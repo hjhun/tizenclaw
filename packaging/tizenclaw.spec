@@ -15,6 +15,7 @@ TizenClaw Native Agent running as a System Service Application, utilizing LXC fo
 
 %prep
 %setup -q -n %{name}-%{version}
+cp packaging/tizenclaw.manifest .
 
 %build
 export CFLAGS="$CFLAGS -Wall"
