@@ -9,18 +9,16 @@ public:
     ContainerEngine();
     ~ContainerEngine();
 
-    // Initialize the runc backend
+    // Initialize the container backend (crun or runc)
     bool Initialize();
 
-    // Create and start a new container
-    // Uses the given name and a base RootFS path
-    bool StartContainer(const std::string& container_name, const std::string& rootfs_path);
-
-    // Stop and destroy a container
-    bool StopContainer(const std::string& container_name);
+    // Setup container rootfs, generate config.json, and execute a skill command
+    // capturing the JSON output synchronously via popen
+    std::string ExecuteSkill(const std::string& skill_name, const std::string& arg_str);
 
 private:
     bool m_initialized;
+    std::string m_runtime_bin;
 };
 
 #endif // __CONTAINER_ENGINE_H__

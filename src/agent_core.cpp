@@ -171,28 +171,16 @@ std::string AgentCore::QueryGemini(const std::string& prompt_text) {
 bool AgentCore::ExecuteSkill(const std::string& skill_name, const nlohmann::json& args) {
     dlog_print(DLOG_INFO, LOG_TAG, "Executing skill logic: %s", skill_name.c_str());
     
-    // Launching the predefined container environment for Skills execution
-    m_container->StartContainer("tizenclaw_skill_vm", "/opt/usr/share/tizenclaw/rootfs.tar.gz");
-    
-    // Convert JSON explicitly to a shell-escaped string or just write to temp file
     std::string arg_str = args.dump();
-    // Escape single quotes just in case
-    size_t pos = 0;
-    while ((pos = arg_str.find("'", pos)) != std::string::npos) {
-        arg_str.replace(pos, 1, "'\"'\"'");
-        pos += 5;
-    }
-    
-    std::string skill_file = "/opt/usr/share/tizenclaw/skills/" + skill_name + "/" + skill_name + ".py";
-    // Using environment variable to pass JSON args generically, avoids quoting issues
-    std::string cmd = "CLAW_ARGS='" + arg_str + "' python3 " + skill_file;
-    
-    dlog_print(DLOG_INFO, LOG_TAG, "Running Skill CMD: %s", cmd.c_str());
-    int res = std::system(cmd.c_str());
-    
-    if (res != 0) {
-        dlog_print(DLOG_ERROR, LOG_TAG, "Skill execution failed with code %d", res);
+    std::string response = m_container->ExecuteSkill(skill_name, arg_str);
+
+    if (response.empty()) {
+        dlog_print(DLOG_ERROR, LOG_TAG, "Skill execution failed or returned empty output");
         return false;
     }
+
+    dlog_print(DLOG_INFO, LOG_TAG, "Skill output: %s", response.c_str());
+    
+    // Additional logic could format the response and send back to LLM context
     return true;
 }
