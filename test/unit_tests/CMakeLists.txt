@@ -19,7 +19,7 @@ set(UNIT_TEST_SRCS
 
 # Mock Sources
 set(MOCK_SRCS
-    mock/mock_dlog.cc
+    # mock/mock_dlog.cc
 )
 
 # Main project sources to test (excluding main())
