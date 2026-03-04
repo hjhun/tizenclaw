@@ -18,7 +18,8 @@ set(APP_DATA_DIR "/opt/usr/share/tizenclaw")
 # Tizen pkg-config dependencies
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(PKGS REQUIRED
-    capi-appfw-service-application
+    tizen-core
+    glib-2.0
     dlog
     libcurl
 )
@@ -45,7 +46,7 @@ target_link_libraries(${PACKAGE} ${PKGS_LIBRARIES})
 
 # Installation rules
 install(TARGETS ${PACKAGE} DESTINATION ${APP_EXEC_DIR})
-install(FILES tizen-manifest.xml DESTINATION /usr/share/org.tizen.tizenclaw/)
+install(FILES packaging/tizenclaw.service DESTINATION /usr/lib/systemd/system/)
 install(FILES data/rootfs.tar.gz DESTINATION /opt/usr/share/tizenclaw/)
 install(DIRECTORY skills/ DESTINATION /opt/usr/share/tizenclaw/skills/)
 

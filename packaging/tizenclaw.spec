@@ -6,7 +6,8 @@ Group:      System/Service
 License:    Apache-2.0
 Source0:    %{name}-%{version}.tar.gz
 BuildRequires:  cmake
-BuildRequires:  pkgconfig(capi-appfw-service-application)
+BuildRequires:  pkgconfig(tizen-core)
+BuildRequires:  pkgconfig(glib-2.0)
 BuildRequires:  pkgconfig(dlog)
 BuildRequires:  pkgconfig(libcurl)
 BuildRequires:  pkgconfig(gtest)
@@ -18,7 +19,6 @@ TizenClaw Native Agent running as a System Service Application, utilizing LXC fo
 
 %prep
 %setup -q -n %{name}-%{version}
-cp packaging/tizenclaw.manifest .
 
 %build
 export CFLAGS="$CFLAGS -Wall"
@@ -43,20 +43,14 @@ cd build
 
 # Tizen apps structure
 mkdir -p %{buildroot}/usr/bin
-mkdir -p %{buildroot}/usr/share/org.tizen.tizenclaw/res
-mkdir -p %{buildroot}/usr/share/org.tizen.tizenclaw/shared/res
+mkdir -p %{buildroot}/usr/lib/systemd/system/
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/skills
 
 %files
-%manifest tizenclaw.manifest
 %defattr(-,root,root,-)
 /usr/bin/tizenclaw
 /usr/bin/tizenclaw-unittests
+/usr/lib/systemd/system/tizenclaw.service
 /opt/usr/share/tizenclaw/rootfs.tar.gz
 /opt/usr/share/tizenclaw/skills/
-/usr/share/org.tizen.tizenclaw/tizen-manifest.xml
-%dir /usr/share/org.tizen.tizenclaw/shared/res
-%dir /usr/share/org.tizen.tizenclaw/shared
-%dir /usr/share/org.tizen.tizenclaw/res
-%dir /usr/share/org.tizen.tizenclaw/
 %dir /opt/usr/share/tizenclaw/

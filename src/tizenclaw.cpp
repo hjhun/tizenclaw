@@ -2,96 +2,85 @@
 
 #include <iostream>
 #include <string>
+#include <csignal>
+#include <exception>
 
-// Entry point when the service is created
-bool service_app_create(void *data) {
-    appdata *ad = static_cast<appdata *>(data);
-    dlog_print(DLOG_INFO, LOG_TAG, "TizenClaw Service Created.");
+TizenClawDaemon* g_daemon = nullptr;
 
-    ad->is_running = true;
-    ad->agent = new AgentCore();
+void signal_handler(int sig) {
+    dlog_print(DLOG_INFO, LOG_TAG, "Caught signal %d", sig);
+    if (g_daemon) {
+        g_daemon->Quit();
+    }
+}
+
+TizenClawDaemon::TizenClawDaemon(int argc, char** argv)
+    : argc_(argc), argv_(argv) {
+    tizen_core_init();
+    tizen_core_task_create("main", false, &task_);
+}
+
+TizenClawDaemon::~TizenClawDaemon() {
+    if (task_) {
+        tizen_core_task_destroy(task_);
+        task_ = nullptr;
+    }
+    tizen_core_shutdown();
+}
+
+int TizenClawDaemon::Run() {
+    dlog_print(DLOG_INFO, LOG_TAG, "TizenClaw Daemon Run");
+    OnCreate();
     
-    if (!ad->agent->Initialize()) {
+    // Set up signal handling
+    std::signal(SIGINT, signal_handler);
+    std::signal(SIGTERM, signal_handler);
+
+    int ret = tizen_core_task_run(task_);
+    OnDestroy();
+    return ret;
+}
+
+void TizenClawDaemon::Quit() {
+    dlog_print(DLOG_INFO, LOG_TAG, "TizenClaw Daemon Quit");
+    if (task_) {
+        tizen_core_task_quit(task_);
+    }
+}
+
+void TizenClawDaemon::OnCreate() {
+    dlog_print(DLOG_INFO, LOG_TAG, "TizenClaw Daemon OnCreate");
+    agent_ = new AgentCore();
+    if (!agent_->Initialize()) {
         dlog_print(DLOG_ERROR, LOG_TAG, "Failed to initialize AgentCore");
     }
 
     // TODO: Initialize LXC Container Engine
     // TODO: Start MCP Server connection
-
-    return true;
 }
 
-// Entry point when the service is terminated
-void service_app_terminate(void *data) {
-    appdata *ad = static_cast<appdata *>(data);
-    dlog_print(DLOG_INFO, LOG_TAG, "TizenClaw Service Terminated.");
-
-    ad->is_running = false;
-
-    if (ad->agent) {
-        ad->agent->Shutdown();
-        delete ad->agent;
-        ad->agent = nullptr;
+void TizenClawDaemon::OnDestroy() {
+    dlog_print(DLOG_INFO, LOG_TAG, "TizenClaw Daemon OnDestroy");
+    if (agent_) {
+        agent_->Shutdown();
+        delete agent_;
+        agent_ = nullptr;
     }
-
+    
     // TODO: Cleanup LXC processes and MCP sockets here
 }
 
-// Entry point when another app sends an AppControl request (e.g. Prompt intent)
-void service_app_control(app_control_h app_control, void *data) {
-    appdata *ad = static_cast<appdata *>(data);
-    if (!ad) return;
-
-    char *caller_id = nullptr;
-    if (app_control_get_caller(app_control, &caller_id) == APP_CONTROL_ERROR_NONE) {
-        dlog_print(DLOG_INFO, LOG_TAG, "AppControl received from: %s", caller_id);
-    }
-    
-    char *operation = nullptr;
-    if (app_control_get_operation(app_control, &operation) == APP_CONTROL_ERROR_NONE) {
-        dlog_print(DLOG_INFO, LOG_TAG, "Operation: %s", operation);
-
-        char *extra_data = nullptr;
-        if (app_control_get_extra_data(app_control, "prompt", &extra_data) == APP_CONTROL_ERROR_NONE) {
-            std::string prompt(extra_data);
-            dlog_print(DLOG_INFO, LOG_TAG, "Received Prompt through AppControl: %s", prompt.c_str());
-            
-            if (ad->agent) {
-                ad->agent->ProcessPrompt(prompt);
-            }
-            free(extra_data);
-        } else {
-            dlog_print(DLOG_INFO, LOG_TAG, "No 'prompt' extra data found in AppControl");
-        }
-    }
-
-    if (caller_id) free(caller_id);
-    if (operation) free(operation);
-}
-
-void service_app_lang_changed(app_event_info_h event_info, void *user_data) {
-    (void)event_info;
-    (void)user_data;
-}
-
-void service_app_region_changed(app_event_info_h event_info, void *user_data) {
-    (void)event_info;
-    (void)user_data;
-}
-
 int main(int argc, char *argv[]) {
-    appdata ad = {nullptr, false};
-    service_app_lifecycle_callback_s event_callback;
-    event_callback.create = service_app_create;
-    event_callback.terminate = service_app_terminate;
-    event_callback.app_control = service_app_control;
-
     dlog_print(DLOG_INFO, LOG_TAG, "TizenClaw Service starting...");
-
-    int result = service_app_main(argc, argv, &event_callback, &ad);
-    
-    if (result != APP_ERROR_NONE)
-        dlog_print(DLOG_ERROR, LOG_TAG, "Service app starting failed: %d", result);
-
-    return result;
+    try {
+        TizenClawDaemon daemon(argc, argv);
+        g_daemon = &daemon;
+        return daemon.Run();
+    } catch (const std::exception& e) {
+        dlog_print(DLOG_ERROR, LOG_TAG, "Exception: %s", e.what());
+        return -1;
+    } catch (...) {
+        dlog_print(DLOG_ERROR, LOG_TAG, "Unknown exception");
+        return -1;
+    }
 }
