@@ -70,20 +70,23 @@ void service_app_control(app_control_h app_control, void *data) {
 }
 
 void service_app_lang_changed(app_event_info_h event_info, void *user_data) {
-    // App event handlers
+    (void)event_info;
+    (void)user_data;
 }
 
 void service_app_region_changed(app_event_info_h event_info, void *user_data) {
-    // App event handlers
+    (void)event_info;
+    (void)user_data;
 }
 
 int main(int argc, char *argv[]) {
     appdata ad = {nullptr, false};
-    service_app_lifecycle_callback_s event_callback = {0,};
+    service_app_lifecycle_callback_s event_callback = {0};
 
     event_callback.create = service_app_create;
     event_callback.terminate = service_app_terminate;
     event_callback.app_control = service_app_control;
+    event_callback.app_ext_control = nullptr;
 
     dlog_print(DLOG_INFO, LOG_TAG, "TizenClaw Service starting...");
 

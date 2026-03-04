@@ -6,6 +6,8 @@
 // Mocking Tizen dlog_print for unit testing environment
 extern "C" {
 int __dlog_print(int log_id, int prio, const char* tag, const char* fmt, ...) {
+    (void)log_id;
+    (void)prio;
     printf("[%s] ", tag);
     va_list ap;
     va_start(ap, fmt);

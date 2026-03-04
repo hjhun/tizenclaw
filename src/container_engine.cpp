@@ -49,7 +49,7 @@ bool ContainerEngine::StartContainer(const std::string& container_name, const st
     int ret = std::system((run_cmd + " > /dev/null 2>&1").c_str());
     if (ret != 0) {
         // Under test environments without rootfs/config.json, runc run will fail.
-        dlog_print(DLOG_WARNING, LOG_TAG, "runc run failed (expected in mock). Ret code: %d", ret);
+        dlog_print(DLOG_WARN, LOG_TAG, "runc run failed (expected in mock). Ret code: %d", ret);
     }
 
     return true;
@@ -65,11 +65,12 @@ bool ContainerEngine::StopContainer(const std::string& container_name) {
     
     int ret = std::system((stop_cmd + " > /dev/null 2>&1").c_str());
     if (ret != 0) {
-        dlog_print(DLOG_WARNING, LOG_TAG, "runc kill failed (expected in mock). Ret code: %d", ret);
+        dlog_print(DLOG_WARN, LOG_TAG, "runc kill failed (expected in mock). Ret code: %d", ret);
     }
     
     std::string delete_cmd = "runc --root /tmp/runc delete " + container_name;
-    std::system((delete_cmd + " > /dev/null 2>&1").c_str());
+    int del_ret = std::system((delete_cmd + " > /dev/null 2>&1").c_str());
+    (void)del_ret;
 
     return true;
 }
