@@ -9,7 +9,7 @@ endif()
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTEST_DEPS REQUIRED gtest gmock)
-pkg_check_modules(APPFW_DEPS REQUIRED capi-appfw-service-application dlog libcurl)
+pkg_check_modules(CORE_DEPS REQUIRED tizen-core glib-2.0 dlog libcurl)
 
 # Test Sources
 set(UNIT_TEST_SRCS
@@ -41,12 +41,12 @@ target_include_directories(tizenclaw-unittests PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../../inc
     ${CMAKE_CURRENT_SOURCE_DIR}/../../inc/nlohmann
     ${GTEST_DEPS_INCLUDE_DIRS}
-    ${APPFW_DEPS_INCLUDE_DIRS}
+    ${CORE_DEPS_INCLUDE_DIRS}
 )
 
 target_link_libraries(tizenclaw-unittests PUBLIC
     ${GTEST_DEPS_LIBRARIES}
-    ${APPFW_DEPS_LIBRARIES}
+    ${CORE_DEPS_LIBRARIES}
     pthread
 )
 
