@@ -53,7 +53,7 @@ mkdir -p %{buildroot}/opt/usr/apps/org.tizen.tizenclaw/shared/res
 /opt/usr/apps/org.tizen.tizenclaw/bin/tizenclaw-unittests
 /opt/usr/apps/org.tizen.tizenclaw/tizen-manifest.xml
 /opt/usr/apps/org.tizen.tizenclaw/data/rootfs.tar.gz
-%dir /opt/usr/apps/org.tizen.tizenclaw/data/skills
+/opt/usr/apps/org.tizen.tizenclaw/data/skills/
 %dir /opt/usr/apps/org.tizen.tizenclaw/shared/res
 %dir /opt/usr/apps/org.tizen.tizenclaw/bin
 %dir /opt/usr/apps/org.tizen.tizenclaw/res

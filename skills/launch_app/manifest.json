@@ -1,0 +1,7 @@
+{
+  "name": "launch_app",
+  "version": "1.0",
+  "description": "A skill to launch Tizen applications via app_control API",
+  "entrypoint": "python3 launch_app.py",
+  "dependencies": []
+}
