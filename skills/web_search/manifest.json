@@ -1,0 +1,7 @@
+{
+    "name": "web_search",
+    "version": "1.0",
+    "description": "An OpenClaw compatible skill to perform a web search via Wikipedia API.",
+    "entrypoint": "python3 web_search.py",
+    "dependencies": []
+}

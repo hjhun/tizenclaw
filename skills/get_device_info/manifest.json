@@ -1,0 +1,7 @@
+{
+    "name": "get_device_info",
+    "version": "1.0",
+    "description": "An OpenClaw compatible skill to retrieve hardware device information such as battery level.",
+    "entrypoint": "python3 get_device_info.py",
+    "dependencies": []
+}

@@ -1,0 +1,7 @@
+{
+    "name": "telegram_listener",
+    "version": "1.0",
+    "description": "A long-running listener to bridge Telegram messages into TizenClaw Prompts via AppControl.",
+    "entrypoint": "python3 telegram_listener.py",
+    "dependencies": []
+}
