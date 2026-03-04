@@ -8,6 +8,7 @@ Source0:    %{name}-%{version}.tar.gz
 BuildRequires:  cmake
 BuildRequires:  pkgconfig(capi-appfw-service-application)
 BuildRequires:  pkgconfig(dlog)
+BuildRequires:  pkgconfig(libcurl)
 BuildRequires:  pkgconfig(gtest)
 BuildRequires:  pkgconfig(gmock)
 # C++ toolchain is generally available in Tizen

@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <json.hpp>
 
 #include "container_engine.h"
 
@@ -22,8 +23,12 @@ public:
     void ProcessPrompt(const std::string& prompt);
 
 private:
+    std::string QueryGemini(const std::string& prompt_text);
+    bool ExecuteSkill(const std::string& skill_name, const nlohmann::json& args);
+
     std::unique_ptr<ContainerEngine> m_container;
     bool m_initialized;
+    std::string m_gemini_api_key;
 };
 
 #endif // __AGENT_CORE_H__

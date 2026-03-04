@@ -9,7 +9,7 @@ endif()
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTEST_DEPS REQUIRED gtest gmock)
-pkg_check_modules(APPFW_DEPS REQUIRED capi-appfw-service-application dlog)
+pkg_check_modules(APPFW_DEPS REQUIRED capi-appfw-service-application dlog libcurl)
 
 # Test Sources
 set(UNIT_TEST_SRCS
@@ -39,6 +39,7 @@ target_include_directories(tizenclaw-unittests PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/mock
     ${CMAKE_CURRENT_SOURCE_DIR}/../../inc
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../inc/nlohmann
     ${GTEST_DEPS_INCLUDE_DIRS}
     ${APPFW_DEPS_INCLUDE_DIRS}
 )

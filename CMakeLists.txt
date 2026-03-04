@@ -20,11 +20,14 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(PKGS REQUIRED
     capi-appfw-service-application
     dlog
+    libcurl
 )
 
+# Include directories (plus nlohmann_json)
 include_directories(
     inc
     ${PKGS_INCLUDE_DIRS}
+    "inc/nlohmann"
 )
 
 add_definitions("-DAPP_DATA_DIR=\"${APP_DATA_DIR}\"")
