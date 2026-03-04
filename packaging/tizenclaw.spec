@@ -50,6 +50,7 @@ mkdir -p %{buildroot}/opt/usr/apps/org.tizen.tizenclaw/shared/res
 %manifest tizenclaw.manifest
 %defattr(-,root,root,-)
 /opt/usr/apps/org.tizen.tizenclaw/bin/tizenclaw
+/opt/usr/apps/org.tizen.tizenclaw/bin/tizenclaw-unittests
 /opt/usr/apps/org.tizen.tizenclaw/tizen-manifest.xml
 %dir /opt/usr/apps/org.tizen.tizenclaw/data/skills
 %dir /opt/usr/apps/org.tizen.tizenclaw/shared/res
