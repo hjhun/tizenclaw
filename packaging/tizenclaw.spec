@@ -13,7 +13,6 @@ BuildRequires:  pkgconfig(dlog)
 BuildRequires:  pkgconfig(libcurl)
 BuildRequires:  pkgconfig(gtest)
 BuildRequires:  pkgconfig(gmock)
-BuildRequires:  pkgconfig(libxml-2.0)
 # C++ toolchain is generally available in Tizen
 
 %description
