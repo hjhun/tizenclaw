@@ -175,7 +175,18 @@ std::string AgentCore::ProcessPrompt(
     LlmResponse resp = m_backend->Chat(local_history, tools, on_chunk);
 
     if (!resp.success) {
-      LOG(ERROR) << "LLM error: " << resp.error_message;
+      LOG(ERROR) << "LLM error: "
+                 << resp.error_message;
+      // Rollback: remove the user message to
+      // prevent corrupted history from poisoning
+      // subsequent requests.
+      {
+        std::lock_guard<std::mutex> lock(
+            session_mutex_);
+        if (!m_sessions[session_id].empty()) {
+          m_sessions[session_id].pop_back();
+        }
+      }
       return "Error: " + resp.error_message;
     }
 

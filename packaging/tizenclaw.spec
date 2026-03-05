@@ -106,6 +106,7 @@ mkdir -p %{buildroot}/opt/usr/share/tizenclaw/skills
 %defattr(-,root,root,-)
 %manifest %{name}.manifest
 /usr/bin/tizenclaw
+/usr/bin/tizenclaw-cli
 /usr/bin/start_mcp_tunnel.sh
 /usr/lib/systemd/system/tizenclaw.service
 /usr/lib/systemd/system/tizenclaw-skills-secure.service

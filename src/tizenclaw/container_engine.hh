@@ -6,7 +6,6 @@
 
 namespace tizenclaw {
 
-
 class ContainerEngine {
 public:
     ContainerEngine();
@@ -15,19 +14,40 @@ public:
     // Initialize the container backend (crun or runc)
     bool Initialize();
 
-    // Setup container rootfs, generate config.json, and execute a skill command
-    // capturing the JSON output synchronously from a long-running container.
-    std::string ExecuteSkill(const std::string& skill_name, const std::string& arg_str);
+    // Execute a skill: tries UDS socket first, then
+    // crun exec fallback, then host-direct fallback.
+    std::string ExecuteSkill(
+        const std::string& skill_name,
+        const std::string& arg_str);
 
 private:
+    // Execute skill via Unix Domain Socket to the
+    // skill_executor running in the secure container.
+    std::string ExecuteSkillViaSocket(
+        const std::string& skill_name,
+        const std::string& arg_str);
+
+    // Legacy: exec into running OCI container
+    std::string ExecuteSkillViaCrun(
+        const std::string& skill_name,
+        const std::string& arg_str);
+
     bool EnsureSkillsContainerRunning();
     bool PrepareSkillsBundle();
     bool IsContainerRunning() const;
     bool StartSkillsContainer();
     void StopSkillsContainer();
     bool WriteSkillsConfig() const;
-    std::string BuildPaths(const std::string& leaf) const;
-    std::string EscapeShellArg(const std::string& input) const;
+    std::string BuildPaths(
+        const std::string& leaf) const;
+    std::string EscapeShellArg(
+        const std::string& input) const;
+    std::string CrunCmd(
+        const std::string& subcmd) const;
+
+    // Extract last JSON-like line from raw output
+    static std::string ExtractJsonResult(
+        const std::string& raw);
 
     bool m_initialized;
     std::string m_runtime_bin;
@@ -36,6 +56,10 @@ private:
     std::string m_bundle_dir;
     std::string m_rootfs_tar;
     std::string m_container_id;
+    std::string m_crun_root;
+
+    static constexpr const char* kSkillSocketPath =
+        "/tmp/tizenclaw_skill.sock";
 };
 
 } // namespace tizenclaw

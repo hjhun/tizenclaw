@@ -152,6 +152,23 @@ LlmResponse AnthropicBackend::Chat(
     LlmResponse r;
     r.success = false;
     r.error_message = http_resp.error;
+    if (!http_resp.body.empty()) {
+      try {
+        auto ej =
+            nlohmann::json::parse(http_resp.body);
+        if (ej.contains("error")) {
+          r.error_message += ": " +
+              ej["error"].value("message", "");
+        }
+      } catch (...) {
+        r.error_message += ": " +
+            http_resp.body.substr(
+                0, std::min((size_t)200,
+                            http_resp.body.size()));
+      }
+    }
+    LOG(ERROR) << "API error: "
+               << r.error_message;
     return r;
   }
 

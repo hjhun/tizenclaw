@@ -12,7 +12,7 @@ Conventional Commits 스타일과 유사하게 목적이 명확히 드러나는 
 **가장 중요한 점: 커밋 메시지는 항상 영어(English)로 작성되어야 하며, 변경 사항에 대한 구체적이고 상세한 설명이 본문에 포함되어야합니다.**
 
 ```text
-[Phase X] Title (Under 50 chars, clear and concise English)
+Title (Under 50 chars, clear and concise English)
 
 (빈 줄)
 Provide a detailed explanation of the implemented features, bug fixes, or structural changes.
@@ -21,7 +21,7 @@ Describe 'Why' and 'What' was done extensively but clearly. (Wrap text at 72 cha
 
 ## 2. 작성 예시 (Good)
 ```text
-[Phase 2] Switch from LXC to lightweight runc for ContainerEngine
+Switch from LXC to lightweight runc for ContainerEngine
 
 Refactored the ContainerEngine implementation to use the lightweight
 `runc` CLI via `std::system` instead of relying on `liblxc` APIs.
@@ -34,7 +34,7 @@ and spawn robust runc commands.
 ## 3. 금지 사항 (Bad)
 다음과 같은 기계적이고 불필요한 Verification 텍스트 블록은 **절대 넣지 마세요.**
 ```text
-[Phase 2] Add LXC ...
+Add LXC ...
 (빈 줄)
 내용...
 (빈 줄)

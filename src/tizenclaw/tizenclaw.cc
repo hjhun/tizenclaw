@@ -341,8 +341,16 @@ constexpr uid_t TizenClawDaemon::kAllowedUids[];
 
 } // namespace tizenclaw
 
+#include "../common/file_log_backend.hh"
+
 int main(int argc, char *argv[]) {
     using namespace tizenclaw;
+
+    // Add file-based logging (reliable inside chroot where dlog is unavailable)
+    tizenclaw::utils::LogCore::GetCore().AddLogBackend(
+        std::make_shared<tizenclaw::utils::FileLogBackend>(
+            "/tmp/tizenclaw.log", 1024 * 1024, 3));
+
     LOG(INFO) << "TizenClaw Service starting...";
     try {
         TizenClawDaemon daemon(argc, argv);

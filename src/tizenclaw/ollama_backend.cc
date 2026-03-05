@@ -147,6 +147,27 @@ LlmResponse OllamaBackend::Chat(
     LlmResponse r;
     r.success = false;
     r.error_message = http_resp.error;
+    if (!http_resp.body.empty()) {
+      try {
+        auto ej =
+            nlohmann::json::parse(http_resp.body);
+        if (ej.contains("error")) {
+          std::string emsg =
+              ej["error"].is_string()
+                  ? ej["error"].get<std::string>()
+                  : ej["error"].value(
+                        "message", "");
+          r.error_message += ": " + emsg;
+        }
+      } catch (...) {
+        r.error_message += ": " +
+            http_resp.body.substr(
+                0, std::min((size_t)200,
+                            http_resp.body.size()));
+      }
+    }
+    LOG(ERROR) << "API error: "
+               << r.error_message;
     return r;
   }
 

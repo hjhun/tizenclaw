@@ -31,10 +31,9 @@ write_config() {
   "process": {
     "terminal": false,
     "user": {"uid": 0, "gid": 0},
-    "args": ["sh", "-lc", "while true; do sleep 3600; done"],
+    "args": ["python3", "/skills/skill_executor.py"],
     "env": [
-      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-      "LD_LIBRARY_PATH=/tizen_libs:/tizen_libs64"
+      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     ],
     "cwd": "/",
     "noNewPrivileges": true,
@@ -44,7 +43,12 @@ write_config() {
       "inheritable": [],
       "permitted": [],
       "ambient": []
-    }
+    },
+    "rlimits": [
+      {"type": "RLIMIT_NOFILE", "hard": 256, "soft": 256},
+      {"type": "RLIMIT_NPROC", "hard": 64, "soft": 64},
+      {"type": "RLIMIT_AS", "hard": 268435456, "soft": 268435456}
+    ]
   },
   "root": {
     "path": "rootfs",
@@ -69,32 +73,79 @@ write_config() {
       "options": ["rbind", "ro"]
     },
     {
-      "destination": "/tizen_libs",
+      "destination": "/usr",
       "type": "bind",
-      "source": "/usr/lib",
+      "source": "/usr",
       "options": ["rbind", "ro"]
     },
     {
-      "destination": "/tizen_libs64",
+      "destination": "/etc",
       "type": "bind",
-      "source": "/usr/lib64",
+      "source": "/etc",
       "options": ["rbind", "ro"]
     },
     {
-      "destination": "/var/run/dbus",
+      "destination": "/lib64",
       "type": "bind",
-      "source": "/var/run/dbus",
+      "source": "/lib64",
+      "options": ["rbind", "ro"]
+    },
+    {
+      "destination": "/run",
+      "type": "bind",
+      "source": "/run",
+      "options": ["rbind", "rw"]
+    },
+    {
+      "destination": "/tmp",
+      "type": "bind",
+      "source": "/tmp",
       "options": ["rbind", "rw"]
     }
   ],
   "linux": {
+    "cgroupsPath": "",
     "namespaces": [
       {"type": "mount"},
       {"type": "pid"},
-      {"type": "ipc"},
-      {"type": "uts"},
-      {"type": "network"}
+      {"type": "ipc"}
     ],
+    "seccomp": {
+      "defaultAction": "SCMP_ACT_ERRNO",
+      "architectures": ["SCMP_ARCH_X86_64", "SCMP_ARCH_X86", "SCMP_ARCH_AARCH64"],
+      "syscalls": [{
+        "names": [
+          "read","write","open","close","stat","fstat","lstat",
+          "poll","lseek","mmap","mprotect","munmap","brk",
+          "ioctl","access","pipe","select","sched_yield",
+          "dup","dup2","nanosleep","getpid","socket","connect",
+          "sendto","recvfrom","sendmsg","recvmsg","bind","listen",
+          "getsockname","getpeername","getsockopt","setsockopt",
+          "clone","fork","vfork","execve","exit","wait4",
+          "kill","uname","fcntl","flock","fsync","fdatasync",
+          "truncate","ftruncate","getdents","getcwd","chdir",
+          "mkdir","rmdir","creat","link","unlink","symlink",
+          "readlink","chmod","chown","lchown","umask",
+          "gettimeofday","getrlimit","getrusage","sysinfo",
+          "times","getuid","getgid","setuid","setgid",
+          "geteuid","getegid","getppid","getpgrp","setsid",
+          "getgroups","setgroups","sigaltstack","madvise",
+          "shmget","shmat","shmctl","shmdt",
+          "clock_gettime","clock_getres","clock_nanosleep",
+          "exit_group","epoll_wait","epoll_ctl","tgkill",
+          "openat","mkdirat","fchownat","fstatat",
+          "unlinkat","renameat","linkat","symlinkat",
+          "readlinkat","fchmodat","faccessat","futex",
+          "set_robust_list","get_robust_list",
+          "epoll_create1","pipe2","dup3","accept4",
+          "prlimit64","getrandom","memfd_create",
+          "statx","clone3","close_range","rseq",
+          "newfstatat","accept","shutdown","fchmod",
+          "rt_sigaction","rt_sigprocmask","rt_sigreturn"
+        ],
+        "action": "SCMP_ACT_ALLOW"
+      }]
+    },
     "maskedPaths": [
       "/proc/acpi",
       "/proc/kcore",
@@ -127,6 +178,37 @@ prepare_bundle() {
   write_config
 }
 
+run_without_container() {
+  echo "Watchdog cgroup unavailable. Falling back to chroot with unshare."
+
+  mkdir -p "${BUNDLE_DIR}/rootfs/skills" "${BUNDLE_DIR}/rootfs/proc" \
+           "${BUNDLE_DIR}/rootfs/dev" "${BUNDLE_DIR}/rootfs/tmp" \
+           "${BUNDLE_DIR}/rootfs/usr" "${BUNDLE_DIR}/rootfs/etc" \
+           "${BUNDLE_DIR}/rootfs/lib64" "${BUNDLE_DIR}/rootfs/run"
+
+  exec unshare -m /bin/sh -c "
+    mount --make-rprivate / || true
+    mount -t proc proc \"${BUNDLE_DIR}/rootfs/proc\" || true
+    mount --rbind /dev \"${BUNDLE_DIR}/rootfs/dev\" || true
+    mount --rbind \"${APP_DATA_DIR}/skills\" \"${BUNDLE_DIR}/rootfs/skills\" || true
+    mount --rbind /tmp \"${BUNDLE_DIR}/rootfs/tmp\" || true
+
+    # Read-only mounts: host /usr, /etc, /lib64
+    # Provides glibc Python3, CAPI/HAL libs, ld.so.cache, tizen-platform.conf
+    mount --rbind /usr \"${BUNDLE_DIR}/rootfs/usr\" || true
+    mount -o remount,bind,ro \"${BUNDLE_DIR}/rootfs/usr\" || true
+    mount --rbind /etc \"${BUNDLE_DIR}/rootfs/etc\" || true
+    mount -o remount,bind,ro \"${BUNDLE_DIR}/rootfs/etc\" || true
+    mount --rbind /lib64 \"${BUNDLE_DIR}/rootfs/lib64\" || true
+    mount -o remount,bind,ro \"${BUNDLE_DIR}/rootfs/lib64\" || true
+
+    # Read-write mount: /run (D-Bus runtime sockets)
+    mount --rbind /run \"${BUNDLE_DIR}/rootfs/run\" || true
+
+    exec chroot \"${BUNDLE_DIR}/rootfs\" python3 /skills/skill_executor.py
+  "
+}
+
 start_container() {
   if [ -z "${RUNTIME_BIN}" ]; then
     echo "No OCI runtime found (crun/runc)" >&2
@@ -135,55 +217,32 @@ start_container() {
   prepare_bundle
   "${RUNTIME_BIN}" delete -f "${CONTAINER_ID}" >/dev/null 2>&1 || true
 
-  local RUNTIME_CMD=""
-  local NEEDS_FALLBACK=0
-  
-  if ! "${RUNTIME_BIN}" run --help 2>&1 | grep -q -- "--cgroup-manager"; then
-    if ! command -v runc >/dev/null 2>&1; then
-      NEEDS_FALLBACK=1
+  cd "${BUNDLE_DIR}"
+  if [[ "$(basename "${RUNTIME_BIN}")" == "crun" ]]; then
+    # Check if watchdog cgroup is accessible; if not and no runc, use chroot fallback
+    if { [ ! -d "/sys/fs/cgroup/watchdog" ] || [ ! -w "/sys/fs/cgroup/watchdog" ]; } \
+      && ! command -v runc >/dev/null 2>&1; then
+      run_without_container
     fi
+    # Try --cgroup-manager=disabled if supported
+    if "${RUNTIME_BIN}" run --help 2>&1 | grep -q -- "--cgroup-manager"; then
+      exec "${RUNTIME_BIN}" run --cgroup-manager=disabled "${CONTAINER_ID}"
+    else
+      # crun doesn't support --cgroup-manager; try runc if available
+      if command -v runc >/dev/null 2>&1; then
+        echo "crun does not support --cgroup-manager, switching to runc"
+        exec runc run "${CONTAINER_ID}"
+      else
+        echo "crun does not support --cgroup-manager, fallback to unshare+chroot"
+        run_without_container
+      fi
+    fi
+  else
+    exec "${RUNTIME_BIN}" run "${CONTAINER_ID}"
   fi
-
-  if [ "${NEEDS_FALLBACK}" = "1" ]; then
-    echo "Runtime does not support disabling cgroups. Falling back to chroot with unshare."
-    
-    mkdir -p "${BUNDLE_DIR}/rootfs/skills" "${BUNDLE_DIR}/rootfs/proc" "${BUNDLE_DIR}/rootfs/dev" "${BUNDLE_DIR}/rootfs/var/run/dbus" "${BUNDLE_DIR}/rootfs/tizen_libs" "${BUNDLE_DIR}/rootfs/tizen_libs64"
-    
-    # Run in background via nohup and fake a container id pid
-    nohup unshare -m /bin/sh -c "
-      mount --make-rprivate / || true
-      mount -t proc proc \"${BUNDLE_DIR}/rootfs/proc\" || true
-      mount --rbind /dev \"${BUNDLE_DIR}/rootfs/dev\" || true
-      mount --rbind \"${APP_DATA_DIR}/skills\" \"${BUNDLE_DIR}/rootfs/skills\" || true
-      mount --rbind /usr/lib \"${BUNDLE_DIR}/rootfs/tizen_libs\" || true
-      mount --rbind /usr/lib64 \"${BUNDLE_DIR}/rootfs/tizen_libs64\" || true
-      mount --rbind /var/run/dbus \"${BUNDLE_DIR}/rootfs/var/run/dbus\" || true
-      exec chroot \"${BUNDLE_DIR}/rootfs\" /bin/sh -lc \"export LD_LIBRARY_PATH=/tizen_libs:/tizen_libs64; while true; do sleep 3600; done\"
-    " </dev/null >/dev/null 2>&1 &
-    
-    echo $! > "${BUNDLE_DIR}/chroot.pid"
-    return 0
-  fi
-
-  local CGRP_ARG="--cgroup-manager=disabled"
-  (
-    cd "${BUNDLE_DIR}"
-    "${RUNTIME_BIN}" run ${CGRP_ARG} -d "${CONTAINER_ID}"
-  )
 }
 
 stop_container() {
-  if [ -f "${BUNDLE_DIR}/chroot.pid" ]; then
-    local CPID=$(cat "${BUNDLE_DIR}/chroot.pid")
-    kill -9 $CPID >/dev/null 2>&1 || true
-    rm -f "${BUNDLE_DIR}/chroot.pid"
-    umount "${BUNDLE_DIR}/rootfs/skills" >/dev/null 2>&1 || true
-    umount "${BUNDLE_DIR}/rootfs/dev" >/dev/null 2>&1 || true
-    umount "${BUNDLE_DIR}/rootfs/proc" >/dev/null 2>&1 || true
-    echo "Stopped chroot container."
-    return 0
-  fi
-
   if [ -z "${RUNTIME_BIN}" ]; then
     return 0
   fi

@@ -4,8 +4,7 @@ After=network.target
 Before=tizenclaw.service
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
+Type=simple
 ExecStart=/usr/libexec/tizenclaw/skills_secure_container.sh start
 ExecStop=/usr/libexec/tizenclaw/skills_secure_container.sh stop
 ExecReload=/usr/libexec/tizenclaw/skills_secure_container.sh restart

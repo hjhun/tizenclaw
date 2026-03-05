@@ -51,6 +51,7 @@ run_without_container() {
   exec unshare -m /bin/sh -c "
     mkdir -p \"${BUNDLE_DIR}/rootfs/proc\" \"${BUNDLE_DIR}/rootfs/dev\" \"${BUNDLE_DIR}/rootfs/sys\" \
              \"${BUNDLE_DIR}/rootfs/usr\" \"${BUNDLE_DIR}/rootfs/lib\" \"${BUNDLE_DIR}/rootfs/lib64\" \
+             \"${BUNDLE_DIR}/rootfs/etc/dbus-1\" \
              \"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw\" \"${BUNDLE_DIR}/rootfs/run\" \"${BUNDLE_DIR}/rootfs/tmp\"
     
     mount --make-rprivate / || true
@@ -61,11 +62,14 @@ run_without_container() {
     mount --rbind /usr \"${BUNDLE_DIR}/rootfs/usr\" || true
     mount --rbind /lib \"${BUNDLE_DIR}/rootfs/lib\" || true
     mount --rbind /lib64 \"${BUNDLE_DIR}/rootfs/lib64\" || true
+    touch \"${BUNDLE_DIR}/rootfs/etc/tizen-platform.conf\" 2>/dev/null || true
+    mount --bind /etc/tizen-platform.conf \"${BUNDLE_DIR}/rootfs/etc/tizen-platform.conf\" || true
+    mount --rbind /etc/dbus-1 \"${BUNDLE_DIR}/rootfs/etc/dbus-1\" || true
     mount --rbind /opt/usr/share/tizenclaw \"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw\" || true
     mount --rbind /run \"${BUNDLE_DIR}/rootfs/run\" || true
     mount --rbind /tmp \"${BUNDLE_DIR}/rootfs/tmp\" || true
 
-    exec chroot \"${BUNDLE_DIR}/rootfs\" ${CMD}
+    exec chroot \"${BUNDLE_DIR}/rootfs\" ${CMD} 2>>/tmp/tizenclaw_daemon.log
   "
 }
 
@@ -151,6 +155,18 @@ write_config() {
       "options": ["rbind", "rw"]
     },
     {
+      "destination": "/etc/tizen-platform.conf",
+      "type": "bind",
+      "source": "/etc/tizen-platform.conf",
+      "options": ["bind", "ro"]
+    },
+    {
+      "destination": "/etc/dbus-1",
+      "type": "bind",
+      "source": "/etc/dbus-1",
+      "options": ["rbind", "ro"]
+    },
+    {
       "destination": "/tmp",
       "type": "bind",
       "source": "/tmp",
@@ -217,8 +233,9 @@ if [[ "$(basename "${RUNTIME_BIN}")" == "crun" ]]; then
       RUNTIME_BIN="runc"
       "${RUNTIME_BIN}" run "${CONTAINER_ID}" >>"${LOG_FILE}" 2>&1
     else
-      log "crun does not support --cgroup-manager, fallback to plain run"
-      "${RUNTIME_BIN}" run "${CONTAINER_ID}" >>"${LOG_FILE}" 2>&1
+      log "crun does not support --cgroup-manager, fallback to unshare+chroot"
+      set -e
+      run_without_container
     fi
   fi
 else

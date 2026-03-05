@@ -54,8 +54,12 @@ set(SOURCES
 add_executable(${PACKAGE} ${SOURCES})
 target_link_libraries(${PACKAGE} ${PKGS_LIBRARIES})
 
+# CLI test tool (no Tizen deps — pure POSIX sockets)
+add_executable(tizenclaw-cli src/tools/tizenclaw_cli.cc)
+
 # Installation rules
 install(TARGETS ${PACKAGE} DESTINATION ${APP_EXEC_DIR})
+install(TARGETS tizenclaw-cli DESTINATION ${APP_EXEC_DIR})
 install(FILES
     packaging/tizenclaw.service
     packaging/tizenclaw-skills-secure.service
