@@ -11,6 +11,7 @@
 // --------------------------------------------------
 
 struct LlmToolCall {
+  std::string id;       // provider-assigned ID (e.g. "call_abc123")
   std::string name;
   nlohmann::json args;
 };
@@ -22,6 +23,7 @@ struct LlmMessage {
   std::vector<LlmToolCall> tool_calls;
   // When role == "tool" (function result)
   std::string tool_name;
+  std::string tool_call_id;  // ID of the tool_call this result responds to
   nlohmann::json tool_result;
 };
 

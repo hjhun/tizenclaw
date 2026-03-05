@@ -65,11 +65,26 @@ void TizenClawDaemon::OnCreate() {
     
     ipc_running_ = true;
     ipc_thread_ = std::thread(&TizenClawDaemon::IpcServerLoop, this);
+
+    // Start Telegram bridge (non-fatal if config is missing)
+    telegram_bridge_ = new TelegramBridge();
+    if (!telegram_bridge_->Start()) {
+        dlog_print(DLOG_WARN, LOG_TAG,
+                   "Telegram bridge not started "
+                   "(config may be missing)");
+    }
 }
 
 void TizenClawDaemon::OnDestroy() {
     dlog_print(DLOG_INFO, LOG_TAG, "TizenClaw Daemon OnDestroy");
-    
+
+    // Stop Telegram bridge first
+    if (telegram_bridge_) {
+        telegram_bridge_->Stop();
+        delete telegram_bridge_;
+        telegram_bridge_ = nullptr;
+    }
+
     ipc_running_ = false;
     if (ipc_socket_ != -1) {
         shutdown(ipc_socket_, SHUT_RDWR);

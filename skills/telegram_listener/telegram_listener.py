@@ -109,12 +109,18 @@ def send_telegram_message(token, chat_id, text):
             return False
 
 
-def poll_telegram_bot(token):
+def poll_telegram_bot(token, allowed_chat_ids=None):
     """Main polling loop for Telegram updates."""
     offset = 0
     url = f"https://api.telegram.org/bot{token}"
     print("Starting Telegram polling for "
           "TizenClaw...")
+    if allowed_chat_ids:
+        print(f"Allowed chat IDs: "
+              f"{allowed_chat_ids}")
+    else:
+        print("No chat ID restrictions "
+              "(all users allowed)")
 
     while True:
         try:
@@ -138,6 +144,15 @@ def poll_telegram_bot(token):
                             "chat", {}).get("id")
 
                         if text and chat_id:
+                            # Check allowlist
+                            if (allowed_chat_ids and
+                                    chat_id not in
+                                    allowed_chat_ids):
+                                print(
+                                    f"Blocked [{chat_id}]"
+                                    f": not in allowlist")
+                                continue
+
                             print(
                                 f"Telegram [{chat_id}]"
                                 f": '{text}' -> "
@@ -177,4 +192,21 @@ if __name__ == "__main__":
               "environment variable.")
         sys.exit(1)
 
-    poll_telegram_bot(bot_token)
+    # Load allowed_chat_ids from config
+    _allowed_ids = None
+    _config_path = (
+        "/opt/usr/share/tizenclaw/"
+        "telegram_config.json")
+    try:
+        with open(_config_path) as _f:
+            _cfg = json.load(_f)
+            _ids = _cfg.get(
+                "allowed_chat_ids", [])
+            if _ids:
+                _allowed_ids = set(
+                    int(x) for x in _ids)
+    except (FileNotFoundError, json.JSONDecodeError,
+            ValueError) as _e:
+        print(f"Config load note: {_e}")
+
+    poll_telegram_bot(bot_token, _allowed_ids)

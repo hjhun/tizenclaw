@@ -38,12 +38,10 @@ nlohmann::json AnthropicBackend::ToAnthropicMessages(
       if (!msg.tool_calls.empty()) {
         nlohmann::json content =
             nlohmann::json::array();
-        int idx = 0;
         for (auto& tc : msg.tool_calls) {
           content.push_back({
               {"type", "tool_use"},
-              {"id", "toolu_" +
-                         std::to_string(idx++)},
+              {"id", tc.id},
               {"name", tc.name},
               {"input", tc.args}
           });
@@ -57,7 +55,7 @@ nlohmann::json AnthropicBackend::ToAnthropicMessages(
           {"role", "user"},
           {"content", {{
               {"type", "tool_result"},
-              {"tool_use_id", "toolu_0"},
+              {"tool_use_id", msg.tool_call_id},
               {"content",
                msg.tool_result.dump()}
           }}}
@@ -115,6 +113,7 @@ AnthropicBackend::ParseAnthropicResponse(
             block["text"].get<std::string>();
       } else if (type == "tool_use") {
         LlmToolCall tc;
+        tc.id = block.value("id", "");
         tc.name = block["name"];
         tc.args = block["input"];
         resp.tool_calls.push_back(tc);

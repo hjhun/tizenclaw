@@ -10,6 +10,7 @@
 
 #include "container_engine.hh"
 #include "llm_backend.hh"
+#include "session_store.hh"
 
 class AgentCore {
 public:
@@ -47,6 +48,8 @@ private:
              std::vector<LlmMessage>> m_sessions;
     static constexpr size_t kMaxHistorySize = 20;
     static constexpr int kMaxIterations = 5;
+
+    SessionStore session_store_;
 };
 
 #endif // __AGENT_CORE_H__

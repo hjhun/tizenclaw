@@ -7,6 +7,7 @@
 #include <thread>
 #include <atomic>
 #include "agent_core.hh"
+#include "telegram_bridge.hh"
 
 #ifdef  LOG_TAG
 #undef  LOG_TAG
@@ -35,6 +36,7 @@ private:
     std::thread ipc_thread_;
     std::atomic<bool> ipc_running_{false};
     int ipc_socket_ = -1;
+    TelegramBridge* telegram_bridge_ = nullptr;
 
     // Allowed UIDs for IPC connections
     // 0=root, 301=app_fw, 200=system, 5001=developer

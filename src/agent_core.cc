@@ -131,6 +131,10 @@ void AgentCore::Shutdown() {
   dlog_print(DLOG_INFO, LOG_TAG,
              "AgentCore Shutting down...");
 
+  // Save all sessions before shutting down
+  for (auto& [sid, history] : m_sessions) {
+    session_store_.SaveSession(sid, history);
+  }
   m_sessions.clear();
   if (m_backend) {
     m_backend->Shutdown();
@@ -158,6 +162,16 @@ std::string AgentCore::ProcessPrompt(
   auto tools = LoadSkillDeclarations();
 
   // Add user message to session history
+  // Load from disk if not in memory
+  if (m_sessions.find(session_id) ==
+      m_sessions.end()) {
+    auto loaded =
+        session_store_.LoadSession(session_id);
+    if (!loaded.empty()) {
+      m_sessions[session_id] = std::move(loaded);
+    }
+  }
+
   LlmMessage user_msg;
   user_msg.role = "user";
   user_msg.text = prompt;
@@ -187,6 +201,11 @@ std::string AgentCore::ProcessPrompt(
       TrimHistory(session_id);
 
       dlog_print(DLOG_INFO, LOG_TAG, "Final response: %s", resp.text.c_str());
+
+      // Save session to disk
+      session_store_.SaveSession(
+          session_id, history);
+
       return resp.text.empty() ? "No response text." : resp.text;
     }
 
@@ -202,23 +221,36 @@ std::string AgentCore::ProcessPrompt(
                iterations + 1, resp.tool_calls.size());
 
     // Execute multiple tools in parallel using std::async
-    std::vector<std::future<std::pair<std::string, std::string>>> futures;
+    struct ToolExecResult {
+      std::string id;
+      std::string name;
+      std::string output;
+    };
+    std::vector<std::future<ToolExecResult>> futures;
     for (auto& tc : resp.tool_calls) {
-      futures.push_back(std::async(std::launch::async, [this, tc]() {
-        return std::make_pair(tc.name, ExecuteSkill(tc.name, tc.args));
+      futures.push_back(std::async(std::launch::async,
+          [this, tc]() {
+        ToolExecResult r;
+        r.id = tc.id;
+        r.name = tc.name;
+        r.output = ExecuteSkill(tc.name, tc.args);
+        return r;
       }));
     }
 
-    // Collect results
+    // Collect results with accurate tool_call_id
     for (auto& f : futures) {
       auto result = f.get();
       LlmMessage tool_msg;
       tool_msg.role = "tool";
-      tool_msg.tool_name = result.first;
+      tool_msg.tool_name = result.name;
+      tool_msg.tool_call_id = result.id;
       try {
-        tool_msg.tool_result = nlohmann::json::parse(result.second);
+        tool_msg.tool_result =
+            nlohmann::json::parse(result.output);
       } catch (...) {
-        tool_msg.tool_result = {{"output", result.second}};
+        tool_msg.tool_result =
+            {{"output", result.output}};
       }
       history.push_back(tool_msg);
     }
@@ -228,6 +260,11 @@ std::string AgentCore::ProcessPrompt(
   }
 
   dlog_print(DLOG_WARN, LOG_TAG, "Reached max tool iterations (%d)", kMaxIterations);
+
+  // Save session even on iteration limit
+  session_store_.SaveSession(
+      session_id, m_sessions[session_id]);
+
   return last_text.empty() ? "Task partially completed (reached iteration limit)." : last_text;
 }
 

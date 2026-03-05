@@ -108,9 +108,12 @@ LlmResponse GeminiBackend::ParseGeminiResponse(
         j["candidates"][0]["content"]["parts"];
     resp.success = true;
 
-    for (auto& part : parts) {
+    for (size_t i = 0; i < parts.size(); ++i) {
+      auto& part = parts[i];
       if (part.contains("functionCall")) {
         LlmToolCall tc;
+        tc.id = "gemini_call_" +
+                std::to_string(i);
         tc.name =
             part["functionCall"]["name"];
         tc.args =

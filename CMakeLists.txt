@@ -44,6 +44,8 @@ set(SOURCES
     src/openai_backend.cc
     src/anthropic_backend.cc
     src/ollama_backend.cc
+    src/telegram_bridge.cc
+    src/session_store.cc
 )
 
 # Executable
@@ -62,7 +64,7 @@ install(PROGRAMS
     scripts/skills_secure_container.sh
     DESTINATION /usr/libexec/tizenclaw/
 )
-install(FILES data/rootfs.tar.gz data/llm_config.json.sample DESTINATION /opt/usr/share/tizenclaw/)
+install(FILES data/rootfs.tar.gz data/llm_config.json.sample data/telegram_config.json.sample DESTINATION /opt/usr/share/tizenclaw/)
 install(DIRECTORY skills/ DESTINATION /opt/usr/share/tizenclaw/skills/)
 install(PROGRAMS scripts/start_mcp_tunnel.sh DESTINATION /usr/bin/)
 # Unit Tests (run during %check)

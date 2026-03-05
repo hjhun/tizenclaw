@@ -114,6 +114,7 @@ mkdir -p %{buildroot}/opt/usr/share/tizenclaw/skills
 /usr/libexec/tizenclaw/crun
 /opt/usr/share/tizenclaw/rootfs.tar.gz
 /opt/usr/share/tizenclaw/llm_config.json.sample
+/opt/usr/share/tizenclaw/telegram_config.json.sample
 /opt/usr/share/tizenclaw/skills/
 %dir /opt/usr/share/tizenclaw/
 

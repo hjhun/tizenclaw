@@ -65,7 +65,7 @@ graph LR
 
 ```
 tizenclaw/
-├── src/                             # C++ 소스 (9개 파일, 1,799 LOC)
+├── src/                             # C++ 소스 (10개 파일, ~2,070 LOC)
 │   ├── tizenclaw.cc                 # 데몬 메인, IPC 서버, 시그널 핸들링
 │   ├── agent_core.cc                # Agentic Loop, 스킬 디스패치, 세션 관리
 │   ├── container_engine.cc          # OCI 컨테이너 생명주기 관리 (crun)
@@ -74,8 +74,9 @@ tizenclaw/
 │   ├── gemini_backend.cc            # Google Gemini API 연동
 │   ├── openai_backend.cc            # OpenAI / xAI (Grok) API 연동
 │   ├── anthropic_backend.cc         # Anthropic Claude API 연동
-│   └── ollama_backend.cc            # Ollama 로컬 LLM 연동
-├── inc/                             # 헤더 파일 (9개 + nlohmann/json.hpp)
+│   ├── ollama_backend.cc            # Ollama 로컬 LLM 연동
+│   └── telegram_bridge.cc           # Telegram Listener 프로세스 관리 (fork+exec, watchdog)
+├── inc/                             # 헤더 파일 (10개 + nlohmann/json.hpp)
 │   ├── tizenclaw.hh                 # TizenClawDaemon 클래스
 │   ├── agent_core.hh                # AgentCore 클래스
 │   ├── container_engine.hh          # ContainerEngine 클래스
@@ -85,6 +86,7 @@ tizenclaw/
 │   ├── openai_backend.hh            # OpenAI + xAI 공용
 │   ├── anthropic_backend.hh
 │   ├── ollama_backend.hh
+│   ├── telegram_bridge.hh           # TelegramBridge 클래스
 │   └── nlohmann/json.hpp            # JSON 파서 (header-only)
 ├── skills/                          # Python 스킬 (12개 디렉터리)
 │   ├── common/                      # 공용 유틸리티
@@ -109,6 +111,7 @@ tizenclaw/
 │   └── Dockerfile                   # RootFS 빌드 참고용
 ├── data/
 │   ├── llm_config.json.sample       # LLM 설정 샘플
+│   ├── telegram_config.json.sample  # Telegram Bot 설정 샘플
 │   └── rootfs.tar.gz                # Alpine RootFS (49 MB)
 ├── test/unit_tests/                 # gtest/gmock 단위 테스트
 │   ├── agent_core_test.cc           # AgentCore 테스트 (4개 케이스)
@@ -133,7 +136,7 @@ tizenclaw/
 
 | 모듈 | 파일 | 역할 | LOC | 상태 |
 |------|------|------|-----|------|
-| **Daemon** | `tizenclaw.cc/hh` | Tizen Core 이벤트 루프, SIGINT/SIGTERM 핸들링, IPC 서버 스레드 | 318 | ✅ 완료 |
+| **Daemon** | `tizenclaw.cc/hh` | Tizen Core 이벤트 루프, SIGINT/SIGTERM 핸들링, IPC 서버 스레드, TelegramBridge 관리 | 335 | ✅ 완료 |
 | **AgentCore** | `agent_core.cc/hh` | Agentic Loop (최대 5회 반복), 세션별 대화 히스토리 (최대 20턴), 병렬 tool 실행 (`std::async`) | 304 | ✅ 완료 |
 | **ContainerEngine** | `container_engine.cc/hh` | crun 기반 OCI 컨테이너 생성/실행, `config.json` 동적 생성, namespace 격리, `crun exec` | 348 | ✅ 완료 |
 | **HttpClient** | `http_client.cc/hh` | libcurl POST, 지수 백오프 재시도, SSL CA 자동 탐색, 커넥트/요청 타임아웃 | 137 | ✅ 완료 |
@@ -159,6 +162,7 @@ tizenclaw/
 | **IPC Server** | `tizenclaw.cc::IpcServerLoop()` | Abstract Unix Socket (`\0tizenclaw.ipc`), JSON 양방향 | ✅ 완료 |
 | **UID 인증** | `IsAllowedUid()` | `SO_PEERCRED` 기반, root/app_fw/system/developer | ✅ 완료 |
 | **Telegram Listener** | `telegram_listener.py` | Bot API Long-Polling → IPC Socket → sendMessage 회신 | ✅ 완료 |
+| **TelegramBridge** | `telegram_bridge.cc/hh` | `fork()+execv()` 자식 프로세스 관리, watchdog 재시작 (3회, 5초) | ✅ 완료 |
 | **MCP Server** | `mcp_server/server.py` | stdio JSON-RPC 2.0, `sdb shell` 터널링 | ✅ 완료 |
 
 ### 3.4 Skills 시스템
@@ -240,10 +244,10 @@ tizenclaw/
 
 ### 🔴 높은 우선순위
 
-#### 5.1 telegram_listener systemd 서비스 독립화
-- [ ] `telegram_listener`를 별도 systemd 서비스로 분리 (현재 컨테이너 외부에서 수동 실행)
-- [ ] `TELEGRAM_BOT_TOKEN`을 환경변수 파일 또는 `llm_config.json`에서 관리
-- [ ] 서비스 재시작 정책 및 헬스체크 구현
+#### 5.1 ~~telegram_listener systemd 서비스 독립화~~ → 데몬 관리 프로세스로 통합 ✅
+- [x] `TelegramBridge` 모듈: `fork()+execv()`로 `telegram_listener.py`를 자식 프로세스로 실행
+- [x] `telegram_config.json`에서 `TELEGRAM_BOT_TOKEN` 로드 및 환경변수 주입
+- [x] Watchdog 스레드: 비정상 종료 시 자동 재시작 (최대 3회, 5초 간격)
 
 #### 5.2 IPC 프로토콜 고도화
 - [ ] 메시지 프레이밍: 길이-프리픽스(length-prefix) 프로토콜 도입 (현재 shutdown(SHUT_WR) 기반)
@@ -305,7 +309,7 @@ tizenclaw/
 | SSL 검증 | CA 번들 자동 탐색 (✅ 개선됨) | Tizen 플랫폼 CA 경로 통합 |
 | 에러 로깅 | dlog만 사용 | 구조화 로깅 (레벨별 + 원격 수집) |
 | 스킬 출력 파싱 | stdout JSON 그대로 반환 | JSON 스키마 검증 추가 |
-| telegram_listener 배포 | 수동 실행, TELEGRAM_BOT_TOKEN 환경변수 필요 | systemd 서비스 + 설정 파일 통합 |
+| telegram_listener 배포 | ~~수동 실행~~ 데몬 자식 프로세스 (fork+exec) | ✅ TelegramBridge 모듈로 해결 |
 | MCP Server 실행 방식 | `subprocess`로 스킬 직접 실행 | Daemon IPC를 통한 Agentic Loop 활용 |
 | 동시 IPC 처리 | 순차 처리 (한 번에 하나의 클라이언트) | 스레드풀 또는 비동기 I/O |
 
@@ -315,8 +319,8 @@ tizenclaw/
 
 | 카테고리 | 파일 수 | LOC |
 |---------|--------|-----|
-| C++ 소스 (`src/*.cc`) | 9 | 1,799 |
-| C++ 헤더 (`inc/*.hh`) | 9 | 370 |
+| C++ 소스 (`src/*.cc`) | 10 | ~2,070 |
+| C++ 헤더 (`inc/*.hh`) | 10 | ~440 |
 | Python 스킬 & 유틸 | ~20 | ~1,100 |
 | Shell 스크립트 | 6 | ~500 |
 | **총계** | ~44 | ~3,770 |

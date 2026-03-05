@@ -97,8 +97,11 @@ LlmResponse OllamaBackend::ParseOllamaResponse(
 
     if (msg.contains("tool_calls") &&
         !msg["tool_calls"].empty()) {
-      for (auto& tc : msg["tool_calls"]) {
+      for (size_t i = 0; i < msg["tool_calls"].size(); ++i) {
+        auto& tc = msg["tool_calls"][i];
         LlmToolCall call;
+        call.id = "ollama_call_" +
+                  std::to_string(i);
         call.name =
             tc["function"]["name"];
         call.args =

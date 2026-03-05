@@ -44,11 +44,9 @@ nlohmann::json OpenAiBackend::ToOpenAiMessages(
       if (!msg.tool_calls.empty()) {
         nlohmann::json tcs =
             nlohmann::json::array();
-        int idx = 0;
         for (auto& tc : msg.tool_calls) {
           tcs.push_back({
-              {"id", "call_" +
-                         std::to_string(idx++)},
+              {"id", tc.id},
               {"type", "function"},
               {"function",
                {{"name", tc.name},
@@ -64,8 +62,7 @@ nlohmann::json OpenAiBackend::ToOpenAiMessages(
     } else if (msg.role == "tool") {
       entry = {
           {"role", "tool"},
-          {"tool_call_id",
-           "call_0"},  // simplified mapping
+          {"tool_call_id", msg.tool_call_id},
           {"content", msg.tool_result.dump()}
       };
     }
@@ -118,6 +115,7 @@ LlmResponse OpenAiBackend::ParseOpenAiResponse(
         !msg["tool_calls"].empty()) {
       for (auto& tc : msg["tool_calls"]) {
         LlmToolCall call;
+        call.id = tc.value("id", "");
         call.name =
             tc["function"]["name"];
         try {
