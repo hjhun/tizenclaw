@@ -139,10 +139,18 @@ LlmResponse GeminiBackend::ParseGeminiResponse(
 LlmResponse GeminiBackend::Chat(
     const std::vector<LlmMessage>& messages,
     const std::vector<LlmToolDecl>& tools,
-    std::function<void(const std::string&)> on_chunk) {
+    std::function<void(const std::string&)> on_chunk,
+    const std::string& system_prompt) {
   nlohmann::json payload = {
       {"contents", ToGeminiContents(messages)}
   };
+  if (!system_prompt.empty()) {
+    payload["system_instruction"] = {
+        {"parts", {
+            {{"text", system_prompt}}
+        }}
+    };
+  }
   auto gemini_tools = ToGeminiTools(tools);
   if (!gemini_tools.is_null()) {
     payload["tools"] = gemini_tools;

@@ -126,13 +126,17 @@ AnthropicBackend::ParseAnthropicResponse(
 LlmResponse AnthropicBackend::Chat(
     const std::vector<LlmMessage>& messages,
     const std::vector<LlmToolDecl>& tools,
-    std::function<void(const std::string&)> on_chunk) {
+    std::function<void(const std::string&)> on_chunk,
+    const std::string& system_prompt) {
   nlohmann::json payload = {
       {"model", model_},
       {"max_tokens", 4096},
       {"messages",
        ToAnthropicMessages(messages)}
   };
+  if (!system_prompt.empty()) {
+    payload["system"] = system_prompt;
+  }
   auto ant_tools = ToAnthropicTools(tools);
   if (!ant_tools.is_null()) {
     payload["tools"] = ant_tools;

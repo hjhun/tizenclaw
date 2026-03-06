@@ -1,5 +1,6 @@
 {
   "active_backend": "gemini",
+  "system_prompt_file": "/opt/usr/share/tizenclaw/config/system_prompt.txt",
   "backends": {
     "gemini": {
       "api_key": "",

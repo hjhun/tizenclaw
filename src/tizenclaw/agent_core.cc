@@ -105,6 +105,14 @@ bool AgentCore::Initialize() {
 
   curl_global_init(CURL_GLOBAL_DEFAULT);
 
+  // Load system prompt
+  m_system_prompt = LoadSystemPrompt(llm_config);
+  if (!m_system_prompt.empty()) {
+    LOG(INFO) << "System prompt loaded (" << m_system_prompt.size() << " chars)";
+  } else {
+    LOG(WARNING) << "No system prompt configured";
+  }
+
   LOG(INFO) << "AgentCore initialized with backend: " << m_backend->GetName();
   m_initialized = true;
   return true;
@@ -171,8 +179,12 @@ std::string AgentCore::ProcessPrompt(
   std::string last_text;
 
   while (iterations < kMaxIterations) {
+    // Build system prompt with dynamic skill list
+    std::string full_prompt = BuildSystemPrompt(tools);
+
     // Query LLM backend without holding lock
-    LlmResponse resp = m_backend->Chat(local_history, tools, on_chunk);
+    LlmResponse resp = m_backend->Chat(
+        local_history, tools, on_chunk, full_prompt);
 
     if (!resp.success) {
       LOG(ERROR) << "LLM error: "
@@ -458,6 +470,92 @@ AgentCore::LoadSkillDeclarations() {
   tools.push_back(file_tool);
 
   return tools;
+}
+
+std::string AgentCore::LoadSystemPrompt(
+    const nlohmann::json& config) {
+  // Priority 1: Inline system_prompt in config
+  if (config.contains("system_prompt") &&
+      config["system_prompt"].is_string()) {
+    std::string prompt =
+        config["system_prompt"].get<std::string>();
+    if (!prompt.empty()) {
+      LOG(INFO) << "System prompt loaded from config (inline)";
+      return prompt;
+    }
+  }
+
+  // Priority 2: system_prompt_file path in config
+  if (config.contains("system_prompt_file") &&
+      config["system_prompt_file"].is_string()) {
+    std::string file_path =
+        config["system_prompt_file"]
+            .get<std::string>();
+    std::ifstream pf(file_path);
+    if (pf.is_open()) {
+      std::string content(
+          (std::istreambuf_iterator<char>(pf)),
+          std::istreambuf_iterator<char>());
+      pf.close();
+      if (!content.empty()) {
+        LOG(INFO) << "System prompt loaded from: "
+                  << file_path;
+        return content;
+      }
+    }
+  }
+
+  // Priority 3: Default file path
+  const std::string default_path =
+      "/opt/usr/share/tizenclaw/config/"
+      "system_prompt.txt";
+  std::ifstream df(default_path);
+  if (df.is_open()) {
+    std::string content(
+        (std::istreambuf_iterator<char>(df)),
+        std::istreambuf_iterator<char>());
+    df.close();
+    if (!content.empty()) {
+      LOG(INFO) << "System prompt loaded from default: "
+                << default_path;
+      return content;
+    }
+  }
+
+  // Priority 4: Hardcoded fallback
+  LOG(INFO) << "Using hardcoded default system prompt";
+  return
+      "You are TizenClaw, an AI assistant running "
+      "on a Tizen device. You can control the device "
+      "using the available tools. Always respond in "
+      "the same language as the user's message. "
+      "Be concise and helpful.";
+}
+
+std::string AgentCore::BuildSystemPrompt(
+    const std::vector<LlmToolDecl>& tools) {
+  std::string prompt = m_system_prompt;
+
+  // Build tool list string
+  std::string tool_list;
+  for (const auto& t : tools) {
+    tool_list += "- " + t.name + ": "
+        + t.description + "\n";
+  }
+
+  // Replace {{AVAILABLE_TOOLS}} placeholder
+  const std::string placeholder =
+      "{{AVAILABLE_TOOLS}}";
+  size_t pos = prompt.find(placeholder);
+  if (pos != std::string::npos) {
+    prompt.replace(pos, placeholder.size(),
+                   tool_list);
+  } else if (!tool_list.empty()) {
+    // If no placeholder, append tool list
+    prompt += "\n\nAvailable tools:\n" + tool_list;
+  }
+
+  return prompt;
 }
 
 void AgentCore::TrimHistory(

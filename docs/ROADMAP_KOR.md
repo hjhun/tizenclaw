@@ -27,7 +27,7 @@
 | **자동화** | 태스크 스케줄러 | ✅ 기본 cron | ✅ cron/interval/일회성 | ❌ `schedule_alarm`만 | 🔴 |
 | **채널** | 멀티 채널 지원 | ✅ 22개 이상 | ✅ 5개 (스킬 기반) | ⚠️ 2개 (Telegram, MCP) | 🟡 |
 | **채널** | 채널 추상화 | ✅ 정적 레지스트리 | ✅ 자기 등록 | ❌ 하드코딩 | 🔴 |
-| **프롬프트** | 시스템 프롬프트 | ✅ 동적 생성 | ✅ 그룹별 `CLAUDE.md` | ❌ C++ 하드코딩 | 🔴 |
+| **프롬프트** | 시스템 프롬프트 | ✅ 동적 생성 | ✅ 그룹별 `CLAUDE.md` | ✅ 외부 파일 + 동적 생성 | ✅ |
 | **에이전트** | 에이전트 간 통신 | ✅ `sessions_send` | ✅ Agent Swarms | ❌ | 🟢 |
 | **에이전트** | 루프 감지 | ✅ 18K LOC 감지기 | ✅ 타임아웃 + idle | ⚠️ `kMaxIterations=5` | 🟡 |
 | **에이전트** | tool_call_id 매핑 | ✅ 정확 추적 | ✅ SDK 네이티브 | ⚠️ 하드코딩 ID | 🟡 |
@@ -326,17 +326,23 @@ timeline
 
 ---
 
-### 12.2 시스템 프롬프트 외부화
+### 12.2 시스템 프롬프트 외부화 ✅ (완료)
 | 항목 | 내용 |
 |------|------|
 | **갭** | 시스템 프롬프트 C++ 하드코딩 — 변경 시 재빌드 필요 |
 | **참고** | NanoClaw: 그룹별 `CLAUDE.md` · OpenClaw: `system-prompt.ts` |
-| **계획** | `llm_config.json`의 `system_prompt` 또는 `/opt/usr/share/tizenclaw/system_prompt.txt` |
+| **계획** | `llm_config.json`의 `system_prompt` 또는 `/opt/usr/share/tizenclaw/config/system_prompt.txt` |
+
+**구현 내용:**
+- `LlmBackend::Chat()` 인터페이스: `system_prompt` 파라미터 추가
+- 4단계 fallback 로딩: config inline → `system_prompt_file` 경로 → 기본 파일 → 하드코딩
+- `{{AVAILABLE_TOOLS}}` placeholder를 현재 스킬 목록으로 동적 치환
+- 백엔드별 API 형식: Gemini (`system_instruction`), OpenAI/Ollama (`system` role), Anthropic (`system` 필드)
 
 **완료 기준:**
-- [ ] 외부 파일/설정에서 로드
-- [ ] 현재 스킬 목록을 프롬프트에 동적 포함
-- [ ] 설정 없으면 기본 하드코딩 프롬프트 (하위 호환)
+- [x] 외부 파일/설정에서 로드
+- [x] 현재 스킬 목록을 프롬프트에 동적 포함
+- [x] 설정 없으면 기본 하드코딩 프롬프트 (하위 호환)
 
 ---
 

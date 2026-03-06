@@ -65,7 +65,8 @@ public:
   virtual LlmResponse Chat(
       const std::vector<LlmMessage>& messages,
       const std::vector<LlmToolDecl>& tools,
-      std::function<void(const std::string&)> on_chunk = nullptr) = 0;
+      std::function<void(const std::string&)> on_chunk = nullptr,
+      const std::string& system_prompt = "") = 0;
 
   // Provider name (e.g. "gemini", "openai")
   virtual std::string GetName() const = 0;

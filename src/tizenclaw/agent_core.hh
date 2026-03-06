@@ -60,6 +60,14 @@ private:
     std::vector<LlmToolDecl>
     LoadSkillDeclarations();
 
+    // Load system prompt from config or file
+    std::string LoadSystemPrompt(
+        const nlohmann::json& config);
+
+    // Build final system prompt with dynamic skill list
+    std::string BuildSystemPrompt(
+        const std::vector<LlmToolDecl>& tools);
+
     // Trim session history to kMaxHistorySize
     void TrimHistory(
         const std::string& session_id);
@@ -67,6 +75,9 @@ private:
     std::unique_ptr<ContainerEngine> m_container;
     std::unique_ptr<LlmBackend> m_backend;
     bool m_initialized;
+
+    // System prompt loaded from external file
+    std::string m_system_prompt;
 
     // Session-based conversation history
     std::map<std::string,

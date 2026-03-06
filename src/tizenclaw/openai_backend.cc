@@ -140,10 +140,16 @@ LlmResponse OpenAiBackend::ParseOpenAiResponse(
 LlmResponse OpenAiBackend::Chat(
     const std::vector<LlmMessage>& messages,
     const std::vector<LlmToolDecl>& tools,
-    std::function<void(const std::string&)> on_chunk) {
+    std::function<void(const std::string&)> on_chunk,
+    const std::string& system_prompt) {
+  auto oai_msgs = ToOpenAiMessages(messages);
+  if (!system_prompt.empty()) {
+    oai_msgs.insert(oai_msgs.begin(),
+        {{"role", "system"}, {"content", system_prompt}});
+  }
   nlohmann::json payload = {
       {"model", model_},
-      {"messages", ToOpenAiMessages(messages)}
+      {"messages", oai_msgs}
   };
   auto oai_tools = ToOpenAiTools(tools);
   if (!oai_tools.is_null()) {

@@ -72,7 +72,7 @@ install(PROGRAMS
     DESTINATION /usr/libexec/tizenclaw/
 )
 install(FILES data/rootfs.tar.gz DESTINATION /opt/usr/share/tizenclaw/)
-install(FILES data/llm_config.json.sample data/telegram_config.json.sample DESTINATION /opt/usr/share/tizenclaw/config/)
+install(FILES data/llm_config.json.sample data/telegram_config.json.sample data/system_prompt.txt DESTINATION /opt/usr/share/tizenclaw/config/)
 install(DIRECTORY skills/ DESTINATION /opt/usr/share/tizenclaw/skills/)
 install(PROGRAMS scripts/start_mcp_tunnel.sh DESTINATION /usr/bin/)
 # Unit Tests (run during %check)

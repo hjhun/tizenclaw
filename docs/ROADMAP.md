@@ -27,7 +27,7 @@
 | **Automation** | Task scheduler | ✅ Basic cron | ✅ cron/interval/one-shot | ❌ `schedule_alarm` only | 🔴 |
 | **Channel** | Multi-channel support | ✅ 22+ channels | ✅ 5 channels (via skills) | ⚠️ 2 (Telegram, MCP) | 🟡 |
 | **Channel** | Channel abstraction | ✅ Static registry | ✅ Self-registration | ❌ Hardcoded | 🔴 |
-| **Prompt** | System prompt | ✅ Dynamic generation | ✅ Per-group `CLAUDE.md` | ❌ Hardcoded C++ | 🔴 |
+| **Prompt** | System prompt | ✅ Dynamic generation | ✅ Per-group `CLAUDE.md` | ✅ External file + dynamic | ✅ |
 | **Agent** | Agent-to-Agent | ✅ `sessions_send` | ✅ Agent Swarms | ❌ | 🟢 |
 | **Agent** | Loop detection | ✅ 18K LOC detector | ✅ Timeout + idle | ⚠️ `kMaxIterations=5` | 🟡 |
 | **Agent** | tool_call_id mapping | ✅ Accurate tracking | ✅ SDK native | ⚠️ Hardcoded IDs | 🟡 |
@@ -326,17 +326,23 @@ timeline
 
 ---
 
-### 12.2 System Prompt Externalization
+### 12.2 System Prompt Externalization ✅ (Done)
 | Item | Details |
 |------|---------|
 | **Gap** | System prompt hardcoded in C++ — requires rebuild to change |
 | **Ref** | NanoClaw: per-group `CLAUDE.md` · OpenClaw: `system-prompt.ts` |
-| **Plan** | `system_prompt` in `llm_config.json` or `/opt/usr/share/tizenclaw/system_prompt.txt` |
+| **Plan** | `system_prompt` in `llm_config.json` or `/opt/usr/share/tizenclaw/config/system_prompt.txt` |
+
+**Implementation:**
+- `LlmBackend::Chat()` interface: added `system_prompt` parameter
+- 4-level fallback loading: config inline → `system_prompt_file` path → default file → hardcoded
+- `{{AVAILABLE_TOOLS}}` placeholder dynamically replaced with current skill list
+- Per-backend API format: Gemini (`system_instruction`), OpenAI/Ollama (`system` role), Anthropic (`system` field)
 
 **Done When:**
-- [ ] Load from external file/config
-- [ ] Dynamically include current skill list in prompt
-- [ ] Default hardcoded prompt if no config (backward compatible)
+- [x] Load from external file/config
+- [x] Dynamically include current skill list in prompt
+- [x] Default hardcoded prompt if no config (backward compatible)
 
 ---
 

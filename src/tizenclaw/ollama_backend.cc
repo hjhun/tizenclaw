@@ -128,11 +128,17 @@ LlmResponse OllamaBackend::ParseOllamaResponse(
 LlmResponse OllamaBackend::Chat(
     const std::vector<LlmMessage>& messages,
     const std::vector<LlmToolDecl>& tools,
-    std::function<void(const std::string&)> on_chunk) {
+    std::function<void(const std::string&)> on_chunk,
+    const std::string& system_prompt) {
   bool streaming = (on_chunk != nullptr);
+  auto ollama_msgs = ToOllamaMessages(messages);
+  if (!system_prompt.empty()) {
+    ollama_msgs.insert(ollama_msgs.begin(),
+        {{"role", "system"}, {"content", system_prompt}});
+  }
   nlohmann::json payload = {
       {"model", model_},
-      {"messages", ToOllamaMessages(messages)},
+      {"messages", ollama_msgs},
       {"stream", streaming}
   };
   auto ollama_tools = ToOllamaTools(tools);
