@@ -20,6 +20,11 @@ public:
         const std::string& skill_name,
         const std::string& arg_str);
 
+    // Execute arbitrary Python code via the skill
+    // executor's execute_code command.
+    std::string ExecuteCode(
+        const std::string& code);
+
 private:
     // Execute skill via Unix Domain Socket to the
     // skill_executor running in the secure container.

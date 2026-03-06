@@ -40,6 +40,10 @@ private:
         const std::string& skill_name,
         const nlohmann::json& args);
 
+    // Execute arbitrary Python code (built-in tool)
+    std::string ExecuteCode(
+        const std::string& code);
+
     // Load skill manifests as tool declarations
     std::vector<LlmToolDecl>
     LoadSkillDeclarations();

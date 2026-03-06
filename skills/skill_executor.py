@@ -17,6 +17,7 @@ import socket
 import struct
 import subprocess
 import sys
+import tempfile
 import threading
 
 SOCKET_PATH = "/tmp/tizenclaw_skill.sock"
@@ -24,6 +25,7 @@ SKILLS_DIR = "/skills"
 PYTHON_BIN = "/usr/bin/python3"
 MAX_PAYLOAD = 10 * 1024 * 1024  # 10 MB
 EXEC_TIMEOUT = 30  # seconds
+CODE_EXEC_TIMEOUT = 15  # seconds for dynamic code
 
 
 def log(msg):
@@ -50,6 +52,19 @@ def send_response(sock, resp_dict):
         sock.sendall(header + payload)
     except BrokenPipeError:
         pass
+
+
+def extract_json_output(stdout_text):
+    """Extract the last JSON-like line from stdout."""
+    output = stdout_text.rstrip()
+    lines = output.split("\n")
+    for line in reversed(lines):
+        stripped = line.strip()
+        if stripped and (
+            stripped.startswith("{") or stripped.startswith("[")
+        ):
+            return stripped
+    return output
 
 
 def execute_skill(skill_name, args_str):
@@ -94,18 +109,66 @@ def execute_skill(skill_name, args_str):
             ),
         }
 
-    # Extract last non-empty line as JSON result
-    output = result.stdout.rstrip()
-    lines = output.split("\n")
-    for line in reversed(lines):
-        stripped = line.strip()
-        if stripped and (
-            stripped.startswith("{") or stripped.startswith("[")
-        ):
-            return {"status": "ok", "output": stripped}
+    return {
+        "status": "ok",
+        "output": extract_json_output(result.stdout),
+    }
 
-    # Fallback: return raw stdout
-    return {"status": "ok", "output": output}
+
+def execute_dynamic_code(code_str, timeout=None):
+    """Execute LLM-generated Python code in a temp file."""
+    if timeout is None:
+        timeout = CODE_EXEC_TIMEOUT
+
+    log(f"execute_code: {len(code_str)} chars, "
+        f"timeout={timeout}s")
+
+    # Write code to a temp file
+    tmp_fd, tmp_path = tempfile.mkstemp(
+        suffix=".py", prefix="tizenclaw_dynamic_",
+        dir="/tmp"
+    )
+    try:
+        with os.fdopen(tmp_fd, "w") as f:
+            f.write(code_str)
+
+        env = os.environ.copy()
+        result = subprocess.run(
+            [PYTHON_BIN, tmp_path],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "error",
+            "output": f"Code timed out after {timeout}s",
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "output": f"Failed to run code: {e}",
+        }
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "")[:500]
+        return {
+            "status": "error",
+            "output": (
+                f"exit {result.returncode}: {detail}"
+            ),
+        }
+
+    return {
+        "status": "ok",
+        "output": extract_json_output(result.stdout),
+    }
 
 
 def handle_client(conn):
@@ -139,11 +202,27 @@ def handle_client(conn):
                 })
                 continue
 
-            skill = req.get("skill", "")
-            args = req.get("args", "{}")
-            log(f"Exec skill={skill}")
+            # Route by command type
+            command = req.get("command", "")
+            if command == "execute_code":
+                code = req.get("code", "")
+                timeout = req.get("timeout",
+                                  CODE_EXEC_TIMEOUT)
+                if not code:
+                    send_response(conn, {
+                        "status": "error",
+                        "output": "No code provided",
+                    })
+                    continue
+                log(f"execute_code request")
+                resp = execute_dynamic_code(code, timeout)
+            else:
+                # Legacy skill execution
+                skill = req.get("skill", "")
+                args = req.get("args", "{}")
+                log(f"Exec skill={skill}")
+                resp = execute_skill(skill, args)
 
-            resp = execute_skill(skill, args)
             send_response(conn, resp)
 
     except Exception as e:

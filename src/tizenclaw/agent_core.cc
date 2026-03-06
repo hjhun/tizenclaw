@@ -239,7 +239,14 @@ std::string AgentCore::ProcessPrompt(
         ToolExecResult r;
         r.id = tc.id;
         r.name = tc.name;
-        r.output = ExecuteSkill(tc.name, tc.args);
+        if (tc.name == "execute_code") {
+          std::string code =
+              tc.args.value("code", "");
+          r.output = ExecuteCode(code);
+        } else {
+          r.output = ExecuteSkill(
+              tc.name, tc.args);
+        }
         return r;
       }));
     }
@@ -305,6 +312,23 @@ std::string AgentCore::ExecuteSkill(
   return response;
 }
 
+std::string AgentCore::ExecuteCode(
+    const std::string& code) {
+  LOG(INFO) << "ExecuteCode: "
+            << code.size() << " chars";
+
+  std::string response =
+      m_container->ExecuteCode(code);
+
+  if (response.empty()) {
+    LOG(ERROR) << "Code execution failed";
+    return "{\"error\": \"Code execution failed\"}";
+  }
+
+  LOG(INFO) << "Code output: " << response;
+  return response;
+}
+
 std::vector<LlmToolDecl>
 AgentCore::LoadSkillDeclarations() {
   std::vector<LlmToolDecl> tools;
@@ -340,6 +364,32 @@ AgentCore::LoadSkillDeclarations() {
     }
   }
   closedir(dir);
+
+  // Built-in tool: execute_code
+  LlmToolDecl code_tool;
+  code_tool.name = "execute_code";
+  code_tool.description =
+      "Execute arbitrary Python code on the Tizen "
+      "device. Use this when no existing skill/tool "
+      "can accomplish the task. The code MUST print "
+      "a JSON result to stdout as the last line. "
+      "Available: ctypes for Tizen C-API, os, "
+      "subprocess, json, sys. "
+      "Libraries at /tizen_libs or system path.";
+  code_tool.parameters = {
+      {"type", "object"},
+      {"properties", {
+          {"code", {
+              {"type", "string"},
+              {"description",
+               "Python code to execute on the "
+               "Tizen device"}
+          }}
+      }},
+      {"required", nlohmann::json::array({"code"})}
+  };
+  tools.push_back(code_tool);
+
   return tools;
 }
 

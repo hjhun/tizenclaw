@@ -1,0 +1,16 @@
+{
+    "name": "terminate_app",
+    "description": "Terminate a running Tizen application by its app_id. Use this to stop or close an app that is currently running.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "app_id": {
+                "type": "string",
+                "description": "The Tizen application ID to terminate, e.g., org.tizen.browser"
+            }
+        },
+        "required": [
+            "app_id"
+        ]
+    }
+}

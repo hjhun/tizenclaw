@@ -324,6 +324,126 @@ std::string ContainerEngine::ExecuteSkillViaSocket(
   }
 }
 
+std::string ContainerEngine::ExecuteCode(
+    const std::string& code) {
+  if (!m_initialized) {
+    LOG(ERROR) << "Cannot execute code. "
+               << "Engine not initialized.";
+    return "{}";
+  }
+
+  LOG(INFO) << "ExecuteCode: " << code.size()
+            << " chars";
+
+  // Connect to skill executor via UDS
+  int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (sock < 0) {
+    LOG(WARNING) << "UDS socket() failed: "
+                 << strerror(errno);
+    return "{}";
+  }
+
+  struct sockaddr_un addr;
+  std::memset(&addr, 0, sizeof(addr));
+  addr.sun_family = AF_UNIX;
+  strncpy(addr.sun_path, kSkillSocketPath,
+          sizeof(addr.sun_path) - 1);
+
+  if (connect(sock,
+              reinterpret_cast<struct sockaddr*>(
+                  &addr),
+              sizeof(addr)) < 0) {
+    LOG(WARNING) << "UDS connect failed: "
+                 << strerror(errno);
+    close(sock);
+    return "{}";
+  }
+
+  // Build execute_code request JSON
+  nlohmann::json req;
+  req["command"] = "execute_code";
+  req["code"] = code;
+  req["timeout"] = 15;
+  std::string payload = req.dump();
+
+  // Send length-prefixed request
+  uint32_t net_len = htonl(payload.size());
+  if (::write(sock, &net_len, 4) != 4) {
+    LOG(ERROR) << "UDS write header failed";
+    close(sock);
+    return "{}";
+  }
+
+  ssize_t total = 0;
+  ssize_t len =
+      static_cast<ssize_t>(payload.size());
+  while (total < len) {
+    ssize_t w = ::write(
+        sock, payload.data() + total,
+        len - total);
+    if (w <= 0) {
+      LOG(ERROR) << "UDS write body failed";
+      close(sock);
+      return "{}";
+    }
+    total += w;
+  }
+
+  // Read 4-byte response header
+  uint32_t resp_net_len = 0;
+  ssize_t hr = ::recv(
+      sock, &resp_net_len, 4, MSG_WAITALL);
+  if (hr != 4) {
+    LOG(ERROR) << "UDS recv header failed";
+    close(sock);
+    return "{}";
+  }
+
+  uint32_t resp_len = ntohl(resp_net_len);
+  if (resp_len > 10 * 1024 * 1024) {
+    LOG(ERROR) << "UDS response too large: "
+               << resp_len;
+    close(sock);
+    return "{}";
+  }
+
+  // Read response body
+  std::vector<char> resp_buf(resp_len);
+  ssize_t br = ::recv(
+      sock, resp_buf.data(), resp_len,
+      MSG_WAITALL);
+  close(sock);
+
+  if (br != static_cast<ssize_t>(resp_len)) {
+    LOG(ERROR) << "UDS recv body incomplete";
+    return "{}";
+  }
+
+  std::string resp_str(
+      resp_buf.data(), resp_len);
+  LOG(INFO) << "ExecuteCode response ("
+            << resp_len << " bytes)";
+
+  try {
+    auto resp = nlohmann::json::parse(resp_str);
+    std::string status =
+        resp.value("status", "error");
+    std::string output =
+        resp.value("output", "");
+    if (status == "ok") {
+      return output;
+    }
+    LOG(ERROR) << "ExecuteCode error: " << output;
+    nlohmann::json err;
+    err["error"] = output;
+    return err.dump();
+  } catch (const std::exception& e) {
+    LOG(ERROR) << "UDS JSON parse error: "
+               << e.what();
+    return "{}";
+  }
+}
+
 std::string ContainerEngine::ExecuteSkillViaCrun(
     const std::string& skill_name,
     const std::string& arg_str) {
