@@ -77,12 +77,21 @@ public:
         const std::string& session_id);
 
 private:
+    // Find existing session file by scanning
+    // dir for *-{session_id}.md pattern
+    std::string FindSessionFile(
+        const std::string& dir,
+        const std::string& session_id) const;
+
     std::string GetSessionPath(
         const std::string& session_id) const;
     std::string GetLegacySessionPath(
         const std::string& session_id) const;
     std::string GetLogsDir() const;
     std::string GetUsageDir() const;
+
+    // Get current date as YYYY-MM-DD string
+    static std::string GetDatePrefix();
 
     // Markdown serialization
     std::string MessagesToMarkdown(

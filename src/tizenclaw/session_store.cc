@@ -1,6 +1,7 @@
 #include <fstream>
 #include <sstream>
 #include <sys/stat.h>
+#include <dirent.h>
 #include <chrono>
 #include <ctime>
 #include <cstdio>
@@ -22,14 +23,60 @@ void SessionStore::SetDirectory(
   sessions_dir_ = dir;
 }
 
+std::string SessionStore::GetDatePrefix() {
+  auto now = std::chrono::system_clock::now();
+  auto t =
+      std::chrono::system_clock::to_time_t(now);
+  struct tm tm_buf;
+  localtime_r(&t, &tm_buf);
+  char buf[16];
+  strftime(buf, sizeof(buf),
+           "%Y-%m-%d", &tm_buf);
+  return std::string(buf);
+}
+
+std::string SessionStore::FindSessionFile(
+    const std::string& dir,
+    const std::string& session_id) const {
+  // Look for *-{session_id}.md in dir
+  std::string suffix =
+      "-" + session_id + ".md";
+  DIR* d = opendir(dir.c_str());
+  if (!d) return "";
+
+  struct dirent* ent;
+  while ((ent = readdir(d)) != nullptr) {
+    std::string name(ent->d_name);
+    if (name.size() > suffix.size() &&
+        name.substr(
+            name.size() - suffix.size()) ==
+            suffix) {
+      closedir(d);
+      return dir + "/" + name;
+    }
+  }
+  closedir(d);
+  return "";
+}
+
 std::string SessionStore::GetSessionPath(
     const std::string& session_id) const {
-  return sessions_dir_ + "/" + session_id + ".md";
+  // Reuse existing file if found
+  std::string existing =
+      FindSessionFile(
+          sessions_dir_, session_id);
+  if (!existing.empty()) return existing;
+
+  // New file: YYYY-MM-DD-{session_id}.md
+  return sessions_dir_ + "/" +
+      GetDatePrefix() + "-" +
+      session_id + ".md";
 }
 
 std::string SessionStore::GetLegacySessionPath(
     const std::string& session_id) const {
-  return sessions_dir_ + "/" + session_id + ".json";
+  return sessions_dir_ + "/" +
+      session_id + ".json";
 }
 
 std::string SessionStore::GetLogsDir() const {
@@ -633,8 +680,14 @@ void SessionStore::LogTokenUsage(
   std::string usage_dir = GetUsageDir();
   EnsureDir(usage_dir);
 
+  // Find existing or create new with date prefix
   std::string usage_path =
-      usage_dir + "/" + session_id + ".md";
+      FindSessionFile(usage_dir, session_id);
+  if (usage_path.empty()) {
+    usage_path = usage_dir + "/" +
+        GetDatePrefix() + "-" +
+        session_id + ".md";
+  }
 
   // Read existing usage summary if present
   TokenUsageSummary summary;
@@ -741,7 +794,9 @@ TokenUsageSummary SessionStore::LoadTokenUsage(
   TokenUsageSummary summary;
 
   std::string usage_path =
-      GetUsageDir() + "/" + session_id + ".md";
+      FindSessionFile(
+          GetUsageDir(), session_id);
+  if (usage_path.empty()) return summary;
   std::ifstream in(usage_path);
   if (!in.is_open()) return summary;
 

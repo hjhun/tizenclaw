@@ -2,6 +2,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <sys/stat.h>
+#include <dirent.h>
 
 #include "session_store.hh"
 
@@ -47,14 +48,31 @@ TEST_F(SessionStoreTest,
     EXPECT_TRUE(
         store_.SaveSession("test1", history));
 
-    // Verify file is .md format
-    std::ifstream check(
-        test_dir_ + "/test1.md");
-    EXPECT_TRUE(check.is_open());
-    std::string content(
-        (std::istreambuf_iterator<char>(check)),
-        std::istreambuf_iterator<char>());
-    check.close();
+    // Verify file exists with date prefix
+    // Pattern: YYYY-MM-DD-test1.md
+    bool found = false;
+    std::string content;
+    DIR* dir = opendir(test_dir_.c_str());
+    if (dir) {
+      struct dirent* ent;
+      while ((ent = readdir(dir)) != nullptr) {
+        std::string name(ent->d_name);
+        if (name.find("-test1.md") !=
+            std::string::npos) {
+          found = true;
+          std::ifstream check(
+              test_dir_ + "/" + name);
+          content.assign(
+              (std::istreambuf_iterator<char>(
+                  check)),
+              std::istreambuf_iterator<char>());
+          check.close();
+          break;
+        }
+      }
+      closedir(dir);
+    }
+    EXPECT_TRUE(found);
 
     // Should contain YAML frontmatter
     EXPECT_TRUE(
@@ -208,10 +226,23 @@ TEST_F(SessionStoreTest,
     EXPECT_EQ(loaded[0].text,
               "Old JSON message");
 
-    // After migration, .md file should exist
-    std::ifstream md_check(
-        test_dir_ + "/migrate_test.md");
-    EXPECT_TRUE(md_check.is_open());
+    // After migration, date-prefixed .md should
+    // exist
+    bool found_md = false;
+    DIR* dir = opendir(test_dir_.c_str());
+    if (dir) {
+      struct dirent* ent;
+      while ((ent = readdir(dir)) != nullptr) {
+        std::string name(ent->d_name);
+        if (name.find("-migrate_test.md") !=
+            std::string::npos) {
+          found_md = true;
+          break;
+        }
+      }
+      closedir(dir);
+    }
+    EXPECT_TRUE(found_md);
 
     // And .json should be deleted
     std::ifstream json_check(json_path);
