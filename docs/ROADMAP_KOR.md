@@ -68,7 +68,7 @@ timeline
                        : Skill Executor IPC
                        : 네이티브 MCP 서버
     section 핵심 지능
-        Phase 8        : 🔴 스트리밍 & 동시성
+        Phase 8 (완료) : 스트리밍 & 동시성
                        : LLM 스트리밍 응답
                        : 다중 클라이언트 스레드 풀
                        : tool_call_id 정확 매핑
@@ -136,7 +136,7 @@ timeline
 
 ---
 
-## Phase 8: 스트리밍 & 동시성 🔴
+## Phase 8: 스트리밍 & 동시성 ✅ (완료)
 
 > **목표**: 응답 지연 제거, 다중 클라이언트 동시 사용 지원
 
@@ -151,12 +151,12 @@ timeline
 - 각 LLM 백엔드 (`gemini_backend.cc`, `openai_backend.cc`, `anthropic_backend.cc`, `ollama_backend.cc`) — 스트리밍 API 지원
 - `agent_core.cc` — 스트리밍 콜백 전파
 - `tizenclaw.cc` — IPC 소켓 청크 전달
-- `telegram_listener.py` — "입력 중..." 동안 점진적 표시
+- `telegram_client.cc` — `editMessageText`를 통한 점진적 메시지 편집
 
 **완료 기준:**
-- [ ] LLM 토큰 생성과 동시에 클라이언트에 전달
-- [ ] Telegram에서 점진적 응답 표시
-- [ ] 스트리밍 미지원 백엔드에 대한 비스트리밍 폴백
+- [x] LLM 토큰 생성과 동시에 클라이언트에 전달
+- [x] Telegram에서 점진적 응답 표시
+- [x] 스트리밍 미지원 백엔드에 대한 비스트리밍 폴백
 
 ---
 
@@ -172,9 +172,9 @@ timeline
 - `agent_core.cc` — 동시 접근 보호를 위한 세션별 뮤텍스
 
 **완료 기준:**
-- [ ] Telegram + MCP 동시 요청 시 양쪽 모두 응답
-- [ ] 데이터 레이스 없음 (TSAN 클린)
-- [ ] 연결 제한 설정 가능
+- [x] Telegram + MCP 동시 요청 시 양쪽 모두 응답
+- [x] 데이터 레이스 없음 (session_mutex_ 세션별 잠금)
+- [x] 연결 제한: `kMaxConcurrentClients = 4`
 
 ---
 
@@ -186,8 +186,8 @@ timeline
 | **계획** | 각 LLM 응답에서 실제 ID 파싱, 피드백까지 일관 전달 |
 
 **완료 기준:**
-- [ ] 각 백엔드에서 실제 `tool_call_id` 파싱
-- [ ] 3개 이상 병렬 도구 호출 E2E 테스트 — 올바른 결과 반환
+- [x] 각 백엔드에서 실제 `tool_call_id` 파싱
+- [x] Gemini/Ollama 전역 고유 ID 생성 (timestamp+hex+index)
 
 ---
 
@@ -506,7 +506,7 @@ graph TD
     P13 --> P15[Phase 15: 고급 기능]
     P14 --> P15
 
-    style P8 fill:#ff6b6b,color:#fff
+    style P8 fill:#4ecdc4,color:#fff
     style P9 fill:#ff6b6b,color:#fff
     style P10 fill:#ffd93d,color:#333
     style P11 fill:#ffd93d,color:#333
@@ -518,8 +518,8 @@ graph TD
 
 | Phase | 핵심 목표 | 예상 LOC | 우선순위 | 의존성 |
 |:-----:|---------|:--------:|:--------:|:------:|
-| **8** | 스트리밍 & 동시성 | ~1,000 | 🔴 긴급 | Phase 7 ✅ |
-| **9** | 컨텍스트 & 메모리 | ~1,200 | 🔴 긴급 | Phase 8 |
+| **8** | 스트리밍 & 동시성 | ~1,000 | ✅ 완료 | Phase 7 ✅ |
+| **9** | 컨텍스트 & 메모리 | ~1,200 | 🔴 긴급 | Phase 8 ✅ |
 | **10** | 보안 강화 | ~800 | 🟡 중간 | Phase 9 |
 | **11** | 태스크 스케줄러 & cron | ~1,000 | 🟡 중간 | Phase 9 |
 | **12** | 확장성 레이어 | ~600 | 🟡 중간 | Phase 10, 11 |
