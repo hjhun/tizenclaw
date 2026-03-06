@@ -1,0 +1,13 @@
+{
+    "default_engine": "naver",
+    "daily_limit": 100,
+    "usage_file": "/data/web_search_usage.json",
+    "naver": {
+        "client_id": "YOUR_NAVER_CLIENT_ID",
+        "client_secret": "YOUR_NAVER_CLIENT_SECRET"
+    },
+    "google": {
+        "api_key": "YOUR_GOOGLE_API_KEY",
+        "search_engine_id": "YOUR_GOOGLE_CX_ID"
+    }
+}

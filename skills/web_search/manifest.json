@@ -1,7 +1,7 @@
 {
     "name": "web_search",
-    "version": "1.0",
-    "description": "An OpenClaw compatible skill to perform a web search via Wikipedia API.",
+    "version": "2.0",
+    "description": "Search the web using Naver (default) or Google. Returns top search results with titles, snippets, and URLs. Daily usage is rate-limited.",
     "entrypoint": "python3 web_search.py",
     "dependencies": [],
     "parameters": {
@@ -9,7 +9,15 @@
         "properties": {
             "query": {
                 "type": "string",
-                "description": "Search keyword for web Wikipedia search"
+                "description": "Search query string"
+            },
+            "engine": {
+                "type": "string",
+                "enum": [
+                    "naver",
+                    "google"
+                ],
+                "description": "Search engine to use. Default is naver. Use google only if user explicitly requests it."
             }
         },
         "required": [
