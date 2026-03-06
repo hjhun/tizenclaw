@@ -72,9 +72,9 @@ timeline
                        : LLM streaming response
                        : Multi-client thread pool
                        : tool_call_id accurate mapping
-        Phase 9        : 🔴 Context & Memory
+        Phase 9 (Done) : Context & Memory
                        : Context compaction (LLM summary)
-                       : SQLite persistent storage
+                       : Markdown persistent storage
                        : Token counting per model
     section Security & Automation
         Phase 10       : 🟡 Security Hardening
@@ -191,7 +191,7 @@ timeline
 
 ---
 
-## Phase 9: Context & Memory 🔴
+## Phase 9: Context & Memory ✅ (Done)
 
 > **Goal**: Intelligent context management, persistent structured storage
 
@@ -200,32 +200,43 @@ timeline
 |------|---------|
 | **Gap** | Simple FIFO deletion after 20 turns — important early context lost |
 | **Ref** | OpenClaw: `compaction.ts` LLM auto-summarization (15K LOC) |
-| **Plan** | When exceeding threshold, summarize oldest N turns via LLM → compress to 1 turn |
+| **Impl** | When exceeding 15 turns, oldest 10 summarized via LLM → compressed to 1 turn |
+
+**Target Files:**
+- `agent_core.hh` — added `CompactHistory()` method, compaction threshold constants
+- `agent_core.cc` — LLM-based context compaction with FIFO fallback
 
 **Done When:**
-- [ ] Oldest 10 turns summarized when exceeding 15 turns
-- [ ] `[compressed]` marker on summarized turns
-- [ ] Fallback to FIFO trim on summarization failure
+- [x] Oldest 10 turns summarized when exceeding 15 turns
+- [x] `[compressed]` marker on summarized turns
+- [x] Fallback to FIFO trim on summarization failure
+- [x] Hard limit at 30 turns (FIFO)
 
 ---
 
-### 9.2 SQLite Persistent Storage
+### 9.2 Markdown Persistent Storage
 | Item | Details |
 |------|---------|
-| **Gap** | JSON files for session data — fragile, no query capability |
+| **Gap** | JSON files for session data — limited readability, no metadata |
 | **Ref** | NanoClaw: `db.ts` (19K LOC) — messages, tasks, sessions, groups |
-| **Plan** | Tizen built-in SQLite3 — single DB file for all structured data |
+| **Impl** | Markdown files (YAML frontmatter) — structured storage with no new dependencies |
 
-**Schema Targets:**
-- `sessions` — migrate from JSON file (Phase 6)
-- `skill_executions` — skill name, args, result, duration
-- `tasks` — scheduled tasks (Phase 11 integration)
-- `llm_usage` — token counts per model per session
+**Storage Structure:**
+```
+/opt/usr/share/tizenclaw/
+├── sessions/{id}.md       ← YAML frontmatter + ## role headers
+├── logs/{YYYY-MM-DD}.md   ← Daily skill execution tables
+└── usage/{id}.md          ← Per-session token usage
+```
+
+**Target Files:**
+- `session_store.hh` — new structs (`SkillLogEntry`, `TokenUsageEntry`, `TokenUsageSummary`), Markdown serialization methods
+- `session_store.cc` — Markdown parser/writer, YAML frontmatter, legacy JSON auto-migration, atomic file writes
 
 **Done When:**
-- [ ] Session history in SQLite (migration from JSON file)
-- [ ] Skill execution logs queryable
-- [ ] Daemon restart preserves all data
+- [x] Session history saved as Markdown (JSON → MD auto-migration)
+- [x] Skill execution logs as daily Markdown tables
+- [x] Daemon restart preserves all data
 
 ---
 
@@ -234,12 +245,20 @@ timeline
 |------|---------|
 | **Gap** | No awareness of context window consumption |
 | **Ref** | OpenClaw: per-model accurate token counting |
-| **Plan** | Parse `usage` field from each backend response → store in SQLite |
+| **Impl** | Parse `usage` field from each backend response → store in Markdown |
+
+**Target Files:**
+- `llm_backend.hh` — added `prompt_tokens`, `completion_tokens`, `total_tokens` to `LlmResponse`
+- `gemini_backend.cc` — parse `usageMetadata`
+- `openai_backend.cc` — parse `usage` + fix `insert()` ambiguity bug
+- `anthropic_backend.cc` — parse `usage.input_tokens/output_tokens`
+- `ollama_backend.cc` — parse `prompt_eval_count/eval_count`
+- `agent_core.cc` — token logging after every LLM call, skill execution timing
 
 **Done When:**
-- [ ] Token usage logged per request
-- [ ] Warning when approaching context window limit
-- [ ] Per-session usage summary via dlog
+- [x] Token usage logged per request
+- [x] Per-session cumulative usage tracked in Markdown files
+- [x] Skill execution duration measured via `std::chrono` and logged
 
 ---
 
@@ -303,7 +322,7 @@ timeline
 **Done When:**
 - [ ] "Tell me the weather every day at 9 AM" → cron task → auto execution
 - [ ] Task listing and cancellation via natural language
-- [ ] Execution history stored in SQLite (Phase 9.2)
+- [ ] Execution history stored in Markdown (Phase 9.2)
 - [ ] Failed task retry with backoff
 
 ---

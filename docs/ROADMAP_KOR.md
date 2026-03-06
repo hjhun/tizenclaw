@@ -72,9 +72,9 @@ timeline
                        : LLM 스트리밍 응답
                        : 다중 클라이언트 스레드 풀
                        : tool_call_id 정확 매핑
-        Phase 9        : 🔴 컨텍스트 & 메모리
+        Phase 9 (완료) : 컨텍스트 & 메모리
                        : 컨텍스트 압축 (LLM 요약)
-                       : SQLite 영구 저장소
+                       : Markdown 영구 저장소
                        : 모델별 토큰 카운팅
     section 보안 & 자동화
         Phase 10       : 🟡 보안 강화
@@ -191,7 +191,7 @@ timeline
 
 ---
 
-## Phase 9: 컨텍스트 & 메모리 🔴
+## Phase 9: 컨텍스트 & 메모리 ✅ (완료)
 
 > **목표**: 지능적 컨텍스트 관리, 구조화된 영구 저장소
 
@@ -200,32 +200,43 @@ timeline
 |------|------|
 | **갭** | 20턴 초과 시 단순 FIFO 삭제 — 초기 중요 컨텍스트 손실 |
 | **참고** | OpenClaw: `compaction.ts` LLM 자동 요약 (15K LOC) |
-| **계획** | 임계치 초과 시 오래된 N턴을 LLM으로 요약 → 1턴으로 압축 |
+| **구현** | 15턴 초과 시 가장 오래된 10턴을 LLM으로 요약 → 1턴으로 압축 |
+
+**수정 대상 파일:**
+- `agent_core.hh` — `CompactHistory()` 메서드 추가, 압축 임계값 상수
+- `agent_core.cc` — LLM 요약 기반 컨텍스트 압축 구현, FIFO 폴백
 
 **완료 기준:**
-- [ ] 15턴 초과 시 가장 오래된 10턴 요약
-- [ ] `[compressed]` 마커 표시
-- [ ] 요약 실패 시 FIFO 트리밍 폴백
+- [x] 15턴 초과 시 가장 오래된 10턴 요약
+- [x] `[compressed]` 마커 표시
+- [x] 요약 실패 시 FIFO 트리밍 폴백
+- [x] 하드 리밋 30턴 (FIFO)
 
 ---
 
-### 9.2 SQLite 영구 저장소
+### 9.2 Markdown 영구 저장소
 | 항목 | 내용 |
 |------|------|
-| **갭** | 세션 데이터를 JSON 파일로 관리 — 취약하고 쿼리 불가 |
+| **갭** | 세션 데이터를 JSON 파일로 관리 — 가독성 부족, 메타데이터 없음 |
 | **참고** | NanoClaw: `db.ts` (19K LOC) — 메시지, 태스크, 세션, 그룹 |
-| **계획** | Tizen 내장 SQLite3 — 단일 DB 파일에 모든 구조화 데이터 저장 |
+| **구현** | Markdown 파일 (YAML frontmatter) — 새 의존성 없이 구조화 저장 |
 
-**스키마 대상:**
-- `sessions` — JSON 파일에서 마이그레이션 (Phase 6)
-- `skill_executions` — 스킬명, 인자, 결과, 소요시간
-- `tasks` — 예약 태스크 (Phase 11 연동)
-- `llm_usage` — 모델별 세션별 토큰 수
+**저장 구조:**
+```
+/opt/usr/share/tizenclaw/
+├── sessions/{id}.md       ← YAML frontmatter + ## role 헤더
+├── logs/{YYYY-MM-DD}.md   ← 일별 스킬 실행 테이블
+└── usage/{id}.md          ← 세션별 토큰 사용량
+```
+
+**수정 대상 파일:**
+- `session_store.hh` — 새 구조체 (`SkillLogEntry`, `TokenUsageEntry`, `TokenUsageSummary`), Markdown 직렬화 메서드
+- `session_store.cc` — Markdown 파서/라이터, YAML frontmatter, 레거시 JSON 자동 마이그레이션, 원자적 파일 쓰기
 
 **완료 기준:**
-- [ ] 세션 히스토리 SQLite 저장 (JSON 파일에서 마이그레이션)
-- [ ] 스킬 실행 로그 쿼리 가능
-- [ ] 데몬 재시작 시 모든 데이터 보존
+- [x] 세션 히스토리 Markdown 저장 (JSON → MD 자동 마이그레이션)
+- [x] 스킬 실행 로그 일별 Markdown 테이블
+- [x] 데몬 재시작 시 모든 데이터 보존
 
 ---
 
@@ -234,12 +245,20 @@ timeline
 |------|------|
 | **갭** | 컨텍스트 윈도우 소비량 파악 불가 |
 | **참고** | OpenClaw: 모델별 정확 토큰 카운팅 |
-| **계획** | 각 백엔드 응답의 `usage` 필드 파싱 → SQLite 저장 |
+| **구현** | 각 백엔드 응답의 `usage` 필드 파싱 → Markdown 파일 저장 |
+
+**수정 대상 파일:**
+- `llm_backend.hh` — `LlmResponse`에 `prompt_tokens`, `completion_tokens`, `total_tokens` 추가
+- `gemini_backend.cc` — `usageMetadata` 파싱
+- `openai_backend.cc` — `usage` 파싱 + `insert()` 모호성 버그 수정
+- `anthropic_backend.cc` — `usage.input_tokens/output_tokens` 파싱
+- `ollama_backend.cc` — `prompt_eval_count/eval_count` 파싱
+- `agent_core.cc` — 매 LLM 호출 후 토큰 로깅, 스킬 실행 시간 측정
 
 **완료 기준:**
-- [ ] 요청별 토큰 사용량 로깅
-- [ ] 컨텍스트 윈도우 한계 접근 시 경고
-- [ ] 세션별 사용량 요약 dlog 출력
+- [x] 요청별 토큰 사용량 로깅
+- [x] 세션별 누적 사용량 Markdown 파일에 기록
+- [x] 스킬 실행 시간 `std::chrono`로 측정 및 로깅
 
 ---
 
@@ -303,7 +322,7 @@ timeline
 **완료 기준:**
 - [ ] "매일 오전 9시에 날씨 알려줘" → cron 태스크 → 자동 실행
 - [ ] 자연어로 태스크 목록 조회 및 취소
-- [ ] 실행 이력 SQLite 저장 (Phase 9.2)
+- [ ] 실행 이력 Markdown 저장 (Phase 9.2)
 - [ ] 실패 태스크 백오프 재시도
 
 ---
