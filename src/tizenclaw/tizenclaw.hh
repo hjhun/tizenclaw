@@ -13,6 +13,9 @@
 #include "task_scheduler.hh"
 #include "channel_registry.hh"
 #include "skill_watcher.hh"
+#include "webhook_channel.hh"
+#include "slack_channel.hh"
+#include "discord_channel.hh"
 #include "../common/logging.hh"
 
 namespace tizenclaw {

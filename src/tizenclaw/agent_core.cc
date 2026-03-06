@@ -246,10 +246,9 @@ std::string AgentCore::ProcessPrompt(
   tool_policy_.ResetIdleTracking(session_id);
 
   while (iterations < max_iter) {
-    // Build system prompt with dynamic
-    // skill list
+    // Build session-specific system prompt
     std::string full_prompt =
-        BuildSystemPrompt(tools);
+        GetSessionPrompt(session_id, tools);
 
     // Query LLM backend without holding lock
     LlmResponse resp = m_backend->Chat(
@@ -387,6 +386,13 @@ std::string AgentCore::ProcessPrompt(
                    tc.name == "cancel_task") {
           r.output = ExecuteTaskOp(
               tc.name, tc.args);
+        } else if (
+            tc.name == "create_session" ||
+            tc.name == "list_sessions" ||
+            tc.name == "send_to_session") {
+          r.output = ExecuteSessionOp(
+              tc.name, tc.args,
+              session_id);
         } else {
           r.output = ExecuteSkill(
               tc.name, tc.args);
@@ -741,6 +747,81 @@ AgentCore::LoadSkillDeclarations() {
           {"task_id"})}
   };
   tools.push_back(cancel_task_tool);
+
+  // Built-in tool: create_session
+  LlmToolDecl create_session_tool;
+  create_session_tool.name = "create_session";
+  create_session_tool.description =
+      "Create a new agent session with a custom "
+      "system prompt. The new session operates "
+      "independently with its own conversation "
+      "history. Use this to delegate specialized "
+      "tasks to a purpose-built agent.";
+  create_session_tool.parameters = {
+      {"type", "object"},
+      {"properties", {
+          {"name", {
+              {"type", "string"},
+              {"description",
+               "Short name for the session "
+               "(used as session_id prefix)"}
+          }},
+          {"system_prompt", {
+              {"type", "string"},
+              {"description",
+               "Custom system prompt that "
+               "defines the agent's role and "
+               "behavior"}
+          }}
+      }},
+      {"required", nlohmann::json::array(
+          {"name", "system_prompt"})}
+  };
+  tools.push_back(create_session_tool);
+
+  // Built-in tool: list_sessions
+  LlmToolDecl list_sessions_tool;
+  list_sessions_tool.name = "list_sessions";
+  list_sessions_tool.description =
+      "List all active agent sessions with "
+      "their names and system prompts.";
+  list_sessions_tool.parameters = {
+      {"type", "object"},
+      {"properties", nlohmann::json::object()},
+      {"required", nlohmann::json::array()}
+  };
+  tools.push_back(list_sessions_tool);
+
+  // Built-in tool: send_to_session
+  LlmToolDecl send_to_session_tool;
+  send_to_session_tool.name = "send_to_session";
+  send_to_session_tool.description =
+      "Send a message to another agent session "
+      "and receive its response. The target "
+      "session processes the message using its "
+      "own system prompt and conversation "
+      "history. Use this for inter-agent "
+      "communication and task delegation.";
+  send_to_session_tool.parameters = {
+      {"type", "object"},
+      {"properties", {
+          {"target_session", {
+              {"type", "string"},
+              {"description",
+               "The session_id of the target "
+               "agent to send the message to"}
+          }},
+          {"message", {
+              {"type", "string"},
+              {"description",
+               "The message to send to the "
+               "target agent session"}
+          }}
+      }},
+      {"required", nlohmann::json::array(
+          {"target_session", "message"})}
+  };
+  tools.push_back(send_to_session_tool);
 
   cached_tools_ = tools;
   cached_tools_loaded_.store(true);
@@ -1192,6 +1273,176 @@ LlmResponse AgentCore::TryFallbackBackends(
   }
 
   return last_resp;
+}
+
+std::string AgentCore::ExecuteSessionOp(
+    const std::string& operation,
+    const nlohmann::json& args,
+    const std::string& caller_session) {
+  LOG(INFO) << "SessionOp: " << operation;
+
+  if (operation == "create_session") {
+    std::string name =
+        args.value("name", "agent");
+    std::string prompt =
+        args.value("system_prompt", "");
+
+    if (prompt.empty()) {
+      return "{\"error\": \"system_prompt "
+             "is required\"}";
+    }
+
+    // Generate unique session_id
+    auto now = std::chrono::system_clock::now();
+    auto ts = std::chrono::duration_cast<
+        std::chrono::milliseconds>(
+        now.time_since_epoch()).count();
+    std::string session_id =
+        "agent_" + name + "_" +
+        std::to_string(ts % 100000);
+
+    // Store per-session system prompt
+    {
+      std::lock_guard<std::mutex> lock(
+          session_mutex_);
+      session_prompts_[session_id] = prompt;
+    }
+
+    LOG(INFO) << "Created agent session: "
+              << session_id;
+
+    nlohmann::json result = {
+        {"status", "ok"},
+        {"session_id", session_id},
+        {"name", name},
+        {"system_prompt_length",
+         (int)prompt.size()}
+    };
+    return result.dump();
+  }
+
+  if (operation == "list_sessions") {
+    nlohmann::json sessions =
+        nlohmann::json::array();
+    {
+      std::lock_guard<std::mutex> lock(
+          session_mutex_);
+      for (auto& [sid, prompt] :
+           session_prompts_) {
+        nlohmann::json s = {
+            {"session_id", sid},
+            {"system_prompt",
+             prompt.substr(
+                 0, std::min((size_t)100,
+                             prompt.size()))
+             + (prompt.size() > 100
+                    ? "..."
+                    : "")},
+            {"history_size",
+             m_sessions.count(sid)
+                 ? (int)m_sessions[sid].size()
+                 : 0}
+        };
+        sessions.push_back(s);
+      }
+
+      // Also list sessions without custom
+      // prompts (default sessions)
+      for (auto& [sid, hist] : m_sessions) {
+        if (session_prompts_.count(sid) == 0) {
+          nlohmann::json s = {
+              {"session_id", sid},
+              {"system_prompt", "(default)"},
+              {"history_size",
+               (int)hist.size()}
+          };
+          sessions.push_back(s);
+        }
+      }
+    }
+
+    nlohmann::json result = {
+        {"status", "ok"},
+        {"sessions", sessions},
+        {"count", (int)sessions.size()}
+    };
+    return result.dump();
+  }
+
+  if (operation == "send_to_session") {
+    std::string target =
+        args.value("target_session", "");
+    std::string message =
+        args.value("message", "");
+
+    if (target.empty() || message.empty()) {
+      return "{\"error\": \"target_session "
+             "and message are required\"}";
+    }
+
+    // Prevent self-messaging loop
+    if (target == caller_session) {
+      return "{\"error\": \"Cannot send "
+             "message to self\"}";
+    }
+
+    LOG(INFO) << "Sending to session: "
+              << target << " from: "
+              << caller_session;
+
+    // Call ProcessPrompt on target session
+    // Note: no streaming for inter-agent
+    std::string response =
+        ProcessPrompt(target, message);
+
+    nlohmann::json result = {
+        {"status", "ok"},
+        {"target_session", target},
+        {"response", response}
+    };
+    return result.dump();
+  }
+
+  return "{\"error\": \"Unknown session "
+         "operation: " + operation + "\"}";
+}
+
+std::string AgentCore::GetSessionPrompt(
+    const std::string& session_id,
+    const std::vector<LlmToolDecl>& tools) {
+  // Check for per-session prompt override
+  {
+    std::lock_guard<std::mutex> lock(
+        session_mutex_);
+    auto it = session_prompts_.find(session_id);
+    if (it != session_prompts_.end()) {
+      // Use custom prompt with tool list
+      std::string prompt = it->second;
+
+      std::string tool_list;
+      for (const auto& t : tools) {
+        tool_list += "- " + t.name + ": "
+            + t.description + "\n";
+      }
+
+      const std::string placeholder =
+          "{{AVAILABLE_TOOLS}}";
+      size_t pos = prompt.find(placeholder);
+      if (pos != std::string::npos) {
+        prompt.replace(
+            pos, placeholder.size(),
+            tool_list);
+      } else if (!tool_list.empty()) {
+        prompt +=
+            "\n\nAvailable tools:\n" + tool_list;
+      }
+
+      return prompt;
+    }
+  }
+
+  // Fallback to global system prompt
+  return BuildSystemPrompt(tools);
 }
 
 } // namespace tizenclaw

@@ -25,10 +25,10 @@
 | **보안** | API 키 관리 | ✅ 로테이션 + 암호화 | ✅ stdin 전달 | ✅ 디바이스 바인딩 암호화 | ✅ |
 | **보안** | 감사 로깅 | ✅ 45K LOC `audit.ts` | ✅ `ipc-auth.test.ts` | ✅ Markdown 감사 + dlog | ✅ |
 | **자동화** | 태스크 스케줄러 | ✅ 기본 cron | ✅ cron/interval/일회성 | ✅ cron/interval/once/weekly | ✅ |
-| **채널** | 멀티 채널 지원 | ✅ 22개 이상 | ✅ 5개 (스킬 기반) | ✅ 2개 (Telegram, MCP) + 확장 가능 | 🟡 |
+| **채널** | 멀티 채널 지원 | ✅ 22개 이상 | ✅ 5개 (스킬 기반) | ✅ 5개 (Telegram, MCP, Webhook, Slack, Discord) | ✅ |
 | **채널** | 채널 추상화 | ✅ 정적 레지스트리 | ✅ 자기 등록 | ✅ C++ Channel 인터페이스 | ✅ |
 | **프롬프트** | 시스템 프롬프트 | ✅ 동적 생성 | ✅ 그룹별 `CLAUDE.md` | ✅ 외부 파일 + 동적 생성 | ✅ |
-| **에이전트** | 에이전트 간 통신 | ✅ `sessions_send` | ✅ Agent Swarms | ❌ | 🟢 |
+| **에이전트** | 에이전트 간 통신 | ✅ `sessions_send` | ✅ Agent Swarms | ✅ 세션별 프롬프트 + send_to_session | ✅ |
 | **에이전트** | 루프 감지 | ✅ 18K LOC 감지기 | ✅ 타임아웃 + idle | ✅ 반복 + idle + 설정 가능 | ✅ |
 | **에이전트** | tool_call_id 매핑 | ✅ 정확 추적 | ✅ SDK 네이티브 | ✅ 백엔드별 파싱 | ✅ |
 | **인프라** | DB 엔진 | ✅ SQLite + sqlite-vec | ✅ SQLite | ❌ | 🔴 |
@@ -95,9 +95,9 @@ timeline
                        : 모델 폴백 자동 전환
                        : 루프 감지 강화
     section 고급 UX
-        Phase 14       : 🟢 신규 채널 & 통합
-                       : Slack / Discord 채널
-                       : 웹훅 인바운드 트리거
+        Phase 14 (완료) : 신규 채널 & 통합
+                       : Slack / Discord 채널 (libwebsockets)
+                       : 웹훅 인바운드 트리거 (libsoup)
                        : 에이전트 간 메시징
         Phase 15       : 🟢 고급 플랫폼 기능
                        : 시맨틱 검색 (RAG)
@@ -470,7 +470,7 @@ timeline
 
 ---
 
-## Phase 14: 신규 채널 & 통합 🟢
+## Phase 14: 신규 채널 & 통합 ✅ (완료)
 
 > **목표**: 커뮤니케이션 범위 확장, 에이전트 협조 도입
 
@@ -482,9 +482,9 @@ timeline
 | **계획** | Phase 12 채널 추상화를 활용하여 Slack + Discord 구현 |
 
 **완료 기준:**
-- [ ] Slack 채널 (Bot API Socket Mode)
-- [ ] Discord 채널 (Discord.js 유사 통합)
-- [ ] 각 채널은 독립 프로세스로 실행 (Telegram 브릿지와 유사)
+- [x] Slack 채널 (Bot API Socket Mode, libwebsockets)
+- [x] Discord 채널 (Gateway WebSocket, libwebsockets)
+- [x] 각 채널 `ChannelRegistry` 등록 (총 5개 채널)
 
 ---
 
@@ -496,9 +496,9 @@ timeline
 | **계획** | 경량 HTTP 리스너로 웹훅 이벤트 수신 → Agentic Loop로 라우팅 |
 
 **완료 기준:**
-- [ ] 수신 웹훅용 HTTP 엔드포인트
-- [ ] 설정 가능한 URL 경로 → 스킬 매핑
-- [ ] HMAC 서명 검증
+- [x] 수신 웹훅용 HTTP 엔드포인트 (libsoup `SoupServer`)
+- [x] 설정 가능한 URL 경로 → 세션 매핑 (`webhook_config.json`)
+- [x] HMAC-SHA256 서명 검증 (GLib `GHmac`)
 
 ---
 
@@ -510,9 +510,9 @@ timeline
 | **계획** | 다중 세션 관리 + 세션 간 메시지 전달 |
 
 **완료 기준:**
-- [ ] 서로 다른 시스템 프롬프트의 복수 동시 에이전트 세션
-- [ ] `send_to_session` 도구로 에이전트 간 통신
-- [ ] 세션별 격리 (별도 히스토리, 백엔드, 권한)
+- [x] 세션별 시스템 프롬프트로 복수 동시 에이전트 세션
+- [x] 내장 도구: `create_session`, `list_sessions`, `send_to_session`
+- [x] 세션별 격리 (별도 히스토리 + `GetSessionPrompt` 시스템 프롬프트)
 
 ---
 
@@ -582,7 +582,7 @@ graph TD
     style P11 fill:#4ecdc4,color:#fff
     style P12 fill:#4ecdc4,color:#fff
     style P13 fill:#4ecdc4,color:#fff
-    style P14 fill:#6bcb77,color:#fff
+    style P14 fill:#4ecdc4,color:#fff
     style P15 fill:#6bcb77,color:#fff
 ```
 
@@ -594,7 +594,7 @@ graph TD
 | **11** | 태스크 스케줄러 & cron | ~1,000 | ✅ 완료 | Phase 9 ✅ |
 | **12** | 확장성 레이어 | ~600 | ✅ 완료 | Phase 10, 11 ✅ |
 | **13** | 스킬 생태계 | ~800 | ✅ 완료 | Phase 12 ✅ |
-| **14** | 신규 채널 & 통합 | ~1,200 | 🟢 낮음 | Phase 12 ✅ |
+| **14** | 신규 채널 & 통합 | ~1,200 | ✅ 완료 | Phase 12 ✅ |
 | **15** | 고급 플랫폼 기능 | ~2,000 | 🟢 낮음 | Phase 13, 14 |
 
 > **총 예상 추가 코드**: ~8,600 LOC (현재 ~4,500 LOC → ~13,100 LOC)

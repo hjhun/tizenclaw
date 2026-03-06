@@ -1,0 +1,5 @@
+{
+    "bot_token": "YOUR-DISCORD-BOT-TOKEN",
+    "allowed_guilds": [],
+    "allowed_channels": []
+}

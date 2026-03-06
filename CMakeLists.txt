@@ -23,12 +23,16 @@ pkg_check_modules(PKGS REQUIRED
     dlog
     libcurl
 )
+pkg_check_modules(LIBSOUP REQUIRED libsoup-2.4)
+pkg_check_modules(LIBWEBSOCKETS REQUIRED libwebsockets)
 
 
 # Include directories (plus nlohmann_json)
 include_directories(
     src/tizenclaw
     ${PKGS_INCLUDE_DIRS}
+    ${LIBSOUP_INCLUDE_DIRS}
+    ${LIBWEBSOCKETS_INCLUDE_DIRS}
     "src/common/nlohmann"
 )
 
@@ -56,12 +60,17 @@ set(SOURCES
     src/tizenclaw/task_scheduler.cc
     src/tizenclaw/channel_registry.cc
     src/tizenclaw/skill_watcher.cc
+    src/tizenclaw/webhook_channel.cc
+    src/tizenclaw/slack_channel.cc
+    src/tizenclaw/discord_channel.cc
 )
 
 # Executable
 add_executable(${PACKAGE} ${SOURCES})
 target_link_libraries(${PACKAGE}
     ${PKGS_LIBRARIES}
+    ${LIBSOUP_LIBRARIES}
+    ${LIBWEBSOCKETS_LIBRARIES}
 )
 
 # CLI test tool (no Tizen deps — pure POSIX sockets)
@@ -81,7 +90,7 @@ install(PROGRAMS
     DESTINATION /usr/libexec/tizenclaw/
 )
 install(FILES data/rootfs.tar.gz DESTINATION /opt/usr/share/tizenclaw/)
-install(FILES data/llm_config.json.sample data/telegram_config.json.sample data/system_prompt.txt data/tool_policy.json DESTINATION /opt/usr/share/tizenclaw/config/)
+install(FILES data/llm_config.json.sample data/telegram_config.json.sample data/webhook_config.json.sample data/slack_config.json.sample data/discord_config.json.sample data/system_prompt.txt data/tool_policy.json DESTINATION /opt/usr/share/tizenclaw/config/)
 install(DIRECTORY skills/ DESTINATION /opt/usr/share/tizenclaw/skills/)
 install(PROGRAMS scripts/start_mcp_tunnel.sh DESTINATION /usr/bin/)
 # Unit Tests (run during %check)

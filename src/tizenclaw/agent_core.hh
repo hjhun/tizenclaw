@@ -57,6 +57,14 @@ public:
     // Called by SkillWatcher on manifest changes
     void ReloadSkills();
 
+    // Execute session management operations
+    // (create_session, list_sessions,
+    //  send_to_session)
+    std::string ExecuteSessionOp(
+        const std::string& operation,
+        const nlohmann::json& args,
+        const std::string& caller_session);
+
 private:
     // Execute a skill and return its JSON output
     std::string ExecuteSkill(
@@ -120,6 +128,11 @@ private:
              std::vector<LlmMessage>> m_sessions;
     std::mutex session_mutex_; // Protects m_sessions
 
+    // Per-session system prompt overrides
+    // session_id → custom system_prompt
+    std::map<std::string, std::string>
+        session_prompts_;
+
     static constexpr size_t kMaxHistorySize = 30;
     static constexpr size_t kCompactionThreshold
         = 15;
@@ -139,6 +152,12 @@ private:
 
     // Task scheduler (owned by daemon)
     TaskScheduler* scheduler_ = nullptr;
+
+    // Get session-specific system prompt
+    // (falls back to global m_system_prompt)
+    std::string GetSessionPrompt(
+        const std::string& session_id,
+        const std::vector<LlmToolDecl>& tools);
 };
 
 } // namespace tizenclaw

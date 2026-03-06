@@ -25,10 +25,10 @@
 | **Security** | API key management | ✅ Rotation + encrypted | ✅ stdin delivery | ✅ Device-bound encryption | ✅ |
 | **Security** | Audit logging | ✅ 45K LOC `audit.ts` | ✅ `ipc-auth.test.ts` | ✅ Markdown audit + dlog | ✅ |
 | **Automation** | Task scheduler | ✅ Basic cron | ✅ cron/interval/one-shot | ✅ cron/interval/once/weekly | ✅ |
-| **Channel** | Multi-channel support | ✅ 22+ channels | ✅ 5 channels (via skills) | ✅ 2 (Telegram, MCP) + extensible | 🟡 |
+| **Channel** | Multi-channel support | ✅ 22+ channels | ✅ 5 channels (via skills) | ✅ 5 (Telegram, MCP, Webhook, Slack, Discord) | ✅ |
 | **Channel** | Channel abstraction | ✅ Static registry | ✅ Self-registration | ✅ C++ Channel interface | ✅ |
 | **Prompt** | System prompt | ✅ Dynamic generation | ✅ Per-group `CLAUDE.md` | ✅ External file + dynamic | ✅ |
-| **Agent** | Agent-to-Agent | ✅ `sessions_send` | ✅ Agent Swarms | ❌ | 🟢 |
+| **Agent** | Agent-to-Agent | ✅ `sessions_send` | ✅ Agent Swarms | ✅ Per-session prompt + send_to_session | ✅ |
 | **Agent** | Loop detection | ✅ 18K LOC detector | ✅ Timeout + idle | ✅ Repeat + idle + configurable | ✅ |
 | **Agent** | tool_call_id mapping | ✅ Accurate tracking | ✅ SDK native | ✅ Per-backend parsing | ✅ |
 | **Infra** | DB engine | ✅ SQLite + sqlite-vec | ✅ SQLite | ❌ | 🔴 |
@@ -95,9 +95,9 @@ timeline
                        : Model fallback auto-switch
                        : Loop detection enhancement
     section Advanced UX
-        Phase 14       : 🟢 New Channels & Integrations
-                       : Slack / Discord channel
-                       : Webhook inbound trigger
+        Phase 14 (Done) : New Channels & Integrations
+                       : Slack / Discord channel (libwebsockets)
+                       : Webhook inbound trigger (libsoup)
                        : Agent-to-Agent messaging
         Phase 15       : 🟢 Advanced Platform Features
                        : Semantic search (RAG)
@@ -470,7 +470,7 @@ timeline
 
 ---
 
-## Phase 14: New Channels & Integrations 🟢
+## Phase 14: New Channels & Integrations ✅ (Done)
 
 > **Goal**: Expand communication reach, introduce agent coordination
 
@@ -482,9 +482,9 @@ timeline
 | **Plan** | Implement Slack + Discord using Phase 12 channel abstraction |
 
 **Done When:**
-- [ ] Slack channel via Bot API (Socket Mode)
-- [ ] Discord channel via Discord.js-like integration
-- [ ] Each channel runs as independent process (similar to Telegram bridge)
+- [x] Slack channel via Bot API (Socket Mode, libwebsockets)
+- [x] Discord channel via Gateway WebSocket (libwebsockets)
+- [x] Each channel registered via `ChannelRegistry` (5 channels total)
 
 ---
 
@@ -496,9 +496,9 @@ timeline
 | **Plan** | Lightweight HTTP listener for webhook events → route to Agentic Loop |
 
 **Done When:**
-- [ ] HTTP endpoint for incoming webhooks
-- [ ] Configurable URL paths → skill mapping
-- [ ] HMAC signature validation
+- [x] HTTP endpoint for incoming webhooks (libsoup `SoupServer`)
+- [x] Configurable URL path → session mapping (`webhook_config.json`)
+- [x] HMAC-SHA256 signature validation (GLib `GHmac`)
 
 ---
 
@@ -510,9 +510,9 @@ timeline
 | **Plan** | Multi-session management + inter-session message passing |
 
 **Done When:**
-- [ ] Multiple concurrent agent sessions with different system prompts
-- [ ] `send_to_session` tool for inter-agent communication
-- [ ] Per-session isolation (separate history, backend, permissions)
+- [x] Multiple concurrent agent sessions with per-session system prompts
+- [x] Built-in tools: `create_session`, `list_sessions`, `send_to_session`
+- [x] Per-session isolation (separate history + system prompt via `GetSessionPrompt`)
 
 ---
 
@@ -582,7 +582,7 @@ graph TD
     style P11 fill:#4ecdc4,color:#fff
     style P12 fill:#4ecdc4,color:#fff
     style P13 fill:#4ecdc4,color:#fff
-    style P14 fill:#6bcb77,color:#fff
+    style P14 fill:#4ecdc4,color:#fff
     style P15 fill:#6bcb77,color:#fff
 ```
 
@@ -594,7 +594,7 @@ graph TD
 | **11** | Task scheduler & cron | ~1,000 | ✅ Done | Phase 9 ✅ |
 | **12** | Extensibility layer | ~600 | ✅ Done | Phase 10, 11 ✅ |
 | **13** | Skill ecosystem | ~800 | ✅ Done | Phase 12 ✅ |
-| **14** | New channels & integrations | ~1,200 | 🟢 Low | Phase 12 ✅ |
+| **14** | New channels & integrations | ~1,200 | ✅ Done | Phase 12 ✅ |
 | **15** | Advanced platform features | ~2,000 | 🟢 Low | Phase 13, 14 |
 
 > **Total estimated additional code**: ~8,600 LOC (current ~4,500 LOC → ~13,100 LOC)

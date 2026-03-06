@@ -1,0 +1,18 @@
+{
+    "port": 8080,
+    "hmac_secret": "",
+    "routes": [
+        {
+            "path": "/webhook",
+            "session_id": "webhook_default"
+        },
+        {
+            "path": "/github",
+            "session_id": "github_agent"
+        },
+        {
+            "path": "/alert",
+            "session_id": "monitoring_agent"
+        }
+    ]
+}
