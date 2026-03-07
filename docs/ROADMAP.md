@@ -1,4 +1,4 @@
-# TizenClaw Development Roadmap v3.0
+# TizenClaw Development Roadmap v4.0
 
 > **Date**: 2026-03-07
 > **Reference**: [Project Analysis](ANALYSIS.md) | [System Design](DESIGN.md)
@@ -16,7 +16,7 @@
 | **IPC** | Robust message framing | ✅ WebSocket + JSON-RPC | ✅ Sentinel markers | ✅ Length-prefix + JSON-RPC | ✅ |
 | **Memory** | Conversation persistence | ✅ SQLite + Vector DB | ✅ SQLite | ✅ Markdown (YAML frontmatter) | ✅ |
 | **Memory** | Context compaction | ✅ LLM auto-summarize | ❌ | ✅ LLM auto-summarize | ✅ |
-| **Memory** | Semantic search (RAG) | ✅ MMR + embeddings | ❌ | ❌ | 🔴 |
+| **Memory** | Semantic search (RAG) | ✅ MMR + embeddings | ❌ | ✅ SQLite + cosine similarity | ✅ |
 | **LLM** | Model fallback | ✅ Auto-switch (18K LOC) | ❌ | ✅ Auto-switch + backoff | ✅ |
 | **LLM** | Token counting | ✅ Per-model accurate | ❌ | ✅ Per-model parsing | ✅ |
 | **LLM** | Usage tracking | ✅ Per-model token usage | ❌ | ✅ Daily/monthly Markdown | ✅ |
@@ -24,19 +24,21 @@
 | **Security** | Sender allowlist | ✅ `allowlist-match.ts` | ✅ `sender-allowlist.ts` | ✅ UID + chat_id | ✅ |
 | **Security** | API key management | ✅ Rotation + encrypted | ✅ stdin delivery | ✅ Device-bound encryption | ✅ |
 | **Security** | Audit logging | ✅ 45K LOC `audit.ts` | ✅ `ipc-auth.test.ts` | ✅ Markdown audit + dlog | ✅ |
+| **Security** | Admin authentication | ✅ OAuth / token | ❌ | ✅ Session-token + SHA-256 | ✅ |
 | **Automation** | Task scheduler | ✅ Basic cron | ✅ cron/interval/one-shot | ✅ cron/interval/once/weekly | ✅ |
-| **Channel** | Multi-channel support | ✅ 22+ channels | ✅ 5 channels (via skills) | ✅ 5 (Telegram, MCP, Webhook, Slack, Discord) | ✅ |
+| **Channel** | Multi-channel support | ✅ 22+ channels | ✅ 5 channels (via skills) | ✅ 7 (Telegram, MCP, Webhook, Slack, Discord, Voice, Web) | ✅ |
 | **Channel** | Channel abstraction | ✅ Static registry | ✅ Self-registration | ✅ C++ Channel interface | ✅ |
 | **Prompt** | System prompt | ✅ Dynamic generation | ✅ Per-group `CLAUDE.md` | ✅ External file + dynamic | ✅ |
 | **Agent** | Agent-to-Agent | ✅ `sessions_send` | ✅ Agent Swarms | ✅ Per-session prompt + send_to_session | ✅ |
 | **Agent** | Loop detection | ✅ 18K LOC detector | ✅ Timeout + idle | ✅ Repeat + idle + configurable | ✅ |
 | **Agent** | tool_call_id mapping | ✅ Accurate tracking | ✅ SDK native | ✅ Per-backend parsing | ✅ |
-| **Infra** | DB engine | ✅ SQLite + sqlite-vec | ✅ SQLite | ❌ | 🔴 |
+| **Infra** | DB engine | ✅ SQLite + sqlite-vec | ✅ SQLite | ✅ SQLite (RAG embeddings) | ✅ |
 | **Infra** | Structured logging | ✅ Pino (JSON) | ✅ Pino (JSON) | ✅ Markdown audit tables | ✅ |
 | **Infra** | Skill hot-reload | ✅ Runtime install | ✅ apply/rebase | ✅ inotify auto-reload | ✅ |
-| **UX** | Browser control | ✅ CDP Chrome | ❌ | ❌ | 🟢 |
-| **UX** | Voice interface | ✅ Wake word + TTS | ❌ | ❌ | 🟢 |
-| **UX** | Web UI | ✅ Control UI + WebChat | ❌ | ❌ | 🟢 |
+| **UX** | Browser control | ✅ CDP Chrome | ❌ | ❌ | 🟡 |
+| **UX** | Voice interface | ✅ Wake word + TTS | ❌ | ✅ Tizen STT/TTS C-API | ✅ |
+| **UX** | Web UI | ✅ Control UI + WebChat | ❌ | ✅ Admin Dashboard + Chat | ✅ |
+| **Ops** | Config management | ✅ UI-based config | ❌ | ✅ Web config editor + backup | ✅ |
 
 ---
 
@@ -57,7 +59,7 @@
 
 ```mermaid
 timeline
-    title TizenClaw Development Roadmap (Phase 6–15)
+    title TizenClaw Development Roadmap (Phase 6–18)
     section Critical Foundation
         Phase 6 (Done) : IPC Stabilization
                        : Length-prefix protocol
@@ -99,10 +101,23 @@ timeline
                        : Slack / Discord channel (libwebsockets)
                        : Webhook inbound trigger (libsoup)
                        : Agent-to-Agent messaging
-        Phase 15       : 🟢 Advanced Platform Features
+        Phase 15 (Done) : Advanced Platform Features
                        : Semantic search (RAG)
                        : Web UI dashboard
                        : Voice control (TTS/STT)
+    section Operational Maturity
+        Phase 16 (Done) : Operational Excellence
+                       : Admin authentication
+                       : Web config editor
+                       : Branding integration
+        Phase 17       : 🔴 Multi-Agent Orchestration
+                       : Supervisor agent pattern
+                       : Skill pipeline engine
+                       : A2A protocol
+        Phase 18       : 🟡 Production Readiness
+                       : Health metrics & monitoring
+                       : OTA update mechanism
+                       : Browser control (CDP)
 ```
 
 ---
@@ -564,6 +579,150 @@ timeline
 
 ---
 
+## Phase 16: Operational Excellence ✅ (Completed 2026-03-07)
+
+> **Goal**: Remote maintenance and configuration management via web interface
+
+### 16.1 Admin Authentication System
+| Item | Details |
+|------|---------|
+| **Gap** | Dashboard accessible without authentication |
+| **Plan** | Session-token mechanism with SHA-256 password hashing |
+
+**Done When:**
+- [x] Secure API endpoint protection with session tokens
+- [x] Default `admin/admin` credentials with mandatory password change
+- [x] SHA-256 password hashing stored in `admin_password.json`
+
+---
+
+### 16.2 Centralized Configuration Management
+| Item | Details |
+|------|---------|
+| **Gap** | Config changes require terminal access and file editing |
+| **Plan** | In-browser JSON editor with validation and backup-on-write |
+
+**Done When:**
+- [x] 7 config files editable via web UI (`llm_config.json`, `telegram_config.json`, `slack_config.json`, `discord_config.json`, `webhook_config.json`, `tool_policy.json`, `system_prompt.txt`)
+- [x] Automatic backup before overwrite
+- [x] File whitelist to prevent arbitrary writes
+- [x] Daemon restart trigger from admin interface
+
+---
+
+### 16.3 Branding & Identity
+| Item | Details |
+|------|---------|
+| **Gap** | Generic dashboard appearance |
+| **Plan** | Official logo integration and consistent branding |
+
+**Done When:**
+- [x] `tizenclaw.jpg` logo integrated into sidebar
+- [x] Consistent dark glassmorphism theme across all pages
+
+---
+
+## Phase 17: Multi-Agent Orchestration (Proposed)
+
+> **Goal**: Advanced multi-agent patterns for complex autonomous workflows
+
+### 17.1 Supervisor Agent Pattern
+| Item | Details |
+|------|---------|
+| **Gap** | Agent-to-Agent is flat messaging — no hierarchical delegation |
+| **Ref** | OpenClaw: `sessions_send` · LangGraph: Supervisor pattern |
+| **Plan** | Supervisor agent decomposes goals → delegates to specialized role agents → validates results |
+
+**Implementation Direction:**
+- `AgentRole` struct: role name, system prompt, allowed tools
+- `SupervisorLoop`: goal → plan → delegate → collect → validate → report
+- Configurable via `agent_roles.json`
+
+**Done When:**
+- [ ] Role-based agent creation with tool restrictions
+- [ ] Supervisor goal decomposition and delegation loop
+- [ ] Result aggregation and validation
+
+---
+
+### 17.2 Skill Pipeline Engine
+| Item | Details |
+|------|---------|
+| **Gap** | Only LLM-reactive tool execution — no deterministic workflows |
+| **Ref** | LangChain: Chains · n8n: workflow automation |
+| **Plan** | Pre-defined sequential/conditional skill execution with data flow between stages |
+
+**Implementation Direction:**
+- `PipelineExecutor` class: load pipeline JSON → sequential step execution → `{{variable}}` interpolation
+- Error handling: per-step retry, skip-on-failure
+- Built-in tools: `create_pipeline`, `list_pipelines`, `run_pipeline`
+- Integration with `TaskScheduler` for cron-triggered pipelines
+
+**Done When:**
+- [ ] Pipeline JSON format: steps, triggers, variable interpolation
+- [ ] Sequential execution with output passing
+- [ ] Conditional branching (`if/then/else`)
+- [ ] TaskScheduler integration for scheduled pipelines
+
+---
+
+### 17.3 A2A (Agent-to-Agent) Protocol
+| Item | Details |
+|------|---------|
+| **Gap** | No cross-device agent coordination |
+| **Ref** | Google A2A Protocol specification |
+| **Plan** | HTTP/WebSocket-based inter-device agent communication |
+
+**Done When:**
+- [ ] A2A endpoint on WebDashboard HTTP server
+- [ ] Agent Card discovery (`.well-known/agent.json`)
+- [ ] Task lifecycle: submit → working → artifact → done
+
+---
+
+## Phase 18: Production Readiness (Proposed)
+
+> **Goal**: Enterprise-grade reliability, monitoring, and deployment
+
+### 18.1 Health Metrics & Monitoring
+| Item | Details |
+|------|---------|
+| **Gap** | No runtime health visibility |
+| **Plan** | Prometheus-style metrics endpoint for CPU, memory, uptime, request counts |
+
+**Done When:**
+- [ ] `/api/metrics` endpoint with key system metrics
+- [ ] Dashboard health panel with live stats
+
+---
+
+### 18.2 OTA Update Mechanism
+| Item | Details |
+|------|---------|
+| **Gap** | Updates require manual RPM push via sdb |
+| **Plan** | Over-the-air daemon and skill updates via HTTP pull |
+
+**Done When:**
+- [ ] Version checking against remote manifest
+- [ ] Skill auto-update from configured repository
+- [ ] Rollback mechanism on update failure
+
+---
+
+### 18.3 Browser Control (CDP)
+| Item | Details |
+|------|---------|
+| **Gap** | No web automation capability |
+| **Ref** | OpenClaw: CDP Chrome DevTools Protocol |
+| **Plan** | Chrome DevTools Protocol integration for web page interaction |
+
+**Done When:**
+- [ ] CDP connection to embedded Chromium/WebView
+- [ ] Built-in tools: `navigate_url`, `click_element`, `extract_text`
+- [ ] Screenshot capture for visual feedback
+
+---
+
 ## Phase Dependency & Size Estimation
 
 ```mermaid
@@ -577,6 +736,9 @@ graph TD
     P12 --> P14[Phase 14: New Channels]
     P13 --> P15[Phase 15: Advanced Features]
     P14 --> P15
+    P15 --> P16[Phase 16: Operational Excellence]
+    P16 --> P17[Phase 17: Multi-Agent]
+    P16 --> P18[Phase 18: Production Readiness]
 
     style P8 fill:#4ecdc4,color:#fff
     style P9 fill:#4ecdc4,color:#fff
@@ -585,7 +747,10 @@ graph TD
     style P12 fill:#4ecdc4,color:#fff
     style P13 fill:#4ecdc4,color:#fff
     style P14 fill:#4ecdc4,color:#fff
-    style P15 fill:#6bcb77,color:#fff
+    style P15 fill:#4ecdc4,color:#fff
+    style P16 fill:#4ecdc4,color:#fff
+    style P17 fill:#ff6b6b,color:#fff
+    style P18 fill:#ffd93d,color:#fff
 ```
 
 | Phase | Core Goal | Est. LOC | Priority | Dependencies |
@@ -597,6 +762,10 @@ graph TD
 | **12** | Extensibility layer | ~600 | ✅ Done | Phase 10, 11 ✅ |
 | **13** | Skill ecosystem | ~800 | ✅ Done | Phase 12 ✅ |
 | **14** | New channels & integrations | ~1,200 | ✅ Done | Phase 12 ✅ |
-| **15** | Advanced platform features | ~2,000 | 🟢 Low | Phase 13, 14 |
+| **15** | Advanced platform features | ~2,000 | ✅ Done | Phase 13, 14 ✅ |
+| **16** | Operational excellence | ~800 | ✅ Done | Phase 15 ✅ |
+| **17** | Multi-Agent orchestration | ~2,000 | 🔴 High | Phase 16 ✅ |
+| **18** | Production readiness | ~1,500 | 🟡 Medium | Phase 16 ✅ |
 
-> **Total estimated additional code**: ~8,600 LOC (current ~4,500 LOC → ~13,100 LOC)
+> **Current codebase**: ~17,400 LOC across ~76 files
+> **Projected with Phase 17-18**: ~20,900 LOC

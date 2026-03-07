@@ -1,4 +1,4 @@
-# TizenClaw 개발 로드맵 v3.0
+# TizenClaw 개발 로드맵 v4.0
 
 > **작성일**: 2026-03-07
 > **기반 문서**: [프로젝트 분석](ANALYSIS.md) | [설계 문서](DESIGN.md)
@@ -16,7 +16,7 @@
 | **IPC** | 견고한 메시지 프레이밍 | ✅ WebSocket + JSON-RPC | ✅ 센티널 마커 | ✅ 길이-프리픽스 + JSON-RPC | ✅ |
 | **메모리** | 대화 영구 저장 | ✅ SQLite + Vector DB | ✅ SQLite | ✅ Markdown (YAML frontmatter) | ✅ |
 | **메모리** | 컨텍스트 압축 | ✅ LLM 자동 요약 | ❌ | ✅ LLM 자동 요약 | ✅ |
-| **메모리** | 시맨틱 검색 (RAG) | ✅ MMR + 임베딩 | ❌ | ❌ | 🔴 |
+| **메모리** | 시맨틱 검색 (RAG) | ✅ MMR + 임베딩 | ❌ | ✅ SQLite + 코사인 유사도 | ✅ |
 | **LLM** | 모델 폴백 | ✅ 자동 전환 (18K LOC) | ❌ | ✅ 자동 전환 + 백오프 | ✅ |
 | **LLM** | 토큰 카운팅 | ✅ 모델별 정확 계산 | ❌ | ✅ 모델별 파싱 | ✅ |
 | **LLM** | 사용량 추적 | ✅ 모델별 토큰 사용량 | ❌ | ✅ 일별/월별 Markdown | ✅ |
@@ -24,19 +24,21 @@
 | **보안** | 발신자 허용목록 | ✅ `allowlist-match.ts` | ✅ `sender-allowlist.ts` | ✅ UID + chat_id | ✅ |
 | **보안** | API 키 관리 | ✅ 로테이션 + 암호화 | ✅ stdin 전달 | ✅ 디바이스 바인딩 암호화 | ✅ |
 | **보안** | 감사 로깅 | ✅ 45K LOC `audit.ts` | ✅ `ipc-auth.test.ts` | ✅ Markdown 감사 + dlog | ✅ |
+| **보안** | 관리자 인증 | ✅ OAuth / 토큰 | ❌ | ✅ 세션 토큰 + SHA-256 | ✅ |
 | **자동화** | 태스크 스케줄러 | ✅ 기본 cron | ✅ cron/interval/일회성 | ✅ cron/interval/once/weekly | ✅ |
-| **채널** | 멀티 채널 지원 | ✅ 22개 이상 | ✅ 5개 (스킬 기반) | ✅ 5개 (Telegram, MCP, Webhook, Slack, Discord) | ✅ |
+| **채널** | 멀티 채널 지원 | ✅ 22개 이상 | ✅ 5개 (스킬 기반) | ✅ 7개 (Telegram, MCP, Webhook, Slack, Discord, Voice, Web) | ✅ |
 | **채널** | 채널 추상화 | ✅ 정적 레지스트리 | ✅ 자기 등록 | ✅ C++ Channel 인터페이스 | ✅ |
 | **프롬프트** | 시스템 프롬프트 | ✅ 동적 생성 | ✅ 그룹별 `CLAUDE.md` | ✅ 외부 파일 + 동적 생성 | ✅ |
 | **에이전트** | 에이전트 간 통신 | ✅ `sessions_send` | ✅ Agent Swarms | ✅ 세션별 프롬프트 + send_to_session | ✅ |
 | **에이전트** | 루프 감지 | ✅ 18K LOC 감지기 | ✅ 타임아웃 + idle | ✅ 반복 + idle + 설정 가능 | ✅ |
 | **에이전트** | tool_call_id 매핑 | ✅ 정확 추적 | ✅ SDK 네이티브 | ✅ 백엔드별 파싱 | ✅ |
-| **인프라** | DB 엔진 | ✅ SQLite + sqlite-vec | ✅ SQLite | ❌ | 🔴 |
+| **인프라** | DB 엔진 | ✅ SQLite + sqlite-vec | ✅ SQLite | ✅ SQLite (RAG 임베딩) | ✅ |
 | **인프라** | 구조화 로깅 | ✅ Pino (JSON) | ✅ Pino (JSON) | ✅ Markdown 감사 테이블 | ✅ |
 | **인프라** | 스킬 핫리로드 | ✅ 런타임 설치 | ✅ apply/rebase | ✅ inotify 자동 리로드 | ✅ |
-| **UX** | 브라우저 제어 | ✅ CDP Chrome | ❌ | ❌ | 🟢 |
-| **UX** | 음성 인터페이스 | ✅ 웨이크 워드 + TTS | ❌ | ❌ | 🟢 |
-| **UX** | 웹 UI | ✅ 제어 UI + 웹챗 | ❌ | ❌ | 🟢 |
+| **UX** | 브라우저 제어 | ✅ CDP Chrome | ❌ | ❌ | 🟡 |
+| **UX** | 음성 인터페이스 | ✅ 웨이크 워드 + TTS | ❌ | ✅ Tizen STT/TTS C-API | ✅ |
+| **UX** | 웹 UI | ✅ 제어 UI + 웹챗 | ❌ | ✅ 관리 대시보드 + 채팅 | ✅ |
+| **운영** | 설정 관리 | ✅ UI 기반 설정 | ❌ | ✅ 웹 설정 편집기 + 백업 | ✅ |
 
 ---
 
@@ -57,7 +59,7 @@
 
 ```mermaid
 timeline
-    title TizenClaw 개발 로드맵 (Phase 6–15)
+    title TizenClaw 개발 로드맵 (Phase 6–18)
     section 핵심 기반
         Phase 6 (완료) : IPC 안정화
                        : 길이-프리픽스 프로토콜
@@ -99,10 +101,23 @@ timeline
                        : Slack / Discord 채널 (libwebsockets)
                        : 웹훅 인바운드 트리거 (libsoup)
                        : 에이전트 간 메시징
-        Phase 15       : 🟢 고급 플랫폼 기능
+        Phase 15 (완료) : 고급 플랫폼 기능
                        : 시맨틱 검색 (RAG)
                        : 웹 UI 대시보드
                        : 음성 제어 (TTS/STT)
+    section 운영 성숙
+        Phase 16 (완료) : 운영 우수성
+                       : 관리자 인증
+                       : 웹 설정 편집기
+                       : 브랜딩 통합
+        Phase 17       : 🔴 멀티 에이전트 오케스트레이션
+                       : 슈퍼바이저 에이전트 패턴
+                       : 스킬 파이프라인 엔진
+                       : A2A 프로토콜
+        Phase 18       : 🟡 프로덕션 준비
+                       : 헬스 메트릭스 & 모니터링
+                       : OTA 업데이트 메커니즘
+                       : 브라우저 제어 (CDP)
 ```
 
 ---
@@ -564,6 +579,150 @@ timeline
 
 ---
 
+## Phase 16: 운영 우수성 ✅ (2026-03-07 완료)
+
+> **목표**: 웹 인터페이스를 통한 원격 유지보수 및 설정 관리
+
+### 16.1 관리자 인증 시스템
+| 항목 | 내용 |
+|------|------|
+| **갭** | 인증 없이 대시보드 접근 가능 |
+| **계획** | SHA-256 비밀번호 해싱의 세션 토큰 메커니즘 |
+
+**완료 기준:**
+- [x] 세션 토큰으로 API 엔드포인트 보호
+- [x] 기본 `admin/admin` 자격증명 + 필수 비밀번호 변경
+- [x] `admin_password.json`에 SHA-256 비밀번호 해시 저장
+
+---
+
+### 16.2 중앙집중 설정 관리
+| 항목 | 내용 |
+|------|------|
+| **갭** | 설정 변경에 터미널 접근과 파일 편집 필요 |
+| **계획** | 검증 및 백업-온-라이트 기능의 인브라우저 JSON 편집기 |
+
+**완료 기준:**
+- [x] 웹 UI를 통한 7개 설정 파일 편집 (`llm_config.json`, `telegram_config.json`, `slack_config.json`, `discord_config.json`, `webhook_config.json`, `tool_policy.json`, `system_prompt.txt`)
+- [x] 덮어쓰기 전 자동 백업
+- [x] 임의 파일 쓰기 방지를 위한 파일 화이트리스트
+- [x] 관리 인터페이스에서 데몬 재시작 트리거
+
+---
+
+### 16.3 브랜딩 & 아이덴티티
+| 항목 | 내용 |
+|------|------|
+| **갭** | 대시보드 외관이 일반적 |
+| **계획** | 공식 로고 통합 및 일관된 브랜딩 |
+
+**완료 기준:**
+- [x] 사이드바에 `tizenclaw.jpg` 로고 통합
+- [x] 모든 페이지에 일관된 다크 글래스모피즘 테마
+
+---
+
+## Phase 17: 멀티 에이전트 오케스트레이션 (제안)
+
+> **목표**: 복잡한 자율 워크플로우를 위한 고급 멀티 에이전트 패턴
+
+### 17.1 슈퍼바이저 에이전트 패턴
+| 항목 | 내용 |
+|------|------|
+| **갭** | 에이전트 간 통신이 평면적 메시징 — 계층적 위임 없음 |
+| **참고** | OpenClaw: `sessions_send` · LangGraph: Supervisor 패턴 |
+| **계획** | 슈퍼바이저 에이전트가 목표 분해 → 전문 역할 에이전트에 위임 → 결과 검증 |
+
+**구현 방향:**
+- `AgentRole` 구조체: 역할명, 시스템 프롬프트, 허용 도구
+- `SupervisorLoop`: 목표 → 계획 → 위임 → 수집 → 검증 → 보고
+- `agent_roles.json`으로 설정 가능
+
+**완료 기준:**
+- [ ] 도구 제한이 있는 역할 기반 에이전트 생성
+- [ ] 슈퍼바이저 목표 분해 및 위임 루프
+- [ ] 결과 집계 및 검증
+
+---
+
+### 17.2 스킬 파이프라인 엔진
+| 항목 | 내용 |
+|------|------|
+| **갭** | LLM 반응적 도구 실행만 — 결정적 워크플로우 없음 |
+| **참고** | LangChain: Chains · n8n: 워크플로우 자동화 |
+| **계획** | 단계 간 데이터 흐름을 가진 사전 정의된 순차/조건 스킬 실행 |
+
+**구현 방향:**
+- `PipelineExecutor` 클래스: 파이프라인 JSON 로드 → 순차 단계 실행 → `{{variable}}` 보간
+- 에러 핸들링: 단계별 재시도, 실패 시 건너뛰기
+- 내장 도구: `create_pipeline`, `list_pipelines`, `run_pipeline`
+- `TaskScheduler`와 통합하여 cron 트리거 파이프라인
+
+**완료 기준:**
+- [ ] 파이프라인 JSON 포맷: 단계, 트리거, 변수 보간
+- [ ] 출력 전달을 가진 순차 실행
+- [ ] 조건 분기 (`if/then/else`)
+- [ ] 예약 파이프라인을 위한 TaskScheduler 통합
+
+---
+
+### 17.3 A2A (Agent-to-Agent) 프로토콜
+| 항목 | 내용 |
+|------|------|
+| **갭** | 크로스 디바이스 에이전트 협조 불가 |
+| **참고** | Google A2A Protocol 사양 |
+| **계획** | HTTP/WebSocket 기반 디바이스 간 에이전트 통신 |
+
+**완료 기준:**
+- [ ] WebDashboard HTTP 서버의 A2A 엔드포인트
+- [ ] Agent Card 디스커버리 (`.well-known/agent.json`)
+- [ ] 태스크 생명주기: submit → working → artifact → done
+
+---
+
+## Phase 18: 프로덕션 준비 (제안)
+
+> **목표**: 엔터프라이즈급 안정성, 모니터링, 배포
+
+### 18.1 헬스 메트릭스 & 모니터링
+| 항목 | 내용 |
+|------|------|
+| **갭** | 런타임 상태 가시성 없음 |
+| **계획** | CPU, 메모리, 업타임, 요청 수를 위한 Prometheus 스타일 메트릭 엔드포인트 |
+
+**완료 기준:**
+- [ ] 주요 시스템 메트릭이 있는 `/api/metrics` 엔드포인트
+- [ ] 실시간 통계가 있는 대시보드 헬스 패널
+
+---
+
+### 18.2 OTA 업데이트 메커니즘
+| 항목 | 내용 |
+|------|------|
+| **갭** | 업데이트에 sdb를 통한 수동 RPM 푸시 필요 |
+| **계획** | HTTP pull을 통한 무선 데몬 및 스킬 업데이트 |
+
+**완료 기준:**
+- [ ] 원격 매니페스트 대비 버전 확인
+- [ ] 설정된 저장소에서 스킬 자동 업데이트
+- [ ] 업데이트 실패 시 롤백 메커니즘
+
+---
+
+### 18.3 브라우저 제어 (CDP)
+| 항목 | 내용 |
+|------|------|
+| **갭** | 웹 자동화 기능 없음 |
+| **참고** | OpenClaw: CDP Chrome DevTools Protocol |
+| **계획** | 웹 페이지 상호작용을 위한 Chrome DevTools Protocol 연동 |
+
+**완료 기준:**
+- [ ] 내장 Chromium/WebView에 CDP 연결
+- [ ] 내장 도구: `navigate_url`, `click_element`, `extract_text`
+- [ ] 시각적 피드백을 위한 스크린샷 캡처
+
+---
+
 ## Phase 의존성 & 규모 추정
 
 ```mermaid
@@ -577,6 +736,9 @@ graph TD
     P12 --> P14[Phase 14: 신규 채널]
     P13 --> P15[Phase 15: 고급 기능]
     P14 --> P15
+    P15 --> P16[Phase 16: 운영 우수성]
+    P16 --> P17[Phase 17: 멀티 에이전트]
+    P16 --> P18[Phase 18: 프로덕션 준비]
 
     style P8 fill:#4ecdc4,color:#fff
     style P9 fill:#4ecdc4,color:#fff
@@ -585,7 +747,10 @@ graph TD
     style P12 fill:#4ecdc4,color:#fff
     style P13 fill:#4ecdc4,color:#fff
     style P14 fill:#4ecdc4,color:#fff
-    style P15 fill:#6bcb77,color:#fff
+    style P15 fill:#4ecdc4,color:#fff
+    style P16 fill:#4ecdc4,color:#fff
+    style P17 fill:#ff6b6b,color:#fff
+    style P18 fill:#ffd93d,color:#fff
 ```
 
 | Phase | 핵심 목표 | 예상 LOC | 우선순위 | 의존성 |
@@ -597,6 +762,10 @@ graph TD
 | **12** | 확장성 레이어 | ~600 | ✅ 완료 | Phase 10, 11 ✅ |
 | **13** | 스킬 생태계 | ~800 | ✅ 완료 | Phase 12 ✅ |
 | **14** | 신규 채널 & 통합 | ~1,200 | ✅ 완료 | Phase 12 ✅ |
-| **15** | 고급 플랫폼 기능 | ~2,000 | 🟢 낮음 | Phase 13, 14 |
+| **15** | 고급 플랫폼 기능 | ~2,000 | ✅ 완료 | Phase 13, 14 ✅ |
+| **16** | 운영 우수성 | ~800 | ✅ 완료 | Phase 15 ✅ |
+| **17** | 멀티 에이전트 오케스트레이션 | ~2,000 | 🔴 높음 | Phase 16 ✅ |
+| **18** | 프로덕션 준비 | ~1,500 | 🟡 중간 | Phase 16 ✅ |
 
-> **총 예상 추가 코드**: ~8,600 LOC (현재 ~4,500 LOC → ~13,100 LOC)
+> **현재 코드베이스**: ~76개 파일, ~17,400 LOC
+> **Phase 17-18 완료 시 예상**: ~20,900 LOC

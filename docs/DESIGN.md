@@ -1,123 +1,419 @@
 # TizenClaw System Design Document
 
+> **Last Updated**: 2026-03-07
+> **Version**: 2.0
+
 ---
 
 ## 1. Overview
 
-**TizenClaw** is a native agent runtime optimized for the Tizen Embedded Linux environment. Built as a **daemon** in native C++, it runs in the system background, receives user prompts, and dynamically executes skills. It establishes a safe and extensible Agent-Skill interaction environment even under Tizen's strict security policies (SMACK, DAC, kUEP).
+**TizenClaw** is a native C++ AI agent **daemon** optimized for the Tizen Embedded Linux platform. It runs as a **systemd service** in the background, receives user prompts through multiple communication channels (Telegram, Slack, Discord, MCP, Webhook, Voice, Web Dashboard), interprets them via configurable LLM backends, and executes device-level actions using sandboxed Python skills inside OCI containers.
+
+The system establishes a safe and extensible Agent-Skill interaction environment under Tizen's strict security policies (SMACK, DAC, kUEP) while providing enterprise-grade features including multi-agent coordination, streaming responses, encrypted credential storage, and structured audit logging.
 
 ### System Environment
 
 - **OS**: Tizen Embedded Linux (Tizen 10.0)
-- **Security**: SMACK + DAC enforced
-- **Kernel Protection**: kUEP (Kernel Unprivileged Execution Protection) enabled
+- **Runtime**: systemd daemon (`tizenclaw.service`)
+- **Security**: SMACK + DAC enforced, kUEP (Kernel Unprivileged Execution Protection) enabled
+- **Language**: C++17, Python 3.x (skills)
 
 ---
 
 ## 2. System Architecture
 
 ```mermaid
-graph TD
-    subgraph Tizen_Environment ["Tizen System / Kernel"]
-        SMACK["SMACK (Mandatory Access Control)"]
-        kUEP["kUEP (Kernel Unprivileged Execution Protection)"]
-        DeviceCAPI["Tizen Device C APIs (Native)"]
-        AppFW["Service Framework / D-Bus"]
+graph TB
+    subgraph External["External Channels"]
+        Telegram["Telegram Bot<br/>(Long Polling)"]
+        Slack["Slack Bot<br/>(Socket Mode / WebSocket)"]
+        Discord["Discord Bot<br/>(Gateway WebSocket)"]
+        MCP["MCP Client<br/>(Claude Desktop via sdb)"]
+        Webhook["Webhook<br/>(HTTP Inbound)"]
+        Voice["Voice<br/>(Tizen STT/TTS)"]
+        WebUI["Web Dashboard<br/>(port 9090)"]
     end
 
-    subgraph TizenClaw_Process ["TizenClaw Service App (C++)"]
-        CoreEngine["Agent Core (Prompt Analyzer & Planner)"]
-        PlatformAdapter["Tizen Platform API Adapter"]
-        MCPServerConn["MCP Server Connector"]
-        ContainerEngine["OCI Container Engine (crun/runc/LXC)"]
+    subgraph Daemon["TizenClaw Daemon (C++ / systemd)"]
+        ChannelReg["ChannelRegistry"]
+        IPC["IPC Server<br/>(Abstract Unix Socket)"]
 
-        CoreEngine --> PlatformAdapter
-        CoreEngine --> ContainerEngine
-        CoreEngine <--> MCPServerConn
-    end
-
-    subgraph Lightweight_Sandbox ["OCI Container Instance (Image Based)"]
-        subgraph Runtime ["Language Runtimes"]
-            PythonRT["Python 3.x Standalone"]
-            NodeRT["Node.js Standalone"]
+        subgraph Core["Agent Core"]
+            AgentCore["AgentCore<br/>(Agentic Loop)"]
+            SessionStore["SessionStore<br/>(Markdown Persistence)"]
+            TaskSched["TaskScheduler<br/>(Cron / Interval)"]
+            ToolPolicy["ToolPolicy<br/>(Risk + Loop Detection)"]
+            EmbStore["EmbeddingStore<br/>(SQLite RAG)"]
         end
 
-        subgraph Skills ["/opt/usr/share/tizenclaw/skills/"]
-            OpenClawSkill_Py["OpenClaw Skill (Python)"]
-            TizenWrapper_Py["Tizen C-API Wrapper (Python)"]
+        subgraph LLM["LLM Backend Layer"]
+            Factory["LlmBackendFactory"]
+            Gemini["Gemini"]
+            OpenAI["OpenAI / xAI"]
+            Anthropic["Anthropic"]
+            Ollama["Ollama"]
         end
 
-        PythonRT --> OpenClawSkill_Py
-        PythonRT --> TizenWrapper_Py
-        TizenWrapper_Py -. "ctypes/pybind11" .-> DeviceCAPI
+        subgraph Security["Security Layer"]
+            KeyStore["KeyStore<br/>(Encrypted API Keys)"]
+            AuditLog["AuditLogger<br/>(Markdown Tables)"]
+        end
+
+        subgraph Infra["Infrastructure"]
+            Container["ContainerEngine<br/>(crun OCI)"]
+            HttpClient["HttpClient<br/>(libcurl + retry)"]
+            SkillWatch["SkillWatcher<br/>(inotify)"]
+            WebDash["WebDashboard<br/>(libsoup SPA)"]
+        end
+
+        ChannelReg --> IPC
+        IPC --> AgentCore
+        AgentCore --> Factory
+        AgentCore --> Container
+        AgentCore --> SessionStore
+        AgentCore --> TaskSched
+        AgentCore --> ToolPolicy
+        AgentCore --> EmbStore
+        Factory --> Gemini & OpenAI & Anthropic & Ollama
+        Gemini & OpenAI & Anthropic & Ollama --> HttpClient
+        AgentCore --> KeyStore
+        AgentCore --> AuditLog
     end
 
-    AppFW -. "Manage Lifecycle" .-> TizenClaw_Process
-    SMACK -. "Apply Policies" .-> TizenClaw_Process
-    ContainerEngine -->|"Launch via crun with RootFS"| Lightweight_Sandbox
-    TizenClaw_Process -. "Bypass kUEP Policy" .-> Lightweight_Sandbox
+    subgraph Sandbox["OCI Container (crun)"]
+        SkillExec["Skill Executor<br/>(UDS IPC)"]
+        Skills["Python Skills<br/>(sandboxed)"]
+        SkillExec --> Skills
+    end
+
+    Telegram & Slack & Discord & Voice --> ChannelReg
+    MCP --> IPC
+    Webhook --> WebDash
+    WebUI --> WebDash
+    Container -->|"crun exec"| Sandbox
 ```
 
 ---
 
-## 3. Requirements
+## 3. Core Module Design
 
-### 3.1 Functional Requirements
+### 3.1 Daemon Process (`tizenclaw.cc`)
 
-- **Agent Core Runtime**: Native C++ based. Prompt-driven action planning. MCP integration
-- **Skills Execution Environment**: Dynamic loading from `/opt/usr/share/tizenclaw/skills/`. Tizen C API ctypes wrappers. OpenClaw skill compatibility
-- **OCI Container**: `crun`-based filesystem isolation. Alpine Linux RootFS. kUEP bypass support
+The main daemon process manages the overall lifecycle:
 
-### 3.2 Non-Functional Requirements
+- **systemd integration**: Runs as `Type=simple` service, handles `SIGINT`/`SIGTERM` for graceful shutdown
+- **IPC Server**: Abstract Unix Domain Socket (`\0tizenclaw.sock`) with length-prefix framing (`[4-byte len][JSON]`)
+- **UID Authentication**: `SO_PEERCRED`-based sender validation (root, app_fw, system, developer)
+- **Thread Pool**: `kMaxConcurrentClients = 4` concurrent request handling
+- **Channel Lifecycle**: Initializes and manages all channels via `ChannelRegistry`
 
-- **Deployment**: Tizen System Service App (C++ Native), signed with Platform/System privileges
-- **Runtime**: Python/Node.js encapsulated inside Container RootFS image (no host installation required)
+### 3.2 Agent Core (`agent_core.cc`)
+
+The central orchestration engine implementing the **Agentic Loop**:
+
+- **Iterative Tool Calling**: LLM generates tool calls → execute → feed results back → repeat (configurable `max_iterations`)
+- **Streaming Responses**: Chunked IPC delivery (`stream_chunk` / `stream_end`) with progressive Telegram message editing
+- **Context Compaction**: When exceeding 15 turns, oldest 10 turns are summarized via LLM into 1 compressed turn
+- **Multi-Session**: Concurrent agent sessions with per-session system prompts and history isolation
+- **Model Fallback**: Sequential retry across `fallback_backends` with rate-limit backoff
+- **Built-in Tools**: `execute_code`, `file_manager`, `create_task`, `list_tasks`, `cancel_task`, `create_session`, `list_sessions`, `send_to_session`, `ingest_document`, `search_knowledge`
+
+### 3.3 LLM Backend Layer
+
+Provider-agnostic abstraction via `LlmBackend` interface:
+
+| Backend | Source | Default Model | Streaming | Token Counting |
+|---------|--------|---------------|:---------:|:--------------:|
+| Gemini | `gemini_backend.cc` | `gemini-2.5-flash` | ✅ | ✅ |
+| OpenAI | `openai_backend.cc` | `gpt-4o` | ✅ | ✅ |
+| xAI (Grok) | `openai_backend.cc` | `grok-3` | ✅ | ✅ |
+| Anthropic | `anthropic_backend.cc` | `claude-sonnet-4-20250514` | ✅ | ✅ |
+| Ollama | `ollama_backend.cc` | `llama3` | ✅ | ✅ |
+
+- **Factory Pattern**: `LlmBackendFactory::Create()` instantiation
+- **Runtime Switching**: `active_backend` field in `llm_config.json`
+- **System Prompt**: 4-level fallback (config inline → file path → default file → hardcoded), `{{AVAILABLE_TOOLS}}` dynamic placeholder
+
+### 3.4 Container Engine (`container_engine.cc`)
+
+OCI-compliant skill execution environment:
+
+- **Runtime**: `crun` 1.26 (built from source during RPM packaging)
+- **Dual Architecture**: Standard Container (daemon) + Skills Secure Container (sandbox)
+- **Namespace Isolation**: PID, Mount, User namespaces
+- **Fallback**: `unshare + chroot` when cgroup unavailable
+- **Skill Executor IPC**: Length-prefixed JSON over Unix Domain Socket between daemon and containerized Python executor
+- **Host Bind-Mounts**: `/usr/bin`, `/usr/lib`, `/usr/lib64`, `/lib64` for Tizen C-API access
+
+### 3.5 Channel Abstraction Layer
+
+Unified `Channel` interface for all communication endpoints:
+
+```cpp
+class Channel {
+ public:
+  virtual std::string GetName() const = 0;
+  virtual bool Start() = 0;
+  virtual void Stop() = 0;
+  virtual bool IsRunning() const = 0;
+};
+```
+
+| Channel | Implementation | Protocol |
+|---------|---------------|----------|
+| Telegram | `telegram_client.cc` | Bot API Long-Polling |
+| Slack | `slack_channel.cc` | Socket Mode (libwebsockets) |
+| Discord | `discord_channel.cc` | Gateway WebSocket (libwebsockets) |
+| MCP | `mcp_server.cc` | stdio JSON-RPC 2.0 |
+| Webhook | `webhook_channel.cc` | HTTP inbound (libsoup) |
+| Voice | `voice_channel.cc` | Tizen STT/TTS C-API (conditional compilation) |
+| Web Dashboard | `web_dashboard.cc` | libsoup SPA (port 9090) |
+
+`ChannelRegistry` manages lifecycle (register, start/stop all, lookup by name).
+
+### 3.6 Security Subsystem
+
+| Component | File | Function |
+|-----------|------|----------|
+| **KeyStore** | `key_store.cc` | Device-bound API key encryption (GLib SHA-256 + XOR, `/etc/machine-id`) |
+| **ToolPolicy** | `tool_policy.cc` | Per-skill `risk_level`, loop detection (3x repeat block), idle progress check |
+| **AuditLogger** | `audit_logger.cc` | Markdown table audit files (`audit/YYYY-MM-DD.md`), daily rotation, 5MB limit |
+| **UID Auth** | `tizenclaw.cc` | `SO_PEERCRED` IPC sender validation |
+| **Webhook Auth** | `webhook_channel.cc` | HMAC-SHA256 signature validation (GLib `GHmac`) |
+
+### 3.7 Persistence & Storage
+
+All storage uses **Markdown with YAML frontmatter** (no external DB dependency except SQLite for RAG):
+
+```
+/opt/usr/share/tizenclaw/
+├── sessions/{YYYY-MM-DD}-{id}.md    ← Conversation history
+├── logs/{YYYY-MM-DD}.md             ← Daily skill execution logs
+├── usage/
+│   ├── {session-id}.md              ← Per-session token usage
+│   ├── daily/YYYY-MM-DD.md          ← Daily aggregate
+│   └── monthly/YYYY-MM.md           ← Monthly aggregate
+├── audit/YYYY-MM-DD.md              ← Audit trail
+├── tasks/task-{id}.md               ← Scheduled tasks
+└── knowledge/embeddings.db          ← SQLite vector store (RAG)
+```
+
+### 3.8 Task Scheduler (`task_scheduler.cc`)
+
+In-process automation with LLM integration:
+
+- **Schedule Types**: `daily HH:MM`, `interval Ns/Nm/Nh`, `once YYYY-MM-DD HH:MM`, `weekly DAY HH:MM`
+- **Execution**: Direct `AgentCore::ProcessPrompt()` call (no IPC slot consumption)
+- **Persistence**: Markdown with YAML frontmatter
+- **Retry**: Failed tasks retry with exponential backoff (max 3 retries)
+
+### 3.9 RAG / Semantic Search (`embedding_store.cc`)
+
+Knowledge retrieval beyond conversation history:
+
+- **Storage**: SQLite with brute-force cosine similarity (sufficient for embedded scale)
+- **Embedding APIs**: Gemini (`text-embedding-004`), OpenAI (`text-embedding-3-small`), Ollama
+- **Built-in Tools**: `ingest_document` (chunking + embedding), `search_knowledge` (cosine similarity query)
+
+### 3.10 Web Dashboard (`web_dashboard.cc`)
+
+Built-in administrative dashboard:
+
+- **Server**: libsoup `SoupServer` on port 9090
+- **Frontend**: Dark glassmorphism SPA (HTML+CSS+JS)
+- **REST API**: `/api/sessions`, `/api/tasks`, `/api/logs`, `/api/chat`, `/api/config`
+- **Admin Auth**: Session-token mechanism with SHA-256 password hashing
+- **Config Editor**: In-browser editing of 7 configuration files with backup-on-write
 
 ---
 
-## 4. Core Module Design
+## 4. Multi-Agent Orchestration Design
 
-### 4.1 System Service App
-- Based on Tizen Application Framework with full ecosystem integration
-- App Manager lifecycle management. System App privileges + SMACK exception policies
+TizenClaw currently supports **multi-session agent-to-agent messaging** (Phase 14.3). This section outlines the design direction for more advanced multi-agent patterns.
 
-### 4.2 Lightweight Container (Image-based) with kUEP Bypass
-- Direct execution of OCI-compatible `crun` runtime instead of Docker
-- Alpine Linux RootFS tarball → mounted at a designated path
-- OCI spec (`config.json`) assigns capabilities, namespace partitioning, and kUEP bypass
+### 4.1 Current State: Session-Based Agents
 
-### 4.3 Runtime Encapsulation
-- Python/Node.js encapsulated inside Container RootFS image
-- Skill scripts injected into container via external volume mounts
+```mermaid
+graph LR
+    User["User Prompt"]
+    MainAgent["Main Agent<br/>(default session)"]
+    SubAgent1["Research Agent<br/>(session: research)"]
+    SubAgent2["Code Agent<br/>(session: code)"]
 
-### 4.4 Dynamic Skills
-- **Skills directory**: `/opt/usr/share/tizenclaw/skills/`
-- AgentCore identifies required skills → executes `python3 skill.py` inside the container → parses `stdout` JSON
-- Tizen Device APIs are incrementally ported via `ctypes` Python wrappers
+    User --> MainAgent
+    MainAgent -->|"create_session<br/>+ send_to_session"| SubAgent1
+    MainAgent -->|"create_session<br/>+ send_to_session"| SubAgent2
+    SubAgent1 -->|"send_to_session"| MainAgent
+    SubAgent2 -->|"send_to_session"| MainAgent
+```
 
-### 4.5 MCP (Model Context Protocol) Integration
-- MCP Server Connector connects to external MCP clients via sockets/pipes
-- Data exchange using standard MCP format
+- Each session has its own system prompt and conversation history
+- `create_session`, `list_sessions`, `send_to_session` built-in tools
+- Sessions are isolated but can communicate via message passing
+
+### 4.2 Future: Supervisor Pattern
+
+A **Supervisor Agent** decomposes complex goals into sub-tasks and delegates to specialized role agents:
+
+```mermaid
+graph TD
+    Supervisor["Supervisor Agent<br/>(Goal Decomposition)"]
+    Planner["Planner Agent<br/>(Task Breakdown)"]
+    Executor["Executor Agent<br/>(Skill Dispatch)"]
+    Reviewer["Reviewer Agent<br/>(Result Validation)"]
+
+    Supervisor --> Planner
+    Planner --> Executor
+    Executor --> Reviewer
+    Reviewer -->|"retry / approve"| Supervisor
+```
+
+**Implementation Direction**:
+- `AgentRole` struct: role name, system prompt, allowed tools
+- `SupervisorLoop`: goal → plan → delegate → collect → validate → report
+- Configurable via `agent_roles.json`
+
+### 4.3 Future: A2A (Agent-to-Agent) Protocol
+
+For cross-device or cross-instance agent coordination:
+
+```mermaid
+graph LR
+    DeviceA["TizenClaw<br/>(Device A)"]
+    DeviceB["TizenClaw<br/>(Device B)"]
+    Cloud["Cloud Agent<br/>(External)"]
+
+    DeviceA <-->|"A2A JSON-RPC<br/>(HTTP/WebSocket)"| DeviceB
+    DeviceA <-->|"A2A"| Cloud
+```
+
+**Implementation Direction**:
+- A2A endpoint on WebDashboard HTTP server
+- Agent Card discovery (`.well-known/agent.json`)
+- Task lifecycle: submit → working → artifact → done
 
 ---
 
-## 5. Initial Development Phases (Phase 1–5)
+## 5. Skill / Tool Pipeline (Chain) Execution Design
 
-### Phase 1: Foundation Architecture ✅
-C++ System Service App skeleton, IPC design, Prompt Planner structure
+The current Agentic Loop executes tools **reactively** (LLM decides each step). This section proposes **proactive pipeline execution** for deterministic multi-step workflows.
 
-### Phase 2: Container Execution Environment ✅
-- `crun`-based OCI runtime integration, RootFS execution logic
-- Dynamic `config.json` generation, Namespace partitioning (User, PID, Mount, Network)
+### 5.1 Current: Reactive Agentic Loop
 
-### Phase 3: Imaging & Runtime Encapsulation ✅
-- Alpine + Python/Node.js RootFS tarball creation
-- RootFS included in RPM packaging, kUEP constraint bypass verified
+```mermaid
+sequenceDiagram
+    participant User
+    participant Agent as AgentCore
+    participant LLM
+    participant Skill
 
-### Phase 4: Skills System & API Wrapper ✅
-- Skill folder monitoring and manifest reading, ctypes Python wrappers
-- OpenClaw-compatible basic skill set verified
+    User->>Agent: prompt
+    loop max_iterations
+        Agent->>LLM: prompt + history
+        LLM->>Agent: tool_call(skill_A, args)
+        Agent->>Skill: execute skill_A
+        Skill->>Agent: result
+        Agent->>LLM: tool_result + history
+        LLM->>Agent: text response (or more tool_calls)
+    end
+    Agent->>User: final response
+```
 
-### Phase 5: MCP Server & End-to-End Validation ✅
-- MCP protocol connection completed, full pipeline established
-- LLM → Tizen Agent → Tizen API calls → LLM response
+### 5.2 Future: Deterministic Skill Pipeline
+
+Pre-defined sequences of skill executions with data flow between stages:
+
+```mermaid
+graph LR
+    Trigger["Trigger<br/>(user prompt / cron / webhook)"]
+    Step1["Step 1<br/>web_search(query)"]
+    Step2["Step 2<br/>execute_code(summarize)"]
+    Step3["Step 3<br/>send_to_session(report)"]
+
+    Trigger --> Step1 -->|"result → input"| Step2 -->|"summary → input"| Step3
+```
+
+**Design**:
+
+```json
+{
+  "pipeline_id": "daily_news_summary",
+  "trigger": "daily 09:00",
+  "steps": [
+    {"skill": "web_search", "args": {"query": "{{topic}}"}, "output_as": "search_result"},
+    {"skill": "execute_code", "args": {"code": "summarize({{search_result}})"}, "output_as": "summary"},
+    {"skill": "send_to_session", "args": {"session": "report", "message": "{{summary}}"}}
+  ]
+}
+```
+
+**Implementation Direction**:
+- `PipelineExecutor` class: load pipeline JSON → execute steps sequentially → pass outputs via `{{variable}}` interpolation
+- Error handling: per-step retry, skip-on-failure, rollback
+- Built-in tools: `create_pipeline`, `list_pipelines`, `run_pipeline`
+- Storage: `pipelines/pipeline-{id}.json`
+- Integration with `TaskScheduler` for cron-triggered pipelines
+
+### 5.3 Future: Conditional / Branching Pipelines
+
+```json
+{
+  "steps": [
+    {"skill": "get_battery_info", "output_as": "battery"},
+    {
+      "condition": "{{battery.level}} < 20",
+      "then": [{"skill": "vibrate_device", "args": {"duration_ms": 500}}],
+      "else": [{"skill": "execute_code", "args": {"code": "print('Battery OK')"}}]
+    }
+  ]
+}
+```
+
+---
+
+## 6. Future Enhancements / TODO
+
+### 6.1 New Features to Add
+
+| Feature | Priority | Description |
+|---------|:--------:|-------------|
+| **Supervisor Agent** | 🔴 High | Multi-agent goal decomposition and delegation |
+| **Skill Pipeline Engine** | 🔴 High | Deterministic sequential/conditional skill execution |
+| **A2A Protocol** | 🟡 Medium | Cross-device agent communication (JSON-RPC) |
+| **Browser Control** | 🟡 Medium | CDP (Chrome DevTools Protocol) integration for web automation |
+| **Wake Word Detection** | 🟡 Medium | Hardware mic-based voice activation (requires STT hardware) |
+| **Skill Marketplace** | 🟢 Low | Remote skill download, validation, and installation |
+| **OTA Update** | 🟢 Low | Over-the-air daemon and skill updates |
+| **Health Metrics** | 🟢 Low | Prometheus-style metrics for monitoring (CPU, memory, uptime) |
+
+### 6.2 Areas to Improve
+
+| Area | Current State | Improvement Direction |
+|------|--------------|----------------------|
+| **RAG Scalability** | Brute-force cosine similarity | ANN index (HNSW) for large document sets |
+| **Token Budgeting** | Token counting after response | Pre-request token estimation to prevent context overflow |
+| **Concurrent Tasks** | Sequential task execution | Parallel task execution with dependency graph |
+| **Skill Output Validation** | Raw stdout JSON | JSON schema validation per skill |
+| **Error Recovery** | Crash loses in-flight requests | Request journaling for crash recovery |
+| **Log Aggregation** | Local Markdown files | Remote syslog or structured log forwarding |
+
+---
+
+## 7. Requirements Summary
+
+### 7.1 Functional Requirements
+
+- **Agent Core**: Native C++ daemon with multi-LLM Agentic Loop, streaming, context compaction
+- **Skills Execution**: OCI container-isolated Python skills with inotify hot-reload
+- **Communication**: 7 channels (Telegram, Slack, Discord, MCP, Webhook, Voice, Web)
+- **Security**: Encrypted keys, tool policy, audit logging, UID/HMAC authentication
+- **Automation**: Cron/interval task scheduler with LLM integration
+- **Knowledge**: SQLite-backed RAG with embedding search
+- **Administration**: Web dashboard with config editor and admin authentication
+
+### 7.2 Non-Functional Requirements
+
+- **Deployment**: systemd service, RPM packaging via GBS
+- **Runtime**: Python encapsulated inside Container RootFS (no host installation required)
+- **Performance**: Native C++ for low memory/CPU footprint on embedded devices
+- **Reliability**: Model fallback, exponential backoff, failed task retry
