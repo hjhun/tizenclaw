@@ -4,6 +4,16 @@
 
     const API = '';  // Same origin
 
+    // --- Auth State ---
+    let authToken =
+        sessionStorage.getItem('admin_token');
+
+    function getAuthHeaders() {
+        return authToken
+            ? { 'Authorization': 'Bearer ' + authToken }
+            : {};
+    }
+
     // --- Navigation ---
     const navItems =
         document.querySelectorAll('.nav-item');
@@ -23,11 +33,11 @@
         if (navEl) navEl.classList.add('active');
         if (pageEl) pageEl.classList.add('active');
 
-        // Load data for the page
         if (page === 'dashboard') loadDashboard();
         else if (page === 'sessions') loadSessions();
         else if (page === 'tasks') loadTasks();
         else if (page === 'logs') loadLogs();
+        else if (page === 'admin') loadAdmin();
     }
 
     navItems.forEach(item => {
@@ -37,10 +47,14 @@
     });
 
     // --- API Helpers ---
-    async function apiFetch(endpoint) {
+    async function apiFetch(endpoint, opts) {
         try {
+            const headers = Object.assign(
+                {}, getAuthHeaders(),
+                (opts && opts.headers) || {});
             const res = await fetch(
-                API + '/api/' + endpoint);
+                API + '/api/' + endpoint,
+                Object.assign({}, opts, { headers }));
             return await res.json();
         } catch (e) {
             console.error('API error:', e);
@@ -49,20 +63,13 @@
     }
 
     async function apiPost(endpoint, body) {
-        try {
-            const res = await fetch(
-                API + '/api/' + endpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(body)
-            });
-            return await res.json();
-        } catch (e) {
-            console.error('API error:', e);
-            return null;
-        }
+        return apiFetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+        });
     }
 
     // --- Dashboard ---
@@ -165,7 +172,6 @@
         document.getElementById('chat-session');
 
     function addChatMsg(role, text) {
-        // Remove welcome message if present
         const welcome =
             chatMessages.querySelector('.chat-welcome');
         if (welcome) welcome.remove();
@@ -211,6 +217,293 @@
             sendChat();
         }
     });
+
+    // ==========================
+    // Admin Page
+    // ==========================
+
+    const CONFIG_LABELS = {
+        'llm_config': 'LLM Configuration',
+        'telegram_config': 'Telegram Bot',
+        'slack_config': 'Slack Integration',
+        'discord_config': 'Discord Bot',
+        'webhook_config': 'Webhook Routes',
+        'tool_policy': 'Tool Policy',
+        'system_prompt': 'System Prompt'
+    };
+
+    function loadAdmin() {
+        if (authToken) {
+            showAdminPanel();
+        } else {
+            showLoginForm();
+        }
+    }
+
+    function showLoginForm() {
+        document.getElementById('admin-login')
+            .style.display = '';
+        document.getElementById('admin-panel')
+            .style.display = 'none';
+    }
+
+    function showAdminPanel() {
+        document.getElementById('admin-login')
+            .style.display = 'none';
+        document.getElementById('admin-panel')
+            .style.display = '';
+        loadConfigs();
+    }
+
+    // --- Login ---
+    document.getElementById('admin-login-btn')
+        .addEventListener('click', doLogin);
+    document.getElementById('admin-password')
+        .addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') doLogin();
+        });
+
+    async function doLogin() {
+        const pw = document.getElementById(
+            'admin-password').value;
+        const errEl = document.getElementById(
+            'login-error');
+        errEl.textContent = '';
+
+        if (!pw) {
+            errEl.textContent = 'Password required';
+            return;
+        }
+
+        const resp = await apiPost(
+            'auth/login', { password: pw });
+
+        if (resp && resp.status === 'ok') {
+            authToken = resp.token;
+            sessionStorage.setItem(
+                'admin_token', authToken);
+            document.getElementById(
+                'admin-password').value = '';
+            showAdminPanel();
+        } else {
+            errEl.textContent =
+                (resp && resp.error) ||
+                'Login failed';
+        }
+    }
+
+    // --- Logout ---
+    document.getElementById('admin-logout-btn')
+        .addEventListener('click', () => {
+            authToken = null;
+            sessionStorage.removeItem('admin_token');
+            showLoginForm();
+        });
+
+    // --- Password Change ---
+    document.getElementById('admin-change-pw-btn')
+        .addEventListener('click', () => {
+            const f = document.getElementById(
+                'pw-change-form');
+            f.style.display =
+                f.style.display === 'none' ? '' : 'none';
+        });
+
+    document.getElementById('pw-cancel-btn')
+        .addEventListener('click', () => {
+            document.getElementById('pw-change-form')
+                .style.display = 'none';
+        });
+
+    document.getElementById('pw-save-btn')
+        .addEventListener('click', async () => {
+            const cur = document.getElementById(
+                'pw-current').value;
+            const nw = document.getElementById(
+                'pw-new').value;
+            const msg = document.getElementById(
+                'pw-change-msg');
+
+            if (!cur || !nw) {
+                msg.textContent = 'Fill in both fields';
+                msg.style.color = 'var(--danger)';
+                return;
+            }
+
+            const resp = await apiPost(
+                'auth/change_password', {
+                current_password: cur,
+                new_password: nw
+            });
+
+            if (resp && resp.status === 'ok') {
+                msg.textContent = 'Password changed!';
+                msg.style.color = 'var(--success)';
+                document.getElementById(
+                    'pw-current').value = '';
+                document.getElementById(
+                    'pw-new').value = '';
+                setTimeout(() => {
+                    document.getElementById(
+                        'pw-change-form').style.display =
+                        'none';
+                    msg.textContent = '';
+                }, 2000);
+            } else {
+                msg.textContent =
+                    (resp && resp.error) || 'Failed';
+                msg.style.color = 'var(--danger)';
+            }
+        });
+
+    // --- Config Management ---
+    async function loadConfigs() {
+        const list = document.getElementById(
+            'config-list');
+        const data = await apiFetch('config/list');
+
+        if (!data || !data.configs) {
+            list.innerHTML =
+                '<p class="empty-state">' +
+                'Failed to load configs</p>';
+            return;
+        }
+
+        list.innerHTML = data.configs.map(c => {
+            const label =
+                CONFIG_LABELS[c.name] || c.name;
+            const statusClass =
+                c.exists ? 'exists' : '';
+            const statusText =
+                c.exists ? '● Active' : '○ Not configured';
+
+            return '<div class="config-card"' +
+                ' data-config="' + escHtml(c.name) + '">' +
+                '<div class="config-card-header">' +
+                '<span class="config-card-title">' +
+                escHtml(label) + '</span>' +
+                '<span class="config-card-status ' +
+                statusClass + '">' +
+                statusText + '</span>' +
+                '</div>' +
+                '<div class="config-card-body"' +
+                ' id="config-body-' +
+                escHtml(c.name) + '">' +
+                '<textarea class="config-editor"' +
+                ' id="config-editor-' +
+                escHtml(c.name) + '">' +
+                'Loading...</textarea>' +
+                '<div class="config-actions">' +
+                '<button class="btn-outline config-reload"' +
+                ' data-config="' + escHtml(c.name) +
+                '">Reload</button>' +
+                '<button class="btn-send config-save"' +
+                ' data-config="' + escHtml(c.name) +
+                '">Save</button></div>' +
+                '<p class="config-msg"' +
+                ' id="config-msg-' +
+                escHtml(c.name) + '"></p>' +
+                '</div></div>';
+        }).join('');
+
+        // Toggle body on header click
+        list.querySelectorAll(
+            '.config-card-header').forEach(hdr => {
+                hdr.addEventListener('click', () => {
+                    const name = hdr.parentElement
+                        .dataset.config;
+                    const body = document.getElementById(
+                        'config-body-' + name);
+                    const isOpen =
+                        body.classList.contains('open');
+                    if (!isOpen) {
+                        body.classList.add('open');
+                        loadConfigContent(name);
+                    } else {
+                        body.classList.remove('open');
+                    }
+                });
+            });
+
+        // Save buttons
+        list.querySelectorAll('.config-save')
+            .forEach(btn => {
+                btn.addEventListener('click', () => {
+                    saveConfig(btn.dataset.config);
+                });
+            });
+
+        // Reload buttons
+        list.querySelectorAll('.config-reload')
+            .forEach(btn => {
+                btn.addEventListener('click', () => {
+                    loadConfigContent(btn.dataset.config);
+                });
+            });
+    }
+
+    async function loadConfigContent(name) {
+        const editor = document.getElementById(
+            'config-editor-' + name);
+        const msg = document.getElementById(
+            'config-msg-' + name);
+        msg.textContent = '';
+        msg.className = 'config-msg';
+
+        const resp = await apiFetch(
+            'config/' + name);
+
+        if (resp && resp.status === 'ok') {
+            editor.value = resp.content;
+        } else if (resp && resp.sample) {
+            editor.value = resp.sample;
+            msg.textContent =
+                'No config found — showing sample';
+            msg.className = 'config-msg error';
+        } else {
+            editor.value = '';
+            msg.textContent =
+                (resp && resp.error) || 'Load failed';
+            msg.className = 'config-msg error';
+        }
+    }
+
+    async function saveConfig(name) {
+        const editor = document.getElementById(
+            'config-editor-' + name);
+        const msg = document.getElementById(
+            'config-msg-' + name);
+        const content = editor.value;
+
+        // Validate JSON (except system_prompt)
+        if (name !== 'system_prompt') {
+            try {
+                JSON.parse(content);
+            } catch (e) {
+                msg.textContent =
+                    'Invalid JSON: ' + e.message;
+                msg.className = 'config-msg error';
+                return;
+            }
+        }
+
+        msg.textContent = 'Saving...';
+        msg.className = 'config-msg';
+
+        const resp = await apiPost(
+            'config/' + name, { content: content });
+
+        if (resp && resp.status === 'ok') {
+            msg.textContent = 'Saved successfully!';
+            msg.className = 'config-msg success';
+            // Refresh header status
+            loadConfigs();
+        } else {
+            msg.textContent =
+                (resp && resp.error) || 'Save failed';
+            msg.className = 'config-msg error';
+        }
+    }
 
     // --- Utility ---
     function escHtml(s) {

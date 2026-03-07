@@ -4,6 +4,9 @@
 #include <string>
 #include <thread>
 #include <atomic>
+#include <set>
+#include <vector>
+#include <mutex>
 #include <libsoup/soup.h>
 
 #include "channel.hh"
@@ -63,6 +66,32 @@ private:
   void ApiChat(SoupMessage* msg) const;
   void ApiStatus(SoupMessage* msg) const;
 
+  // Auth endpoints
+  void ApiAuthLogin(SoupMessage* msg);
+  void ApiAuthChangePassword(SoupMessage* msg);
+  bool ValidateToken(
+      SoupMessage* msg) const;
+  std::string HashPassword(
+      const std::string& pw) const;
+  std::string GenerateToken() const;
+  void LoadAdminPassword();
+  void SaveAdminPassword();
+
+  // Config endpoints
+  void ApiConfigList(SoupMessage* msg) const;
+  void ApiConfigGet(
+      SoupMessage* msg,
+      const std::string& name) const;
+  void ApiConfigSet(
+      SoupMessage* msg,
+      const std::string& name);
+  bool IsAllowedConfig(
+      const std::string& name) const;
+  std::string ConfigFilePath(
+      const std::string& name) const;
+  std::string SampleFilePath(
+      const std::string& name) const;
+
   AgentCore* agent_;
   TaskScheduler* scheduler_;
   SoupServer* server_ = nullptr;
@@ -73,6 +102,17 @@ private:
   // Configuration
   int port_ = 9090;
   std::string web_root_;
+  std::string config_dir_;
+
+  // Auth state
+  std::string admin_password_hash_;
+  std::string admin_pw_file_;
+  mutable std::mutex tokens_mutex_;
+  std::set<std::string> active_tokens_;
+
+  // Allowed config names
+  static const std::vector<std::string>
+      kAllowedConfigs;
 };
 
 }  // namespace tizenclaw

@@ -1,82 +1,77 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport"
-    content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TizenClaw Dashboard</title>
-  <meta name="description"
-    content="TizenClaw AI Agent System Dashboard">
+  <meta name="description" content="TizenClaw AI Agent System Dashboard">
   <link rel="stylesheet" href="/style.css">
-  <link rel="preconnect"
-    href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
     rel="stylesheet">
 </head>
+
 <body>
   <div class="app">
     <nav class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <h1 class="logo">
-          <span class="logo-icon">🐾</span>
+          <img src="/img/tizenclaw.jpg" alt="TizenClaw" class="logo-img">
           TizenClaw
         </h1>
         <span class="version">v1.0.0</span>
       </div>
       <ul class="nav-items">
-        <li class="nav-item active"
-          data-page="dashboard" id="nav-dashboard">
+        <li class="nav-item active" data-page="dashboard" id="nav-dashboard">
           <span class="nav-icon">📊</span>
           Dashboard
         </li>
-        <li class="nav-item"
-          data-page="sessions" id="nav-sessions">
+        <li class="nav-item" data-page="sessions" id="nav-sessions">
           <span class="nav-icon">💬</span>
           Sessions
         </li>
-        <li class="nav-item"
-          data-page="tasks" id="nav-tasks">
+        <li class="nav-item" data-page="tasks" id="nav-tasks">
           <span class="nav-icon">📋</span>
           Tasks
         </li>
-        <li class="nav-item"
-          data-page="logs" id="nav-logs">
+        <li class="nav-item" data-page="logs" id="nav-logs">
           <span class="nav-icon">📜</span>
           Logs
         </li>
-        <li class="nav-item"
-          data-page="chat" id="nav-chat">
+        <li class="nav-item" data-page="chat" id="nav-chat">
           <span class="nav-icon">🤖</span>
           Chat
+        </li>
+        <li class="nav-divider"></li>
+        <li class="nav-item" data-page="admin" id="nav-admin">
+          <span class="nav-icon">⚙️</span>
+          Admin
         </li>
       </ul>
     </nav>
 
     <main class="content" id="content">
       <!-- Dashboard Page -->
-      <section class="page active"
-        id="page-dashboard">
+      <section class="page active" id="page-dashboard">
         <h2 class="page-title">Dashboard</h2>
         <div class="stats-grid" id="stats-grid">
           <div class="stat-card">
             <div class="stat-label">Status</div>
-            <div class="stat-value"
-              id="stat-status">—</div>
+            <div class="stat-value" id="stat-status">—</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Sessions</div>
-            <div class="stat-value"
-              id="stat-sessions">—</div>
+            <div class="stat-value" id="stat-sessions">—</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Tasks</div>
-            <div class="stat-value"
-              id="stat-tasks">—</div>
+            <div class="stat-value" id="stat-tasks">—</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Version</div>
-            <div class="stat-value"
-              id="stat-version">—</div>
+            <div class="stat-value" id="stat-version">—</div>
           </div>
         </div>
       </section>
@@ -103,8 +98,7 @@
       <section class="page" id="page-logs">
         <h2 class="page-title">Audit Logs</h2>
         <div class="log-container" id="log-view">
-          <pre class="log-content"
-            id="log-content">Loading...</pre>
+          <pre class="log-content" id="log-content">Loading...</pre>
         </div>
       </section>
 
@@ -116,23 +110,74 @@
             <label for="chat-session">
               Session:
             </label>
-            <input type="text" id="chat-session"
-              value="web_dashboard"
-              placeholder="session id">
+            <input type="text" id="chat-session" value="web_dashboard" placeholder="session id">
           </div>
-          <div class="chat-messages"
-            id="chat-messages">
+          <div class="chat-messages" id="chat-messages">
             <div class="chat-welcome">
               Type a message to start chatting
               with TizenClaw.
             </div>
           </div>
           <div class="chat-input-area">
-            <textarea id="chat-input"
-              placeholder="Type your message..."
-              rows="2"></textarea>
-            <button id="chat-send"
-              class="btn-send">Send</button>
+            <textarea id="chat-input" placeholder="Type your message..." rows="2"></textarea>
+            <button id="chat-send" class="btn-send">Send</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Admin Page -->
+      <section class="page" id="page-admin">
+        <h2 class="page-title">Admin</h2>
+
+        <!-- Login Form (shown when not authed) -->
+        <div id="admin-login" class="admin-login">
+          <div class="login-card">
+            <img src="/img/tizenclaw.jpg" alt="TizenClaw" class="login-logo">
+            <h3>Admin Login</h3>
+            <div class="form-group">
+              <input type="password" id="admin-password" placeholder="Password" autocomplete="current-password">
+            </div>
+            <button id="admin-login-btn" class="btn-send btn-full">
+              Login
+            </button>
+            <p class="login-error" id="login-error"></p>
+          </div>
+        </div>
+
+        <!-- Admin Panel (shown when authed) -->
+        <div id="admin-panel" class="admin-panel" style="display:none">
+          <div class="admin-toolbar">
+            <div class="admin-toolbar-left">
+              <span class="admin-badge">
+                🔐 Authenticated
+              </span>
+            </div>
+            <div class="admin-toolbar-right">
+              <button id="admin-change-pw-btn" class="btn-outline">
+                Change Password
+              </button>
+              <button id="admin-logout-btn" class="btn-outline btn-danger-outline">
+                Logout
+              </button>
+            </div>
+          </div>
+
+          <!-- Password Change (hidden) -->
+          <div id="pw-change-form" class="pw-change-form" style="display:none">
+            <div class="form-row">
+              <input type="password" id="pw-current" placeholder="Current password">
+              <input type="password" id="pw-new" placeholder="New password">
+              <button id="pw-save-btn" class="btn-send">Save</button>
+              <button id="pw-cancel-btn" class="btn-outline">Cancel</button>
+            </div>
+            <p class="pw-change-msg" id="pw-change-msg"></p>
+          </div>
+
+          <!-- Config Cards -->
+          <div class="config-list" id="config-list">
+            <p class="empty-state">
+              Loading configurations...
+            </p>
           </div>
         </div>
       </section>
@@ -140,4 +185,5 @@
   </div>
   <script src="/app.js"></script>
 </body>
+
 </html>

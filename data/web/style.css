@@ -64,8 +64,23 @@ body {
     gap: 8px;
 }
 
+.logo-img {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    object-fit: cover;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
 .logo-icon {
     font-size: 1.5rem;
+}
+
+.nav-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 8px 0;
+    list-style: none;
 }
 
 .version {
@@ -389,4 +404,238 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.2);
+}
+
+/* --- Admin Page --- */
+.admin-login {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: calc(100vh - 200px);
+}
+
+.login-card {
+    background: var(--bg-card);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 40px;
+    text-align: center;
+    width: 340px;
+    animation: fadeIn 0.4s ease;
+}
+
+.login-logo {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-bottom: 16px;
+    box-shadow: 0 4px 24px rgba(99, 102, 241, 0.3);
+}
+
+.login-card h3 {
+    font-size: 1.1rem;
+    margin-bottom: 20px;
+    color: #fff;
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group input,
+.form-row input {
+    width: 100%;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    color: var(--text-primary);
+    font-size: 0.88rem;
+    outline: none;
+}
+
+.form-group input:focus,
+.form-row input:focus {
+    border-color: var(--accent);
+}
+
+.btn-full {
+    width: 100%;
+}
+
+.login-error {
+    color: var(--danger);
+    font-size: 0.8rem;
+    margin-top: 12px;
+    min-height: 1.2em;
+}
+
+/* Admin Toolbar */
+.admin-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.admin-toolbar-right {
+    display: flex;
+    gap: 8px;
+}
+
+.admin-badge {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--success);
+    padding: 6px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.btn-outline {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    padding: 8px 16px;
+    border-radius: var(--radius-sm);
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-outline:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+}
+
+.btn-danger-outline:hover {
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+/* Password Change */
+.pw-change-form {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+.form-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.form-row input {
+    flex: 1;
+}
+
+.pw-change-msg {
+    font-size: 0.8rem;
+    margin-top: 8px;
+    min-height: 1.2em;
+}
+
+/* Config Cards */
+.config-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.config-card {
+    background: var(--bg-card);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: border-color 0.2s;
+}
+
+.config-card:hover {
+    border-color: rgba(99, 102, 241, 0.3);
+}
+
+.config-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 20px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.config-card-header:hover {
+    background: var(--bg-glass);
+}
+
+.config-card-title {
+    font-weight: 600;
+    font-size: 0.92rem;
+    color: #fff;
+}
+
+.config-card-status {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.config-card-status.exists {
+    color: var(--success);
+}
+
+.config-card-body {
+    display: none;
+    padding: 0 20px 16px;
+}
+
+.config-card-body.open {
+    display: block;
+}
+
+.config-editor {
+    width: 100%;
+    min-height: 200px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    color: var(--text-primary);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    resize: vertical;
+    outline: none;
+    tab-size: 2;
+}
+
+.config-editor:focus {
+    border-color: var(--accent);
+}
+
+.config-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.config-msg {
+    font-size: 0.78rem;
+    margin-top: 8px;
+    min-height: 1em;
+}
+
+.config-msg.success {
+    color: var(--success);
+}
+
+.config-msg.error {
+    color: var(--danger);
 }

@@ -7,7 +7,11 @@
 #include <fstream>
 #include <sstream>
 #include <cstring>
+#include <cstdlib>
+#include <cctype>
+#include <ctime>
 #include <sys/stat.h>
+#include <dirent.h>
 
 namespace tizenclaw {
 
@@ -18,6 +22,11 @@ WebDashboard::WebDashboard(
       scheduler_(scheduler) {
   web_root_ =
       std::string(APP_DATA_DIR) + "/web";
+  config_dir_ =
+      std::string(APP_DATA_DIR) + "/config";
+  admin_pw_file_ =
+      config_dir_ + "/admin_password.json";
+  LoadAdminPassword();
 }
 
 WebDashboard::~WebDashboard() {
@@ -78,7 +87,7 @@ void WebDashboard::HandleRequest(
   soup_message_headers_append(
       resp_headers,
       "Access-Control-Allow-Headers",
-      "Content-Type");
+      "Content-Type, Authorization");
 
   // Handle OPTIONS (CORS preflight)
   if (msg->method == SOUP_METHOD_OPTIONS) {
@@ -112,6 +121,24 @@ void WebDashboard::HandleApi(
     ApiLogs(msg);
   } else if (path == "/api/chat") {
     ApiChat(msg);
+  } else if (path == "/api/auth/login") {
+    const_cast<WebDashboard*>(this)
+        ->ApiAuthLogin(msg);
+  } else if (path ==
+      "/api/auth/change_password") {
+    const_cast<WebDashboard*>(this)
+        ->ApiAuthChangePassword(msg);
+  } else if (path == "/api/config/list") {
+    ApiConfigList(msg);
+  } else if (path.substr(0, 12) ==
+      "/api/config/") {
+    std::string name = path.substr(12);
+    if (msg->method == SOUP_METHOD_POST) {
+      const_cast<WebDashboard*>(this)
+          ->ApiConfigSet(msg, name);
+    } else {
+      ApiConfigGet(msg, name);
+    }
   } else {
     soup_message_set_status(
         msg, SOUP_STATUS_NOT_FOUND);
@@ -170,6 +197,9 @@ void WebDashboard::ServeStaticFile(
       content_type = "image/png";
     } else if (ext == ".svg") {
       content_type = "image/svg+xml";
+    } else if (ext == ".jpg" ||
+               ext == ".jpeg") {
+      content_type = "image/jpeg";
     }
   }
 
@@ -480,6 +510,466 @@ void WebDashboard::Stop() {
   }
 
   LOG(INFO) << "WebDashboard stopped.";
+}
+
+}  // namespace tizenclaw
+
+// Auth and Config implementations below
+namespace tizenclaw {
+
+const std::vector<std::string>
+    WebDashboard::kAllowedConfigs = {
+  "llm_config",
+  "telegram_config",
+  "slack_config",
+  "discord_config",
+  "webhook_config",
+  "tool_policy",
+  "system_prompt"
+};
+
+// --- Auth helpers ---
+
+std::string WebDashboard::HashPassword(
+    const std::string& pw) const {
+  gchar* checksum =
+      g_compute_checksum_for_string(
+          G_CHECKSUM_SHA256,
+          pw.c_str(),
+          static_cast<gssize>(pw.size()));
+  std::string result(checksum);
+  g_free(checksum);
+  return result;
+}
+
+std::string WebDashboard::GenerateToken()
+    const {
+  // Simple random hex token
+  char buf[33];
+  std::srand(
+      static_cast<unsigned>(
+          std::time(nullptr)) ^
+      static_cast<unsigned>(
+          reinterpret_cast<uintptr_t>(&buf)));
+  for (int i = 0; i < 32; ++i) {
+    buf[i] = "0123456789abcdef"[
+        std::rand() % 16];
+  }
+  buf[32] = '\0';
+  return std::string(buf, 32);
+}
+
+void WebDashboard::LoadAdminPassword() {
+  // Default: sha256("admin")
+  admin_password_hash_ =
+      HashPassword("admin");
+
+  std::ifstream f(admin_pw_file_);
+  if (f.is_open()) {
+    try {
+      nlohmann::json j;
+      f >> j;
+      admin_password_hash_ =
+          j.value("password_hash",
+                  admin_password_hash_);
+    } catch (...) {
+      LOG(WARNING)
+          << "Failed to load admin password";
+    }
+  }
+}
+
+void WebDashboard::SaveAdminPassword() {
+  nlohmann::json j = {
+      {"password_hash", admin_password_hash_}
+  };
+  std::ofstream f(admin_pw_file_);
+  if (f.is_open()) {
+    f << j.dump(2);
+  }
+}
+
+bool WebDashboard::ValidateToken(
+    SoupMessage* msg) const {
+  const char* auth =
+      soup_message_headers_get_one(
+          msg->request_headers,
+          "Authorization");
+  if (!auth) return false;
+
+  std::string hdr(auth);
+  if (hdr.substr(0, 7) != "Bearer ")
+    return false;
+
+  std::string token = hdr.substr(7);
+  std::lock_guard<std::mutex> lock(
+      tokens_mutex_);
+  return active_tokens_.count(token) > 0;
+}
+
+void WebDashboard::ApiAuthLogin(
+    SoupMessage* msg) {
+  if (msg->method != SOUP_METHOD_POST) {
+    soup_message_set_status(
+        msg, SOUP_STATUS_METHOD_NOT_ALLOWED);
+    return;
+  }
+
+  SoupMessageBody* body = msg->request_body;
+  std::string payload;
+  if (body && body->data && body->length > 0)
+    payload.assign(body->data, body->length);
+
+  std::string password;
+  try {
+    auto j = nlohmann::json::parse(payload);
+    password = j.value("password", "");
+  } catch (...) {
+    password = payload;
+  }
+
+  if (HashPassword(password) ==
+      admin_password_hash_) {
+    std::string token = GenerateToken();
+    {
+      std::lock_guard<std::mutex> lock(
+          tokens_mutex_);
+      active_tokens_.insert(token);
+    }
+
+    nlohmann::json resp = {
+        {"status", "ok"},
+        {"token", token}
+    };
+    std::string r = resp.dump();
+    soup_message_set_status(
+        msg, SOUP_STATUS_OK);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        r.c_str(),
+        static_cast<gsize>(r.size()));
+    LOG(INFO) << "Admin login successful";
+  } else {
+    nlohmann::json resp = {
+        {"status", "error"},
+        {"error", "Invalid password"}
+    };
+    std::string r = resp.dump();
+    soup_message_set_status(
+        msg, SOUP_STATUS_UNAUTHORIZED);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        r.c_str(),
+        static_cast<gsize>(r.size()));
+    LOG(WARNING) << "Admin login failed";
+  }
+}
+
+void WebDashboard::ApiAuthChangePassword(
+    SoupMessage* msg) {
+  if (msg->method != SOUP_METHOD_POST) {
+    soup_message_set_status(
+        msg, SOUP_STATUS_METHOD_NOT_ALLOWED);
+    return;
+  }
+
+  if (!ValidateToken(msg)) {
+    soup_message_set_status(
+        msg, SOUP_STATUS_UNAUTHORIZED);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        "{\"error\":\"Unauthorized\"}", 24);
+    return;
+  }
+
+  SoupMessageBody* body = msg->request_body;
+  std::string payload;
+  if (body && body->data && body->length > 0)
+    payload.assign(body->data, body->length);
+
+  try {
+    auto j = nlohmann::json::parse(payload);
+    std::string cur =
+        j.value("current_password", "");
+    std::string nw =
+        j.value("new_password", "");
+
+    if (HashPassword(cur) !=
+        admin_password_hash_) {
+      nlohmann::json r = {
+          {"status", "error"},
+          {"error",
+           "Current password incorrect"}
+      };
+      std::string s = r.dump();
+      soup_message_set_status(
+          msg, SOUP_STATUS_FORBIDDEN);
+      soup_message_set_response(
+          msg, "application/json",
+          SOUP_MEMORY_COPY,
+          s.c_str(),
+          static_cast<gsize>(s.size()));
+      return;
+    }
+
+    if (nw.empty()) {
+      nlohmann::json r = {
+          {"status", "error"},
+          {"error", "New password empty"}
+      };
+      std::string s = r.dump();
+      soup_message_set_status(
+          msg, SOUP_STATUS_BAD_REQUEST);
+      soup_message_set_response(
+          msg, "application/json",
+          SOUP_MEMORY_COPY,
+          s.c_str(),
+          static_cast<gsize>(s.size()));
+      return;
+    }
+
+    admin_password_hash_ = HashPassword(nw);
+    SaveAdminPassword();
+
+    nlohmann::json r = {{"status", "ok"}};
+    std::string s = r.dump();
+    soup_message_set_status(
+        msg, SOUP_STATUS_OK);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        s.c_str(),
+        static_cast<gsize>(s.size()));
+    LOG(INFO) << "Admin password changed";
+  } catch (...) {
+    soup_message_set_status(
+        msg, SOUP_STATUS_BAD_REQUEST);
+  }
+}
+
+// --- Config helpers ---
+
+bool WebDashboard::IsAllowedConfig(
+    const std::string& name) const {
+  for (const auto& c : kAllowedConfigs) {
+    if (c == name) return true;
+  }
+  return false;
+}
+
+std::string WebDashboard::ConfigFilePath(
+    const std::string& name) const {
+  if (name == "system_prompt")
+    return config_dir_ + "/system_prompt.txt";
+  return config_dir_ + "/" + name + ".json";
+}
+
+std::string WebDashboard::SampleFilePath(
+    const std::string& name) const {
+  if (name == "system_prompt")
+    return config_dir_ + "/system_prompt.txt";
+  return config_dir_ + "/" + name +
+      ".json.sample";
+}
+
+void WebDashboard::ApiConfigList(
+    SoupMessage* msg) const {
+  if (!ValidateToken(msg)) {
+    soup_message_set_status(
+        msg, SOUP_STATUS_UNAUTHORIZED);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        "{\"error\":\"Unauthorized\"}", 24);
+    return;
+  }
+
+  nlohmann::json configs =
+      nlohmann::json::array();
+  for (const auto& name : kAllowedConfigs) {
+    std::string fpath = ConfigFilePath(name);
+    struct stat st;
+    bool exists =
+        (stat(fpath.c_str(), &st) == 0);
+    configs.push_back({
+        {"name", name},
+        {"exists", exists}
+    });
+  }
+
+  nlohmann::json resp = {
+      {"status", "ok"},
+      {"configs", configs}
+  };
+  std::string r = resp.dump();
+  soup_message_set_status(
+      msg, SOUP_STATUS_OK);
+  soup_message_set_response(
+      msg, "application/json",
+      SOUP_MEMORY_COPY,
+      r.c_str(),
+      static_cast<gsize>(r.size()));
+}
+
+void WebDashboard::ApiConfigGet(
+    SoupMessage* msg,
+    const std::string& name) const {
+  if (!ValidateToken(msg)) {
+    soup_message_set_status(
+        msg, SOUP_STATUS_UNAUTHORIZED);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        "{\"error\":\"Unauthorized\"}", 24);
+    return;
+  }
+
+  if (!IsAllowedConfig(name)) {
+    soup_message_set_status(
+        msg, SOUP_STATUS_FORBIDDEN);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        "{\"error\":\"Not allowed\"}", 23);
+    return;
+  }
+
+  std::string fpath = ConfigFilePath(name);
+  std::ifstream f(fpath);
+  if (f.is_open()) {
+    std::string content(
+        (std::istreambuf_iterator<char>(f)),
+        std::istreambuf_iterator<char>());
+    nlohmann::json resp = {
+        {"status", "ok"},
+        {"name", name},
+        {"content", content}
+    };
+    std::string r = resp.dump();
+    soup_message_set_status(
+        msg, SOUP_STATUS_OK);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        r.c_str(),
+        static_cast<gsize>(r.size()));
+  } else {
+    // Try sample file
+    std::string sample_path =
+        SampleFilePath(name);
+    std::ifstream sf(sample_path);
+    std::string sample_content;
+    if (sf.is_open()) {
+      sample_content.assign(
+          (std::istreambuf_iterator<char>(sf)),
+          std::istreambuf_iterator<char>());
+    }
+    nlohmann::json resp = {
+        {"status", "not_found"},
+        {"name", name},
+        {"error", "Config not found"},
+        {"sample", sample_content}
+    };
+    std::string r = resp.dump();
+    soup_message_set_status(
+        msg, SOUP_STATUS_OK);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        r.c_str(),
+        static_cast<gsize>(r.size()));
+  }
+}
+
+void WebDashboard::ApiConfigSet(
+    SoupMessage* msg,
+    const std::string& name) {
+  if (!ValidateToken(msg)) {
+    soup_message_set_status(
+        msg, SOUP_STATUS_UNAUTHORIZED);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        "{\"error\":\"Unauthorized\"}", 24);
+    return;
+  }
+
+  if (!IsAllowedConfig(name)) {
+    soup_message_set_status(
+        msg, SOUP_STATUS_FORBIDDEN);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        "{\"error\":\"Not allowed\"}", 23);
+    return;
+  }
+
+  SoupMessageBody* body = msg->request_body;
+  std::string payload;
+  if (body && body->data && body->length > 0)
+    payload.assign(body->data, body->length);
+
+  std::string content;
+  try {
+    auto j = nlohmann::json::parse(payload);
+    content = j.value("content", "");
+  } catch (...) {
+    soup_message_set_status(
+        msg, SOUP_STATUS_BAD_REQUEST);
+    return;
+  }
+
+  std::string fpath = ConfigFilePath(name);
+
+  // Backup existing file
+  struct stat st;
+  if (stat(fpath.c_str(), &st) == 0) {
+    std::string backup = fpath + ".bak";
+    std::ifstream src(fpath, std::ios::binary);
+    std::ofstream dst(backup, std::ios::binary);
+    if (src.is_open() && dst.is_open()) {
+      dst << src.rdbuf();
+    }
+  }
+
+  // Write new content
+  std::ofstream out(fpath);
+  if (!out.is_open()) {
+    nlohmann::json resp = {
+        {"status", "error"},
+        {"error", "Failed to write config"}
+    };
+    std::string r = resp.dump();
+    soup_message_set_status(
+        msg, SOUP_STATUS_INTERNAL_SERVER_ERROR);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        r.c_str(),
+        static_cast<gsize>(r.size()));
+    return;
+  }
+
+  out << content;
+  out.close();
+
+  LOG(INFO) << "Config saved: " << name;
+
+  nlohmann::json resp = {
+      {"status", "ok"},
+      {"name", name}
+  };
+  std::string r = resp.dump();
+  soup_message_set_status(
+      msg, SOUP_STATUS_OK);
+  soup_message_set_response(
+      msg, "application/json",
+      SOUP_MEMORY_COPY,
+      r.c_str(),
+      static_cast<gsize>(r.size()));
 }
 
 }  // namespace tizenclaw
