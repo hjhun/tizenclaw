@@ -19,7 +19,7 @@ BuildRequires:  pkgconfig(sqlite3)
 # C++ toolchain is generally available in Tizen
 
 %description
-TizenClaw Native Agent running as a System Service Application, utilizing LXC for skills execution.
+TizenClaw Native Agent running as a System Service, utilizing LXC for skills execution.
 
 %package unittests
 Summary: Unit tests for TizenClaw
@@ -100,7 +100,7 @@ echo "Using source-built crun binary: ${CRUN_SRC}"
 install -D -m 0755 "${CRUN_SRC}" \
   %{buildroot}/usr/libexec/tizenclaw/crun
 
-# Tizen apps structure
+# Tizen structure
 mkdir -p %{buildroot}/usr/bin
 mkdir -p %{buildroot}/usr/lib/systemd/system/
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/skills

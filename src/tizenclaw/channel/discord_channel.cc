@@ -5,7 +5,6 @@
 
 #include <fstream>
 #include <libwebsockets.h>
-#include <cstring>
 
 namespace tizenclaw {
 
@@ -192,8 +191,7 @@ void DiscordChannel::GatewayLoop() {
         LOG(INFO) << "Connecting to Discord GW: "
                   << ws_url.substr(0, 50) << "...";
 
-        struct lws_context_creation_info info;
-        memset(&info, 0, sizeof(info));
+        struct lws_context_creation_info info{};
         info.port = CONTEXT_PORT_NO_LISTEN;
         info.protocols = discord_protocols;
         info.options =
@@ -209,39 +207,31 @@ void DiscordChannel::GatewayLoop() {
             continue;
         }
 
-        // Parse URL
-        char host[256] = {0};
-        char path[2048] = {0};
-        const char* url_str = ws_url.c_str();
-        const char* host_start = url_str;
-        if (strncmp(url_str, "wss://", 6) == 0) {
-            host_start = url_str + 6;
+        // Parse URL using std::string
+        std::string url_body = ws_url;
+        if (url_body.compare(
+                0, 6, "wss://") == 0) {
+            url_body = url_body.substr(6);
         }
 
-        const char* path_start =
-            strchr(host_start, '/');
-        if (path_start) {
-            size_t host_len =
-                path_start - host_start;
-            snprintf(host, sizeof(host),
-                "%.*s", (int)host_len,
-                host_start);
-            snprintf(path, sizeof(path),
-                "%s", path_start);
+        std::string host;
+        std::string path_str;
+        auto slash_pos = url_body.find('/');
+        if (slash_pos != std::string::npos) {
+            host = url_body.substr(0, slash_pos);
+            path_str = url_body.substr(slash_pos);
         } else {
-            snprintf(host, sizeof(host),
-                "%s", host_start);
-            snprintf(path, sizeof(path), "/");
+            host = std::move(url_body);
+            path_str = "/";
         }
 
-        struct lws_client_connect_info ccinfo;
-        memset(&ccinfo, 0, sizeof(ccinfo));
+        struct lws_client_connect_info ccinfo{};
         ccinfo.context = context;
-        ccinfo.address = host;
+        ccinfo.address = host.c_str();
         ccinfo.port = 443;
-        ccinfo.path = path;
-        ccinfo.host = host;
-        ccinfo.origin = host;
+        ccinfo.path = path_str.c_str();
+        ccinfo.host = host.c_str();
+        ccinfo.origin = host.c_str();
         ccinfo.ssl_connection =
             LCCSCF_USE_SSL;
         ccinfo.protocol =

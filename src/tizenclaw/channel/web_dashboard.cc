@@ -4,16 +4,17 @@
 #include "../storage/audit_logger.hh"
 #include "../../common/logging.hh"
 
-#include <fstream>
-#include <sstream>
-#include <cstring>
-#include <cstdlib>
 #include <cctype>
 #include <ctime>
-#include <sys/stat.h>
-#include <dirent.h>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <random>
+#include <sstream>
 
 namespace tizenclaw {
+
+namespace fs = std::filesystem;
 
 WebDashboard::WebDashboard(
     AgentCore* agent,
@@ -53,9 +54,8 @@ bool WebDashboard::LoadConfig() {
   }
 
   // Check web_root exists
-  struct stat st;
-  if (stat(web_root_.c_str(), &st) != 0 ||
-      !S_ISDIR(st.st_mode)) {
+  std::error_code ec;
+  if (!fs::is_directory(web_root_, ec)) {
     LOG(WARNING)
         << "Web root not found: "
         << web_root_;
@@ -236,35 +236,30 @@ void WebDashboard::ApiSessions(
   nlohmann::json sessions =
       nlohmann::json::array();
 
-  std::string sessions_dir =
+  fs::path sessions_dir =
       std::string(APP_DATA_DIR) + "/sessions";
-  DIR* dir = opendir(sessions_dir.c_str());
-  if (dir) {
-    struct dirent* ent;
-    while ((ent = readdir(dir)) != nullptr) {
-      if (ent->d_name[0] == '.') continue;
-      std::string name = ent->d_name;
-      if (name.size() > 3 &&
-          name.substr(name.size() - 3) ==
-              ".md") {
-        std::string id =
-            name.substr(0, name.size() - 3);
+  std::error_code ec;
+  for (const auto& entry :
+       fs::directory_iterator(sessions_dir, ec)) {
+    if (!entry.is_regular_file(ec)) continue;
+    std::string name =
+        entry.path().filename().string();
+    if (name.empty() || name[0] == '.') continue;
+    if (name.size() <= 3 ||
+        name.substr(name.size() - 3) != ".md")
+      continue;
 
-        // Get file info
-        std::string fpath =
-            sessions_dir + "/" + name;
-        struct stat st;
-        stat(fpath.c_str(), &st);
+    std::string id =
+        name.substr(0, name.size() - 3);
 
-        sessions.push_back({
-            {"id", id},
-            {"file", name},
-            {"size_bytes", st.st_size},
-            {"modified", st.st_mtime}
-        });
-      }
-    }
-    closedir(dir);
+    nlohmann::json entry_j;
+    entry_j["id"] = id;
+    entry_j["file"] = name;
+    std::error_code fec;
+    entry_j["size_bytes"] =
+        static_cast<int64_t>(
+            entry.file_size(fec));
+    sessions.push_back(std::move(entry_j));
   }
 
   std::string body = sessions.dump();
@@ -283,37 +278,33 @@ void WebDashboard::ApiTasks(
   nlohmann::json tasks =
       nlohmann::json::array();
 
-  std::string tasks_dir =
+  fs::path tasks_dir =
       std::string(APP_DATA_DIR) + "/tasks";
-  DIR* dir = opendir(tasks_dir.c_str());
-  if (dir) {
-    struct dirent* ent;
-    while ((ent = readdir(dir)) != nullptr) {
-      if (ent->d_name[0] == '.') continue;
-      std::string name = ent->d_name;
-      if (name.size() > 3 &&
-          name.substr(name.size() - 3) ==
-              ".md") {
-        // Read task file for metadata
-        std::string fpath =
-            tasks_dir + "/" + name;
-        std::ifstream tf(fpath);
-        std::string content;
-        if (tf.is_open()) {
-          content.assign(
-              (std::istreambuf_iterator<char>(
-                   tf)),
-              std::istreambuf_iterator<char>());
-        }
+  std::error_code ec;
+  for (const auto& entry :
+       fs::directory_iterator(tasks_dir, ec)) {
+    if (!entry.is_regular_file(ec)) continue;
+    std::string name =
+        entry.path().filename().string();
+    if (name.empty() || name[0] == '.') continue;
+    if (name.size() <= 3 ||
+        name.substr(name.size() - 3) != ".md")
+      continue;
 
-        tasks.push_back({
-            {"file", name},
-            {"content_preview",
-             content.substr(0, 200)}
-        });
-      }
+    // Read task file for metadata
+    std::ifstream tf(entry.path());
+    std::string content;
+    if (tf.is_open()) {
+      content.assign(
+          (std::istreambuf_iterator<char>(tf)),
+          std::istreambuf_iterator<char>());
     }
-    closedir(dir);
+
+    tasks.push_back({
+        {"file", name},
+        {"content_preview",
+         content.substr(0, 200)}
+    });
   }
 
   std::string body = tasks.dump();
@@ -335,12 +326,12 @@ void WebDashboard::ApiLogs(
   auto now = std::chrono::system_clock::now();
   auto t = std::chrono::system_clock::to_time_t(
       now);
-  struct tm tm_buf;
+  std::tm tm_buf{};
   localtime_r(&t, &tm_buf);
-  char date_buf[16];
-  std::strftime(date_buf, sizeof(date_buf),
-                "%Y-%m-%d", &tm_buf);
-  std::string date(date_buf);
+  std::ostringstream date_oss;
+  date_oss << std::put_time(
+      &tm_buf, "%Y-%m-%d");
+  std::string date = date_oss.str();
 
   std::string log_path =
       std::string(APP_DATA_DIR) +
@@ -544,19 +535,18 @@ std::string WebDashboard::HashPassword(
 
 std::string WebDashboard::GenerateToken()
     const {
-  // Simple random hex token
-  char buf[33];
-  std::srand(
-      static_cast<unsigned>(
-          std::time(nullptr)) ^
-      static_cast<unsigned>(
-          reinterpret_cast<uintptr_t>(&buf)));
+  static constexpr char kHexChars[] =
+      "0123456789abcdef";
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<int>
+      dist(0, 15);
+  std::string token;
+  token.reserve(32);
   for (int i = 0; i < 32; ++i) {
-    buf[i] = "0123456789abcdef"[
-        std::rand() % 16];
+    token += kHexChars[dist(gen)];
   }
-  buf[32] = '\0';
-  return std::string(buf, 32);
+  return token;
 }
 
 void WebDashboard::LoadAdminPassword() {
@@ -791,9 +781,8 @@ void WebDashboard::ApiConfigList(
       nlohmann::json::array();
   for (const auto& name : kAllowedConfigs) {
     std::string fpath = ConfigFilePath(name);
-    struct stat st;
     bool exists =
-        (stat(fpath.c_str(), &st) == 0);
+        fs::exists(fpath);
     configs.push_back({
         {"name", name},
         {"exists", exists}
@@ -925,14 +914,13 @@ void WebDashboard::ApiConfigSet(
   std::string fpath = ConfigFilePath(name);
 
   // Backup existing file
-  struct stat st;
-  if (stat(fpath.c_str(), &st) == 0) {
+  if (fs::exists(fpath)) {
     std::string backup = fpath + ".bak";
-    std::ifstream src(fpath, std::ios::binary);
-    std::ofstream dst(backup, std::ios::binary);
-    if (src.is_open() && dst.is_open()) {
-      dst << src.rdbuf();
-    }
+    std::error_code bec;
+    fs::copy_file(
+        fpath, backup,
+        fs::copy_options::overwrite_existing,
+        bec);
   }
 
   // Write new content

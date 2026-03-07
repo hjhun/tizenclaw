@@ -1,16 +1,17 @@
-#include <fstream>
-#include <sstream>
-#include <sys/stat.h>
-#include <dirent.h>
 #include <chrono>
 #include <ctime>
-#include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <regex>
+#include <sstream>
 
 #include "session_store.hh"
 #include "../../common/logging.hh"
 
 namespace tizenclaw {
+
+namespace fs = std::filesystem;
 
 
 SessionStore::SessionStore()
@@ -27,12 +28,11 @@ std::string SessionStore::GetDatePrefix() {
   auto now = std::chrono::system_clock::now();
   auto t =
       std::chrono::system_clock::to_time_t(now);
-  struct tm tm_buf;
+  std::tm tm_buf{};
   localtime_r(&t, &tm_buf);
-  char buf[16];
-  strftime(buf, sizeof(buf),
-           "%Y-%m-%d", &tm_buf);
-  return std::string(buf);
+  std::ostringstream oss;
+  oss << std::put_time(&tm_buf, "%Y-%m-%d");
+  return oss.str();
 }
 
 std::string SessionStore::FindSessionFile(
@@ -41,21 +41,19 @@ std::string SessionStore::FindSessionFile(
   // Look for *-{session_id}.md in dir
   std::string suffix =
       "-" + session_id + ".md";
-  DIR* d = opendir(dir.c_str());
-  if (!d) return "";
-
-  struct dirent* ent;
-  while ((ent = readdir(d)) != nullptr) {
-    std::string name(ent->d_name);
+  std::error_code ec;
+  for (const auto& entry :
+       fs::directory_iterator(dir, ec)) {
+    if (!entry.is_regular_file(ec)) continue;
+    std::string name =
+        entry.path().filename().string();
     if (name.size() > suffix.size() &&
-        name.substr(
-            name.size() - suffix.size()) ==
-            suffix) {
-      closedir(d);
-      return dir + "/" + name;
+        name.compare(
+            name.size() - suffix.size(),
+            suffix.size(), suffix) == 0) {
+      return entry.path().string();
     }
   }
-  closedir(d);
   return "";
 }
 
@@ -110,18 +108,20 @@ std::string SessionStore::GetMonthlyUsageDir()
 
 std::string SessionStore::GetTimestamp() {
   auto now = std::chrono::system_clock::now();
-  auto t = std::chrono::system_clock::to_time_t(now);
-  struct tm tm_buf;
+  auto t = std::chrono::system_clock::to_time_t(
+      now);
+  std::tm tm_buf{};
   localtime_r(&t, &tm_buf);
-  char buf[64];
-  strftime(buf, sizeof(buf),
-           "%Y-%m-%dT%H:%M:%S%z", &tm_buf);
-  return std::string(buf);
+  std::ostringstream oss;
+  oss << std::put_time(
+      &tm_buf, "%Y-%m-%dT%H:%M:%S%z");
+  return oss.str();
 }
 
 void SessionStore::EnsureDir(
     const std::string& dir) {
-  mkdir(dir.c_str(), 0700);
+  std::error_code ec;
+  fs::create_directories(dir, ec);
 }
 
 bool SessionStore::AtomicWrite(
@@ -137,14 +137,16 @@ bool SessionStore::AtomicWrite(
   out.close();
   if (out.fail()) {
     LOG(ERROR) << "Write failed: " << tmp_path;
-    std::remove(tmp_path.c_str());
+    std::error_code ec;
+    fs::remove(tmp_path, ec);
     return false;
   }
-  if (std::rename(tmp_path.c_str(),
-                  path.c_str()) != 0) {
+  std::error_code ec;
+  fs::rename(tmp_path, path, ec);
+  if (ec) {
     LOG(ERROR) << "Rename failed: " << tmp_path
                << " -> " << path;
-    std::remove(tmp_path.c_str());
+    fs::remove(tmp_path, ec);
     return false;
   }
   return true;
@@ -581,7 +583,8 @@ SessionStore::LoadSession(
     // Auto-migrate: save as Markdown and remove
     // the old JSON file
     if (SaveSession(session_id, history)) {
-      std::remove(json_path.c_str());
+      std::error_code ec;
+      fs::remove(json_path, ec);
       LOG(INFO) << "Migrated session to md: "
                 << session_id;
     }
@@ -597,15 +600,16 @@ SessionStore::LoadSession(
 void SessionStore::DeleteSession(
     const std::string& session_id) {
   // Delete both .md and legacy .json if exist
+  std::error_code ec;
   std::string md_path =
       GetSessionPath(session_id);
-  if (remove(md_path.c_str()) == 0) {
+  if (fs::remove(md_path, ec)) {
     LOG(INFO) << "Session deleted (md): "
               << session_id;
   }
   std::string json_path =
       GetLegacySessionPath(session_id);
-  if (remove(json_path.c_str()) == 0) {
+  if (fs::remove(json_path, ec)) {
     LOG(INFO) << "Session deleted (json): "
               << session_id;
   }
@@ -630,20 +634,17 @@ void SessionStore::LogSkillExecution(
   auto now = std::chrono::system_clock::now();
   auto t = std::chrono::system_clock::to_time_t(
       now);
-  struct tm tm_buf;
+  std::tm tm_buf{};
   localtime_r(&t, &tm_buf);
-  char date_buf[16];
-  strftime(date_buf, sizeof(date_buf),
-           "%Y-%m-%d", &tm_buf);
+  std::ostringstream date_oss;
+  date_oss << std::put_time(
+      &tm_buf, "%Y-%m-%d");
+  std::string date_str = date_oss.str();
   std::string log_path =
-      logs_dir + "/" + date_buf + ".md";
+      logs_dir + "/" + date_str + ".md";
 
   // Check if file exists — add header if new
-  bool is_new = false;
-  {
-    std::ifstream check(log_path);
-    is_new = !check.is_open();
-  }
+  bool is_new = !fs::exists(log_path);
 
   std::ofstream out(log_path, std::ios::app);
   if (!out.is_open()) {
@@ -654,7 +655,7 @@ void SessionStore::LogSkillExecution(
 
   if (is_new) {
     out << "# Skill Execution Log — "
-        << date_buf << "\n\n";
+        << date_str << "\n\n";
     out << "| Time | Session | Skill | "
         << "Duration |\n";
     out << "|------|---------|-------|-"
@@ -806,11 +807,12 @@ void SessionStore::LogTokenUsage(
   auto now_t = std::chrono::system_clock::now();
   auto tt =
       std::chrono::system_clock::to_time_t(now_t);
-  struct tm tm_daily;
+  std::tm tm_daily{};
   localtime_r(&tt, &tm_daily);
-  char date_str[16];
-  strftime(date_str, sizeof(date_str),
-           "%Y-%m-%d", &tm_daily);
+  std::ostringstream date_oss;
+  date_oss << std::put_time(
+      &tm_daily, "%Y-%m-%d");
+  std::string date_str = date_oss.str();
   std::string daily_path =
       daily_dir + "/" + date_str + ".md";
 
@@ -890,9 +892,10 @@ void SessionStore::LogTokenUsage(
   // --- Monthly aggregate ---
   std::string monthly_dir = GetMonthlyUsageDir();
   EnsureDir(monthly_dir);
-  char month_str[16];
-  strftime(month_str, sizeof(month_str),
-           "%Y-%m", &tm_daily);
+  std::ostringstream month_oss;
+  month_oss << std::put_time(
+      &tm_daily, "%Y-%m");
+  std::string month_str = month_oss.str();
   std::string monthly_path =
       monthly_dir + "/" + month_str + ".md";
 

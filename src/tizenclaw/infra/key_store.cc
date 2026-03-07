@@ -7,12 +7,11 @@
 
 #include "key_store.hh"
 
-#include <cstring>
 #include <fstream>
+#include <random>
 #include <sstream>
+#include <string_view>
 #include <vector>
-#include <cstdlib>
-#include <ctime>
 
 #include <glib.h>
 #include <json.hpp>
@@ -115,11 +114,13 @@ std::string KeyStore::Encrypt(
 
   // Generate 16-byte random nonce
   unsigned char nonce[16];
-  srand(static_cast<unsigned>(
-      time(nullptr)) ^ getpid());
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<unsigned short>
+      dist(0, 255);
   for (int i = 0; i < 16; ++i) {
-    nonce[i] = static_cast<unsigned char>(
-        rand() % 256);
+    nonce[i] =
+        static_cast<unsigned char>(dist(gen));
   }
 
   // Derive unique subkey from key + nonce
@@ -152,8 +153,10 @@ std::string KeyStore::Decrypt(
   std::string key = DeriveKey(key_path);
 
   // Remove "ENC:" prefix and decode base64
+  static constexpr std::string_view
+      kEncPrefixView(kEncPrefix);
   std::string encoded =
-      ciphertext.substr(strlen(kEncPrefix));
+      ciphertext.substr(kEncPrefixView.size());
   std::string decoded = Base64Decode(encoded);
 
   if (decoded.size() < 17) {
@@ -176,9 +179,13 @@ std::string KeyStore::Decrypt(
 
 bool KeyStore::IsEncrypted(
     const std::string& value) {
-  return value.size() > strlen(kEncPrefix)
-      && value.substr(0, strlen(kEncPrefix))
-             == kEncPrefix;
+  static constexpr std::string_view
+      kEncPrefixView(kEncPrefix);
+  return value.size() > kEncPrefixView.size()
+      && value.compare(
+             0, kEncPrefixView.size(),
+             kEncPrefixView.data(),
+             kEncPrefixView.size()) == 0;
 }
 
 bool KeyStore::EncryptConfig(
