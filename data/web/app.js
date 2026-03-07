@@ -100,6 +100,10 @@
         const data = await apiFetch('sessions');
         const list =
             document.getElementById('session-list');
+        const viewer =
+            document.getElementById('session-viewer');
+        viewer.style.display = 'none';
+        list.style.display = '';
 
         if (!data || data.length === 0) {
             list.innerHTML =
@@ -114,20 +118,67 @@
             const modified = s.modified ?
                 new Date(s.modified * 1000)
                     .toLocaleString() : '—';
-            return '<div class="card-item">' +
+            return '<div class="card-item clickable"' +
+                ' data-session-id="' +
+                escHtml(s.id) + '">' +
                 '<div class="card-item-title">' +
                 escHtml(s.id) + '</div>' +
                 '<div class="card-item-meta">' +
                 sizeKB + ' KB · ' +
                 modified + '</div></div>';
         }).join('');
+
+        list.querySelectorAll('.card-item').forEach(
+            card => {
+                card.addEventListener('click', () => {
+                    showSessionDetail(
+                        card.dataset.sessionId);
+                });
+            });
     }
+
+    async function showSessionDetail(id) {
+        const list =
+            document.getElementById('session-list');
+        const viewer =
+            document.getElementById('session-viewer');
+        const title = document.getElementById(
+            'session-viewer-title');
+        const content = document.getElementById(
+            'session-viewer-content');
+
+        list.style.display = 'none';
+        viewer.style.display = '';
+        title.textContent = id;
+        content.textContent = 'Loading...';
+
+        const resp =
+            await apiFetch('sessions/' + id);
+        if (resp && resp.content) {
+            content.textContent = resp.content;
+        } else {
+            content.textContent =
+                'Failed to load session.';
+        }
+    }
+
+    document.getElementById('session-back')
+        .addEventListener('click', () => {
+            document.getElementById('session-viewer')
+                .style.display = 'none';
+            document.getElementById('session-list')
+                .style.display = '';
+        });
 
     // --- Tasks ---
     async function loadTasks() {
         const data = await apiFetch('tasks');
         const list =
             document.getElementById('task-list');
+        const viewer =
+            document.getElementById('task-viewer');
+        viewer.style.display = 'none';
+        list.style.display = '';
 
         if (!data || data.length === 0) {
             list.innerHTML =
@@ -137,14 +188,57 @@
         }
 
         list.innerHTML = data.map(t =>
-            '<div class="card-item">' +
+            '<div class="card-item clickable"' +
+            ' data-task-file="' +
+            escHtml(t.file) + '">' +
             '<div class="card-item-title">' +
             escHtml(t.file) + '</div>' +
             '<div class="card-item-meta">' +
             escHtml(t.content_preview || '') +
             '</div></div>'
         ).join('');
+
+        list.querySelectorAll('.card-item').forEach(
+            card => {
+                card.addEventListener('click', () => {
+                    showTaskDetail(
+                        card.dataset.taskFile);
+                });
+            });
     }
+
+    async function showTaskDetail(file) {
+        const list =
+            document.getElementById('task-list');
+        const viewer =
+            document.getElementById('task-viewer');
+        const title = document.getElementById(
+            'task-viewer-title');
+        const content = document.getElementById(
+            'task-viewer-content');
+
+        list.style.display = 'none';
+        viewer.style.display = '';
+        title.textContent = file;
+        content.textContent = 'Loading...';
+
+        const resp =
+            await apiFetch('tasks/' + file);
+        if (resp && resp.content) {
+            content.textContent = resp.content;
+        } else {
+            content.textContent =
+                'Failed to load task.';
+        }
+    }
+
+    document.getElementById('task-back')
+        .addEventListener('click', () => {
+            document.getElementById('task-viewer')
+                .style.display = 'none';
+            document.getElementById('task-list')
+                .style.display = '';
+        });
 
     // --- Logs ---
     async function loadLogs() {

@@ -82,15 +82,28 @@
         <div class="card-list" id="session-list">
           <p class="empty-state">Loading...</p>
         </div>
+        <div class="content-viewer" id="session-viewer" style="display:none">
+          <div class="viewer-header">
+            <button class="btn-outline btn-back" id="session-back">← Back</button>
+            <span class="viewer-title" id="session-viewer-title"></span>
+          </div>
+          <pre class="viewer-content" id="session-viewer-content"></pre>
+        </div>
       </section>
 
-      <!-- Tasks Page -->
       <section class="page" id="page-tasks">
         <h2 class="page-title">
           Scheduled Tasks
         </h2>
         <div class="card-list" id="task-list">
           <p class="empty-state">Loading...</p>
+        </div>
+        <div class="content-viewer" id="task-viewer" style="display:none">
+          <div class="viewer-header">
+            <button class="btn-outline btn-back" id="task-back">← Back</button>
+            <span class="viewer-title" id="task-viewer-title"></span>
+          </div>
+          <pre class="viewer-content" id="task-viewer-content"></pre>
         </div>
       </section>
 

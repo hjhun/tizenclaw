@@ -228,6 +228,58 @@ body {
     font-size: 0.9rem;
 }
 
+/* --- Clickable Cards --- */
+.card-item.clickable {
+    cursor: pointer;
+}
+
+.card-item.clickable:hover {
+    border-color: var(--accent);
+    box-shadow: 0 4px 16px rgba(99, 102, 241, 0.12);
+    transform: translateY(-1px);
+}
+
+/* --- Content Viewer --- */
+.content-viewer {
+    animation: fadeIn 0.3s ease;
+}
+
+.viewer-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.btn-back {
+    flex-shrink: 0;
+}
+
+.viewer-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #fff;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.viewer-content {
+    background: var(--bg-card);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: calc(100vh - 200px);
+    overflow-y: auto;
+}
+
 /* --- Log View --- */
 .log-container {
     background: var(--bg-card);
