@@ -222,36 +222,45 @@ Sample configuration files are included in `data/`.
 tizenclaw/
 ├── src/
 │   ├── common/                    # Logging, shared utilities
-│   └── tizenclaw/                 # Daemon core (49 files)
-│       ├── tizenclaw.cc           # Main daemon, IPC server, signal handling
-│       ├── agent_core.cc          # Agentic Loop, streaming, multi-session
-│       ├── container_engine.cc    # OCI container management (crun)
-│       ├── gemini_backend.cc      # Google Gemini provider
-│       ├── openai_backend.cc      # OpenAI / xAI provider
-│       ├── anthropic_backend.cc   # Anthropic provider
-│       ├── ollama_backend.cc      # Ollama (local) provider
-│       ├── http_client.cc         # libcurl HTTP wrapper
-│       ├── session_store.cc       # Markdown conversation persistence
-│       ├── telegram_client.cc     # Telegram Bot API client
-│       ├── slack_channel.cc       # Slack Bot (libwebsockets)
-│       ├── discord_channel.cc     # Discord Bot (libwebsockets)
-│       ├── mcp_server.cc          # Native MCP Server (JSON-RPC 2.0)
-│       ├── webhook_channel.cc     # Webhook HTTP listener
-│       ├── voice_channel.cc       # Tizen STT/TTS integration
-│       ├── web_dashboard.cc       # Admin dashboard SPA
-│       ├── task_scheduler.cc      # Cron/interval task automation
-│       ├── embedding_store.cc     # SQLite RAG vector store
-│       ├── tool_policy.cc         # Risk-level tool execution policy
-│       ├── key_store.cc           # Encrypted API key storage
-│       ├── audit_logger.cc        # Markdown audit logging
-│       ├── skill_watcher.cc       # inotify skill hot-reload
-│       └── channel_registry.cc    # Channel lifecycle management
+│   └── tizenclaw/                 # Daemon core
+│       ├── core/                  # Main daemon, agent loop, tool policy
+│       │   ├── tizenclaw.cc       #   Daemon entry, IPC server
+│       │   ├── agent_core.cc      #   Agentic Loop, streaming
+│       │   ├── tool_policy.cc     #   Risk-level tool policy
+│       │   └── skill_watcher.cc   #   inotify skill hot-reload
+│       ├── llm/                   # LLM backend providers
+│       │   ├── llm_backend.hh     #   Unified LLM interface
+│       │   ├── gemini_backend.cc  #   Google Gemini
+│       │   ├── openai_backend.cc  #   OpenAI / xAI
+│       │   ├── anthropic_backend.cc  # Anthropic
+│       │   └── ollama_backend.cc  #   Ollama (local)
+│       ├── channel/               # Communication channels
+│       │   ├── channel.hh         #   Channel interface
+│       │   ├── channel_registry.cc#   Lifecycle management
+│       │   ├── telegram_client.cc #   Telegram Bot API
+│       │   ├── slack_channel.cc   #   Slack (WebSocket)
+│       │   ├── discord_channel.cc #   Discord (WebSocket)
+│       │   ├── mcp_server.cc      #   MCP (JSON-RPC 2.0)
+│       │   ├── webhook_channel.cc #   Webhook HTTP
+│       │   ├── voice_channel.cc   #   Tizen STT/TTS
+│       │   └── web_dashboard.cc   #   Admin SPA (port 9090)
+│       ├── storage/               # Data persistence
+│       │   ├── session_store.cc   #   Markdown sessions
+│       │   ├── embedding_store.cc #   SQLite RAG vectors
+│       │   └── audit_logger.cc    #   Audit logging
+│       ├── infra/                 # Infrastructure
+│       │   ├── http_client.cc     #   libcurl HTTP wrapper
+│       │   ├── key_store.cc       #   Encrypted API keys
+│       │   └── container_engine.cc#   OCI container (crun)
+│       └── scheduler/             # Task automation
+│           └── task_scheduler.cc  #   Cron/interval tasks
 ├── skills/                        # Python skill scripts
 ├── scripts/                       # Container setup, CI, hooks
 ├── test/unit_tests/               # Google Test unit tests
 ├── data/                          # Config samples, rootfs, web SPA
 ├── packaging/                     # RPM spec, systemd services
 ├── docs/                          # Design, Analysis, Roadmap
+├── LICENSE                        # Apache License 2.0
 └── CMakeLists.txt
 ```
 
@@ -267,4 +276,6 @@ tizenclaw/
 
 ## License
 
-This project is currently under development. License information will be added soon.
+This project is licensed under the [Apache License 2.0](LICENSE).
+
+Copyright 2024-2026 Samsung Electronics Co., Ltd.
