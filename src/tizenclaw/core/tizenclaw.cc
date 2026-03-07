@@ -267,8 +267,10 @@ void TizenClawDaemon::IpcServerLoop() {
             };
             std::string busy_str = busy.dump();
             uint32_t busy_len = htonl(busy_str.size());
-            ::write(client_sock, &busy_len, 4);
-            ::write(client_sock, busy_str.data(), busy_str.size());
+            if (::write(client_sock, &busy_len, 4) == 4) {
+                ssize_t wr = ::write(client_sock, busy_str.data(), busy_str.size());
+                (void)wr;
+            }
             close(client_sock);
             continue;
         }

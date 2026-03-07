@@ -22,7 +22,8 @@ class SkillWatcherTest
 
   void TearDown() override {
     // Cleanup test directories
-    system(("rm -rf " + test_dir_).c_str());
+    int ret = system(("rm -rf " + test_dir_).c_str());
+    (void)ret;
   }
 
   std::string test_dir_;

@@ -621,6 +621,8 @@ void SessionStore::LogSkillExecution(
     const nlohmann::json& args,
     const std::string& result,
     int duration_ms) {
+  (void)args;
+  (void)result;
   std::string logs_dir = GetLogsDir();
   EnsureDir(logs_dir);
 

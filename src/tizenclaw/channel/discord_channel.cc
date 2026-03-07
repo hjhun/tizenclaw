@@ -79,9 +79,10 @@ static const struct lws_protocols
         "discord-gateway",
         DiscordWsCallback,
         sizeof(DiscordWsSessionData),
-        65536
+        65536,
+        0, nullptr, 0
     },
-    { nullptr, nullptr, 0, 0 }
+    { nullptr, nullptr, 0, 0, 0, nullptr, 0 }
 };
 
 
@@ -222,14 +223,15 @@ void DiscordChannel::GatewayLoop() {
         if (path_start) {
             size_t host_len =
                 path_start - host_start;
-            strncpy(host, host_start,
-                std::min(host_len, (size_t)255));
-            strncpy(path, path_start,
-                std::min(strlen(path_start),
-                         (size_t)2047));
+            snprintf(host, sizeof(host),
+                "%.*s", (int)host_len,
+                host_start);
+            snprintf(path, sizeof(path),
+                "%s", path_start);
         } else {
-            strncpy(host, host_start, 255);
-            strcpy(path, "/");
+            snprintf(host, sizeof(host),
+                "%s", host_start);
+            snprintf(path, sizeof(path), "/");
         }
 
         struct lws_client_connect_info ccinfo;

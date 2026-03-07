@@ -12,13 +12,15 @@ class AuditLoggerTest
 protected:
     void SetUp() override {
         test_dir_ = "/tmp/tizenclaw_audit_test";
-        system(("rm -rf " + test_dir_).c_str());
+        int ret = system(("rm -rf " + test_dir_).c_str());
+        (void)ret;
         AuditLogger::Instance().SetLogDir(
             test_dir_);
     }
 
     void TearDown() override {
-        system(("rm -rf " + test_dir_).c_str());
+        int ret = system(("rm -rf " + test_dir_).c_str());
+        (void)ret;
     }
 
     std::string test_dir_;

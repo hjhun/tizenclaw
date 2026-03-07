@@ -26,7 +26,8 @@ class TaskSchedulerTest
     // Cleanup test files
     std::string cmd =
         "rm -rf " + test_dir;
-    system(cmd.c_str());
+    int ret = system(cmd.c_str());
+    (void)ret;
   }
 
   TaskScheduler* scheduler;
