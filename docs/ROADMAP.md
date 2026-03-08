@@ -52,7 +52,7 @@
 |----------|-------------|
 | **Native C++ Performance** | Lower memory/CPU vs TypeScript — optimal for Tizen embedded |
 | **OCI Container Isolation** | crun-based `seccomp` + `namespace` — finer syscall control than app-level sandboxing |
-| **Direct Tizen C-API** | ctypes wrappers for device hardware (battery, Wi-Fi, BT, haptic, alarm) |
+| **Direct Tizen C-API** | ctypes wrappers for device hardware (battery, Wi-Fi, BT, display, volume, sensors, notifications, alarm) |
 | **Multi-LLM Support** | 5 backends (Gemini, OpenAI, Claude, xAI, Ollama) switchable at runtime |
 | **Lightweight Deployment** | systemd + RPM — standalone device execution without Node.js/Docker |
 | **Native MCP Server** | C++ MCP server integrated into daemon — Claude Desktop controls Tizen devices via sdb |
@@ -136,7 +136,7 @@ timeline
 | 1 | C++ daemon, 5 LLM backends, `HttpClient`, factory pattern |
 | 2 | `ContainerEngine` (crun OCI), dual container architecture, `unshare+chroot` fallback |
 | 3 | Agentic Loop (max 5 iterations), parallel tool exec (`std::async`), session memory |
-| 4 | 9 skills, `tizen_capi_utils.py` ctypes wrapper, `CLAW_ARGS` convention |
+| 4 | 25 skills, `tizen_capi_utils.py` ctypes wrapper, `CLAW_ARGS` convention |
 | 5 | Abstract Unix Socket IPC, `SO_PEERCRED` auth, Telegram bridge, MCP server |
 
 ### Phase 6: IPC/Agentic Loop Stabilization ✅
@@ -294,8 +294,8 @@ timeline
 | **Plan** | Per-skill `risk_level` + loop detection + policy violation feedback |
 
 **Done When:**
-- [x] Side-effect skills (`launch_app`, `vibrate_device`, `terminate_app`, `schedule_alarm`) marked `risk_level: "high"`
-- [x] Read-only skills (`get_battery_info`, `get_wifi_info`, `get_bluetooth_info`, `list_apps`, `get_device_info`) marked `risk_level: "low"`
+- [x] Side-effect skills (`launch_app`, `terminate_app`, `schedule_alarm`, `control_display`, `control_haptic`, `control_led`, `control_power`, `control_volume`, `send_notification`) marked `risk_level: "high"` or `"medium"`
+- [x] Read-only skills (`get_battery_info`, `get_wifi_info`, `get_bluetooth_info`, `list_apps`, `get_device_info`, `get_display_info`, `get_system_info`, `get_runtime_info`, `get_storage_info`, `get_system_settings`, `get_network_info`, `get_sensor_data`, `get_package_info`) marked `risk_level: "low"`
 - [x] Same skill + same args repeated 3x → blocked (loop prevention)
 - [x] Policy violation reason fed back to LLM as tool result
 - [x] Configurable policy via `tool_policy.json` (`max_repeat_count`, `blocked_skills`, `risk_overrides`)

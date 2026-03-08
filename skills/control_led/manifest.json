@@ -1,0 +1,20 @@
+{
+    "name": "control_led",
+    "risk_level": "medium",
+    "description": "Control the camera flash LED (flashlight). Turn on with specified brightness or turn off.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "description": "Action: 'on' to turn on flashlight, 'off' to turn off",
+                "enum": ["on", "off"]
+            },
+            "brightness": {
+                "type": "integer",
+                "description": "Brightness level when turning on (0 to max). Only used when action is 'on'."
+            }
+        },
+        "required": ["action"]
+    }
+}

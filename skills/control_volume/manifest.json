@@ -1,0 +1,25 @@
+{
+    "name": "control_volume",
+    "risk_level": "medium",
+    "description": "Get or set system volume levels for different sound types (system, notification, alarm, ringtone, media, call, voip).",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "description": "'get' to read current volumes, 'set' to change volume",
+                "enum": ["get", "set"]
+            },
+            "sound_type": {
+                "type": "string",
+                "description": "Sound type to control (for 'set' action): system, notification, alarm, ringtone, media, call, voip",
+                "enum": ["system", "notification", "alarm", "ringtone", "media", "call", "voip"]
+            },
+            "volume": {
+                "type": "integer",
+                "description": "Volume level to set (for 'set' action, 0 to max)"
+            }
+        },
+        "required": ["action"]
+    }
+}

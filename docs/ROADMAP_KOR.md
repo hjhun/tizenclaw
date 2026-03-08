@@ -52,7 +52,7 @@
 |------|------|
 | **네이티브 C++ 성능** | TypeScript 대비 낮은 메모리/CPU — Tizen 임베디드 환경에 최적 |
 | **OCI 컨테이너 격리** | crun 기반 `seccomp` + `namespace` — 앱 수준 샌드박싱보다 정밀한 시스콜 제어 |
-| **Tizen C-API 직접 접근** | ctypes 래퍼로 디바이스 하드웨어 (배터리, Wi-Fi, BT, 햅틱, 알람) 직접 제어 |
+| **Tizen C-API 직접 접근** | ctypes 래퍼로 디바이스 하드웨어 (배터리, Wi-Fi, BT, 디스플레이, 볼륨, 센서, 알림, 알람) 직접 제어 |
 | **멀티 LLM 지원** | 5개 백엔드 (Gemini, OpenAI, Claude, xAI, Ollama) 런타임 전환 가능 |
 | **경량 배포** | systemd + RPM — Node.js/Docker 없이 단독 디바이스 실행 |
 | **네이티브 MCP 서버** | C++ MCP 서버가 데몬에 내장 — Claude Desktop에서 sdb를 통해 Tizen 디바이스 제어 |
@@ -139,7 +139,7 @@ timeline
 | 1 | C++ 데몬, 5개 LLM 백엔드, `HttpClient`, 팩토리 패턴 |
 | 2 | `ContainerEngine` (crun OCI), 이중 컨테이너 아키텍처, `unshare+chroot` 폴백 |
 | 3 | Agentic Loop (최대 5회 반복), 병렬 도구 실행 (`std::async`), 세션 메모리 |
-| 4 | 9개 스킬, `tizen_capi_utils.py` ctypes 래퍼, `CLAW_ARGS` 규약 |
+| 4 | 25개 스킬, `tizen_capi_utils.py` ctypes 래퍼, `CLAW_ARGS` 규약 |
 | 5 | 추상 유닉스 소켓 IPC, `SO_PEERCRED` 인증, Telegram 브릿지, MCP 서버 |
 
 ### Phase 6: IPC/Agentic Loop 안정화 ✅
@@ -297,8 +297,8 @@ timeline
 | **계획** | 스킬별 `risk_level` + 루프 감지 + 정책 위반 피드백 |
 
 **완료 기준:**
-- [x] 부작용 스킬 (`launch_app`, `vibrate_device`, `terminate_app`, `schedule_alarm`) `risk_level: "high"` 지정
-- [x] 읽기 전용 스킬 (`get_battery_info`, `get_wifi_info`, `get_bluetooth_info`, `list_apps`, `get_device_info`) `risk_level: "low"` 지정
+- [x] 부작용 스킬 (`launch_app`, `terminate_app`, `schedule_alarm`, `control_display`, `control_haptic`, `control_led`, `control_power`, `control_volume`, `send_notification`) `risk_level: "high"` 또는 `"medium"` 지정
+- [x] 읽기 전용 스킬 (`get_battery_info`, `get_wifi_info`, `get_bluetooth_info`, `list_apps`, `get_device_info`, `get_display_info`, `get_system_info`, `get_runtime_info`, `get_storage_info`, `get_system_settings`, `get_network_info`, `get_sensor_data`, `get_package_info`) `risk_level: "low"` 지정
 - [x] 동일 스킬 + 동일 인자 3회 반복 → 차단 (루프 방지)
 - [x] 정책 위반 사유를 LLM에 도구 결과로 피드백
 - [x] `tool_policy.json`으로 정책 설정 가능 (`max_repeat_count`, `blocked_skills`, `risk_overrides`)

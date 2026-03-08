@@ -43,7 +43,7 @@ TizenClaw is part of the **Claw** family of AI agent runtimes, each targeting di
 
 - 🚀 **Native C++ Performance** — Lower memory/CPU vs TypeScript/Node.js runtimes, optimal for embedded devices
 - 🔒 **OCI Container Isolation** — crun-based seccomp + namespace, finer syscall control than app-level sandboxing
-- 📱 **Direct Tizen C-API** — ctypes wrappers for device hardware (battery, Wi-Fi, BT, alarm, app management)
+- 📱 **Direct Tizen C-API** — ctypes wrappers for device hardware (battery, Wi-Fi, BT, display, volume, sensors, notifications, alarm, app management)
 - 🎯 **Tizen Action Framework** — Native integration with per-action LLM tools, MD schema caching, event-driven updates
 - 🤖 **5 LLM Backends** — Gemini, OpenAI, Anthropic, xAI (Grok), Ollama with automatic fallback
 - 📦 **Lightweight Deployment** — systemd + RPM, standalone device execution without Node.js/Docker
@@ -139,7 +139,7 @@ graph TB
 
     subgraph Secure["Secure Container (crun)"]
         Skills["Python Skills<br/>(sandboxed)"]
-        SkillList["launch_app · list_apps · terminate_app<br/>get_device_info · get_battery_info<br/>schedule_alarm · web_search · ..."]
+        SkillList["launch_app · list_apps · terminate_app<br/>get_device_info · get_battery_info · get_wifi_info<br/>get_bluetooth_info · get_display_info · get_system_info<br/>get_runtime_info · get_storage_info · get_network_info<br/>get_sensor_data · get_system_settings · get_package_info<br/>control_display · control_haptic · control_led<br/>control_volume · control_power · play_tone<br/>play_feedback · send_notification · schedule_alarm<br/>web_search"]
         Skills --- SkillList
     end
 
@@ -171,6 +171,22 @@ graph TB
 | `get_battery_info` | Read battery level and charging status |
 | `get_wifi_info` | Get Wi-Fi connection details |
 | `get_bluetooth_info` | Query Bluetooth adapter state |
+| `get_display_info` | Get display brightness, state, and max brightness |
+| `control_display` | Set display brightness level |
+| `get_system_info` | Query hardware info (model, CPU, screen size, supported features) |
+| `get_runtime_info` | Get CPU usage and memory usage statistics |
+| `get_storage_info` | Get internal/external storage space information |
+| `get_system_settings` | Read system settings (locale, timezone, font, wallpaper) |
+| `get_network_info` | Get network connection type, IP address, and status |
+| `get_sensor_data` | Read sensor data (accelerometer, gyroscope, light, proximity, etc.) |
+| `get_package_info` | Query installed package details (version, type, size) |
+| `control_haptic` | Vibrate the device for a specified duration |
+| `control_led` | Control camera flash LED (flashlight on/off) |
+| `control_volume` | Get or set system volume levels by sound type |
+| `control_power` | Request/release CPU or display power lock |
+| `play_tone` | Play DTMF or beep tones |
+| `play_feedback` | Play sound/vibration feedback patterns |
+| `send_notification` | Post a notification to the device notification bar |
 | `schedule_alarm` | Schedule an alarm to launch a specific app at a given time |
 | `web_search` | Search the web using Naver or Google |
 

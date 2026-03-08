@@ -1,0 +1,15 @@
+{
+    "name": "control_haptic",
+    "risk_level": "medium",
+    "description": "Vibrate the device for a specified duration in milliseconds. Useful for alerts or notifications.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "duration_ms": {
+                "type": "integer",
+                "description": "Vibration duration in milliseconds (default: 500)"
+            }
+        },
+        "required": []
+    }
+}

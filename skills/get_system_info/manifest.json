@@ -1,0 +1,10 @@
+{
+    "name": "get_system_info",
+    "risk_level": "low",
+    "description": "Get system hardware information including model name, platform version, build info, screen size, CPU/architecture, and supported features.",
+    "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+    }
+}

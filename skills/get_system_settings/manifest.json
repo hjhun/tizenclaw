@@ -1,0 +1,10 @@
+{
+    "name": "get_system_settings",
+    "risk_level": "low",
+    "description": "Get system settings including locale, timezone, time format (12h/24h), device name, ringtone path, wallpaper path, and font settings.",
+    "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+    }
+}

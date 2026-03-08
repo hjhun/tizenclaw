@@ -42,7 +42,7 @@ graph LR
 
     subgraph Skills["OCI 컨테이너 (Alpine RootFS)"]
         SkillExec["SkillExecutor (IPC)"]
-        SkillList["list_apps · launch_app · terminate_app<br/>get_device_info · get_battery_info<br/>get_wifi_info · get_bluetooth_info<br/>vibrate_device · schedule_alarm · web_search"]
+        SkillList["list_apps · launch_app · terminate_app<br/>get_device_info · get_battery_info · get_wifi_info<br/>get_bluetooth_info · get_display_info · get_system_info<br/>get_runtime_info · get_storage_info · get_network_info<br/>get_sensor_data · get_system_settings · get_package_info<br/>control_display · control_haptic · control_led<br/>control_volume · control_power · play_tone<br/>play_feedback · send_notification · schedule_alarm<br/>web_search"]
     end
 
     Telegram & Slack & Discord & Voice --> IPC
@@ -101,7 +101,7 @@ tizenclaw/
 │   │   ├── skill_watcher.cc/hh      # inotify 스킬 핫리로드
 │   │   └── embedding_store.cc/hh    # SQLite RAG 벡터 스토어
 │   └── common/                      # 공통 유틸리티 (로깅 등)
-├── skills/                          # Python 스킬 (11개 디렉터리)
+├── skills/                          # Python 스킬 (27개 디렉터리)
 │   ├── common/tizen_capi_utils.py   # ctypes 기반 Tizen C-API 래퍼
 │   ├── skill_executor.py            # 컨테이너 측 IPC 스킬 실행기
 │   ├── list_apps/                   # 설치된 앱 목록 조회
@@ -111,7 +111,22 @@ tizenclaw/
 │   ├── get_battery_info/            # 배터리 상태 조회
 │   ├── get_wifi_info/               # Wi-Fi 상태 조회
 │   ├── get_bluetooth_info/          # 블루투스 상태 조회
-│   ├── vibrate_device/              # 햅틱 진동
+│   ├── get_display_info/            # 디스플레이 밝기/상태
+│   ├── get_system_info/             # 하드웨어 및 플랫폼 정보
+│   ├── get_runtime_info/            # CPU/메모리 사용량
+│   ├── get_storage_info/            # 저장소 공간 정보
+│   ├── get_system_settings/         # 시스템 설정 (로케일, 글꼴 등)
+│   ├── get_network_info/            # 네트워크 연결 정보
+│   ├── get_sensor_data/             # 센서 데이터 (가속도, 자이로 등)
+│   ├── get_package_info/            # 패키지 상세 정보
+│   ├── control_display/             # 디스플레이 밝기 제어
+│   ├── control_haptic/              # 햄틱 진동
+│   ├── control_led/                 # 카메라 플래시 LED 제어
+│   ├── control_volume/              # 볼륨 레벨 제어
+│   ├── control_power/               # 전원 잠금 관리
+│   ├── play_tone/                   # DTMF/비프 톤 재생
+│   ├── play_feedback/               # 피드백 패턴 재생
+│   ├── send_notification/           # 알림 게시
 │   ├── schedule_alarm/              # 알람 스케줄링
 │   └── web_search/                  # 웹 검색 (Wikipedia API)
 ├── scripts/                         # 컨테이너 & 인프라 스크립트 (9개)
@@ -210,8 +225,23 @@ tizenclaw/
 | `get_battery_info` | 없음 | `device` (battery) | ✅ |
 | `get_wifi_info` | 없음 | `wifi-manager` | ✅ |
 | `get_bluetooth_info` | 없음 | `bluetooth` | ✅ |
-| `vibrate_device` | `duration_ms` (int, optional) | `feedback` / `haptic` | ✅ |
-| `schedule_alarm` | `delay_sec` (int), `prompt_text` (string) | `alarm` | ✅ |
+| `get_display_info` | 없음 | `device` (display) | ✅ |
+| `control_display` | `brightness` (int) | `device` (display) | ✅ |
+| `get_system_info` | 없음 | `system_info` | ✅ |
+| `get_runtime_info` | 없음 | `runtime_info` | ✅ |
+| `get_storage_info` | 없음 | `storage` | ✅ |
+| `get_system_settings` | 없음 | `system_settings` | ✅ |
+| `get_network_info` | 없음 | `connection` | ✅ |
+| `get_sensor_data` | `sensor_type` (string) | `sensor` | ✅ |
+| `get_package_info` | `package_id` (string) | `package_manager` | ✅ |
+| `control_haptic` | `duration_ms` (int, optional) | `device` (haptic) | ✅ |
+| `control_led` | `action` (string), `brightness` (int) | `device` (flash) | ✅ |
+| `control_volume` | `action`, `sound_type`, `volume` | `sound_manager` | ✅ |
+| `control_power` | `action`, `resource` | `device` (power) | ✅ |
+| `play_tone` | `tone` (string), `duration_ms` (int) | `tone_player` | ✅ |
+| `play_feedback` | `pattern` (string) | `feedback` | ✅ |
+| `send_notification` | `title`, `body` (string) | `notification` | ✅ |
+| `schedule_alarm` | `app_id`, `datetime` (string) | `alarm` | ✅ |
 | `web_search` | `query` (string, required) | 없음 (Wikipedia API) | ✅ |
 
 AgentCore에 직접 구현된 내장 도구:
@@ -275,7 +305,7 @@ AgentCore에 직접 구현된 내장 도구:
 |------|:---:|:---:|:---:|:---:|
 | 언어 | C++ / Python | TypeScript | TypeScript | Rust |
 | 소스 파일 수 | ~89 | ~700+ | ~50 | ~100+ |
-| 스킬 수 | 10 + 10 내장 | 52 | 5+ (skills-engine) | TOML 기반 |
+| 스킬 수 | 25 + 10 내장 | 52 | 5+ (skills-engine) | TOML 기반 |
 | LLM 백엔드 | 5 | 15+ | Claude SDK | 5+ (trait 기반) |
 | 채널 수 | 7 | 22+ | 5 | 17 |
 | 테스트 커버리지 | 205+ 케이스 | 수백 개 | 수십 개 | 포괄적 |
@@ -340,7 +370,7 @@ Phase 6-18을 통해 원래 분석에서 식별된 대부분의 Gap이 해소되
 | C++ 소스 (`src/tizenclaw/*.cc`) | 35 | ~14,500 |
 | C++ 헤더 (`src/tizenclaw/*.hh`) | 30 | ~3,200 |
 | C++ 공통 (`src/common/`) | 5 | ~40 |
-| Python 스킬 & 유틸 | 12 | ~1,300 |
+| Python 스킬 & 유틸 | 28 | ~2,700 |
 | Shell 스크립트 | 9 | ~950 |
 | Web 프론트엔드 (HTML/CSS/JS) | 3 | ~2,100 |
 | 단위 테스트 | 9 | ~1,010 |

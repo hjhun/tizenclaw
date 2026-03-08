@@ -1,0 +1,10 @@
+{
+    "name": "get_display_info",
+    "risk_level": "low",
+    "description": "Get display information including brightness level, max brightness, state (normal/dim/off), and number of displays.",
+    "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+    }
+}

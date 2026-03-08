@@ -1,0 +1,10 @@
+{
+    "name": "get_runtime_info",
+    "risk_level": "low",
+    "description": "Get runtime information including CPU usage and memory usage statistics.",
+    "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+    }
+}

@@ -1,0 +1,16 @@
+{
+    "name": "get_sensor_data",
+    "risk_level": "low",
+    "description": "Read sensor data from device sensors. Supports: accelerometer, gyroscope, light, proximity, pressure, gravity, linear_acceleration, magnetic, rotation_vector, orientation.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "sensor_type": {
+                "type": "string",
+                "description": "Sensor type to read",
+                "enum": ["accelerometer", "gyroscope", "light", "proximity", "pressure", "gravity", "linear_acceleration", "magnetic", "rotation_vector", "orientation"]
+            }
+        },
+        "required": ["sensor_type"]
+    }
+}

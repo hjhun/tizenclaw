@@ -1,0 +1,16 @@
+{
+    "name": "play_feedback",
+    "risk_level": "medium",
+    "description": "Play a feedback pattern using sound and/or vibration. Supports patterns like TAP, SIP, KEY, HOLD, etc.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "pattern": {
+                "type": "string",
+                "description": "Feedback pattern name: TAP, SIP, KEY0-KEY9, HOLD, HW_TAP, HW_HOLD, MESSAGE, EMAIL, WAKEUP, SCHEDULE, TIMER, GENERAL, POWERON, POWEROFF, CHARGERCONN, CHARGING_ERROR, FULLCHARGED, LOWBATT, LOCK, UNLOCK, VIBRATION_ON, SILENT_OFF, BT_CONNECTED, BT_DISCONNECTED",
+                "enum": ["TAP", "SIP", "KEY0", "KEY1", "KEY2", "KEY3", "KEY4", "KEY5", "KEY6", "KEY7", "KEY8", "KEY9", "HOLD", "HW_TAP", "HW_HOLD", "MESSAGE", "EMAIL", "WAKEUP", "SCHEDULE", "TIMER", "GENERAL", "POWERON", "POWEROFF", "CHARGERCONN", "CHARGING_ERROR", "FULLCHARGED", "LOWBATT", "LOCK", "UNLOCK", "VIBRATION_ON", "SILENT_OFF", "BT_CONNECTED", "BT_DISCONNECTED"]
+            }
+        },
+        "required": ["pattern"]
+    }
+}

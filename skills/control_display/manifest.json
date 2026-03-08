@@ -1,0 +1,15 @@
+{
+    "name": "control_display",
+    "risk_level": "medium",
+    "description": "Set display brightness level. Provide brightness as an integer (0 to max_brightness). Use get_display_info first to check max brightness.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "brightness": {
+                "type": "integer",
+                "description": "Brightness level to set (0 to max_brightness)"
+            }
+        },
+        "required": ["brightness"]
+    }
+}

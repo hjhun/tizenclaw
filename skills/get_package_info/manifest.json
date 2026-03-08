@@ -1,0 +1,15 @@
+{
+    "name": "get_package_info",
+    "risk_level": "low",
+    "description": "Get detailed information about an installed package by its package ID (not app_id). Use 'pkginfo --listpkg' on the device to find package IDs. Returns version, type, installed size, and more.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "package_id": {
+                "type": "string",
+                "description": "Package ID to query (e.g., org.tizen.setting)"
+            }
+        },
+        "required": ["package_id"]
+    }
+}

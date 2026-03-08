@@ -42,7 +42,7 @@ graph LR
 
     subgraph Skills["OCI Container (Alpine RootFS)"]
         SkillExec["SkillExecutor (IPC)"]
-        SkillList["list_apps · launch_app · terminate_app<br/>get_device_info · get_battery_info<br/>get_wifi_info · get_bluetooth_info<br/>vibrate_device · schedule_alarm · web_search"]
+        SkillList["list_apps · launch_app · terminate_app<br/>get_device_info · get_battery_info · get_wifi_info<br/>get_bluetooth_info · get_display_info · get_system_info<br/>get_runtime_info · get_storage_info · get_network_info<br/>get_sensor_data · get_system_settings · get_package_info<br/>control_display · control_haptic · control_led<br/>control_volume · control_power · play_tone<br/>play_feedback · send_notification · schedule_alarm<br/>web_search"]
     end
 
     Telegram & Slack & Discord & Voice --> IPC
@@ -101,7 +101,7 @@ tizenclaw/
 │   │   ├── skill_watcher.cc/hh      # inotify skill hot-reload
 │   │   └── embedding_store.cc/hh    # SQLite RAG vector store
 │   └── common/                      # Common utilities (logging, etc.)
-├── skills/                          # Python skills (11 directories)
+├── skills/                          # Python skills (27 directories)
 │   ├── common/tizen_capi_utils.py   # ctypes-based Tizen C-API wrapper
 │   ├── skill_executor.py            # Container-side IPC skill executor
 │   ├── list_apps/                   # List installed apps
@@ -111,7 +111,22 @@ tizenclaw/
 │   ├── get_battery_info/            # Battery status query
 │   ├── get_wifi_info/               # Wi-Fi status query
 │   ├── get_bluetooth_info/          # Bluetooth status query
-│   ├── vibrate_device/              # Haptic vibration
+│   ├── get_display_info/            # Display brightness/state
+│   ├── get_system_info/             # Hardware & platform info
+│   ├── get_runtime_info/            # CPU/memory usage
+│   ├── get_storage_info/            # Storage space info
+│   ├── get_system_settings/         # System settings (locale, font, etc.)
+│   ├── get_network_info/            # Network connection info
+│   ├── get_sensor_data/             # Sensor readings (accel, gyro, etc.)
+│   ├── get_package_info/            # Package details
+│   ├── control_display/             # Display brightness control
+│   ├── control_haptic/              # Haptic vibration
+│   ├── control_led/                 # Camera flash LED control
+│   ├── control_volume/              # Volume level control
+│   ├── control_power/               # Power lock management
+│   ├── play_tone/                   # DTMF/beep tone playback
+│   ├── play_feedback/               # Feedback pattern playback
+│   ├── send_notification/           # Notification posting
 │   ├── schedule_alarm/              # Alarm scheduling
 │   └── web_search/                  # Web search (Wikipedia API)
 ├── scripts/                         # Container & infra scripts (9)
@@ -210,8 +225,23 @@ tizenclaw/
 | `get_battery_info` | None | `device` (battery) | ✅ |
 | `get_wifi_info` | None | `wifi-manager` | ✅ |
 | `get_bluetooth_info` | None | `bluetooth` | ✅ |
-| `vibrate_device` | `duration_ms` (int, optional) | `feedback` / `haptic` | ✅ |
-| `schedule_alarm` | `delay_sec` (int), `prompt_text` (string) | `alarm` | ✅ |
+| `get_display_info` | None | `device` (display) | ✅ |
+| `control_display` | `brightness` (int) | `device` (display) | ✅ |
+| `get_system_info` | None | `system_info` | ✅ |
+| `get_runtime_info` | None | `runtime_info` | ✅ |
+| `get_storage_info` | None | `storage` | ✅ |
+| `get_system_settings` | None | `system_settings` | ✅ |
+| `get_network_info` | None | `connection` | ✅ |
+| `get_sensor_data` | `sensor_type` (string) | `sensor` | ✅ |
+| `get_package_info` | `package_id` (string) | `package_manager` | ✅ |
+| `control_haptic` | `duration_ms` (int, optional) | `device` (haptic) | ✅ |
+| `control_led` | `action` (string), `brightness` (int) | `device` (flash) | ✅ |
+| `control_volume` | `action`, `sound_type`, `volume` | `sound_manager` | ✅ |
+| `control_power` | `action`, `resource` | `device` (power) | ✅ |
+| `play_tone` | `tone` (string), `duration_ms` (int) | `tone_player` | ✅ |
+| `play_feedback` | `pattern` (string) | `feedback` | ✅ |
+| `send_notification` | `title`, `body` (string) | `notification` | ✅ |
+| `schedule_alarm` | `app_id`, `datetime` (string) | `alarm` | ✅ |
 | `web_search` | `query` (string, required) | None (Wikipedia API) | ✅ |
 
 Built-in tools (implemented in AgentCore directly):
@@ -275,7 +305,7 @@ Built-in tools (implemented in AgentCore directly):
 |------|:---:|:---:|:---:|:---:|
 | Language | C++ / Python | TypeScript | TypeScript | Rust |
 | Source files | ~89 | ~700+ | ~50 | ~100+ |
-| Skills | 10 + 10 built-in | 52 | 5+ (skills-engine) | TOML-based |
+| Skills | 25 + 10 built-in | 52 | 5+ (skills-engine) | TOML-based |
 | LLM Backends | 5 | 15+ | Claude SDK | 5+ (trait-driven) |
 | Channels | 7 | 22+ | 5 | 17 |
 | Test coverage | 205+ cases | Hundreds | Dozens | Comprehensive |
@@ -340,7 +370,7 @@ Most gaps identified in the original analysis have been resolved through Phases 
 | C++ Source (`src/tizenclaw/*.cc`) | 35 | ~14,500 |
 | C++ Headers (`src/tizenclaw/*.hh`) | 30 | ~3,200 |
 | C++ Common (`src/common/`) | 5 | ~40 |
-| Python Skills & Utils | 12 | ~1,300 |
+| Python Skills & Utils | 28 | ~2,700 |
 | Shell Scripts | 9 | ~950 |
 | Web Frontend (HTML/CSS/JS) | 3 | ~2,100 |
 | Unit Tests | 9 | ~1,010 |
