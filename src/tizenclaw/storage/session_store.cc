@@ -1,9 +1,11 @@
+#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <regex>
+#include <set>
 #include <sstream>
 
 #include "session_store.hh"
@@ -595,6 +597,37 @@ SessionStore::LoadSession(
   }
 
   return history;
+}
+
+void SessionStore::SanitizeHistory(
+    std::vector<LlmMessage>& history) {
+  // Build set of valid tool_call IDs from
+  // assistant messages that have tool_calls
+  std::set<std::string> valid_tool_call_ids;
+  for (auto& msg : history) {
+    if (msg.role == "assistant") {
+      for (auto& tc : msg.tool_calls) {
+        if (!tc.id.empty()) {
+          valid_tool_call_ids.insert(tc.id);
+        }
+      }
+    }
+  }
+
+  // Remove tool messages whose tool_call_id
+  // is not in valid_tool_call_ids
+  history.erase(
+      std::remove_if(
+          history.begin(), history.end(),
+          [&](const LlmMessage& msg) {
+            if (msg.role != "tool") return false;
+            if (msg.tool_call_id.empty())
+              return true;  // No ID = orphaned
+            return valid_tool_call_ids.find(
+                       msg.tool_call_id) ==
+                   valid_tool_call_ids.end();
+          }),
+      history.end());
 }
 
 void SessionStore::DeleteSession(

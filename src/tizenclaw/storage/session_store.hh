@@ -99,6 +99,12 @@ public:
     DailyUsageSummary LoadMonthlyUsage(
         const std::string& month) const;
 
+    // Remove orphaned tool messages that have no
+    // matching tool_calls in a preceding assistant
+    // message. This prevents OpenAI HTTP 400 errors.
+    static void SanitizeHistory(
+        std::vector<LlmMessage>& history);
+
 private:
     // Find existing session file by scanning
     // dir for *-{session_id}.md pattern

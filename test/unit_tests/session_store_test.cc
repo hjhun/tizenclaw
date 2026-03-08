@@ -317,3 +317,86 @@ TEST_F(SessionStoreTest,
         monthly.total_completion_tokens, 300);
     EXPECT_EQ(monthly.total_requests, 2);
 }
+
+TEST_F(SessionStoreTest,
+    SanitizeRemovesOrphanedTools) {
+    std::vector<LlmMessage> history;
+
+    // Assistant message with [compressed] text
+    // (tool_calls lost after compaction)
+    LlmMessage compressed;
+    compressed.role = "assistant";
+    compressed.text = "[compressed] summary";
+    history.push_back(compressed);
+
+    // Orphaned tool message (no matching
+    // tool_calls in any assistant message)
+    LlmMessage orphan_tool;
+    orphan_tool.role = "tool";
+    orphan_tool.tool_name = "send_to_session";
+    orphan_tool.tool_call_id = "call_QPf0lost";
+    orphan_tool.tool_result = {{"status", "ok"}};
+    history.push_back(orphan_tool);
+
+    // Normal user message
+    LlmMessage user_msg;
+    user_msg.role = "user";
+    user_msg.text = "Hello";
+    history.push_back(user_msg);
+
+    ASSERT_EQ(history.size(), 3u);
+
+    SessionStore::SanitizeHistory(history);
+
+    // Orphaned tool should be removed
+    ASSERT_EQ(history.size(), 2u);
+    EXPECT_EQ(history[0].role, "assistant");
+    EXPECT_EQ(history[1].role, "user");
+}
+
+TEST_F(SessionStoreTest,
+    SanitizeKeepsValidToolPairs) {
+    std::vector<LlmMessage> history;
+
+    // User message
+    LlmMessage user_msg;
+    user_msg.role = "user";
+    user_msg.text = "List apps";
+    history.push_back(user_msg);
+
+    // Assistant with tool_calls
+    LlmMessage assistant_msg;
+    assistant_msg.role = "assistant";
+    assistant_msg.text = "Let me check.";
+    LlmToolCall tc;
+    tc.id = "call_valid123";
+    tc.name = "list_apps";
+    tc.args = {{"count", 5}};
+    assistant_msg.tool_calls.push_back(tc);
+    history.push_back(assistant_msg);
+
+    // Valid tool result
+    LlmMessage tool_msg;
+    tool_msg.role = "tool";
+    tool_msg.tool_name = "list_apps";
+    tool_msg.tool_call_id = "call_valid123";
+    tool_msg.tool_result = {{"apps", {"app1"}}};
+    history.push_back(tool_msg);
+
+    // Final assistant response
+    LlmMessage final_msg;
+    final_msg.role = "assistant";
+    final_msg.text = "Found 1 app.";
+    history.push_back(final_msg);
+
+    ASSERT_EQ(history.size(), 4u);
+
+    SessionStore::SanitizeHistory(history);
+
+    // All messages should be preserved
+    ASSERT_EQ(history.size(), 4u);
+    EXPECT_EQ(history[0].role, "user");
+    EXPECT_EQ(history[1].role, "assistant");
+    EXPECT_EQ(history[2].role, "tool");
+    EXPECT_EQ(history[3].role, "assistant");
+}

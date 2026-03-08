@@ -281,6 +281,10 @@ std::string AgentCore::ProcessPrompt(
     local_history = sessions_[session_id];
   }
 
+  // Sanitize: strip orphaned tool messages
+  // before sending to LLM (prevents HTTP 400)
+  SessionStore::SanitizeHistory(local_history);
+
   int iterations = 0;
   std::string last_text;
   int max_iter =
@@ -1288,6 +1292,26 @@ void AgentCore::CompactHistory(
   size_t count = std::min(
       kCompactionCount, history.size() - 2);
   if (count < 2) return;
+
+  // Extend count to include complete
+  // tool_call/tool pairs — never split a pair
+  while (count < history.size() - 2) {
+    auto& last = history[count - 1];
+    if (last.role == "assistant" &&
+        !last.tool_calls.empty()) {
+      // Include all following tool results
+      while (count < history.size() - 2 &&
+             history[count].role == "tool") {
+        count++;
+      }
+      break;
+    }
+    if (last.role == "tool") {
+      count++;  // Include this tool in compaction
+    } else {
+      break;
+    }
+  }
 
   std::vector<LlmMessage> to_summarize(
       history.begin(),
