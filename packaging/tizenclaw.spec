@@ -106,6 +106,7 @@ mkdir -p %{buildroot}/usr/bin
 mkdir -p %{buildroot}/usr/lib/systemd/system/
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/skills
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/config
+mkdir -p %{buildroot}/opt/usr/share/tizenclaw/tools/embedded
 
 %files
 %defattr(-,root,root,-)
@@ -131,6 +132,8 @@ mkdir -p %{buildroot}/opt/usr/share/tizenclaw/config
 /opt/usr/share/tizenclaw/config/tool_policy.json
 /opt/usr/share/tizenclaw/skills/
 /opt/usr/share/tizenclaw/web/
+/opt/usr/share/tizenclaw/tools/embedded/
+%dir /opt/usr/share/tizenclaw/tools/
 %dir /opt/usr/share/tizenclaw/config/
 %dir /opt/usr/share/tizenclaw/
 

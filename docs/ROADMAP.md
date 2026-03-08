@@ -760,6 +760,27 @@ timeline
 - [x] Fallback `execute_action` generic tool
 - [x] Verified: "볼륨을 올려줘" → `action_homeVolume(command="up")` → success
 
+---
+
+### 18.5 Embedded Tool Schema Discovery ✅
+| Item | Details |
+|------|---------|
+| **Gap** | LLM only sees tool names and short descriptions; no detailed parameter schemas |
+| **Plan** | Store embedded tool schemas as MD files, load into system prompt for precise tool invocation |
+
+**Implementation:**
+- 13 MD files under `tools/embedded/` with detailed parameter tables and JSON schemas
+- Categories: code_execution, file_system, task_scheduler, multi_agent, rag, pipeline
+- Installed via RPM to `/opt/usr/share/tizenclaw/tools/embedded/`
+- System prompt builder scans both `tools/embedded/` and `tools/actions/` directories
+- Schema-execution separation: MD files are LLM context only, execution logic unchanged
+
+**Done When:**
+- [x] 13 embedded tool MD files created with parameter schemas
+- [x] CMakeLists.txt and RPM spec updated for installation
+- [x] System prompt loads MD content from both tool directories
+- [x] Verified: LLM correctly recognizes all embedded + action tools
+
 ## Phase 19: Edge Optimization & Tunneling (Proposed)
 
 > **Goal**: Optimize for constrained devices and enable secure remote access

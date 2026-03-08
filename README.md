@@ -87,6 +87,7 @@ open http://<device-ip>:9090
 - **Web Admin Dashboard** — Dark glassmorphism SPA on port 9090 with session monitoring, chat interface, config editor, and admin authentication.
 - **Multi-Agent** — Supervisor agent pattern, skill pipelines, A2A protocol for cross-device agent collaboration.
 - **Session Persistence** — Conversation history stored as Markdown with YAML frontmatter, surviving daemon restarts.
+- **Tool Schema Discovery** — Embedded tool and Action Framework schemas stored as Markdown files under `/opt/usr/share/tizenclaw/tools/`, automatically loaded into the LLM system prompt for precise tool invocation.
 - **Health Monitoring** — Prometheus-style `/api/metrics` endpoint with live dashboard health panel (CPU, memory, uptime, request counts).
 - **OTA Updates** — Over-the-air skill updates via HTTP pull, version checking against remote manifest, and automatic rollback on failure.
 
@@ -346,6 +347,7 @@ tizenclaw/
 │       └── scheduler/             # Task automation
 │           └── task_scheduler.cc  #   Cron/interval tasks
 ├── skills/                        # Python skill scripts
+├── tools/embedded/                # Embedded tool MD schemas (13 files)
 ├── scripts/                       # Container setup, CI, hooks
 ├── test/unit_tests/               # Google Test unit tests
 ├── data/                          # Config samples, rootfs, web SPA

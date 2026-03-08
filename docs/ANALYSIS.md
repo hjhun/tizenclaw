@@ -124,6 +124,12 @@ tizenclaw/
 │   ├── pre-commit                   # Git pre-commit hook
 │   ├── setup-hooks.sh               # Hook installer
 │   └── Dockerfile                   # RootFS build reference
+├── tools/embedded/                  # Embedded tool MD schemas (13 files)
+│   ├── execute_code.md              # Python code execution
+│   ├── file_manager.md              # File system operations
+│   ├── create_task.md               # Task scheduler
+│   ├── create_pipeline.md           # Pipeline creation
+│   └── ...                          # + 9 more tool schemas
 ├── data/
 │   ├── llm_config.json.sample       # LLM config sample
 │   ├── telegram_config.json.sample  # Telegram Bot config sample
@@ -307,6 +313,7 @@ Most gaps identified in the original analysis have been resolved through Phases 
 | **Multi-Agent Orchestration** | Supervisor pattern, skill pipelines, A2A cross-device protocol |
 | **Health Monitoring** | Prometheus-style `/api/metrics` + live dashboard panel |
 | **Tizen Action Framework** | Per-action LLM tools with MD schema caching, event-driven updates via `action_event_cb` |
+| **Tool Schema Discovery** | Embedded + action tool schemas as MD files, auto-loaded into LLM system prompt |
 | **OTA Updates** | Over-the-air skill updates with version checking and rollback |
 
 ---

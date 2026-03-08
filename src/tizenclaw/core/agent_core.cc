@@ -1380,6 +1380,68 @@ std::string AgentCore::BuildSystemPrompt(
         + t.description + "\n";
   }
 
+  // Load embedded tool descriptions from MD
+  {
+    namespace fs = std::filesystem;
+    const std::string embedded_dir =
+        "/opt/usr/share/tizenclaw/tools/embedded";
+    std::error_code ec;
+    if (fs::exists(embedded_dir, ec)) {
+      std::string embedded_docs;
+      for (const auto& entry :
+           fs::directory_iterator(
+               embedded_dir, ec)) {
+        if (!entry.is_regular_file()) continue;
+        if (entry.path().extension() != ".md")
+          continue;
+        std::ifstream in(entry.path());
+        if (!in.is_open()) continue;
+        std::string content(
+            (std::istreambuf_iterator<char>(in)),
+            std::istreambuf_iterator<char>());
+        if (!content.empty()) {
+          embedded_docs += "\n" + content + "\n";
+        }
+      }
+      if (!embedded_docs.empty()) {
+        tool_list +=
+            "\n## Embedded Tool Details\n"
+            + embedded_docs;
+      }
+    }
+  }
+
+  // Load action tool descriptions from MD
+  {
+    namespace fs = std::filesystem;
+    const std::string actions_dir =
+        "/opt/usr/share/tizenclaw/tools/actions";
+    std::error_code ec;
+    if (fs::exists(actions_dir, ec)) {
+      std::string action_docs;
+      for (const auto& entry :
+           fs::directory_iterator(
+               actions_dir, ec)) {
+        if (!entry.is_regular_file()) continue;
+        if (entry.path().extension() != ".md")
+          continue;
+        std::ifstream in(entry.path());
+        if (!in.is_open()) continue;
+        std::string content(
+            (std::istreambuf_iterator<char>(in)),
+            std::istreambuf_iterator<char>());
+        if (!content.empty()) {
+          action_docs += "\n" + content + "\n";
+        }
+      }
+      if (!action_docs.empty()) {
+        tool_list +=
+            "\n## Device Action Details\n"
+            + action_docs;
+      }
+    }
+  }
+
   // Replace {{AVAILABLE_TOOLS}} placeholder
   const std::string placeholder =
       "{{AVAILABLE_TOOLS}}";

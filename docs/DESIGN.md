@@ -205,6 +205,7 @@ All storage uses **Markdown with YAML frontmatter** (no external DB dependency e
 ├── audit/YYYY-MM-DD.md              ← Audit trail
 ├── tasks/task-{id}.md               ← Scheduled tasks
 ├── tools/actions/{name}.md          ← Action schema cache (auto-synced)
+├── tools/embedded/{name}.md         ← Embedded tool schemas (installed via RPM)
 └── knowledge/embeddings.db          ← SQLite vector store (RAG)
 ```
 
@@ -255,6 +256,15 @@ Built-in administrative dashboard:
 - **REST API**: `/api/sessions`, `/api/tasks`, `/api/logs`, `/api/chat`, `/api/config`
 - **Admin Auth**: Session-token mechanism with SHA-256 password hashing
 - **Config Editor**: In-browser editing of 7 configuration files with backup-on-write
+
+### 3.12 Tool Schema Discovery
+
+LLM tool discovery through Markdown schema files:
+
+- **Embedded Tools**: 13 MD files under `/opt/usr/share/tizenclaw/tools/embedded/` describe built-in tools (execute_code, file_manager, pipelines, tasks, RAG, etc.)
+- **Action Tools**: MD files under `/opt/usr/share/tizenclaw/tools/actions/` describe Tizen Action Framework actions (auto-synced)
+- **System Prompt Integration**: Both directories are scanned at prompt build time, and full MD content is appended to the `{{AVAILABLE_TOOLS}}` section
+- **Schema-Execution Separation**: MD files provide LLM context only; execution logic is handled independently by `AgentCore` dispatch (embedded) or `ActionBridge` (actions)
 
 ---
 
