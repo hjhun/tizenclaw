@@ -195,6 +195,15 @@ bool AgentCore::Initialize() {
   mkdir(rag_dir.c_str(), 0755);
   if (embedding_store_.Initialize(rag_db)) {
     LOG(INFO) << "RAG embedding store ready";
+
+    // Attach pre-built knowledge DB if available
+    std::string knowledge_db =
+        std::string(APP_DATA_DIR) +
+        "/rag/tizen_knowledge.db";
+    if (embedding_store_.AttachKnowledgeDB(
+            knowledge_db)) {
+      LOG(INFO) << "Tizen knowledge DB loaded";
+    }
   } else {
     LOG(WARNING) << "RAG embedding store "
                  << "init failed (non-fatal)";
@@ -1457,8 +1466,10 @@ std::string AgentCore::LoadSystemPrompt(
   return
       "You are TizenClaw, an AI assistant running "
       "on a Tizen device. You can control the device "
-      "using the available tools. Always respond in "
-      "the same language as the user's message. "
+      "using the available tools. You possess extensive "
+      "documentation on Tizen Native APIs in your knowledge base; "
+      "always use the search_knowledge tool for Tizen development queries. "
+      "Always respond in the same language as the user's message. "
       "Be concise and helpful.";
 }
 

@@ -4,6 +4,7 @@
 
 #include <cstdio>
 #include <cmath>
+#include <cstring>
 
 using namespace tizenclaw;
 
@@ -105,6 +106,65 @@ TEST_F(EmbeddingStoreTest,
   EXPECT_NEAR(
       EmbeddingStore::CosineSimilarity(a, b),
       0.0f, 0.001f);
+}
+
+TEST_F(EmbeddingStoreTest, AttachKnowledgeDB) {
+  // 1. Create a "knowledge" DB directly with sqlite3
+  std::string knowledge_db_path = "/tmp/test_knowledge.db";
+  std::remove(knowledge_db_path.c_str());
+
+  sqlite3* kdb = nullptr;
+  ASSERT_EQ(sqlite3_open(knowledge_db_path.c_str(), &kdb), SQLITE_OK);
+  const char* sql =
+      "CREATE TABLE documents ("
+      "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+      "  source TEXT NOT NULL,"
+      "  chunk_text TEXT NOT NULL,"
+      "  embedding BLOB NOT NULL,"
+      "  created_at TEXT DEFAULT (datetime('now'))"
+      ");";
+  ASSERT_EQ(sqlite3_exec(kdb, sql, nullptr, nullptr, nullptr), SQLITE_OK);
+
+  // Insert a mock embedding into the knowledge DB
+  std::vector<float> k_emb = {0, 0, 1, 0};
+  std::vector<uint8_t> k_blob(k_emb.size() * sizeof(float));
+  std::memcpy(k_blob.data(), k_emb.data(), k_blob.size());
+
+  sqlite3_stmt* stmt = nullptr;
+  ASSERT_EQ(sqlite3_prepare_v2(kdb,
+      "INSERT INTO documents (source, chunk_text, embedding) VALUES (?, ?, ?);",
+      -1, &stmt, nullptr), SQLITE_OK);
+  sqlite3_bind_text(stmt, 1, "k_doc1", 6, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 2, "k_chunk1", 8, SQLITE_TRANSIENT);
+  sqlite3_bind_blob(stmt, 3, k_blob.data(), k_blob.size(), SQLITE_TRANSIENT);
+  ASSERT_EQ(sqlite3_step(stmt), SQLITE_DONE);
+  sqlite3_finalize(stmt);
+  sqlite3_close(kdb);
+
+  // 2. Initialize the main store and store a chunk
+  ASSERT_TRUE(store_.Initialize(db_path_));
+  std::vector<float> m_emb = {1, 0, 0, 0};
+  ASSERT_TRUE(store_.StoreChunk("m_doc1", "m_chunk1", m_emb));
+
+  // 3. Attach the knowledge DB
+  EXPECT_TRUE(store_.AttachKnowledgeDB(knowledge_db_path));
+  EXPECT_EQ(store_.GetKnowledgeChunkCount(), 1);
+
+  // 4. Search should find from both
+  // Query matching main DB
+  std::vector<float> q1 = {1, 0, 0, 0};
+  auto r1 = store_.Search(q1, 5);
+  ASSERT_GE(r1.size(), 1u);
+  EXPECT_EQ(r1[0].source, "m_doc1");
+
+  // Query matching knowledge DB
+  std::vector<float> q2 = {0, 0, 1, 0};
+  auto r2 = store_.Search(q2, 5);
+  ASSERT_GE(r2.size(), 1u);
+  EXPECT_EQ(r2[0].source, "k_doc1");
+
+  // Cleanup
+  std::remove(knowledge_db_path.c_str());
 }
 
 TEST_F(EmbeddingStoreTest, ChunkTextBasic) {

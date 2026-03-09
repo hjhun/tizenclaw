@@ -29,6 +29,14 @@ Requires: %{name} = %{version}-%{release}
 %description unittests
 Unit tests for TizenClaw
 
+%package rag
+Summary: RAG Database for TizenClaw
+Group: System/Service
+Requires: %{name} = %{version}-%{release}
+
+%description rag
+Optional pre-built SQLite Knowledge RAG database for Tizen Docs.
+
 %prep
 %setup -q -n %{name}-%{version}
 cp %{SOURCE1001} .
@@ -56,6 +64,12 @@ mkdir -p %{buildroot}/opt/usr/share/tizenclaw/img
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/tools/skills
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/config
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/tools/embedded
+mkdir -p %{buildroot}/opt/usr/share/tizenclaw/rag
+touch %{buildroot}/opt/usr/share/tizenclaw/rag/.keep
+
+if [ -f data/rag/tizen_knowledge.db ]; then
+    cp data/rag/tizen_knowledge.db %{buildroot}/opt/usr/share/tizenclaw/rag/
+fi
 
 ln -sf ../tizenclaw.service %{buildroot}%{_unitdir}/multi-user.target.wants/tizenclaw.service
 ln -sf ../tizenclaw-skills-secure.service %{buildroot}%{_unitdir}/multi-user.target.wants/tizenclaw-skills-secure.service
@@ -87,3 +101,8 @@ ln -sf ../tizenclaw-skills-secure.service %{buildroot}%{_unitdir}/multi-user.tar
 %defattr(-,root,root,-)
 %manifest %{name}.manifest
 %{_bindir}/tizenclaw-unittests
+
+%files rag
+%defattr(-,root,root,-)
+%manifest %{name}.manifest
+/opt/usr/share/tizenclaw/rag/

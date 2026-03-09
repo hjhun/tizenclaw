@@ -42,12 +42,20 @@ public:
       const std::vector<float>& query_embedding,
       int top_k = 5) const;
 
+  // Attach a pre-built knowledge database
+  // (read-only, for RAG from Tizen docs etc.)
+  [[nodiscard]] bool AttachKnowledgeDB(
+      const std::string& path);
+
   // Delete all chunks from a given source
   [[nodiscard]] bool DeleteSource(
       const std::string& source);
 
   // Total number of stored chunks
   [[nodiscard]] int GetChunkCount() const;
+
+  // Chunk count from attached knowledge DB
+  [[nodiscard]] int GetKnowledgeChunkCount() const;
 
   // --- Utility (public for testing) ---
 
@@ -74,6 +82,7 @@ private:
       const void* data, int size);
 
   sqlite3* db_ = nullptr;
+  bool knowledge_attached_ = false;
 };
 
 }  // namespace tizenclaw

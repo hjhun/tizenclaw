@@ -44,6 +44,12 @@ bool EmbeddingStore::Initialize(
 
 void EmbeddingStore::Close() {
   if (db_) {
+    if (knowledge_attached_) {
+      sqlite3_exec(db_,
+          "DETACH DATABASE knowledge;",
+          nullptr, nullptr, nullptr);
+      knowledge_attached_ = false;
+    }
     sqlite3_close(db_);
     db_ = nullptr;
   }
@@ -127,42 +133,54 @@ EmbeddingStore::Search(
     return results;
   }
 
-  const char* sql =
-      "SELECT source, chunk_text, embedding "
-      "FROM documents;";
-
-  sqlite3_stmt* stmt = nullptr;
-  int rc = sqlite3_prepare_v2(
-      db_, sql, -1, &stmt, nullptr);
-  if (rc != SQLITE_OK) {
-    return results;
-  }
-
   // Collect all results with scores
   std::vector<SearchResult> all;
-  while (sqlite3_step(stmt) == SQLITE_ROW) {
-    SearchResult r;
-    const char* src =
-        reinterpret_cast<const char*>(
-            sqlite3_column_text(stmt, 0));
-    const char* txt =
-        reinterpret_cast<const char*>(
-            sqlite3_column_text(stmt, 1));
-    r.source = src ? src : "";
-    r.chunk_text = txt ? txt : "";
 
-    const void* blob_data =
-        sqlite3_column_blob(stmt, 2);
-    int blob_size =
-        sqlite3_column_bytes(stmt, 2);
-    auto emb = BlobToFloats(
-        blob_data, blob_size);
+  // Lambda to scan a table
+  auto scan_table = [&](
+      const char* table_sql) {
+    sqlite3_stmt* stmt = nullptr;
+    int rc = sqlite3_prepare_v2(
+        db_, table_sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) return;
 
-    r.score = CosineSimilarity(
-        query_embedding, emb);
-    all.push_back(std::move(r));
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+      SearchResult r;
+      const char* src =
+          reinterpret_cast<const char*>(
+              sqlite3_column_text(stmt, 0));
+      const char* txt =
+          reinterpret_cast<const char*>(
+              sqlite3_column_text(stmt, 1));
+      r.source = src ? src : "";
+      r.chunk_text = txt ? txt : "";
+
+      const void* blob_data =
+          sqlite3_column_blob(stmt, 2);
+      int blob_size =
+          sqlite3_column_bytes(stmt, 2);
+      auto emb = BlobToFloats(
+          blob_data, blob_size);
+
+      r.score = CosineSimilarity(
+          query_embedding, emb);
+      all.push_back(std::move(r));
+    }
+    sqlite3_finalize(stmt);
+  };
+
+  // Scan main (runtime) documents
+  scan_table(
+      "SELECT source, chunk_text, embedding "
+      "FROM documents;");
+
+  // Scan attached knowledge DB if available
+  if (knowledge_attached_) {
+    scan_table(
+        "SELECT source, chunk_text, embedding "
+        "FROM knowledge.documents;");
   }
-  sqlite3_finalize(stmt);
+
 
   // Sort by descending score
   std::sort(all.begin(), all.end(),
@@ -206,6 +224,59 @@ int EmbeddingStore::GetChunkCount() const {
 
   const char* sql =
       "SELECT COUNT(*) FROM documents;";
+  sqlite3_stmt* stmt = nullptr;
+  int rc = sqlite3_prepare_v2(
+      db_, sql, -1, &stmt, nullptr);
+  if (rc != SQLITE_OK) return 0;
+
+  int count = 0;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    count = sqlite3_column_int(stmt, 0);
+  }
+  sqlite3_finalize(stmt);
+  return count;
+}
+
+bool EmbeddingStore::AttachKnowledgeDB(
+    const std::string& path) {
+  if (!db_) return false;
+
+  // Check file exists
+  FILE* f = fopen(path.c_str(), "r");
+  if (!f) {
+    LOG(WARNING) << "Knowledge DB not found: "
+                 << path;
+    return false;
+  }
+  fclose(f);
+
+  std::string sql =
+      "ATTACH DATABASE '" + path +
+      "' AS knowledge;";
+  char* err = nullptr;
+  int rc = sqlite3_exec(
+      db_, sql.c_str(),
+      nullptr, nullptr, &err);
+  if (rc != SQLITE_OK) {
+    LOG(ERROR) << "Failed to attach knowledge "
+               << "DB: " << (err ? err : "?");
+    sqlite3_free(err);
+    return false;
+  }
+
+  knowledge_attached_ = true;
+  LOG(INFO) << "Knowledge DB attached: " << path
+            << " (" << GetKnowledgeChunkCount()
+            << " chunks)";
+  return true;
+}
+
+int EmbeddingStore::GetKnowledgeChunkCount() const {
+  if (!db_ || !knowledge_attached_) return 0;
+
+  const char* sql =
+      "SELECT COUNT(*) FROM "
+      "knowledge.documents;";
   sqlite3_stmt* stmt = nullptr;
   int rc = sqlite3_prepare_v2(
       db_, sql, -1, &stmt, nullptr);
@@ -296,16 +367,68 @@ EmbeddingStore::FloatsToBlob(
   return blob;
 }
 
+// --- Float16 decoding ---
+static float HalfToFloat(uint16_t h) {
+  uint32_t sign = (h >> 15) & 0x00000001;
+  uint32_t exponent = (h >> 10) & 0x0000001f;
+  uint32_t mantissa = h & 0x000003ff;
+
+  if (exponent == 0) {
+    if (mantissa == 0) {
+      uint32_t res = sign << 31;
+      float f; std::memcpy(&f, &res, 4);
+      return f;
+    } else {
+      while (!(mantissa & 0x00000400)) {
+        mantissa <<= 1;
+        exponent -= 1;
+      }
+      exponent += 1;
+      mantissa &= ~0x00000400;
+    }
+  } else if (exponent == 31) {
+    if (mantissa == 0) {
+      uint32_t res = (sign << 31) | 0x7f800000;
+      float f; std::memcpy(&f, &res, 4);
+      return f;
+    } else {
+      uint32_t res = (sign << 31) | 0x7f800000 | (mantissa << 13);
+      float f; std::memcpy(&f, &res, 4);
+      return f;
+    }
+  }
+
+  exponent = exponent + (127 - 15);
+  mantissa = mantissa << 13;
+  uint32_t res = (sign << 31) | (exponent << 23) | mantissa;
+  float f; std::memcpy(&f, &res, 4);
+  return f;
+}
+
 std::vector<float>
 EmbeddingStore::BlobToFloats(
     const void* data, int size) {
   if (!data || size <= 0) return {};
-  size_t count =
-      static_cast<size_t>(size) / sizeof(float);
-  std::vector<float> v(count);
-  std::memcpy(v.data(), data,
-              count * sizeof(float));
-  return v;
+
+  int num_elements = 0;
+  if (size % sizeof(float) == 0) {
+    // Float32 processing (3072 bytes for 768-dim)
+    num_elements = size / sizeof(float);
+    std::vector<float> vec(num_elements);
+    std::memcpy(vec.data(), data, size);
+    return vec;
+  } else if (size % 2 == 0) {
+    // Float16 processing (1536 bytes for 768-dim)
+    num_elements = size / 2;
+    std::vector<float> vec(num_elements);
+    const uint16_t* u16_data = static_cast<const uint16_t*>(data);
+    for (int i = 0; i < num_elements; ++i) {
+      vec[i] = HalfToFloat(u16_data[i]);
+    }
+    return vec;
+  }
+
+  return {};
 }
 
 }  // namespace tizenclaw

@@ -239,7 +239,7 @@ do_build() {
 # ─────────────────────────────────────────────
 # Step 2: Find the built RPM
 # ─────────────────────────────────────────────
-RPM_FILE=""
+RPM_FILES=()
 RPMS_DIR=""
 
 find_rpm() {
@@ -265,8 +265,8 @@ find_rpm() {
     if [ -z "${RPMS_DIR}" ]; then
       RPMS_DIR="${HOME}/GBS-ROOT/local/repos/tizen/${ARCH}/RPMS"
     fi
-    RPM_FILE="${RPMS_DIR}/${PKG_NAME}-1.0.0-1.${ARCH}.rpm"
-    log "[DRY-RUN] Assuming RPM: ${RPM_FILE}"
+    RPM_FILES=("${RPMS_DIR}/${PKG_NAME}-1.0.0-1.${ARCH}.rpm" "${RPMS_DIR}/${PKG_NAME}-rag-1.0.0-1.${ARCH}.rpm")
+    log "[DRY-RUN] Assuming RPMs: ${RPM_FILES[*]}"
     return 0
   fi
 
@@ -276,27 +276,22 @@ find_rpm() {
 
   log "Searching in: ${RPMS_DIR}"
 
-  # Find the main RPM (exclude -unittests, -debuginfo, -debugsource)
-  RPM_FILE=$(find "${RPMS_DIR}" -maxdepth 1 \
-    -name "${PKG_NAME}-[0-9]*.rpm" \
+  # Find all matching RPMs (exclude unittests, debuginfo, debugsource)
+  mapfile -t RPM_FILES < <(find "${RPMS_DIR}" -maxdepth 1 \
+    -name "${PKG_NAME}*.rpm" \
     ! -name "*-unittests-*" \
     ! -name "*-debuginfo-*" \
     ! -name "*-debugsource-*" \
-    -printf '%T@ %p\n' 2>/dev/null \
-    | sort -rn | head -1 | cut -d' ' -f2-)
+    2>/dev/null | sort)
 
-  if [ -z "${RPM_FILE}" ]; then
-    fail "No ${PKG_NAME} RPM found in ${RPMS_DIR}/\n       Run a build first or remove --skip-build"
+  if [ ${#RPM_FILES[@]} -eq 0 ]; then
+    fail "No ${PKG_NAME} RPMs found in ${RPMS_DIR}/\n       Run a build first or remove --skip-build"
   fi
 
-  local rpm_size
-  rpm_size=$(du -h "${RPM_FILE}" | cut -f1)
-  local rpm_time
-  rpm_time=$(stat -c '%y' "${RPM_FILE}" | cut -d'.' -f1)
-
-  ok "Found: $(basename "${RPM_FILE}")"
-  log "  Size : ${rpm_size}"
-  log "  Built: ${rpm_time}"
+  for rpm in "${RPM_FILES[@]}"; do
+    local rpm_size=$(du -h "${rpm}" | cut -f1)
+    ok "Found: $(basename "${rpm}") (${rpm_size})"
+  done
 }
 
 # ─────────────────────────────────────────────
@@ -340,22 +335,21 @@ do_deploy() {
   run sdb_shell mount -o remount,rw /
   ok "Filesystem remounted (rw)"
 
-  # 3-4. Push RPM
-  local rpm_basename
-  rpm_basename=$(basename "${RPM_FILE}")
-  log "Pushing ${rpm_basename} to device:/tmp/"
-  run sdb_cmd push "${RPM_FILE}" /tmp/
-  ok "RPM transferred"
+  # 3-4. Push and Install RPMs
+  for rpm in "${RPM_FILES[@]}"; do
+    local rpm_basename=$(basename "${rpm}")
+    log "Pushing ${rpm_basename} to device:/tmp/"
+    run sdb_cmd push "${rpm}" /tmp/
+    ok "RPM transferred: ${rpm_basename}"
 
-  # 3-5. Install RPM
-  log "Installing RPM..."
-  run sdb_shell rpm -Uvh --force "/tmp/${rpm_basename}"
-  ok "RPM installed"
+    log "Installing ${rpm_basename}..."
+    run sdb_shell rpm -Uvh --force "/tmp/${rpm_basename}"
+    ok "RPM installed: ${rpm_basename}"
 
-  # 3-6. Cleanup remote RPM
-  log "Cleaning up /tmp/${rpm_basename}..."
-  run sdb_shell rm -f "/tmp/${rpm_basename}"
-  ok "Cleanup done"
+    log "Cleaning up /tmp/${rpm_basename}..."
+    run sdb_shell rm -f "/tmp/${rpm_basename}"
+  done
+  ok "All RPMs processed"
 }
 
 # ─────────────────────────────────────────────

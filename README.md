@@ -61,8 +61,9 @@ gbs build -A x86_64 --include-all
 
 # Deploy to device
 sdb root on && sdb shell mount -o remount,rw /
-sdb push ~/GBS-ROOT/local/repos/tizen/x86_64/RPMS/tizenclaw-*.rpm /tmp/
-sdb shell rpm -Uvh --force /tmp/tizenclaw-*.rpm
+sdb push ~/GBS-ROOT/local/repos/tizen/x86_64/RPMS/tizenclaw-1.0.0-1.x86_64.rpm /tmp/
+sdb push ~/GBS-ROOT/local/repos/tizen/x86_64/RPMS/tizenclaw-rag-1.0.0-1.x86_64.rpm /tmp/
+sdb shell rpm -Uvh --force /tmp/tizenclaw-1.0.0-1.x86_64.rpm /tmp/tizenclaw-rag-1.0.0-1.x86_64.rpm
 
 # Start daemon
 sdb shell systemctl daemon-reload
@@ -243,9 +244,10 @@ Deploy to a Tizen emulator or device over `sdb`:
 sdb root on
 sdb shell mount -o remount,rw /
 
-# Push and install RPM
+# Push and install TizenClaw and the optional RAG Database RPMs
 sdb push ~/GBS-ROOT/local/repos/tizen/x86_64/RPMS/tizenclaw-1.0.0-1.x86_64.rpm /tmp/
-sdb shell rpm -Uvh --force /tmp/tizenclaw-1.0.0-1.x86_64.rpm
+sdb push ~/GBS-ROOT/local/repos/tizen/x86_64/RPMS/tizenclaw-rag-1.0.0-1.x86_64.rpm /tmp/
+sdb shell rpm -Uvh --force /tmp/tizenclaw-1.0.0-1.x86_64.rpm /tmp/tizenclaw-rag-1.0.0-1.x86_64.rpm
 
 # Restart the daemon
 sdb shell systemctl daemon-reload
