@@ -134,6 +134,10 @@ private:
         const std::string& operation,
         const nlohmann::json& args);
 
+    // Execute custom skill management operations
+    std::string ExecuteCustomSkillOp(
+        const nlohmann::json& args);
+
     // Generate embedding vector via LLM API
     std::vector<float> GenerateEmbedding(
         const std::string& text);

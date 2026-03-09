@@ -485,6 +485,10 @@ std::string AgentCore::ProcessPrompt(
               tc.name, tc.args,
               session_id);
         } else if (
+            tc.name == "manage_custom_skill") {
+          r.output = ExecuteCustomSkillOp(
+              tc.args);
+        } else if (
             tc.name == "ingest_document" ||
             tc.name == "search_knowledge") {
           r.output = ExecuteRagOp(
@@ -735,6 +739,46 @@ AgentCore::LoadSkillDeclarations() {
     }
   }
 
+  // Also scan custom_skills directory
+  const std::string custom_skills_dir =
+      "/opt/usr/share/tizenclaw/tools/"
+      "custom_skills";
+  if (fs::is_directory(custom_skills_dir, ec)) {
+    for (const auto& entry :
+         fs::directory_iterator(
+             custom_skills_dir, ec)) {
+      if (!entry.is_directory()) continue;
+      auto dirname =
+          entry.path().filename().string();
+      if (dirname[0] == '.') continue;
+      std::string manifest_path =
+          entry.path() / "manifest.json";
+      std::ifstream mf(manifest_path);
+      if (!mf.is_open()) continue;
+
+      try {
+        nlohmann::json j;
+        mf >> j;
+        if (j.contains("parameters")) {
+          LlmToolDecl t;
+          t.name =
+              j.value("name", dirname);
+          t.description =
+              j.value("description", "");
+          t.parameters = j["parameters"];
+          tools.push_back(t);
+          tool_policy_.LoadManifestRiskLevel(
+              t.name, j);
+        }
+      } catch (...) {
+        LOG(WARNING)
+            << "Failed to parse custom "
+            << "manifest: "
+            << manifest_path;
+      }
+    }
+  }
+
   // Built-in tool: execute_code
   LlmToolDecl code_tool;
   code_tool.name = "execute_code";
@@ -946,6 +990,70 @@ AgentCore::LoadSkillDeclarations() {
           {"target_session", "message"})}
   };
   tools.push_back(send_to_session_tool);
+
+  // Built-in tool: manage_custom_skill
+  LlmToolDecl custom_skill_tool;
+  custom_skill_tool.name =
+      "manage_custom_skill";
+  custom_skill_tool.description =
+      "Create, update, delete, or list custom "
+      "Python skills at runtime. Custom skills "
+      "are auto-discovered and immediately "
+      "available as tools. Use this to extend "
+      "the agent's capabilities with new Tizen "
+      "C-API integrations or utility functions. "
+      "The skill Python code MUST define a main "
+      "function with the same name as the skill, "
+      "print JSON to stdout, and use "
+      "CLAW_ARGS env for parameters.";
+  custom_skill_tool.parameters = {
+      {"type", "object"},
+      {"properties", {
+          {"operation", {
+              {"type", "string"},
+              {"enum", nlohmann::json::array(
+                  {"create", "update",
+                   "delete", "list"})},
+              {"description",
+               "Operation to perform"}
+          }},
+          {"skill_name", {
+              {"type", "string"},
+              {"description",
+               "Name of the custom skill "
+               "(alphanumeric + underscore)"}
+          }},
+          {"description", {
+              {"type", "string"},
+              {"description",
+               "Description of what the "
+               "skill does"}
+          }},
+          {"parameters_schema", {
+              {"type", "object"},
+              {"description",
+               "JSON Schema for skill "
+               "parameters (type, properties, "
+               "required)"}
+          }},
+          {"python_code", {
+              {"type", "string"},
+              {"description",
+               "Complete Python source code "
+               "for the skill"}
+          }},
+          {"risk_level", {
+              {"type", "string"},
+              {"enum", nlohmann::json::array(
+                  {"low", "medium", "high"})},
+              {"description",
+               "Risk level (default: low)"}
+          }}
+      }},
+      {"required", nlohmann::json::array(
+          {"operation"})}
+  };
+  tools.push_back(custom_skill_tool);
 
   // Built-in tool: ingest_document (RAG)
   LlmToolDecl ingest_tool;
@@ -2439,6 +2547,188 @@ std::string AgentCore::ExecuteActionOp(
          "\"Tizen Action not supported "
          "in this build\"}";
 #endif
+}
+
+std::string AgentCore::ExecuteCustomSkillOp(
+    const nlohmann::json& args) {
+  namespace fs = std::filesystem;
+  LOG(INFO) << "CustomSkillOp";
+
+  std::string op =
+      args.value("operation", "");
+  std::string name =
+      args.value("skill_name", "");
+  std::string desc =
+      args.value("description", "");
+  std::string code =
+      args.value("python_code", "");
+  std::string risk =
+      args.value("risk_level", "low");
+  nlohmann::json params_schema =
+      args.value("parameters_schema",
+                 nlohmann::json::object());
+
+  const std::string base_dir =
+      "/opt/usr/share/tizenclaw/tools/"
+      "custom_skills";
+
+  // Ensure base directory exists
+  std::error_code ec;
+  fs::create_directories(base_dir, ec);
+
+  if (op == "list") {
+    nlohmann::json skills =
+        nlohmann::json::array();
+    if (fs::is_directory(base_dir, ec)) {
+      for (const auto& entry :
+           fs::directory_iterator(base_dir, ec)) {
+        if (!entry.is_directory()) continue;
+        auto dirname =
+            entry.path().filename().string();
+        std::string mpath =
+            entry.path() / "manifest.json";
+        std::ifstream mf(mpath);
+        if (mf.is_open()) {
+          try {
+            nlohmann::json j;
+            mf >> j;
+            skills.push_back({
+                {"name", j.value("name",
+                                 dirname)},
+                {"description",
+                 j.value("description", "")},
+                {"risk_level",
+                 j.value("risk_level", "low")}
+            });
+          } catch (...) {
+            skills.push_back({
+                {"name", dirname},
+                {"error",
+                 "Failed to parse manifest"}
+            });
+          }
+        }
+      }
+    }
+    return nlohmann::json({
+        {"status", "ok"},
+        {"custom_skills", skills},
+        {"count", (int)skills.size()},
+        {"base_dir", base_dir}
+    }).dump();
+  }
+
+  if (name.empty()) {
+    return "{\"error\": \"skill_name "
+           "is required\"}";
+  }
+
+  // Validate name (alphanumeric + underscore)
+  for (char c : name) {
+    if (!std::isalnum(c) && c != '_') {
+      return "{\"error\": \"skill_name must "
+             "be alphanumeric + underscore\"}";
+    }
+  }
+
+  std::string skill_dir =
+      base_dir + "/" + name;
+
+  if (op == "create" || op == "update") {
+    if (desc.empty() || code.empty()) {
+      return "{\"error\": \"description and "
+             "python_code are required for "
+             "create/update\"}";
+    }
+
+    if (op == "create" &&
+        fs::is_directory(skill_dir, ec)) {
+      return "{\"error\": \"Skill already "
+             "exists: " + name + "\"}";
+    }
+
+    fs::create_directories(skill_dir, ec);
+
+    // Build parameters schema if not provided
+    if (params_schema.empty() ||
+        !params_schema.contains("type")) {
+      params_schema = {
+          {"type", "object"},
+          {"properties",
+           nlohmann::json::object()},
+          {"required",
+           nlohmann::json::array()}
+      };
+    }
+
+    // Write manifest.json
+    nlohmann::json manifest = {
+        {"name", name},
+        {"risk_level", risk},
+        {"description", desc},
+        {"parameters", params_schema}
+    };
+
+    std::string manifest_path =
+        skill_dir + "/manifest.json";
+    std::ofstream mf(manifest_path);
+    if (!mf.is_open()) {
+      return "{\"error\": \"Failed to "
+             "write manifest\"}";
+    }
+    mf << manifest.dump(4) << std::endl;
+    mf.close();
+
+    // Write Python script
+    std::string py_path =
+        skill_dir + "/" + name + ".py";
+    std::ofstream pf(py_path);
+    if (!pf.is_open()) {
+      return "{\"error\": \"Failed to "
+             "write Python file\"}";
+    }
+    pf << code;
+    pf.close();
+
+    // Invalidate tool cache so new skill
+    // is discovered on next prompt
+    cached_tools_loaded_.store(false);
+
+    return nlohmann::json({
+        {"status", "ok"},
+        {"operation", op},
+        {"skill_name", name},
+        {"manifest_path", manifest_path},
+        {"python_path", py_path},
+        {"message",
+         "Skill " + name +
+         (op == "create"
+              ? " created"
+              : " updated") +
+         " and will be available "
+         "immediately"}
+    }).dump();
+
+  } else if (op == "delete") {
+    if (!fs::is_directory(skill_dir, ec)) {
+      return "{\"error\": \"Skill not found: "
+             + name + "\"}";
+    }
+
+    fs::remove_all(skill_dir, ec);
+    cached_tools_loaded_.store(false);
+
+    return nlohmann::json({
+        {"status", "ok"},
+        {"operation", "delete"},
+        {"skill_name", name},
+        {"message",
+         "Skill " + name + " deleted"}
+    }).dump();
+  }
+
+  return "{\"error\": \"Unknown operation: "
+         + op + "\"}";
 }
 
 } // namespace tizenclaw
