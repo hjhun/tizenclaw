@@ -104,9 +104,13 @@ install -D -m 0755 "${CRUN_SRC}" \
 # Tizen structure
 mkdir -p %{buildroot}/usr/bin
 mkdir -p %{buildroot}/usr/lib/systemd/system/
+mkdir -p %{buildroot}/usr/lib/systemd/system/multi-user.target.wants
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/skills
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/config
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/tools/embedded
+
+ln -sf ../tizenclaw.service %{buildroot}/usr/lib/systemd/system/multi-user.target.wants/tizenclaw.service
+ln -sf ../tizenclaw-skills-secure.service %{buildroot}/usr/lib/systemd/system/multi-user.target.wants/tizenclaw-skills-secure.service
 
 %files
 %defattr(-,root,root,-)
@@ -116,6 +120,8 @@ mkdir -p %{buildroot}/opt/usr/share/tizenclaw/tools/embedded
 /usr/bin/start_mcp_tunnel.sh
 /usr/lib/systemd/system/tizenclaw.service
 /usr/lib/systemd/system/tizenclaw-skills-secure.service
+/usr/lib/systemd/system/multi-user.target.wants/tizenclaw.service
+/usr/lib/systemd/system/multi-user.target.wants/tizenclaw-skills-secure.service
 /usr/libexec/tizenclaw/run_standard_container.sh
 /usr/libexec/tizenclaw/skills_secure_container.sh
 /usr/libexec/tizenclaw/crun
