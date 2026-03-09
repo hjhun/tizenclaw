@@ -1,0 +1,22 @@
+{
+    "name": "send_app_control_with_appid",
+    "version": "1.0",
+    "description": "Launch a specific Tizen application using its app_id. Use this when you KNOW the exact app_id (e.g., org.tizen.browser, org.tizen.setting). Sets operation to default and sends a launch request directly to the specified application.",
+    "entrypoint": "python3 send_app_control_with_appid.py",
+    "risk_level": "high",
+    "dependencies": [],
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "app_id": {
+                "type": "string",
+                "description": "The Tizen application ID to launch (e.g., org.tizen.browser, org.tizen.setting, org.tizen.gallery)"
+            },
+            "extra_data": {
+                "type": "object",
+                "description": "Optional key-value pairs to pass as extra data to the app"
+            }
+        },
+        "required": ["app_id"]
+    }
+}
