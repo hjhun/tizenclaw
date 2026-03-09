@@ -87,8 +87,8 @@ INSTALL(FILES ${CMAKE_SOURCE_DIR}/data/img/${TIZENCLAW_ARCH}/rootfs.tar.gz
   DESTINATION /opt/usr/share/tizenclaw/img/)
 
 # Config samples
-FILE(GLOB CONFIG_SAMPLES ${CMAKE_SOURCE_DIR}/data/*.sample ${CMAKE_SOURCE_DIR}/data/*.txt ${CMAKE_SOURCE_DIR}/data/*.json)
-INSTALL(FILES ${CONFIG_SAMPLES} DESTINATION /opt/usr/share/tizenclaw/config/)
+FILE(GLOB CONFIG_FILES ${CMAKE_SOURCE_DIR}/data/config/*.txt ${CMAKE_SOURCE_DIR}/data/config/*.json)
+INSTALL(FILES ${CONFIG_FILES} DESTINATION /opt/usr/share/tizenclaw/config/)
 
 # Skills, tools, web
 INSTALL(DIRECTORY ${CMAKE_SOURCE_DIR}/skills/ DESTINATION /opt/usr/share/tizenclaw/skills/)

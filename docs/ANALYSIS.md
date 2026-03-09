@@ -152,12 +152,13 @@ tizenclaw/
 │   ├── create_pipeline.md           # Pipeline creation
 │   └── ...                          # + 9 more tool schemas
 ├── data/
-│   ├── llm_config.json.sample       # LLM config sample
-│   ├── telegram_config.json.sample  # Telegram Bot config sample
-│   ├── slack_config.json.sample     # Slack config sample
-│   ├── discord_config.json.sample   # Discord config sample
-│   ├── webhook_config.json.sample   # Webhook config sample
-│   ├── tool_policy.json             # Tool execution policy
+│   ├── sample/                      # Sample configs (not installed to device)
+│   │   ├── llm_config.json.sample
+│   │   ├── telegram_config.json.sample
+│   │   └── ...                      # Other sample configs
+│   ├── config/                      # Active configuration files
+│   │   ├── tool_policy.json         # Tool execution policy
+│   │   └── agent_roles.json         # Agent roles configuration
 │   ├── system_prompt.txt            # Default system prompt
 │   ├── web/                         # Dashboard SPA files
 │   └── img/                         # Container rootfs images (per-arch)

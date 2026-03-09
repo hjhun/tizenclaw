@@ -152,12 +152,13 @@ tizenclaw/
 │   ├── create_pipeline.md           # 파이프라인 생성
 │   └── ...                          # + 9개 추가 도구 스키마
 ├── data/
-│   ├── llm_config.json.sample       # LLM 설정 샘플
-│   ├── telegram_config.json.sample  # Telegram Bot 설정 샘플
-│   ├── slack_config.json.sample     # Slack 설정 샘플
-│   ├── discord_config.json.sample   # Discord 설정 샘플
-│   ├── webhook_config.json.sample   # Webhook 설정 샘플
-│   ├── tool_policy.json             # 도구 실행 정책
+│   ├── sample/                      # 샘플 설정 파일 목록 (디바이스 미설치)
+│   │   ├── llm_config.json.sample
+│   │   ├── telegram_config.json.sample
+│   │   └── ...                      # 기타 샘플 설정들
+│   ├── config/                      # 활성 설정 파일 목록
+│   │   ├── tool_policy.json         # 도구 실행 정책
+│   │   └── agent_roles.json         # 에이전트 역할 설정
 │   ├── system_prompt.txt            # 기본 시스템 프롬프트
 │   ├── web/                         # 대시보드 SPA 파일
 │   └── img/                         # 컨테이너 rootfs 이미지 (아키텍처별)
