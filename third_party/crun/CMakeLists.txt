@@ -11,7 +11,8 @@ SET(CRUN_PATCHES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/patches")
 FILE(GLOB CRUN_PATCHES "${CRUN_PATCHES_DIR}/*.patch")
 
 # Create a build script that runs all steps
-FILE(WRITE "${CMAKE_CURRENT_BINARY_DIR}/build_crun.sh" "#!/bin/sh
+FILE(WRITE "${CMAKE_CURRENT_BINARY_DIR}/build_crun.sh"
+"#!/bin/sh
 set -e
 
 CRUN_SRC_TAR=\"${CRUN_SRC_TAR}\"
@@ -19,21 +20,22 @@ CRUN_BUILD_DIR=\"${CRUN_BUILD_DIR}\"
 CRUN_PATCHES_DIR=\"${CRUN_PATCHES_DIR}\"
 
 # 1. Clean and extract
-rm -rf \"${CRUN_BUILD_DIR}\"
-tar -xf \"${CRUN_SRC_TAR}\" -C \"${CMAKE_CURRENT_BINARY_DIR}\"
+rm -rf \"$CRUN_BUILD_DIR\"
+tar -xf \"$CRUN_SRC_TAR\" -C \"${CMAKE_CURRENT_BINARY_DIR}\"
 
 # 2. Apply patches
-for p in \"${CRUN_PATCHES_DIR}\"/*.patch; do
+for p in \"$CRUN_PATCHES_DIR\"/*.patch; do
   if [ -f \"$p\" ]; then
     echo \"Applying patch: $p\"
-    patch -p1 -d \"${CRUN_BUILD_DIR}\" < \"$p\"
+    patch -p1 -d \"$CRUN_BUILD_DIR\" < \"$p\"
   fi
 done
 
-# 3. Configure
-cd \"${CRUN_BUILD_DIR}\"
-CFLAGS=\"$CFLAGS -Wno-shadow -Wno-unused-variable -Wno-unused-function -Wno-stringop-overread -Wno-stringop-overflow\" \\
-  ./configure \\
+# 3. Strip -Werror flags for third-party code and configure
+CFLAGS=$(echo \"$CFLAGS\" | sed 's/-Werror[^ ]*//g')
+export CFLAGS=\"$CFLAGS -Wno-shadow -Wno-unused-variable -Wno-unused-function -Wno-stringop-overread -Wno-stringop-overflow -Wno-sign-compare\"
+cd \"$CRUN_BUILD_DIR\"
+./configure \\
     --prefix=/usr \\
     --disable-systemd \\
     --disable-shared \\
@@ -42,7 +44,7 @@ CFLAGS=\"$CFLAGS -Wno-shadow -Wno-unused-variable -Wno-unused-function -Wno-stri
     --disable-seccomp
 
 # 4. Build
-make -j\$(nproc)
+make -j$(nproc)
 
 echo \"crun ${CRUN_VERSION} built successfully.\"
 ")
