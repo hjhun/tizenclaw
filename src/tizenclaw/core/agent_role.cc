@@ -37,14 +37,21 @@ bool SupervisorEngine::LoadRoles(
         roles_mutex_);
     roles_.clear();
 
-    if (!config.contains("roles") ||
-        !config["roles"].is_array()) {
+    // Accept both "roles" and "agents" keys
+    nlohmann::json roles_array;
+    if (config.contains("roles") &&
+        config["roles"].is_array()) {
+      roles_array = config["roles"];
+    } else if (config.contains("agents") &&
+               config["agents"].is_array()) {
+      roles_array = config["agents"];
+    } else {
       LOG(WARNING)
-          << "No 'roles' array in config";
+          << "No 'roles' or 'agents' array in config";
       return false;
     }
 
-    for (auto& role_json : config["roles"]) {
+    for (auto& role_json : roles_array) {
       AgentRole role;
       role.name =
           role_json.value("name", "");
@@ -53,10 +60,16 @@ bool SupervisorEngine::LoadRoles(
       role.max_iterations =
           role_json.value("max_iterations", 10);
 
-      if (role_json.contains("allowed_tools") &&
-          role_json["allowed_tools"].is_array()) {
+      // Accept both "allowed_tools" and "tools"
+      std::string tools_key = "allowed_tools";
+      if (!role_json.contains(tools_key) &&
+          role_json.contains("tools")) {
+        tools_key = "tools";
+      }
+      if (role_json.contains(tools_key) &&
+          role_json[tools_key].is_array()) {
         for (auto& t :
-             role_json["allowed_tools"]) {
+             role_json[tools_key]) {
           role.allowed_tools.push_back(
               t.get<std::string>());
         }
