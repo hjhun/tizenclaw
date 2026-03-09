@@ -88,8 +88,13 @@ detect_arch() {
     return 0
   fi
 
-  ARCH="${cpu_arch}"
-  ok "Detected device architecture: ${ARCH}"
+  # Map sdb cpu_arch to GBS-compatible architecture name
+  case "${cpu_arch}" in
+    armv7)   ARCH="armv7l" ;;
+    *)       ARCH="${cpu_arch}" ;;
+  esac
+
+  ok "Detected device architecture: ${ARCH} (cpu_arch: ${cpu_arch})"
 }
 
 # ─────────────────────────────────────────────
