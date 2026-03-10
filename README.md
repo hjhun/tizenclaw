@@ -78,7 +78,7 @@ If installed, you can launch the dashboard directly on the device screen:
 
 ```bash
 # Launch the dashboard UI on the device
-sdb shell app_control --uri http://localhost:9090
+sdb shell app_launcher -s org.tizen.tizenclaw-webview __APP_SVC_URI__ "http://localhost:9090"
 ```
 
 Alternatively, access it from your development machine:
