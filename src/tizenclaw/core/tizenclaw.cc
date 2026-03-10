@@ -412,153 +412,130 @@ void TizenClawDaemon::HandleIpcClient(int client_sock) {
         try {
             auto req = nlohmann::json::parse(raw_msg);
 
-            std::string session_id = req.value("session_id", "default");
-            std::string command = req.value("command", "");
-
-            // Handle get_usage command
-            if (command == "get_usage") {
-                std::string usage_type =
-                    req.value("type", "daily");
-                auto& store =
-                    agent_->GetSessionStore();
-
-                if (usage_type == "session") {
-                    std::string sid =
-                        req.value("session_id",
-                                  "default");
-                    auto s = store.LoadTokenUsage(
-                        sid);
-                    response_json = {
-                        {"type", "usage"},
-                        {"usage_type", "session"},
-                        {"session_id", sid},
-                        {"prompt_tokens",
-                         s.total_prompt_tokens},
-                        {"completion_tokens",
-                         s.total_completion_tokens},
-                        {"entries",
-                         (int)s.entries.size()},
-                        {"status", "ok"}};
-                } else if (usage_type == "monthly") {
-                    std::string month =
-                        req.value("month", "");
-                    auto s =
-                        store.LoadMonthlyUsage(
-                            month);
-                    response_json = {
-                        {"type", "usage"},
-                        {"usage_type", "monthly"},
-                        {"month", month},
-                        {"prompt_tokens",
-                         s.total_prompt_tokens},
-                        {"completion_tokens",
-                         s.total_completion_tokens},
-                        {"total_requests",
-                         s.total_requests},
-                        {"status", "ok"}};
-                } else {
-                    // Default: daily
-                    std::string date =
-                        req.value("date", "");
-                    auto s =
-                        store.LoadDailyUsage(date);
-                    response_json = {
-                        {"type", "usage"},
-                        {"usage_type", "daily"},
-                        {"date", date},
-                        {"prompt_tokens",
-                         s.total_prompt_tokens},
-                        {"completion_tokens",
-                         s.total_completion_tokens},
-                        {"total_requests",
-                         s.total_requests},
-                        {"status", "ok"}};
-                }
-            } else {
-            // Normal prompt processing
-            std::string prompt =
-                req.value("text", "");
-            bool stream_requested =
-                req.value("stream", false);
-
-            if (prompt.empty()) {
+            // JSON-RPC 2.0 Check
+            if (req.value("jsonrpc", "") != "2.0" || !req.contains("method")) {
                 response_json = {
-                    {"type", "response"},
-                    {"session_id", session_id},
-                    {"status", "error"},
-                    {"text", "Empty prompt"}
+                    {"jsonrpc", "2.0"},
+                    {"error", {{"code", -32600}, {"message", "Invalid Request"}}},
+                    {"id", req.value("id", nlohmann::json(nullptr))}
                 };
             } else {
-                std::function<void(
-                    const std::string&)>
-                    on_chunk = nullptr;
-                if (stream_requested) {
-                    on_chunk = [client_sock,
-                        session_id](
-                        const std::string& chunk)
-                    {
-                        nlohmann::json cj = {
-                            {"type",
-                             "stream_chunk"},
-                            {"session_id",
-                             session_id},
-                            {"text", chunk}
+                std::string method = req.value("method", "");
+                nlohmann::json params = req.value("params", nlohmann::json::object());
+                nlohmann::json req_id = req.value("id", nlohmann::json(nullptr));
+
+                // Handle get_usage method
+                if (method == "get_usage") {
+                    std::string usage_type = params.value("type", "daily");
+                    auto& store = agent_->GetSessionStore();
+
+                    if (usage_type == "session") {
+                        std::string sid = params.value("session_id", "default");
+                        auto s = store.LoadTokenUsage(sid);
+                        response_json = {
+                            {"jsonrpc", "2.0"},
+                            {"id", req_id},
+                            {"result", {
+                                {"usage_type", "session"},
+                                {"session_id", sid},
+                                {"prompt_tokens", s.total_prompt_tokens},
+                                {"completion_tokens", s.total_completion_tokens},
+                                {"entries", (int)s.entries.size()}
+                            }}
                         };
-                        std::string cs =
-                            cj.dump();
-                        uint32_t cl =
-                            htonl(cs.size());
-                        if (::write(client_sock,
-                                &cl, 4) == 4) {
-                            ssize_t t = 0;
-                            auto sz =
-                                static_cast<
-                                    ssize_t>(
-                                    cs.size());
-                            while (t < sz) {
-                                auto w = ::write(
-                                    client_sock,
-                                    cs.data() + t,
-                                    sz - t);
-                                if (w <= 0) break;
-                                t += w;
-                            }
+                    } else if (usage_type == "monthly") {
+                        std::string month = params.value("month", "");
+                        auto s = store.LoadMonthlyUsage(month);
+                        response_json = {
+                            {"jsonrpc", "2.0"},
+                            {"id", req_id},
+                            {"result", {
+                                {"usage_type", "monthly"},
+                                {"month", month},
+                                {"prompt_tokens", s.total_prompt_tokens},
+                                {"completion_tokens", s.total_completion_tokens},
+                                {"total_requests", s.total_requests}
+                            }}
+                        };
+                    } else {
+                        // Default: daily
+                        std::string date = params.value("date", "");
+                        auto s = store.LoadDailyUsage(date);
+                        response_json = {
+                            {"jsonrpc", "2.0"},
+                            {"id", req_id},
+                            {"result", {
+                                {"usage_type", "daily"},
+                                {"date", date},
+                                {"prompt_tokens", s.total_prompt_tokens},
+                                {"completion_tokens", s.total_completion_tokens},
+                                {"total_requests", s.total_requests}
+                            }}
+                        };
+                    }
+                } else if (method == "prompt") {
+                    std::string session_id = params.value("session_id", "default");
+                    std::string prompt = params.value("text", "");
+                    bool stream_requested = params.value("stream", false);
+
+                    if (prompt.empty()) {
+                        response_json = {
+                            {"jsonrpc", "2.0"},
+                            {"error", {{"code", -32602}, {"message", "Empty prompt"}}},
+                            {"id", req_id}
+                        };
+                    } else {
+                        std::function<void(const std::string&)> on_chunk = nullptr;
+                        if (stream_requested) {
+                            on_chunk = [client_sock](const std::string& chunk) {
+                                nlohmann::json cj = {
+                                    {"jsonrpc", "2.0"},
+                                    {"method", "stream_chunk"},
+                                    {"params", {{"text", chunk}}}
+                                };
+                                std::string cs = cj.dump();
+                                uint32_t cl = htonl(cs.size());
+                                if (::write(client_sock, &cl, 4) == 4) {
+                                    ssize_t t = 0;
+                                    auto sz = static_cast<ssize_t>(cs.size());
+                                    while (t < sz) {
+                                        auto w = ::write(client_sock, cs.data() + t, sz - t);
+                                        if (w <= 0) break;
+                                        t += w;
+                                    }
+                                }
+                            };
                         }
+
+                        std::string result = agent_->ProcessPrompt(session_id, prompt, on_chunk);
+                        response_json = {
+                            {"jsonrpc", "2.0"},
+                            {"id", req_id},
+                            {"result", {{"text", result}}}
+                        };
+                    }
+                } else {
+                    response_json = {
+                        {"jsonrpc", "2.0"},
+                        {"error", {{"code", -32601}, {"message", "Method not found"}}},
+                        {"id", req_id}
                     };
                 }
-
-                std::string result =
-                    agent_->ProcessPrompt(
-                        session_id, prompt,
-                        on_chunk);
-                response_json = {
-                    {"type", stream_requested ? "stream_end" : "response"},
-                    {"session_id", session_id},
-                    {"status", "ok"},
-                    {"text", result}
-                };
-            }
-            } // end else (normal prompt)
+            } // end else valid json-rpc
         } catch (const nlohmann::json::exception& e) {
             LOG(WARNING) << "Non-JSON IPC msg, treating as plain text";
-            std::string result =
-                agent_->ProcessPrompt(
-                    "default", raw_msg);
+            std::string result = agent_->ProcessPrompt("default", raw_msg);
             response_json = {
-                {"type", "response"},
-                {"session_id", "default"},
-                {"status", "ok"},
-                {"text", result}
+                {"jsonrpc", "2.0"},
+                {"id", nlohmann::json(nullptr)},
+                {"result", {{"text", result}}}
             };
         } catch (const std::exception& e) {
             LOG(ERROR) << "IPC processing error: " << e.what();
             response_json = {
-                {"type", "response"},
-                {"session_id", "default"},
-                {"status", "error"},
-                {"text",
-                 std::string("Internal error: ")
-                     + e.what()}
+                {"jsonrpc", "2.0"},
+                {"id", nlohmann::json(nullptr)},
+                {"error", {{"code", -32000}, {"message", std::string("Internal error: ") + e.what()}}}
             };
         }
 

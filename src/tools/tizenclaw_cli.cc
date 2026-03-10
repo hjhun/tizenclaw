@@ -119,10 +119,11 @@ std::string SendRequest(int sock,
                         bool stream) {
   // Build JSON manually (no nlohmann dependency)
   std::string json_req =
-      "{\"session_id\":\"" + JsonEscape(session_id) +
+      "{\"jsonrpc\":\"2.0\",\"method\":\"prompt\",\"id\":1,\"params\":{"
+      "\"session_id\":\"" + JsonEscape(session_id) +
       "\",\"text\":\"" + JsonEscape(prompt) +
       "\",\"stream\":" + (stream ? "true" : "false") +
-      "}";
+      "}}";
 
   // Send length-prefixed request
   uint32_t net_len = htonl(
@@ -171,12 +172,13 @@ std::string SendRequest(int sock,
         return val;
       };
 
-      std::string type = find_value(chunk_str, "type");
+      std::string method = find_value(chunk_str, "method");
       std::string text = find_value(chunk_str, "text");
 
-      if (type == "stream_chunk") {
+      if (method == "stream_chunk") {
         std::cout << text << std::flush;
-      } else if (type == "stream_end") {
+      } else if (chunk_str.find("\"result\":") != std::string::npos ||
+                 chunk_str.find("\"error\":") != std::string::npos) {
         if (!text.empty()) {
           final_text = text;
         }
@@ -284,7 +286,7 @@ int main(int argc, char* argv[]) {
       if (sock < 0) return 1;
 
       std::string json_req =
-          "{\"command\":\"get_usage\","
+          "{\"jsonrpc\":\"2.0\",\"method\":\"get_usage\",\"id\":1,\"params\":{"
           "\"type\":\"" +
           JsonEscape(utype) + "\"";
       if (utype == "daily" && !uvalue.empty())
@@ -301,7 +303,7 @@ int main(int argc, char* argv[]) {
         json_req +=
             ",\"session_id\":\"" +
             JsonEscape(uvalue) + "\"";
-      json_req += "}";
+      json_req += "}}";
 
       std::string resp =
           SendRawJson(sock, json_req);
