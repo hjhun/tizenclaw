@@ -37,6 +37,31 @@ PluginManager::~PluginManager() {
 
 bool PluginManager::Initialize() {
   StartListening();
+
+  pkgmgrinfo_pkginfo_metadata_filter_h filter;
+  int ret = pkgmgrinfo_pkginfo_metadata_filter_create(&filter);
+  if (ret != PMINFO_R_OK) {
+    LOG(ERROR) << "Failed to create metadata filter: " << ret;
+    return false;
+  }
+
+  pkgmgrinfo_pkginfo_metadata_filter_add(
+      filter, "http://tizen.org/metadata/tizenclaw/llm-backend", nullptr);
+
+  pkgmgrinfo_pkginfo_metadata_filter_foreach(
+      filter,
+      [](pkgmgrinfo_pkginfo_h handle, void* user_data) {
+        auto* manager = static_cast<PluginManager*>(user_data);
+        char* pkgid = nullptr;
+        if (pkgmgrinfo_pkginfo_get_pkgid(handle, &pkgid) == PMINFO_R_OK && pkgid) {
+          manager->LoadPluginFromPkg(pkgid);
+          free(pkgid);
+        }
+        return 0;
+      },
+      this);
+
+  pkgmgrinfo_pkginfo_metadata_filter_destroy(filter);
   return true;
 }
 
