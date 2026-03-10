@@ -88,6 +88,12 @@ if (ret != TIZENCLAW_ERROR_NONE) {
 
 Use this method when you want to receive the response progressively as the LLM generates tokens. This is ideal for chat interfaces or to show progress to the user.
 
+**Why use Streaming?**
+Generating a complete response from a Large Language Model (LLM) takes time. If a user asks a complex question, the Standard Asynchronous API might appear unresponsive for several seconds while the text is being generated. The Streaming API solves this by returning text "chunks" as soon as they are inferred, allowing you to create a real-time "typing" effect on the UI, thus vastly improving the user experience (UX).
+
+**Continuing a Conversation (Session ID)**
+It is important to note that maintaining the conversation context is independent of whether you use the Standard or Streaming API. To continue a dialogue, simply provide the exact same `session_id` continuously. The TizenClaw daemon manages the history based strictly on this ID.
+
 **API:**
 ```c
 int tizenclaw_client_send_request_stream(tizenclaw_client_h client, 
