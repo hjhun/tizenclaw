@@ -55,7 +55,6 @@ bool PluginManager::Initialize() {
         char* pkgid = nullptr;
         if (pkgmgrinfo_pkginfo_get_pkgid(handle, &pkgid) == PMINFO_R_OK && pkgid) {
           manager->LoadPluginFromPkg(pkgid);
-          free(pkgid);
         }
         return 0;
       },
