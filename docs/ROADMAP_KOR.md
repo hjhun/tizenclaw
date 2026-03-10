@@ -35,7 +35,7 @@
 | **인프라** | DB 엔진 | ✅ SQLite + sqlite-vec | ✅ SQLite | ✅ SQLite + PostgreSQL | ✅ SQLite (RAG 임베딩) | ✅ |
 | **인프라** | 구조화 로깅 | ✅ Pino (JSON) | ✅ Pino (JSON) | ✅ Observer trait | ✅ Markdown 감사 테이블 | ✅ |
 | **인프라** | 스킬 핫리로드 | ✅ 런타임 설치 | ✅ apply/rebase | ✅ TOML 매니페스트 | ✅ inotify 자동 리로드 | ✅ |
-| **인프라** | 터널 지원 | ✅ Tailscale Serve/Funnel | ❌ | ✅ Cloudflare/Tailscale/ngrok | ❌ | 🟡 |
+| **인프라** | 터널 지원 | ✅ Tailscale Serve/Funnel | ❌ | ✅ Cloudflare/Tailscale/ngrok | ✅ ngrok / 커스텀 | ✅ |
 | **인프라** | 헬스 메트릭스 | ✅ Health checks | ❌ | ✅ Observer trait | ✅ `/api/metrics` + 대시보드 | ✅ |
 | **인프라** | OTA 업데이트 | ❌ | ❌ | ❌ | ✅ OTA 스킬 업데이터 + 롤백 | ✅ |
 | **UX** | 브라우저 제어 | ✅ CDP Chrome | ❌ | ✅ Agent 브라우저 | ❌ | 🟡 |
@@ -785,7 +785,7 @@ timeline
 - [x] 시스템 프롬프트가 양쪽 도구 디렉터리에서 MD 내용 로드
 - [x] 검증: LLM이 모든 내장 + 액션 도구를 정확히 인지
 
-## Phase 19: 엣지 최적화 & 터널링 (제안)
+## Phase 19: 엣지 최적화 & 터널링 (진행 중)
 
 > **목표**: 제한된 디바이스 최적화 및 안전한 원격 접근 지원
 > **참고**: ZeroClaw — <5MB RAM, Rust 바이너리 · OpenClaw — Tailscale Serve/Funnel
@@ -798,9 +798,9 @@ timeline
 | **계획** | 안전한 원격 대시보드 접근을 위한 설정 가능한 리버스 터널 |
 
 **완료 기준:**
-- [ ] 터널 추상화 레이어 (Tailscale / ngrok / 커스텀)
-- [ ] `tunnel_config.json`을 통한 자동 구성
-- [ ] 터널을 통한 HTTPS 대시보드 접근
+- [x] 터널 추상화 레이어 (Tailscale / ngrok / 커스텀)
+- [x] `tunnel_config.json`을 통한 자동 구성
+- [x] 터널을 통한 HTTPS 대시보드 접근
 
 ---
 
@@ -926,7 +926,7 @@ graph TD
 | **16** | 운영 우수성 | ~800 | ✅ 완료 | Phase 15 ✅ |
 | **17** | 멀티 에이전트 오케스트레이션 | ~3,950 | ✅ 완료 | Phase 16 ✅ |
 | **18** | 프로덕션 준비 | ~1,500 | 🟡 진행 중 | Phase 17 ✅ |
-| **19** | 엣지 최적화 & 터널링 | ~1,000 | 🔴 높음 | Phase 18 |
+| **19** | 엣지 최적화 & 터널링 | ~1,000 | � 진행 중 | Phase 18 |
 | **20** | 스킬 레지스트리 & 마켓플레이스 | ~1,200 | 🟠 보통 | Phase 18 |
 
 > **현재 코드베이스**: ~89개 파일, ~23,100 LOC

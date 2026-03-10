@@ -35,7 +35,7 @@
 | **Infra** | DB engine | ✅ SQLite + sqlite-vec | ✅ SQLite | ✅ SQLite + PostgreSQL | ✅ SQLite (RAG embeddings) | ✅ |
 | **Infra** | Structured logging | ✅ Pino (JSON) | ✅ Pino (JSON) | ✅ Observer trait | ✅ Markdown audit tables | ✅ |
 | **Infra** | Skill hot-reload | ✅ Runtime install | ✅ apply/rebase | ✅ TOML manifests | ✅ inotify auto-reload | ✅ |
-| **Infra** | Tunnel support | ✅ Tailscale Serve/Funnel | ❌ | ✅ Cloudflare/Tailscale/ngrok | ❌ | 🟡 |
+| **Infra** | Tunnel support | ✅ Tailscale Serve/Funnel | ❌ | ✅ Cloudflare/Tailscale/ngrok | ✅ ngrok / custom | ✅ |
 | **Infra** | Health metrics | ✅ Health checks | ❌ | ✅ Observer trait | ✅ `/api/metrics` + dashboard | ✅ |
 | **Infra** | OTA updates | ❌ | ❌ | ❌ | ✅ OTA skill updater + rollback | ✅ |
 | **UX** | Browser control | ✅ CDP Chrome | ❌ | ✅ Agent browser | ❌ | 🟡 |
@@ -782,7 +782,7 @@ timeline
 - [x] System prompt loads MD content from both tool directories
 - [x] Verified: LLM correctly recognizes all embedded + action tools
 
-## Phase 19: Edge Optimization & Tunneling (Proposed)
+## Phase 19: Edge Optimization & Tunneling (In Progress)
 
 > **Goal**: Optimize for constrained devices and enable secure remote access
 > **Ref**: ZeroClaw — <5MB RAM, Rust binary · OpenClaw — Tailscale Serve/Funnel
@@ -795,9 +795,9 @@ timeline
 | **Plan** | Configurable reverse tunnel for secure remote dashboard access |
 
 **Done When:**
-- [ ] Tunnel abstraction layer (Tailscale / ngrok / custom)
-- [ ] Auto-configuration via `tunnel_config.json`
-- [ ] Dashboard accessible over HTTPS via tunnel
+- [x] Tunnel abstraction layer (Tailscale / ngrok / custom)
+- [x] Auto-configuration via `tunnel_config.json`
+- [x] Dashboard accessible over HTTPS via tunnel
 
 ---
 
@@ -923,7 +923,7 @@ graph TD
 | **16** | Operational excellence | ~800 | ✅ Done | Phase 15 ✅ |
 | **17** | Multi-Agent orchestration | ~3,950 | ✅ Done | Phase 16 ✅ |
 | **18** | Production readiness | ~1,500 | 🟡 In Progress | Phase 17 ✅ |
-| **19** | Edge optimization & tunneling | ~1,000 | 🔴 High | Phase 18 |
+| **19** | Edge optimization & tunneling | ~1,000 | 🟡 In Progress | Phase 18 |
 | **20** | Skill registry & marketplace | ~1,200 | 🟠 Medium | Phase 18 |
 
 > **Current codebase**: ~23,100 LOC across ~89 files
