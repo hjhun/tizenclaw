@@ -59,6 +59,7 @@ Shared library implementation of the TizenClaw LLM Backend C-API.
 %package -n tizenclaw-llm-backend-devel
 Summary: TizenClaw LLM Backend Plugin Development Files
 Requires: tizenclaw-llm-backend = %{version}-%{release}
+Requires: %{name}-devel = %{version}-%{release}
 
 %description -n tizenclaw-llm-backend-devel
 Development files for writing custom TizenClaw LLM Backend Plugins.
