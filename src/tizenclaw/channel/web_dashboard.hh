@@ -13,6 +13,7 @@
 #include "a2a_handler.hh"
 #include "../infra/health_monitor.hh"
 #include "../infra/ota_updater.hh"
+#include "../infra/tunnel_manager.hh"
 
 namespace tizenclaw {
 
@@ -145,6 +146,10 @@ private:
   // OTA updater
   std::unique_ptr<OtaUpdater>
       ota_updater_;
+
+  // Tunnel manager
+  std::unique_ptr<TunnelManager>
+      tunnel_manager_;
 };
 
 }  // namespace tizenclaw

@@ -11,37 +11,20 @@ This workflow defines the core development process (Plan -> Develop -> Verify) f
 - Analyze existing code and check applicable workflows (e.g., `/coding_rules`, `/commit_guidelines`).
 - Write a work unit (`task.md`) and establish a detailed plan before implementation.
 
-## 2. Develop & Local Verification
+## 2. Develop & Deploy
 - Modify source code and add/modify unit tests.
-- Refer to the `gbs_build.md` workflow to build and verify the code locally.
-  - Command: `gbs build -A <arch> --include-all`
-  - `<arch>` is determined by the connected device (refer to the `cpu_arch` field from `sdb capability`, e.g., `x86_64`, `aarch64`).
-- Refer to the `gtest_integration.md` workflow to ensure component-level verification passes.
+- After writing code, use the `deploy.sh` script to build, deploy, and restart the daemon via a single command.
+  - Run: `./deploy.sh`
+  - The script will automatically trigger a `gbs build`, locate the built rpm packages, install them on the device, and restart the `tizenclaw` service.
 
-## 3. Verify (Device Deployment and Verification)
-Once written and locally verified, the code must be deployed to the actual target (Tizen Emulator or actual device) to confirm its behavior.
-This process follows the `deploy_to_emulator.md` workflow.
+## 3. Verify
+Once `deploy.sh` successfully finishes:
+- Check the log output of the TizenClaw daemon to verify correct startup and runtime execution:
+  - Command: `sdb shell dlogutil TizenClaw`
+- If you need a more advanced component test, refer to `/gtest_integration.md`.
 
 > [!TIP]
 > If a crash occurs after deployment, refer to the `crash_debug.md` workflow to analyze the crash dump.
-
-1. **Check Device Connection**
-   - Command: `sdb devices`
-   - Verify that the target device is in the `device` state.
-
-2. **Obtain Permissions and Write Access**
-   - Command: `sdb root on`
-   - Command: `sdb shell mount -o remount,rw /`
-
-3. **Deploy and Install RPM Package**
-   - Command: `sdb push ~/GBS-ROOT/local/repos/tizen/<arch>/RPMS/tizenclaw-1.0.0-1.<arch>.rpm /tmp/`
-   - Command: `sdb shell rpm -Uvh --force /tmp/tizenclaw-1.0.0-1.<arch>.rpm`
-   - `<arch>` is automatically detected as the `cpu_arch` using `sdb capability` (e.g., `x86_64`, `aarch64`).
-
-4. **Restart Daemon and Check Status**
-   - Command: `sdb shell systemctl daemon-reload`
-   - Command: `sdb shell systemctl restart tizenclaw`
-   - Command: `sdb shell systemctl status tizenclaw -l`
 
 ## 4. Commit (Completion of Work)
 When all verification is complete, perform a `git commit` to finalize the work according to the `commit_guidelines.md` workflow.
@@ -86,7 +69,5 @@ This is a list of detailed workflow files referenced in this AGENTS workflow.
 |---|---|---|
 | Coding Rules | `coding_rules.md` | Plan |
 | Commit Guidelines | `commit_guidelines.md` | Commit |
-| GBS Build | `gbs_build.md` | Develop |
-| GTest Unit Testing | `gtest_integration.md` | Develop |
-| Emulator Deployment | `deploy_to_emulator.md` | Verify |
+| GTest Unit Testing | `gtest_integration.md` | Verify |
 | Crash Dump Debugging | `crash_debug.md` | Verify |

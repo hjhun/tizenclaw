@@ -57,6 +57,12 @@ WebDashboard::WebDashboard(
   if (!ota_updater_->LoadConfig(ota_config)) {
     LOG(WARNING) << "OTA config not loaded (using defaults)";
   }
+
+  // Initialize tunnel manager
+  std::string tunnel_config =
+      config_dir_ + "/tunnel_config.json";
+  tunnel_manager_ =
+      std::make_unique<TunnelManager>(tunnel_config);
 }
 
 WebDashboard::~WebDashboard() {
@@ -280,6 +286,13 @@ void WebDashboard::ApiStatus(
       {"channels",
        agent_ ? "active" : "inactive"}
   };
+
+  if (tunnel_manager_ && tunnel_manager_->IsRunning()) {
+    std::string url = tunnel_manager_->GetPublicUrl();
+    if (!url.empty()) {
+      status["tunnel_url"] = url;
+    }
+  }
   std::string body = status.dump();
   soup_message_set_status(
       msg, SOUP_STATUS_OK);
@@ -775,7 +788,18 @@ bool WebDashboard::Start() {
     loop_ = g_main_loop_new(nullptr, FALSE);
     LOG(INFO) << "Web dashboard running on "
               << "port " << port_;
+    
+    // Start the tunnel Manager on exactly this port
+    if (tunnel_manager_) {
+      tunnel_manager_->StartTunnel(port_);
+    }
+
     g_main_loop_run(loop_);
+    
+    // Stop tunnel manager along with loop
+    if (tunnel_manager_) {
+      tunnel_manager_->StopTunnel();
+    }
     g_main_loop_unref(loop_);
     loop_ = nullptr;
   });
@@ -931,13 +955,14 @@ namespace tizenclaw {
 
 const std::vector<std::string>
     WebDashboard::kAllowedConfigs = {
-  "llm_config",
-  "telegram_config",
-  "slack_config",
-  "discord_config",
-  "webhook_config",
-  "tool_policy",
-  "agent_roles"
+  "llm_config.json",
+  "telegram_config.json",
+  "slack_config.json",
+  "discord_config.json",
+  "webhook_config.json",
+  "tool_policy.json",
+  "agent_roles.json",
+  "tunnel_config.json"
 };
 
 // --- Auth helpers ---

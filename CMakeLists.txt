@@ -59,3 +59,7 @@ ADD_SUBDIRECTORY(test/unit_tests)
 INSTALL(FILES "${CMAKE_CURRENT_SOURCE_DIR}/data/rag/tizen_knowledge.db"
         DESTINATION "${APP_DATA_DIR}/rag"
         OPTIONAL)
+
+INSTALL(FILES "${CMAKE_CURRENT_SOURCE_DIR}/data/sample/tunnel_config.json.sample"
+        DESTINATION "${APP_DATA_DIR}/config"
+        RENAME "tunnel_config.json")

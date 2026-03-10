@@ -37,6 +37,7 @@ NOINIT=false
 SKIP_BUILD=false
 DRY_RUN=false
 DEVICE_SERIAL=""
+WITH_NGROK=false
 
 # ─────────────────────────────────────────────
 # Logging helpers
@@ -122,6 +123,7 @@ ${CYAN}Options:${NC}
   -a, --arch <arch>     Build architecture (default: auto-detect via sdb)
   -n, --noinit          Skip build-env init (faster rebuild)
   -s, --skip-build      Skip GBS build, deploy existing RPM
+  -w, --with-ngrok      Auto-download and push ngrok binary to the device
   -d, --device <serial> Target a specific sdb device
       --dry-run         Print commands without executing
   -h, --help            Show this help
@@ -130,6 +132,7 @@ ${CYAN}Examples:${NC}
   $(basename "$0")                     # Full build + deploy + run
   $(basename "$0") -n                  # Quick rebuild + deploy + run
   $(basename "$0") -s                  # Deploy existing RPM + run
+  $(basename "$0") -w                  # Deploy and install ngrok binary
   $(basename "$0") --dry-run           # Preview all steps
   $(basename "$0") -a aarch64          # Build for ARM64 target
   $(basename "$0") -d emulator-26101   # Target specific device
@@ -146,6 +149,7 @@ parse_args() {
       -a|--arch)       ARCH="$2"; ARCH_EXPLICIT=true; shift 2 ;;
       -n|--noinit)     NOINIT=true; shift ;;
       -s|--skip-build) SKIP_BUILD=true; shift ;;
+      -w|--with-ngrok) WITH_NGROK=true; shift ;;
       -d|--device)     DEVICE_SERIAL="$2"; shift 2 ;;
       --dry-run)       DRY_RUN=true; shift ;;
       -h|--help)       usage ;;
@@ -357,6 +361,40 @@ do_deploy() {
     fi
   done
   ok "All RPMs processed"
+
+  # 3-5. Auto-download and install ngrok if requested
+  if [ "${WITH_NGROK}" = true ]; then
+    log "Auto-installing ngrok..."
+    local ngrok_arch
+    case "${ARCH}" in
+      x86_64)  ngrok_arch="amd64" ;;
+      aarch64) ngrok_arch="arm64" ;;
+      armv7l)  ngrok_arch="arm" ;;
+      *)       fail "Unsupported architecture for ngrok: ${ARCH}" ;;
+    esac
+
+    local ngrok_url="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-${ngrok_arch}.tgz"
+    local local_tgz="/tmp/ngrok-${ngrok_arch}.tgz"
+
+    if [ "${DRY_RUN}" = false ]; then
+      log "Downloading ${ngrok_url}..."
+      curl -sL "${ngrok_url}" -o "${local_tgz}" || fail "Failed to download ngrok"
+      
+      log "Extracting ngrok..."
+      tar -xzf "${local_tgz}" -C /tmp || fail "Failed to extract ngrok"
+      
+      log "Pushing ngrok to device:/usr/bin/ngrok..."
+      run sdb_cmd push /tmp/ngrok /tmp/ngrok
+      run sdb_shell mv /tmp/ngrok /usr/bin/ngrok
+      run sdb_shell chmod +x /usr/bin/ngrok
+      
+      log "Cleaning up local /tmp files..."
+      rm -f "${local_tgz}" /tmp/ngrok
+      ok "ngrok installed to /usr/bin/ngrok"
+    else
+      log "[DRY-RUN] Download ${ngrok_url} and push to /usr/bin/ngrok"
+    fi
+  fi
 }
 
 # ─────────────────────────────────────────────

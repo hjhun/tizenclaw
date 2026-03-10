@@ -59,7 +59,13 @@ TizenClaw is part of the **Claw** family of AI agent runtimes, each targeting di
 # Build
 gbs build -A x86_64 --include-all
 
-# Deploy to device
+# Or use the deploy script for an automated build + deploy:
+./deploy.sh
+
+# To build and deploy with the secure tunnel dependency (ngrok):
+./deploy.sh --with-ngrok
+
+# Manual deployment to device (if not using deploy.sh)
 sdb root on && sdb shell mount -o remount,rw /
 sdb push ~/GBS-ROOT/local/repos/tizen/x86_64/RPMS/tizenclaw-1.0.0-1.x86_64.rpm /tmp/
 sdb push ~/GBS-ROOT/local/repos/tizen/x86_64/RPMS/tizenclaw-rag-1.0.0-1.x86_64.rpm /tmp/
