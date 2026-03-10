@@ -37,6 +37,14 @@ Requires: %{name} = %{version}-%{release}
 %description rag
 Optional pre-built SQLite Knowledge RAG database for Tizen Docs.
 
+%package devel
+Summary: Development files for TizenClaw
+Group: Development/Libraries
+Requires: %{name} = %{version}-%{release}
+
+%description devel
+Development files for TizenClaw (C-API headers and library symlinks).
+
 %prep
 %setup -q -n %{name}-%{version}
 cp %{SOURCE1001} .
@@ -60,6 +68,7 @@ ctest -V
 mkdir -p %{buildroot}%{_bindir}
 mkdir -p %{buildroot}%{_unitdir}
 mkdir -p %{buildroot}%{_unitdir}/multi-user.target.wants
+mkdir -p %{buildroot}%{_includedir}/tizenclaw
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/img
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/tools/skills
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/config
@@ -76,6 +85,7 @@ ln -sf ../tizenclaw-skills-secure.service %{buildroot}%{_unitdir}/multi-user.tar
 %{_bindir}/tizenclaw
 %{_bindir}/tizenclaw-cli
 %{_bindir}/start_mcp_tunnel.sh
+%{_libdir}/libtizenclaw.so.*
 %{_unitdir}/tizenclaw.service
 %{_unitdir}/tizenclaw-skills-secure.service
 %{_unitdir}/multi-user.target.wants/tizenclaw.service
@@ -102,3 +112,8 @@ ln -sf ../tizenclaw-skills-secure.service %{buildroot}%{_unitdir}/multi-user.tar
 %defattr(-,root,root,-)
 %manifest %{name}.manifest
 /opt/usr/share/tizenclaw/rag/
+
+%files devel
+%defattr(-,root,root,-)
+%{_includedir}/tizenclaw/
+%{_libdir}/libtizenclaw.so

@@ -1,0 +1,28 @@
+# CMakeLists.txt for libtizenclaw CAPI
+SET(CAPI_SRC
+  "tizenclaw_client.cc"
+)
+
+ADD_LIBRARY(tizenclaw-api SHARED ${CAPI_SRC})
+SET_TARGET_PROPERTIES(tizenclaw-api PROPERTIES
+  OUTPUT_NAME tizenclaw
+  VERSION "1.0.0"
+  SOVERSION "1"
+)
+
+TARGET_INCLUDE_DIRECTORIES(tizenclaw-api PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/inc>
+  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/tizenclaw>
+)
+
+# Install rules
+INSTALL(TARGETS tizenclaw-api
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+INSTALL(FILES
+  ${CMAKE_CURRENT_SOURCE_DIR}/inc/tizenclaw.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/inc/tizenclaw_error.h
+  DESTINATION include/tizenclaw
+)
