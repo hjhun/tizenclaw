@@ -54,3 +54,8 @@ ADD_SUBDIRECTORY(third_party/crun)
 ## Unit Tests
 ENABLE_TESTING()
 ADD_SUBDIRECTORY(test/unit_tests)
+
+## Install optional RAG Database
+INSTALL(FILES "${CMAKE_CURRENT_SOURCE_DIR}/data/rag/tizen_knowledge.db"
+        DESTINATION "${APP_DATA_DIR}/rag"
+        OPTIONAL)

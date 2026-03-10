@@ -67,10 +67,6 @@ mkdir -p %{buildroot}/opt/usr/share/tizenclaw/tools/embedded
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/rag
 touch %{buildroot}/opt/usr/share/tizenclaw/rag/.keep
 
-if [ -f data/rag/tizen_knowledge.db ]; then
-    cp data/rag/tizen_knowledge.db %{buildroot}/opt/usr/share/tizenclaw/rag/
-fi
-
 ln -sf ../tizenclaw.service %{buildroot}%{_unitdir}/multi-user.target.wants/tizenclaw.service
 ln -sf ../tizenclaw-skills-secure.service %{buildroot}%{_unitdir}/multi-user.target.wants/tizenclaw-skills-secure.service
 
