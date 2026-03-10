@@ -417,11 +417,8 @@ graph LR
 | **Supervisor Agent** | 🔴 High | Multi-agent goal decomposition and delegation |
 | **Skill Pipeline Engine** | 🔴 High | Deterministic sequential/conditional skill execution |
 | **A2A Protocol** | 🟡 Medium | Cross-device agent communication (JSON-RPC) |
-| **Browser Control** | 🟡 Medium | CDP (Chrome DevTools Protocol) integration for web automation |
 | **Wake Word Detection** | 🟡 Medium | Hardware mic-based voice activation (requires STT hardware) |
 | **Skill Marketplace** | 🟢 Low | Remote skill download, validation, and installation |
-| **OTA Update** | 🟢 Low | Over-the-air daemon and skill updates |
-| **Health Metrics** | 🟢 Low | Prometheus-style metrics for monitoring (CPU, memory, uptime) |
 
 ### 6.2 Areas to Improve
 
