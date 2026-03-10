@@ -166,7 +166,6 @@ bool PluginManager::LoadPluginFromPkg(const std::string& pkgid) {
   }
   
   std::string path(res_path);
-  free(res_path);
 
   char* so_value = nullptr;
   ret = pkgmgrinfo_pkginfo_get_metadata_value(
@@ -177,7 +176,6 @@ bool PluginManager::LoadPluginFromPkg(const std::string& pkgid) {
     return false;
   }
   std::string so_local_path = so_value;
-  free(so_value);
   pkgmgrinfo_pkginfo_destroy_pkginfo(pkginfo);
 
   // Usually plugins install their res/ to rootpath/res
