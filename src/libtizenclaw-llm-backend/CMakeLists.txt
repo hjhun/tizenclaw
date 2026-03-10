@@ -1,0 +1,44 @@
+SET(TARGET_TIZENCLAW_LLM_BACKEND "tizenclaw-llm-backend")
+
+ADD_LIBRARY(${TARGET_TIZENCLAW_LLM_BACKEND} SHARED
+    tizenclaw_llm_backend.cc
+)
+
+APPLY_PKG_CONFIG(${TARGET_TIZENCLAW_LLM_BACKEND} PRIVATE
+  DLOG_DEPS
+)
+
+# Use global FULLVER from top-level or define locally
+if(NOT DEFINED FULLVER)
+  set(FULLVER "1.0.0")
+endif()
+
+TARGET_INCLUDE_DIRECTORIES(${TARGET_TIZENCLAW_LLM_BACKEND}
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/inc>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../libtizenclaw/inc>
+        $<INSTALL_INTERFACE:include/tizenclaw/llm-backend>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../common
+)
+
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/tizenclaw-llm-backend.pc.in
+  ${CMAKE_CURRENT_BINARY_DIR}/tizenclaw-llm-backend.pc
+  @ONLY
+)
+
+# Install rules
+INSTALL(TARGETS ${TARGET_TIZENCLAW_LLM_BACKEND}
+    LIBRARY DESTINATION ${LIB_INSTALL_DIR}
+    ARCHIVE DESTINATION ${LIB_INSTALL_DIR}
+)
+
+INSTALL(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/inc/
+    DESTINATION ${INCLUDEDIR}/tizenclaw/llm-backend
+    FILES_MATCHING PATTERN "*.h"
+)
+
+INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/tizenclaw-llm-backend.pc
+    DESTINATION ${LIB_INSTALL_DIR}/pkgconfig
+)

@@ -1,3 +1,5 @@
-ADD_SUBDIRECTORY(lib)
+ADD_SUBDIRECTORY(libtizenclaw)
+ADD_SUBDIRECTORY(libtizenclaw-llm-backend)
+ADD_SUBDIRECTORY(pkgmgr-metadata-plugin)
 ADD_SUBDIRECTORY(tizenclaw)
 ADD_SUBDIRECTORY(tools)

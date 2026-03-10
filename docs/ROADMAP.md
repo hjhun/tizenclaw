@@ -135,7 +135,7 @@ timeline
                        : Developer Portal
                        : Enterprise Fleet Management
         Phase 21       : Framework Stabilization & SDK Export
-                       : Modular CAPI extraction (`src/lib`)
+                       : Modular CAPI extraction (`src/libtizenclaw`)
                        : System-level AI SDK usage
                        : Dynamic lib bindings
 ```

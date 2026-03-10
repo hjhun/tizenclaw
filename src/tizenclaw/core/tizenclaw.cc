@@ -16,6 +16,7 @@
 #include "tizenclaw.hh"
 #include "../infra/key_store.hh"
 #include "../storage/audit_logger.hh"
+#include "../llm/plugin_manager.hh"
 
 #include <iostream>
 #include <string>
@@ -131,6 +132,9 @@ void TizenClawDaemon::OnCreate() {
     agent_->SetScheduler(scheduler_.get());
     scheduler_->Start(agent_.get());
 
+    // Initialize Plugin Manager
+    PluginManager::GetInstance().Initialize();
+
     // Register channels
     auto* a = agent_.get();
     channel_registry_.Register(
@@ -176,6 +180,9 @@ void TizenClawDaemon::OnCreate() {
 
 void TizenClawDaemon::OnDestroy() {
     LOG(INFO) << "TizenClaw Daemon OnDestroy";
+
+    // Stop Plugin Manager
+    PluginManager::GetInstance().Shutdown();
 
     // Stop Skill Watcher
     skill_watcher_.Stop();

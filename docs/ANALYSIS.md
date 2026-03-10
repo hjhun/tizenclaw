@@ -352,7 +352,7 @@ Most gaps identified in the original analysis have been resolved through Phases 
 | **Edge Memory Optimization** | Aggressive idle memory reclamation using `malloc_trim` and SQLite cache flushing via PSS profiling |
 | **OCI Container Isolation** | crun-based `seccomp` + `namespace` — finer syscall control |
 | **Direct Tizen C-API** | ctypes wrappers for device hardware (battery, Wi-Fi, BT, haptic, etc.) |
-| **Modular CAPI Export** | External library generation (`src/lib`) enabling TizenClaw to act as a system-level AI SDK for other apps |
+| **Modular CAPI Export** | External library generation (`src/libtizenclaw`) enabling TizenClaw to act as a system-level AI SDK for other apps |
 | **Multi-LLM Support** | 5 backends switchable at runtime with automatic fallback |
 | **Lightweight Deployment** | systemd + RPM — standalone device execution without Node.js/Docker |
 | **Native MCP Server** | C++ MCP server integrated into daemon — Claude Desktop controls Tizen devices |

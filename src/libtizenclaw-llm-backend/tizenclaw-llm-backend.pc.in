@@ -1,0 +1,10 @@
+prefix=@PREFIX@
+exec_prefix=@PREFIX@
+libdir=@LIBDIR@
+includedir=@INCLUDEDIR@
+
+Name: tizenclaw-llm-backend
+Description: TizenClaw LLM Backend Plugin C-API for dynamic loading
+Version: @FULLVER@
+Libs: -L${libdir} -ltizenclaw-llm-backend
+Cflags: -I${includedir}/tizenclaw/llm-backend

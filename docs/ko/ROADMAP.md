@@ -132,7 +132,7 @@ timeline
                        : 개발자 포털
                        : 기업용 디바이스 관리 (Fleet Management)
         Phase 21       : 프레임워크 안정화 및 SDK 익스포트
-                       : 모듈형 CAPI 분리 (`src/lib`)
+                       : 모듈형 CAPI 분리 (`src/libtizenclaw`)
                        : 시스템 레벨 AI SDK 지원
                        : 동적 라이브러리 바인딩 지원
 ```

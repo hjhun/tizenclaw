@@ -15,6 +15,11 @@ BuildRequires:  pkgconfig(gtest)
 BuildRequires:  pkgconfig(gmock)
 BuildRequires:  pkgconfig(libsoup-2.4)
 BuildRequires:  pkgconfig(libwebsockets)
+BuildRequires:  pkgconfig(pkgmgr)
+BuildRequires:  pkgconfig(pkgmgr-info)
+BuildRequires:  pkgconfig(pkgmgr-installer)
+BuildRequires:  pkgconfig(pkgmgr-parser)
+BuildRequires:  jsoncpp-devel
 BuildRequires:  pkgconfig(sqlite3)
 BuildRequires:  pkgconfig(capi-appfw-tizen-action)
 
@@ -45,6 +50,19 @@ Requires: %{name} = %{version}-%{release}
 %description devel
 Development files for TizenClaw (C-API headers and library symlinks).
 
+%package -n tizenclaw-llm-backend
+Summary: TizenClaw LLM Backend Shared Library
+
+%description -n tizenclaw-llm-backend
+Shared library implementation of the TizenClaw LLM Backend C-API.
+
+%package -n tizenclaw-llm-backend-devel
+Summary: TizenClaw LLM Backend Plugin Development Files
+Requires: tizenclaw-llm-backend = %{version}-%{release}
+
+%description -n tizenclaw-llm-backend-devel
+Development files for writing custom TizenClaw LLM Backend Plugins.
+
 %prep
 %setup -q -n %{name}-%{version}
 cp %{SOURCE1001} .
@@ -54,12 +72,12 @@ export CFLAGS="$CFLAGS -Wall -Wno-shadow -Wno-unused-function -Os -flto"
 export CXXFLAGS="$CXXFLAGS -Wall -Os -flto"
 export LDFLAGS="$LDFLAGS -Wl,--as-needed -flto"
 
-%cmake . -DTIZENCLAW_ARCH=%{_arch}
+%cmake . -DTIZENCLAW_ARCH=%{_arch} -DFULLVER=%{version}
 %__make %{?_smp_mflags}
 
 %check
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:%{buildroot}/usr/lib
-ctest -V
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:../../src/libtizenclaw-llm-backend
+ctest --output-on-failure %{?_smp_mflags}
 
 %install
 %make_install
@@ -102,6 +120,8 @@ ln -sf ../tizenclaw-skills-secure.service %{buildroot}%{_unitdir}/multi-user.tar
 %dir /opt/usr/share/tizenclaw/tools/
 %dir /opt/usr/share/tizenclaw/config/
 %dir /opt/usr/share/tizenclaw/
+%{_sysconfdir}/package-manager/parserlib/metadata/libtizenclaw-metadata-llm-backend-plugin.so
+%{_datarootdir}/parser-plugins/tizenclaw-metadata-llm-backend-plugin.info
 
 %files unittests
 %defattr(-,root,root,-)
@@ -117,3 +137,13 @@ ln -sf ../tizenclaw-skills-secure.service %{buildroot}%{_unitdir}/multi-user.tar
 %defattr(-,root,root,-)
 %{_includedir}/tizenclaw/
 %{_libdir}/libtizenclaw.so
+%{_libdir}/pkgconfig/tizenclaw.pc
+
+%files -n tizenclaw-llm-backend
+%defattr(-,root,root,-)
+%{_libdir}/libtizenclaw-llm-backend.so
+
+%files -n tizenclaw-llm-backend-devel
+%defattr(-,root,root,-)
+%{_includedir}/tizenclaw/llm-backend/
+%{_libdir}/pkgconfig/tizenclaw-llm-backend.pc

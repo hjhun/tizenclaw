@@ -16,7 +16,8 @@ class SkillWatcherTest
     : public ::testing::Test {
  protected:
   void SetUp() override {
-    test_dir_ = "test_skills_watch";
+    const char* test_name = ::testing::UnitTest::GetInstance()->current_test_info()->name();
+    test_dir_ = std::string("test_skills_watch_") + test_name;
     mkdir(test_dir_.c_str(), 0755);
   }
 

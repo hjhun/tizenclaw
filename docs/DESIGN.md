@@ -115,7 +115,7 @@ The main daemon process manages the overall lifecycle:
 - **UID Authentication**: `SO_PEERCRED`-based sender validation (root, app_fw, system, developer)
 - **Thread Pool**: `kMaxConcurrentClients = 4` concurrent request handling
 - **Channel Lifecycle**: Initializes and manages all channels via `ChannelRegistry`
-- **Modular CAPI (`src/lib`)**: The internal logic is fully decoupled from the external CAPI layer (`tizenclaw.h`), facilitating distribution as an SDK.
+- **Modular CAPI (`src/libtizenclaw`)**: The internal logic is fully decoupled from the external CAPI layer (`tizenclaw.h`), facilitating distribution as an SDK.
 
 ### 3.2 Agent Core (`agent_core.cc`)
 

@@ -11,7 +11,8 @@ class AuditLoggerTest
     : public ::testing::Test {
 protected:
     void SetUp() override {
-        test_dir_ = "/tmp/tizenclaw_audit_test";
+        const char* test_name = ::testing::UnitTest::GetInstance()->current_test_info()->name();
+        test_dir_ = std::string("/tmp/tizenclaw_audit_test_") + test_name;
         int ret = system(("rm -rf " + test_dir_).c_str());
         (void)ret;
         AuditLogger::Instance().SetLogDir(

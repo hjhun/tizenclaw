@@ -352,7 +352,7 @@ Phase 6-19를 통해 원래 분석에서 식별된 대부분의 Gap이 해소되
 | **공격적인 엣지 메모리 관리** | 데몬 유휴 상태 모니터링 및 `malloc_trim`, SQLite 캐시 플러시를 통한 공격적 PSS 기반 엣지 메모리 최적화 |
 | **OCI 컨테이너 격리** | crun 기반 `seccomp` + `namespace` — 앱 수준보다 정밀한 시스콜 제어 |
 | **Tizen C-API 직접 호출** | ctypes 래퍼를 통한 디바이스 하드웨어 직접 제어 |
-| **모듈형 CAPI 익스포트** | 타 앱의 시스템 레벨 AI SDK로 동작 가능하도록 외부 라이브러리(`src/lib`) 캡슐화 |
+| **모듈형 CAPI 익스포트** | 타 앱의 시스템 레벨 AI SDK로 동작 가능하도록 외부 라이브러리(`src/libtizenclaw`) 캡슐화 |
 | **강력한 다중 LLM 지원** | 5개 백엔드 런타임 전환 가능 + 자동 폴백 |
 | **경량 배포** | systemd + RPM — Node.js/Docker 없이 단독 디바이스 실행 |
 | **네이티브 MCP 서버** | C++ 데몬 내장 MCP — Claude Desktop에서 Tizen 디바이스 제어 |

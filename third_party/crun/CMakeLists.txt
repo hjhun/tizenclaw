@@ -35,6 +35,8 @@ done
 CFLAGS=$(echo \"$CFLAGS\" | sed 's/-Werror[^ ]*//g')
 export CFLAGS=\"$CFLAGS -Wno-shadow -Wno-unused-variable -Wno-unused-function -Wno-stringop-overread -Wno-stringop-overflow -Wno-sign-compare\"
 cd \"$CRUN_BUILD_DIR\"
+export YAJL_CFLAGS=\" \"
+export YAJL_LIBS=\" \"
 ./configure \\
     --prefix=/usr \\
     --disable-systemd \\

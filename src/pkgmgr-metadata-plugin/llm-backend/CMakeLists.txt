@@ -1,0 +1,27 @@
+SET(TARGET_TIZENCLAW_METADATA_LLM_BACKEND_PLUGIN "tizenclaw-metadata-llm-backend-plugin")
+
+ADD_LIBRARY(${TARGET_TIZENCLAW_METADATA_LLM_BACKEND_PLUGIN} SHARED
+    tizenclaw_metadata_llm_backend_plugin.cc
+    ../../common/logging.cc
+)
+
+APPLY_PKG_CONFIG(${TARGET_TIZENCLAW_METADATA_LLM_BACKEND_PLUGIN} PRIVATE
+  DLOG_DEPS
+  GLIB_DEPS
+  PKGMGR_DEPS
+  PKGMGR_INFO_DEPS
+  PKGMGR_INSTALLER_DEPS
+  PKGMGR_PARSER_DEPS
+)
+
+TARGET_INCLUDE_DIRECTORIES(${TARGET_TIZENCLAW_METADATA_LLM_BACKEND_PLUGIN} PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../common
+)
+
+# Standard pkgmgr plugin install paths
+INSTALL(TARGETS ${TARGET_TIZENCLAW_METADATA_LLM_BACKEND_PLUGIN}
+    DESTINATION /etc/package-manager/parserlib/metadata
+)
+INSTALL(FILES tizenclaw-metadata-llm-backend-plugin.info
+    DESTINATION /usr/share/parser-plugins
+)

@@ -11,21 +11,24 @@ class AgentCoreTest : public ::testing::Test {
 protected:
     void SetUp() override {
         // Create a dummy config for testing
-        const char* test_config = "test_llm_config.json";
-        std::ofstream f(test_config);
+        const char* test_name = ::testing::UnitTest::GetInstance()->current_test_info()->name();
+        config_path_ = std::string("test_llm_config_") + test_name + ".json";
+        
+        std::ofstream f(config_path_);
         f << "{\"active_backend\":\"ollama\",\"backends\":{\"ollama\":{\"endpoint\":\"http://localhost:9999\",\"model\":\"dummy\"}}}" << std::endl;
         f.close();
-        setenv("TIZENCLAW_CONFIG_PATH", test_config, 1);
+        setenv("TIZENCLAW_CONFIG_PATH", config_path_.c_str(), 1);
         
         agent = new AgentCore();
     }
 
     void TearDown() override {
         delete agent;
-        unlink("test_llm_config.json");
+        unlink(config_path_.c_str());
     }
 
     AgentCore* agent;
+    std::string config_path_;
 };
 
 TEST_F(AgentCoreTest, InitializationTest) {

@@ -18,6 +18,8 @@
 #include "openai_backend.hh"
 #include "anthropic_backend.hh"
 #include "ollama_backend.hh"
+#include "plugin_manager.hh"
+#include "plugin_llm_backend.hh"
 
 #include <functional>
 #include <unordered_map>
@@ -61,12 +63,37 @@ kBackendRegistry = {
               OllamaBackend>(); }},
 };
 
+class PluginAdapter : public LlmBackend {
+ public:
+  PluginAdapter(std::shared_ptr<PluginLlmBackend> backend) : backend_(backend) {}
+  bool Initialize(const nlohmann::json& config) override { return backend_->Initialize(config); }
+  LlmResponse Chat(
+      const std::vector<LlmMessage>& messages,
+      const std::vector<LlmToolDecl>& tools,
+      std::function<void(const std::string&)> on_chunk,
+      const std::string& system_prompt) override {
+    return backend_->Chat(messages, tools, on_chunk, system_prompt);
+  }
+  std::string GetName() const override { return backend_->GetName(); }
+  void Shutdown() override {}
+ private:
+  std::shared_ptr<PluginLlmBackend> backend_;
+};
+
 std::unique_ptr<LlmBackend>
 LlmBackendFactory::Create(
     const std::string& name) {
   if (auto it = kBackendRegistry.find(name);
       it != kBackendRegistry.end()) {
     return it->second();
+  }
+
+  // Check plugins
+  auto plugins = PluginManager::GetInstance().GetLlmBackends();
+  for (auto& p : plugins) {
+    if (p->GetName() == name) {
+      return std::make_unique<PluginAdapter>(p);
+    }
   }
 
   LOG(ERROR) << "Unknown LLM backend: " << name;

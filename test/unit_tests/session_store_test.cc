@@ -12,8 +12,9 @@ using namespace tizenclaw;
 class SessionStoreTest : public ::testing::Test {
 protected:
     void SetUp() override {
+        const char* test_name = ::testing::UnitTest::GetInstance()->current_test_info()->name();
         base_dir_ =
-            "/tmp/tizenclaw_test_store";
+            std::string("/tmp/tizenclaw_test_store_") + test_name;
         test_dir_ = base_dir_ + "/sessions";
         mkdir(base_dir_.c_str(), 0700);
         mkdir(test_dir_.c_str(), 0700);

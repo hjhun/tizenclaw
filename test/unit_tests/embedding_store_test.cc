@@ -11,7 +11,8 @@ using namespace tizenclaw;
 class EmbeddingStoreTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    db_path_ = "/tmp/test_embeddings.db";
+    const char* test_name = ::testing::UnitTest::GetInstance()->current_test_info()->name();
+    db_path_ = std::string("/tmp/test_embeddings_") + test_name + ".db";
     std::remove(db_path_.c_str());
   }
 
@@ -110,7 +111,7 @@ TEST_F(EmbeddingStoreTest,
 
 TEST_F(EmbeddingStoreTest, AttachKnowledgeDB) {
   // 1. Create a "knowledge" DB directly with sqlite3
-  std::string knowledge_db_path = "/tmp/test_knowledge.db";
+  std::string knowledge_db_path = std::string("/tmp/test_knowledge_") + ::testing::UnitTest::GetInstance()->current_test_info()->name() + ".db";
   std::remove(knowledge_db_path.c_str());
 
   sqlite3* kdb = nullptr;

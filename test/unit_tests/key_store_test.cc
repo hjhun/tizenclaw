@@ -11,19 +11,22 @@ using namespace tizenclaw;
 class KeyStoreTest : public ::testing::Test {
 protected:
     void SetUp() override {
+        const char* test_name = ::testing::UnitTest::GetInstance()->current_test_info()->name();
+        key_path_ = std::string("test_machine_id_") + test_name;
+        config_path_ = std::string("test_encrypt_config_") + test_name + ".json";
         // Create a fake machine-id for testing
-        std::ofstream f("test_machine_id");
+        std::ofstream f(key_path_);
         f << "test-machine-id-12345678" << std::endl;
         f.close();
-        key_path_ = "test_machine_id";
     }
 
     void TearDown() override {
-        unlink("test_machine_id");
-        unlink("test_encrypt_config.json");
+        unlink(key_path_.c_str());
+        unlink(config_path_.c_str());
     }
 
     std::string key_path_;
+    std::string config_path_;
 };
 
 TEST_F(KeyStoreTest, EncryptDecryptRoundtrip) {
@@ -67,7 +70,7 @@ TEST_F(KeyStoreTest, EmptyStringNotEncrypted) {
 
 TEST_F(KeyStoreTest, EncryptConfigInPlace) {
     // Write a test config
-    std::ofstream f("test_encrypt_config.json");
+    std::ofstream f(config_path_);
     f << R"({
       "active_backend": "gemini",
       "backends": {
@@ -88,10 +91,10 @@ TEST_F(KeyStoreTest, EncryptConfigInPlace) {
 
     // Encrypt the config
     EXPECT_TRUE(KeyStore::EncryptConfig(
-        "test_encrypt_config.json", key_path_));
+        config_path_, key_path_));
 
     // Read back and verify
-    std::ifstream rf("test_encrypt_config.json");
+    std::ifstream rf(config_path_);
     nlohmann::json config;
     rf >> config;
     rf.close();
@@ -126,7 +129,7 @@ TEST_F(KeyStoreTest, EncryptConfigInPlace) {
 
 TEST_F(KeyStoreTest,
        DoubleEncryptionPrevented) {
-    std::ofstream f("test_encrypt_config.json");
+    std::ofstream f(config_path_);
     f << R"({
       "backends": {
         "gemini": {
@@ -138,10 +141,10 @@ TEST_F(KeyStoreTest,
 
     // Encrypt once
     EXPECT_TRUE(KeyStore::EncryptConfig(
-        "test_encrypt_config.json", key_path_));
+        config_path_, key_path_));
 
     // Read the encrypted key
-    std::ifstream rf("test_encrypt_config.json");
+    std::ifstream rf(config_path_);
     nlohmann::json config;
     rf >> config;
     rf.close();
@@ -151,10 +154,10 @@ TEST_F(KeyStoreTest,
 
     // Encrypt again — should not double-encrypt
     EXPECT_TRUE(KeyStore::EncryptConfig(
-        "test_encrypt_config.json", key_path_));
+        config_path_, key_path_));
 
     std::ifstream rf2(
-        "test_encrypt_config.json");
+        config_path_);
     nlohmann::json config2;
     rf2 >> config2;
     rf2.close();

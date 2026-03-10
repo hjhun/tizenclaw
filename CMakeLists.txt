@@ -1,4 +1,4 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 3.5)
+CMAKE_MINIMUM_REQUIRED(VERSION 3.12)
 
 PROJECT(tizenclaw CXX)
 
@@ -17,14 +17,16 @@ else()
     message(WARNING "IPO is not supported: ${ipo_output}")
 endif()
 
-# Suppress GCC ARM false-positive warnings on 32-bit ARM
-IF(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-psabi -Wno-stringop-overread -Wno-stringop-overflow")
-ENDIF()
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-psabi")
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-stringop-overread")
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-stringop-overflow")
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-parameter")
 
 ## Paths
 SET(PREFIX ${CMAKE_INSTALL_PREFIX})
-SET(BINDIR "${PREFIX}/bin")
+SET(BINDIR "${CMAKE_INSTALL_PREFIX}/bin")
+SET(LIBDIR ${LIB_INSTALL_DIR})
+SET(INCLUDEDIR "\${prefix}/include")
 SET(APP_DATA_DIR "/opt/usr/share/tizenclaw")
 
 ## CMake module path (ApplyPkgConfig)
@@ -47,6 +49,12 @@ PKG_CHECK_MODULES(SQLITE3_DEPS REQUIRED sqlite3)
 PKG_CHECK_MODULES(TIZEN_ACTION_DEPS REQUIRED capi-appfw-tizen-action)
 PKG_CHECK_MODULES(LIBSOUP_DEPS REQUIRED libsoup-2.4)
 PKG_CHECK_MODULES(LIBWEBSOCKETS_DEPS REQUIRED libwebsockets)
+
+# Pkgmgr dependencies
+PKG_CHECK_MODULES(PKGMGR_DEPS REQUIRED pkgmgr)
+PKG_CHECK_MODULES(PKGMGR_INFO_DEPS REQUIRED pkgmgr-info)
+PKG_CHECK_MODULES(PKGMGR_INSTALLER_DEPS REQUIRED pkgmgr-installer)
+PKG_CHECK_MODULES(PKGMGR_PARSER_DEPS REQUIRED pkgmgr-parser)
 
 # Optional Tizen STT/TTS (not always available)
 PKG_CHECK_MODULES(TIZEN_STT capi-uix-stt)

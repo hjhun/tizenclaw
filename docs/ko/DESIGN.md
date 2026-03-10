@@ -115,7 +115,7 @@ graph TB
 - **UID 인증**: `SO_PEERCRED` 기반 발신자 검증 (root, app_fw, system, developer)
 - **스레드 풀**: `kMaxConcurrentClients = 4` 동시 요청 처리
 - **채널 생명주기**: `ChannelRegistry`를 통한 모든 채널 초기화 및 관리
-- **모듈형 CAPI (`src/lib`)**: 내부 로직이 외부 CAPI 계층(`tizenclaw.h`)과 완전히 분리되어, SDK로서의 배포가 용이합니다.
+- **모듈형 CAPI (`src/libtizenclaw`)**: 내부 로직이 외부 CAPI 계층(`tizenclaw.h`)과 완전히 분리되어, SDK로서의 배포가 용이합니다.
 
 ### 3.2 Agent Core (`agent_core.cc`)
 

@@ -11,14 +11,16 @@ class ToolPolicyTest : public ::testing::Test {
 protected:
     void SetUp() override {
         policy = new ToolPolicy();
+        config_path_ = std::string("test_tool_policy_") + ::testing::UnitTest::GetInstance()->current_test_info()->name() + ".json";
     }
 
     void TearDown() override {
         delete policy;
-        unlink("test_tool_policy.json");
+        unlink(config_path_.c_str());
     }
 
     ToolPolicy* policy;
+    std::string config_path_;
 };
 
 TEST_F(ToolPolicyTest, DefaultPolicyAllowsAll) {
@@ -31,7 +33,7 @@ TEST_F(ToolPolicyTest, DefaultPolicyAllowsAll) {
 }
 
 TEST_F(ToolPolicyTest, LoadConfigFromFile) {
-    std::ofstream f("test_tool_policy.json");
+    std::ofstream f(config_path_);
     f << R"({
       "max_repeat_count": 2,
       "blocked_skills": ["dangerous_tool"],
@@ -42,17 +44,17 @@ TEST_F(ToolPolicyTest, LoadConfigFromFile) {
     f.close();
 
     EXPECT_TRUE(policy->LoadConfig(
-        "test_tool_policy.json"));
+        config_path_));
 }
 
 TEST_F(ToolPolicyTest, BlockedSkillRejected) {
-    std::ofstream f("test_tool_policy.json");
+    std::ofstream f(config_path_);
     f << R"({
       "blocked_skills": ["blocked_tool"]
     })" << std::endl;
     f.close();
 
-    ASSERT_TRUE(policy->LoadConfig("test_tool_policy.json"));
+    ASSERT_TRUE(policy->LoadConfig(config_path_));
 
     std::string violation =
         policy->CheckPolicy(
@@ -63,12 +65,12 @@ TEST_F(ToolPolicyTest, BlockedSkillRejected) {
 }
 
 TEST_F(ToolPolicyTest, LoopDetectionBlocks) {
-    std::ofstream f("test_tool_policy.json");
+    std::ofstream f(config_path_);
     f << R"({"max_repeat_count": 2})"
       << std::endl;
     f.close();
 
-    ASSERT_TRUE(policy->LoadConfig("test_tool_policy.json"));
+    ASSERT_TRUE(policy->LoadConfig(config_path_));
 
     nlohmann::json args = {{"app_id", "test"}};
 
@@ -89,12 +91,12 @@ TEST_F(ToolPolicyTest, LoopDetectionBlocks) {
 
 TEST_F(ToolPolicyTest,
        DifferentArgsNotBlocked) {
-    std::ofstream f("test_tool_policy.json");
+    std::ofstream f(config_path_);
     f << R"({"max_repeat_count": 1})"
       << std::endl;
     f.close();
 
-    ASSERT_TRUE(policy->LoadConfig("test_tool_policy.json"));
+    ASSERT_TRUE(policy->LoadConfig(config_path_));
 
     nlohmann::json args1 = {{"app_id", "app1"}};
     nlohmann::json args2 = {{"app_id", "app2"}};
@@ -108,12 +110,12 @@ TEST_F(ToolPolicyTest,
 
 TEST_F(ToolPolicyTest,
        DifferentSessionsIndependent) {
-    std::ofstream f("test_tool_policy.json");
+    std::ofstream f(config_path_);
     f << R"({"max_repeat_count": 1})"
       << std::endl;
     f.close();
 
-    ASSERT_TRUE(policy->LoadConfig("test_tool_policy.json"));
+    ASSERT_TRUE(policy->LoadConfig(config_path_));
 
     nlohmann::json args = {{"app_id", "test"}};
 
@@ -127,12 +129,12 @@ TEST_F(ToolPolicyTest,
 }
 
 TEST_F(ToolPolicyTest, ResetSessionClears) {
-    std::ofstream f("test_tool_policy.json");
+    std::ofstream f(config_path_);
     f << R"({"max_repeat_count": 1})"
       << std::endl;
     f.close();
 
-    ASSERT_TRUE(policy->LoadConfig("test_tool_policy.json"));
+    ASSERT_TRUE(policy->LoadConfig(config_path_));
 
     nlohmann::json args = {{"app_id", "test"}};
 
@@ -195,12 +197,12 @@ TEST_F(ToolPolicyTest,
 
 TEST_F(ToolPolicyTest,
        ConfigMaxIterations) {
-    std::ofstream f("test_tool_policy.json");
+    std::ofstream f(config_path_);
     f << R"({"max_iterations": 10})"
       << std::endl;
     f.close();
 
-    ASSERT_TRUE(policy->LoadConfig("test_tool_policy.json"));
+    ASSERT_TRUE(policy->LoadConfig(config_path_));
 
     EXPECT_EQ(policy->GetMaxIterations(), 10);
 }

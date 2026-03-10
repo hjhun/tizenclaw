@@ -48,9 +48,13 @@ APPLY_PKG_CONFIG(tizenclaw-unittests PUBLIC
   TIZEN_ACTION_DEPS
   LIBSOUP_DEPS
   LIBWEBSOCKETS_DEPS
+  PKGMGR_DEPS
+  PKGMGR_INFO_DEPS
+  PKGMGR_INSTALLER_DEPS
+  PKGMGR_PARSER_DEPS
 )
 
-TARGET_LINK_LIBRARIES(tizenclaw-unittests PUBLIC pthread)
+TARGET_LINK_LIBRARIES(tizenclaw-unittests PUBLIC pthread tizenclaw-llm-backend)
 
 TARGET_COMPILE_DEFINITIONS(tizenclaw-unittests PUBLIC
   TIZEN_ACTION_ENABLED
@@ -70,6 +74,7 @@ ENDIF()
 
 ## CTest
 ENABLE_TESTING()
-ADD_TEST(NAME TizenClawTests COMMAND tizenclaw-unittests)
+include(GoogleTest)
+gtest_discover_tests(tizenclaw-unittests DISCOVERY_MODE PRE_TEST)
 
 INSTALL(TARGETS tizenclaw-unittests DESTINATION ${BINDIR})

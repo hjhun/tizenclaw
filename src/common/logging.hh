@@ -154,7 +154,7 @@ __tag_for_project() { return PROJECT_TAG; }
 //     where:
 //       LEVEL = ERROR | WARNING | INFO | DEBUG
 #define LOG(LEVEL)                                                             \
-  ::tizenclaw::utils::LogCatcher(::tizenclaw::utils::LogLevel::LOG_##LEVEL, __tag_for_project()) &   \
+  ::tizenclaw::utils::LogCatcher(::tizenclaw::utils::LogLevel::LOG_##LEVEL, ::tizenclaw::__tag_for_project()) &   \
       ::tizenclaw::utils::StringStream<char>()                                            \
           << std::setw(50) << std::right                                       \
           << (std::string(__FILENAME__) + ": " + std::string(__FUNCTION__) +   \
