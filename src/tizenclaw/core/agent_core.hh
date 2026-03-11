@@ -261,6 +261,11 @@ private:
     std::string GetSessionPrompt(
         const std::string& session_id,
         const std::vector<LlmToolDecl>& tools);
+    // SwitchToBestBackend: Unified algorithm to select and initialize the
+    // best LLM backend based on priority configurations. Active backend is IntMax, 
+    // plugins and fallbacks have configurable priority, descending sort.
+    bool SwitchToBestBackend(bool is_reload = false);
+
 };
 
 } // namespace tizenclaw

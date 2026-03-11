@@ -21,6 +21,8 @@
 #include <sstream>
 #include <sys/stat.h>
 #include <thread>
+#include <climits>
+#include <algorithm>
 
 #include "agent_core.hh"
 #include "../infra/http_client.hh"
@@ -137,80 +139,7 @@ bool AgentCore::Initialize() {
     };
   }
 
-  // Create backend from config or forcibly use a discovered plugin
-  std::string backend_name =
-      llm_config.value("active_backend", "gemini");
-
-  auto plugins = PluginManager::GetInstance().GetLlmBackends();
-  if (!plugins.empty()) {
-    std::shared_ptr<PluginLlmBackend> highest;
-    int max_prio = -1;
-    for (auto& plugin : plugins) {
-      int p = plugin->GetConfig().value("priority", 0);
-      if (p > max_prio) {
-        max_prio = p;
-        highest = plugin;
-      }
-    }
-    if (highest) {
-      backend_name = highest->GetName();
-      LOG(INFO) << "Overriding active_backend to plugin: " << backend_name 
-                << " (priority: " << max_prio << ")";
-    }
-  }
-
-  backend_ =
-      LlmBackendFactory::Create(backend_name);
-  if (!backend_) {
-    LOG(ERROR) << "Failed to create LLM backend: " << backend_name;
-    return false;
-  }
-
-  // Get provider-specific config
-  nlohmann::json backend_config;
-  if (llm_config.contains("backends") &&
-      llm_config["backends"]
-          .contains(backend_name)) {
-    backend_config =
-        llm_config["backends"][backend_name];
-  }
-
-  // Decrypt API key if encrypted
-  if (backend_config.contains("api_key")) {
-    std::string api_key =
-        backend_config["api_key"]
-            .get<std::string>();
-    if (KeyStore::IsEncrypted(api_key)) {
-      std::string decrypted =
-          KeyStore::Decrypt(api_key);
-      if (!decrypted.empty()) {
-        backend_config["api_key"] = decrypted;
-        LOG(INFO) << "API key decrypted for: "
-                  << backend_name;
-      } else {
-        LOG(ERROR)
-            << "Failed to decrypt API key";
-      }
-    }
-  }
-
-  // For xAI, inject provider_name so OpenAiBackend
-  // knows its identity
-  if (backend_name == "xai" ||
-      backend_name == "grok") {
-    backend_config["provider_name"] = "xai";
-    if (!backend_config.contains("endpoint")) {
-      backend_config["endpoint"] =
-          "https://api.x.ai/v1";
-    }
-  }
-
-  if (!backend_->Initialize(backend_config)) {
-    LOG(ERROR) << "Failed to init backend: " << backend_name;
-    backend_.reset();
-    return false;
-  }
-
+  llm_config_ = llm_config;
   curl_global_init(CURL_GLOBAL_DEFAULT);
 
   // Load system prompt
@@ -231,25 +160,10 @@ bool AgentCore::Initialize() {
     LOG(WARNING) << "Tool policy config not loaded (using defaults)";
   }
 
-  // Parse fallback backends from config
-  if (llm_config.contains(
-          "fallback_backends")) {
-    for (auto& name :
-         llm_config["fallback_backends"]) {
-      std::string fb =
-          name.get<std::string>();
-      if (fb != backend_name) {
-        fallback_names_.push_back(fb);
-      }
-    }
-    if (!fallback_names_.empty()) {
-      LOG(INFO)
-          << "Fallback backends: "
-          << fallback_names_.size()
-          << " configured";
-    }
+  if (!SwitchToBestBackend(false)) {
+    LOG(ERROR) << "Failed to switch to best backend during Initialize.";
+    return false;
   }
-  llm_config_ = llm_config;
 
   // Audit: config loaded
   AuditLogger::Instance().Log(
@@ -776,36 +690,85 @@ std::string AgentCore::ExecuteCode(
 
 void AgentCore::ReloadBackend() {
   LOG(INFO) << "Reloading active backend based on plugin changes...";
-  std::string new_backend_name = llm_config_.value("active_backend", "openai");
+  if (!SwitchToBestBackend(true)) {
+    LOG(ERROR) << "Failed to reload and switch to best backend.";
+  }
+}
+
+struct BackendCandidate {
+  std::string name;
+  int priority;
+  std::shared_ptr<PluginLlmBackend> plugin;
+};
+
+bool AgentCore::SwitchToBestBackend(bool is_reload) {
+  std::string default_backend = llm_config_.value("active_backend", "openai");
   
-  auto plugins = PluginManager::GetInstance().GetLlmBackends();
-  if (!plugins.empty()) {
-    std::shared_ptr<PluginLlmBackend> highest;
-    int max_prio = -1;
-    for (auto& plugin : plugins) {
-      int p = plugin->GetConfig().value("priority", 0);
-      if (p > max_prio) {
-        max_prio = p;
-        highest = plugin;
+  std::vector<BackendCandidate> candidates;
+  // 1. Add active backend with baseline priority 1
+  candidates.push_back({default_backend, 1, nullptr});
+
+  // 2. Add fallback backends with configured priority (default 1)
+  if (llm_config_.contains("fallback_backends")) {
+    for (const auto& name_val : llm_config_["fallback_backends"]) {
+      std::string fb = name_val.get<std::string>();
+      if (fb == default_backend) continue;
+      
+      int prio = 1;
+      if (llm_config_.contains("backends") && llm_config_["backends"].contains(fb)) {
+        prio = llm_config_["backends"][fb].value("priority", 1);
       }
-    }
-    if (highest) {
-      new_backend_name = highest->GetName();
-      LOG(INFO) << "ReloadBackend selected plugin: " << new_backend_name 
-                << " (priority: " << max_prio << ")";
+      candidates.push_back({fb, prio, nullptr});
     }
   }
 
-  std::shared_ptr<LlmBackend> new_backend = LlmBackendFactory::Create(new_backend_name);
-  if (new_backend) {
-    nlohmann::json backend_config;
-    if (llm_config_.contains("backends") &&
-        llm_config_["backends"].contains(new_backend_name)) {
-      backend_config = llm_config_["backends"][new_backend_name];
-    }
+  // 3. Add plugin backends
+  auto plugins = PluginManager::GetInstance().GetLlmBackends();
+  for (auto& plugin : plugins) {
+    if (!plugin) continue;
+    int prio = plugin->GetConfig().value("priority", 0);
+    candidates.push_back({plugin->GetName(), prio, plugin});
+  }
+
+  // 4. Sort descending by priority
+  std::stable_sort(candidates.begin(), candidates.end(), 
+    [](const BackendCandidate& a, const BackendCandidate& b) {
+      return a.priority > b.priority;
+    });
+
+  // 5. Try to initialize the best backend
+  std::lock_guard<std::mutex> lock(backend_mutex_);
+  
+  for (size_t i = 0; i < candidates.size(); ++i) {
+    auto& cand = candidates[i];
+    std::string bname = cand.name;
     
-    // For xAI, inject provider_name so OpenAiBackend knows its identity
-    if (new_backend_name == "xai" || new_backend_name == "grok") {
+    std::shared_ptr<LlmBackend> new_backend = LlmBackendFactory::Create(bname);
+    if (!new_backend) continue;
+
+    nlohmann::json backend_config;
+    if (cand.plugin) {
+      backend_config = cand.plugin->GetConfig();
+    } else if (llm_config_.contains("backends") && llm_config_["backends"].contains(bname)) {
+      backend_config = llm_config_["backends"][bname];
+    }
+
+    // Decrypt API key if encrypted
+    if (backend_config.contains("api_key")) {
+      std::string api_key = backend_config["api_key"].get<std::string>();
+      if (KeyStore::IsEncrypted(api_key)) {
+        std::string decrypted = KeyStore::Decrypt(api_key);
+        if (!decrypted.empty()) {
+          backend_config["api_key"] = decrypted;
+          LOG(INFO) << "API key decrypted for: " << bname;
+        } else {
+          LOG(ERROR) << "Failed to decrypt API key for: " << bname;
+        }
+      }
+    }
+
+    // xAI injection
+    if (bname == "xai" || bname == "grok") {
       backend_config["provider_name"] = "xai";
       if (!backend_config.contains("endpoint")) {
         backend_config["endpoint"] = "https://api.x.ai/v1";
@@ -813,23 +776,39 @@ void AgentCore::ReloadBackend() {
     }
 
     if (new_backend->Initialize(backend_config)) {
-      std::lock_guard<std::mutex> lock(backend_mutex_);
-      if (backend_) {
-        backend_->Shutdown();
+      if (backend_ && backend_->GetName() != bname) {
+         backend_->Shutdown();
       }
       backend_ = new_backend;
-      LOG(INFO) << "Successfully reloaded backend to: " << new_backend_name;
-      AuditLogger::Instance().Log(
-          AuditLogger::MakeEvent(
-              AuditEventType::kConfigChange,
-              "",
-              {{"backend", backend_->GetName()}}));
+      LOG(INFO) << (is_reload ? "ReloadBackend" : "AgentCore") << " selected backend: " << bname << " (priority: " << cand.priority << ")";
+
+      if (is_reload) {
+        AuditLogger::Instance().Log(
+            AuditLogger::MakeEvent(
+                AuditEventType::kConfigChange,
+                "",
+                {{"backend", backend_->GetName()}}));
+      }
+
+      // Populate fallback_names_ with the remaining candidates
+      fallback_names_.clear();
+      for (size_t j = i + 1; j < candidates.size(); ++j) {
+        if (std::find(fallback_names_.begin(), fallback_names_.end(), candidates[j].name) == fallback_names_.end()) {
+           fallback_names_.push_back(candidates[j].name);
+        }
+      }
+      if (!fallback_names_.empty()) {
+        LOG(INFO) << "Fallback backends queues: " << fallback_names_.size();
+      }
+      
+      return true;
     } else {
-      LOG(ERROR) << "Failed to initialize new backend: " << new_backend_name;
+      LOG(WARNING) << "Failed to initialize backend candidate: " << bname;
     }
-  } else {
-    LOG(ERROR) << "Failed to create new backend: " << new_backend_name;
   }
+
+  LOG(ERROR) << "Failed to initialize ANY backend from candidates list!";
+  return false;
 }
 
 std::string AgentCore::ExecuteFileOp(
