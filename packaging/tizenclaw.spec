@@ -90,7 +90,7 @@ ln -sf ../tizenclaw-skills-secure.service %{buildroot}%{_unitdir}/multi-user.tar
 %{_bindir}/tizenclaw-cli
 %{_bindir}/start_mcp_tunnel.sh
 %{_libdir}/libtizenclaw.so.*
-%{_libdir}/libtizenclaw-llm-backend.so.*
+%{_libdir}/libtizenclaw-core.so.*
 %{_unitdir}/tizenclaw.service
 %{_unitdir}/tizenclaw-skills-secure.service
 %{_unitdir}/multi-user.target.wants/tizenclaw.service
@@ -124,6 +124,6 @@ ln -sf ../tizenclaw-skills-secure.service %{buildroot}%{_unitdir}/multi-user.tar
 %defattr(-,root,root,-)
 %{_includedir}/tizenclaw/
 %{_libdir}/libtizenclaw.so
-%{_libdir}/libtizenclaw-llm-backend.so
+%{_libdir}/libtizenclaw-core.so
 %{_libdir}/pkgconfig/tizenclaw.pc
-%{_libdir}/pkgconfig/tizenclaw-llm-backend.pc
+%{_libdir}/pkgconfig/tizenclaw-core.pc

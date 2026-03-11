@@ -186,8 +186,10 @@ bool PluginManager::LoadPluginFromPkg(const std::string& pkgid) {
     return false;
   }
 
-  std::lock_guard<std::mutex> lock(llm_backends_mutex_);
-  llm_backends_.push_back(backend);
+  {
+    std::lock_guard<std::mutex> lock(llm_backends_mutex_);
+    llm_backends_.push_back(backend);
+  }
   LOG(INFO) << "Successfully loaded " << backend->GetName() << " from "
             << pkgid;
 

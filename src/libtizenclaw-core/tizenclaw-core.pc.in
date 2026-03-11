@@ -3,9 +3,9 @@ exec_prefix=@PREFIX@
 libdir=@LIBDIR@
 includedir=@INCLUDEDIR@
 
-Name: tizenclaw-llm-backend
+Name: tizenclaw-core
 Description: TizenClaw LLM Backend Plugin C-API for dynamic loading
 Version: @FULLVER@
-Libs: -L${libdir} -ltizenclaw-llm-backend
+Libs: -L${libdir} -ltizenclaw-core
 Cflags: -I${includedir}/tizenclaw/llm-backend -I${includedir}/tizenclaw
 Requires: tizenclaw, libcurl

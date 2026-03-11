@@ -18,8 +18,8 @@
 #include <chrono>
 #include <thread>
 
-#include "../../libtizenclaw-llm-backend/inc/tizenclaw_llm_backend.h"
-#include "../../libtizenclaw-llm-backend/inc/tizenclaw_curl.h"
+#include "../../libtizenclaw-core/inc/tizenclaw_llm_backend.h"
+#include "../../libtizenclaw-core/inc/tizenclaw_curl.h"
 #include "../../common/logging.hh"
 
 namespace tizenclaw {

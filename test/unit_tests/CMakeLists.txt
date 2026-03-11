@@ -54,7 +54,7 @@ APPLY_PKG_CONFIG(tizenclaw-unittests PUBLIC
   PKGMGR_PARSER_DEPS
 )
 
-TARGET_LINK_LIBRARIES(tizenclaw-unittests PUBLIC pthread tizenclaw-llm-backend)
+TARGET_LINK_LIBRARIES(tizenclaw-unittests PUBLIC pthread tizenclaw-core)
 
 TARGET_COMPILE_DEFINITIONS(tizenclaw-unittests PUBLIC
   APP_DATA_DIR="${APP_DATA_DIR}"
