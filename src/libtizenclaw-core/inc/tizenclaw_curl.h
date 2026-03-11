@@ -17,6 +17,8 @@
 #ifndef TIZENCLAW_CURL_H_
 #define TIZENCLAW_CURL_H_
 
+#include <tizenclaw_error.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif

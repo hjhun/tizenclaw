@@ -29,6 +29,12 @@
 
 #include "tizenclaw.h"
 
+#undef EXPORT
+#define EXPORT __attribute__((visibility("default")))
+
+#undef API
+#define API extern "C" EXPORT
+
 namespace {
 
 /**
@@ -292,9 +298,7 @@ void TizenClawClientImpl::PerformRequestTask(std::string session_id,
 
 // --- C-API Public Definitions ---
 
-extern "C" {
-
-int tizenclaw_client_create(tizenclaw_client_h* client) {
+API int tizenclaw_client_create(tizenclaw_client_h* client) {
   if (!client) {
     return TIZENCLAW_ERROR_INVALID_PARAMETER;
   }
@@ -307,7 +311,7 @@ int tizenclaw_client_create(tizenclaw_client_h* client) {
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_client_destroy(tizenclaw_client_h client) {
+API int tizenclaw_client_destroy(tizenclaw_client_h client) {
   if (!client) {
     return TIZENCLAW_ERROR_INVALID_PARAMETER;
   }
@@ -316,7 +320,7 @@ int tizenclaw_client_destroy(tizenclaw_client_h client) {
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_client_send_request(tizenclaw_client_h client,
+API int tizenclaw_client_send_request(tizenclaw_client_h client,
                                   const char* session_id, const char* prompt,
                                   tizenclaw_response_cb response_cb,
                                   tizenclaw_error_cb error_cb,
@@ -331,7 +335,7 @@ int tizenclaw_client_send_request(tizenclaw_client_h client,
   return impl->SendRequest(s_id, s_prompt, response_cb, error_cb, user_data);
 }
 
-int tizenclaw_client_send_request_stream(tizenclaw_client_h client,
+API int tizenclaw_client_send_request_stream(tizenclaw_client_h client,
                                          const char* session_id,
                                          const char* prompt,
                                          tizenclaw_stream_cb stream_cb,
@@ -347,5 +351,3 @@ int tizenclaw_client_send_request_stream(tizenclaw_client_h client,
   return impl->SendRequestStream(s_id, s_prompt, stream_cb, error_cb,
                                  user_data);
 }
-
-}  // extern "C"

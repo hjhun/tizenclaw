@@ -26,6 +26,12 @@
 
 #include "logging.hh"
 
+#undef EXPORT
+#define EXPORT __attribute__((visibility("default")))
+
+#undef API
+#define API extern "C" EXPORT
+
 // -----------------------------------------------------------------------------
 // Internal Data Structures
 // -----------------------------------------------------------------------------
@@ -106,14 +112,10 @@ char* _safe_strdup(const std::string& str) {
 
 }  // namespace
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 // -----------------------------------------------------------------------------
 // LlmToolCall API
 // -----------------------------------------------------------------------------
-int tizenclaw_llm_tool_call_create(tizenclaw_llm_tool_call_h* tool_call) {
+API int tizenclaw_llm_tool_call_create(tizenclaw_llm_tool_call_h* tool_call) {
   if (!tool_call) {
     LOG(ERROR) << "Invalid parameter: tool_call is null";
     return TIZENCLAW_ERROR_INVALID_PARAMETER;
@@ -122,7 +124,7 @@ int tizenclaw_llm_tool_call_create(tizenclaw_llm_tool_call_h* tool_call) {
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_tool_call_destroy(tizenclaw_llm_tool_call_h tool_call) {
+API int tizenclaw_llm_tool_call_destroy(tizenclaw_llm_tool_call_h tool_call) {
   if (!tool_call) {
     LOG(ERROR) << "Invalid parameter: tool_call is null";
     return TIZENCLAW_ERROR_INVALID_PARAMETER;
@@ -131,7 +133,7 @@ int tizenclaw_llm_tool_call_destroy(tizenclaw_llm_tool_call_h tool_call) {
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_tool_call_set_id(tizenclaw_llm_tool_call_h tool_call,
+API int tizenclaw_llm_tool_call_set_id(tizenclaw_llm_tool_call_h tool_call,
                                    const char* id) {
   if (!tool_call || !id) {
     LOG(ERROR) << "Invalid parameter: tool_call or id is null";
@@ -141,7 +143,7 @@ int tizenclaw_llm_tool_call_set_id(tizenclaw_llm_tool_call_h tool_call,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_tool_call_get_id(tizenclaw_llm_tool_call_h tool_call,
+API int tizenclaw_llm_tool_call_get_id(tizenclaw_llm_tool_call_h tool_call,
                                    char** id) {
   if (!tool_call || !id) {
     LOG(ERROR) << "Invalid parameter: tool_call or id is null";
@@ -151,7 +153,7 @@ int tizenclaw_llm_tool_call_get_id(tizenclaw_llm_tool_call_h tool_call,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_tool_call_set_name(tizenclaw_llm_tool_call_h tool_call,
+API int tizenclaw_llm_tool_call_set_name(tizenclaw_llm_tool_call_h tool_call,
                                      const char* name) {
   if (!tool_call || !name) {
     LOG(ERROR) << "Invalid parameter: tool_call or name is null";
@@ -161,7 +163,7 @@ int tizenclaw_llm_tool_call_set_name(tizenclaw_llm_tool_call_h tool_call,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_tool_call_get_name(tizenclaw_llm_tool_call_h tool_call,
+API int tizenclaw_llm_tool_call_get_name(tizenclaw_llm_tool_call_h tool_call,
                                      char** name) {
   if (!tool_call || !name) {
     LOG(ERROR) << "Invalid parameter: tool_call or name is null";
@@ -171,7 +173,7 @@ int tizenclaw_llm_tool_call_get_name(tizenclaw_llm_tool_call_h tool_call,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_tool_call_set_args_json(tizenclaw_llm_tool_call_h tool_call,
+API int tizenclaw_llm_tool_call_set_args_json(tizenclaw_llm_tool_call_h tool_call,
                                           const char* args_json) {
   if (!tool_call || !args_json) {
     LOG(ERROR) << "Invalid parameter: tool_call or args_json is null";
@@ -181,7 +183,7 @@ int tizenclaw_llm_tool_call_set_args_json(tizenclaw_llm_tool_call_h tool_call,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_tool_call_get_args_json(tizenclaw_llm_tool_call_h tool_call,
+API int tizenclaw_llm_tool_call_get_args_json(tizenclaw_llm_tool_call_h tool_call,
                                           char** args_json) {
   if (!tool_call || !args_json) {
     LOG(ERROR) << "Invalid parameter: tool_call or args_json is null";
@@ -195,7 +197,7 @@ int tizenclaw_llm_tool_call_get_args_json(tizenclaw_llm_tool_call_h tool_call,
 // -----------------------------------------------------------------------------
 // LlmMessage API
 // -----------------------------------------------------------------------------
-int tizenclaw_llm_message_create(tizenclaw_llm_message_h* message) {
+API int tizenclaw_llm_message_create(tizenclaw_llm_message_h* message) {
   if (!message) {
     LOG(ERROR) << "Invalid parameter: message is null";
     return TIZENCLAW_ERROR_INVALID_PARAMETER;
@@ -204,7 +206,7 @@ int tizenclaw_llm_message_create(tizenclaw_llm_message_h* message) {
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_message_destroy(tizenclaw_llm_message_h message) {
+API int tizenclaw_llm_message_destroy(tizenclaw_llm_message_h message) {
   if (!message) {
     LOG(ERROR) << "Invalid parameter: message is null";
     return TIZENCLAW_ERROR_INVALID_PARAMETER;
@@ -213,7 +215,7 @@ int tizenclaw_llm_message_destroy(tizenclaw_llm_message_h message) {
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_message_set_role(tizenclaw_llm_message_h message,
+API int tizenclaw_llm_message_set_role(tizenclaw_llm_message_h message,
                                    const char* role) {
   if (!message || !role) {
     LOG(ERROR) << "Invalid parameter: message or role is null";
@@ -223,7 +225,7 @@ int tizenclaw_llm_message_set_role(tizenclaw_llm_message_h message,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_message_get_role(tizenclaw_llm_message_h message,
+API int tizenclaw_llm_message_get_role(tizenclaw_llm_message_h message,
                                    char** role) {
   if (!message || !role) {
     LOG(ERROR) << "Invalid parameter: message or role is null";
@@ -233,7 +235,7 @@ int tizenclaw_llm_message_get_role(tizenclaw_llm_message_h message,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_message_set_text(tizenclaw_llm_message_h message,
+API int tizenclaw_llm_message_set_text(tizenclaw_llm_message_h message,
                                    const char* text) {
   if (!message || !text) {
     LOG(ERROR) << "Invalid parameter: message or text is null";
@@ -243,7 +245,7 @@ int tizenclaw_llm_message_set_text(tizenclaw_llm_message_h message,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_message_get_text(tizenclaw_llm_message_h message,
+API int tizenclaw_llm_message_get_text(tizenclaw_llm_message_h message,
                                    char** text) {
   if (!message || !text) {
     LOG(ERROR) << "Invalid parameter: message or text is null";
@@ -253,7 +255,7 @@ int tizenclaw_llm_message_get_text(tizenclaw_llm_message_h message,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_message_add_tool_call(tizenclaw_llm_message_h message,
+API int tizenclaw_llm_message_add_tool_call(tizenclaw_llm_message_h message,
                                         tizenclaw_llm_tool_call_h tool_call) {
   if (!message || !tool_call) {
     LOG(ERROR) << "Invalid parameter: message or tool_call is null";
@@ -269,7 +271,7 @@ int tizenclaw_llm_message_add_tool_call(tizenclaw_llm_message_h message,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_message_foreach_tool_calls(
+API int tizenclaw_llm_message_foreach_tool_calls(
     tizenclaw_llm_message_h message, tizenclaw_llm_tool_call_cb callback,
     void* user_data) {
   if (!message || !callback) {
@@ -283,7 +285,7 @@ int tizenclaw_llm_message_foreach_tool_calls(
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_message_set_tool_name(tizenclaw_llm_message_h message,
+API int tizenclaw_llm_message_set_tool_name(tizenclaw_llm_message_h message,
                                         const char* tool_name) {
   if (!message || !tool_name) {
     LOG(ERROR) << "Invalid parameter: message or tool_name is null";
@@ -293,7 +295,7 @@ int tizenclaw_llm_message_set_tool_name(tizenclaw_llm_message_h message,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_message_get_tool_name(tizenclaw_llm_message_h message,
+API int tizenclaw_llm_message_get_tool_name(tizenclaw_llm_message_h message,
                                         char** tool_name) {
   if (!message || !tool_name) {
     LOG(ERROR) << "Invalid parameter: message or tool_name is null";
@@ -304,7 +306,7 @@ int tizenclaw_llm_message_get_tool_name(tizenclaw_llm_message_h message,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_message_set_tool_call_id(tizenclaw_llm_message_h message,
+API int tizenclaw_llm_message_set_tool_call_id(tizenclaw_llm_message_h message,
                                            const char* tool_call_id) {
   if (!message || !tool_call_id) {
     LOG(ERROR) << "Invalid parameter: message or tool_call_id is null";
@@ -314,7 +316,7 @@ int tizenclaw_llm_message_set_tool_call_id(tizenclaw_llm_message_h message,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_message_get_tool_call_id(tizenclaw_llm_message_h message,
+API int tizenclaw_llm_message_get_tool_call_id(tizenclaw_llm_message_h message,
                                            char** tool_call_id) {
   if (!message || !tool_call_id) {
     LOG(ERROR) << "Invalid parameter: message or tool_call_id is null";
@@ -325,7 +327,7 @@ int tizenclaw_llm_message_get_tool_call_id(tizenclaw_llm_message_h message,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_message_set_tool_result_json(tizenclaw_llm_message_h message,
+API int tizenclaw_llm_message_set_tool_result_json(tizenclaw_llm_message_h message,
                                                const char* tool_result_json) {
   if (!message || !tool_result_json) {
     LOG(ERROR) << "Invalid parameter: message or tool_result_json is null";
@@ -336,7 +338,7 @@ int tizenclaw_llm_message_set_tool_result_json(tizenclaw_llm_message_h message,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_message_get_tool_result_json(tizenclaw_llm_message_h message,
+API int tizenclaw_llm_message_get_tool_result_json(tizenclaw_llm_message_h message,
                                                char** tool_result_json) {
   if (!message || !tool_result_json) {
     LOG(ERROR) << "Invalid parameter: message or tool_result_json is null";
@@ -350,7 +352,7 @@ int tizenclaw_llm_message_get_tool_result_json(tizenclaw_llm_message_h message,
 // -----------------------------------------------------------------------------
 // LlmMessages (List) API
 // -----------------------------------------------------------------------------
-int tizenclaw_llm_messages_create(tizenclaw_llm_messages_h* messages) {
+API int tizenclaw_llm_messages_create(tizenclaw_llm_messages_h* messages) {
   if (!messages) {
     LOG(ERROR) << "Invalid parameter: messages is null";
     return TIZENCLAW_ERROR_INVALID_PARAMETER;
@@ -359,7 +361,7 @@ int tizenclaw_llm_messages_create(tizenclaw_llm_messages_h* messages) {
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_messages_destroy(tizenclaw_llm_messages_h messages) {
+API int tizenclaw_llm_messages_destroy(tizenclaw_llm_messages_h messages) {
   if (!messages) {
     LOG(ERROR) << "Invalid parameter: messages is null";
     return TIZENCLAW_ERROR_INVALID_PARAMETER;
@@ -368,7 +370,7 @@ int tizenclaw_llm_messages_destroy(tizenclaw_llm_messages_h messages) {
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_messages_add(tizenclaw_llm_messages_h messages,
+API int tizenclaw_llm_messages_add(tizenclaw_llm_messages_h messages,
                                tizenclaw_llm_message_h message) {
   if (!messages || !message) {
     LOG(ERROR) << "Invalid parameter: messages or message is null";
@@ -392,7 +394,7 @@ int tizenclaw_llm_messages_add(tizenclaw_llm_messages_h messages,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_messages_foreach(tizenclaw_llm_messages_h messages,
+API int tizenclaw_llm_messages_foreach(tizenclaw_llm_messages_h messages,
                                    tizenclaw_llm_message_cb callback,
                                    void* user_data) {
   if (!messages || !callback) {
@@ -409,7 +411,7 @@ int tizenclaw_llm_messages_foreach(tizenclaw_llm_messages_h messages,
 // -----------------------------------------------------------------------------
 // LlmToolDecl API
 // -----------------------------------------------------------------------------
-int tizenclaw_llm_tool_create(tizenclaw_llm_tool_h* tool) {
+API int tizenclaw_llm_tool_create(tizenclaw_llm_tool_h* tool) {
   if (!tool) {
     LOG(ERROR) << "Invalid parameter: tool is null";
     return TIZENCLAW_ERROR_INVALID_PARAMETER;
@@ -418,7 +420,7 @@ int tizenclaw_llm_tool_create(tizenclaw_llm_tool_h* tool) {
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_tool_destroy(tizenclaw_llm_tool_h tool) {
+API int tizenclaw_llm_tool_destroy(tizenclaw_llm_tool_h tool) {
   if (!tool) {
     LOG(ERROR) << "Invalid parameter: tool is null";
     return TIZENCLAW_ERROR_INVALID_PARAMETER;
@@ -427,7 +429,7 @@ int tizenclaw_llm_tool_destroy(tizenclaw_llm_tool_h tool) {
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_tool_set_name(tizenclaw_llm_tool_h tool, const char* name) {
+API int tizenclaw_llm_tool_set_name(tizenclaw_llm_tool_h tool, const char* name) {
   if (!tool || !name) {
     LOG(ERROR) << "Invalid parameter: tool or name is null";
     return TIZENCLAW_ERROR_INVALID_PARAMETER;
@@ -436,7 +438,7 @@ int tizenclaw_llm_tool_set_name(tizenclaw_llm_tool_h tool, const char* name) {
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_tool_get_name(tizenclaw_llm_tool_h tool, char** name) {
+API int tizenclaw_llm_tool_get_name(tizenclaw_llm_tool_h tool, char** name) {
   if (!tool || !name) {
     LOG(ERROR) << "Invalid parameter: tool or name is null";
     return TIZENCLAW_ERROR_INVALID_PARAMETER;
@@ -445,7 +447,7 @@ int tizenclaw_llm_tool_get_name(tizenclaw_llm_tool_h tool, char** name) {
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_tool_set_description(tizenclaw_llm_tool_h tool,
+API int tizenclaw_llm_tool_set_description(tizenclaw_llm_tool_h tool,
                                        const char* description) {
   if (!tool || !description) {
     LOG(ERROR) << "Invalid parameter: tool or description is null";
@@ -455,7 +457,7 @@ int tizenclaw_llm_tool_set_description(tizenclaw_llm_tool_h tool,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_tool_get_description(tizenclaw_llm_tool_h tool,
+API int tizenclaw_llm_tool_get_description(tizenclaw_llm_tool_h tool,
                                        char** description) {
   if (!tool || !description) {
     LOG(ERROR) << "Invalid parameter: tool or description is null";
@@ -466,7 +468,7 @@ int tizenclaw_llm_tool_get_description(tizenclaw_llm_tool_h tool,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_tool_set_parameters_json(tizenclaw_llm_tool_h tool,
+API int tizenclaw_llm_tool_set_parameters_json(tizenclaw_llm_tool_h tool,
                                            const char* parameters_json) {
   if (!tool || !parameters_json) {
     LOG(ERROR) << "Invalid parameter: tool or parameters_json is null";
@@ -476,7 +478,7 @@ int tizenclaw_llm_tool_set_parameters_json(tizenclaw_llm_tool_h tool,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_tool_get_parameters_json(tizenclaw_llm_tool_h tool,
+API int tizenclaw_llm_tool_get_parameters_json(tizenclaw_llm_tool_h tool,
                                            char** parameters_json) {
   if (!tool || !parameters_json) {
     LOG(ERROR) << "Invalid parameter: tool or parameters_json is null";
@@ -490,7 +492,7 @@ int tizenclaw_llm_tool_get_parameters_json(tizenclaw_llm_tool_h tool,
 // -----------------------------------------------------------------------------
 // LlmTools (List) API
 // -----------------------------------------------------------------------------
-int tizenclaw_llm_tools_create(tizenclaw_llm_tools_h* tools) {
+API int tizenclaw_llm_tools_create(tizenclaw_llm_tools_h* tools) {
   if (!tools) {
     LOG(ERROR) << "Invalid parameter: tools is null";
     return TIZENCLAW_ERROR_INVALID_PARAMETER;
@@ -499,7 +501,7 @@ int tizenclaw_llm_tools_create(tizenclaw_llm_tools_h* tools) {
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_tools_destroy(tizenclaw_llm_tools_h tools) {
+API int tizenclaw_llm_tools_destroy(tizenclaw_llm_tools_h tools) {
   if (!tools) {
     LOG(ERROR) << "Invalid parameter: tools is null";
     return TIZENCLAW_ERROR_INVALID_PARAMETER;
@@ -508,7 +510,7 @@ int tizenclaw_llm_tools_destroy(tizenclaw_llm_tools_h tools) {
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_tools_add(tizenclaw_llm_tools_h tools,
+API int tizenclaw_llm_tools_add(tizenclaw_llm_tools_h tools,
                             tizenclaw_llm_tool_h tool) {
   if (!tools || !tool) {
     LOG(ERROR) << "Invalid parameter: tools or tool is null";
@@ -520,7 +522,7 @@ int tizenclaw_llm_tools_add(tizenclaw_llm_tools_h tools,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_tools_foreach(tizenclaw_llm_tools_h tools,
+API int tizenclaw_llm_tools_foreach(tizenclaw_llm_tools_h tools,
                                 tizenclaw_llm_tool_cb callback,
                                 void* user_data) {
   if (!tools || !callback) {
@@ -537,7 +539,7 @@ int tizenclaw_llm_tools_foreach(tizenclaw_llm_tools_h tools,
 // -----------------------------------------------------------------------------
 // LlmResponse API
 // -----------------------------------------------------------------------------
-int tizenclaw_llm_response_create(tizenclaw_llm_response_h* response) {
+API int tizenclaw_llm_response_create(tizenclaw_llm_response_h* response) {
   if (!response) {
     LOG(ERROR) << "Invalid parameter: response is null";
     return TIZENCLAW_ERROR_INVALID_PARAMETER;
@@ -546,7 +548,7 @@ int tizenclaw_llm_response_create(tizenclaw_llm_response_h* response) {
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_response_destroy(tizenclaw_llm_response_h response) {
+API int tizenclaw_llm_response_destroy(tizenclaw_llm_response_h response) {
   if (!response) {
     LOG(ERROR) << "Invalid parameter: response is null";
     return TIZENCLAW_ERROR_INVALID_PARAMETER;
@@ -555,7 +557,7 @@ int tizenclaw_llm_response_destroy(tizenclaw_llm_response_h response) {
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_response_set_success(tizenclaw_llm_response_h response,
+API int tizenclaw_llm_response_set_success(tizenclaw_llm_response_h response,
                                        bool success) {
   if (!response) {
     LOG(ERROR) << "Invalid parameter: response is null";
@@ -565,7 +567,7 @@ int tizenclaw_llm_response_set_success(tizenclaw_llm_response_h response,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_response_is_success(tizenclaw_llm_response_h response,
+API int tizenclaw_llm_response_is_success(tizenclaw_llm_response_h response,
                                       bool* success) {
   if (!response || !success) {
     LOG(ERROR) << "Invalid parameter: response or success is null";
@@ -575,7 +577,7 @@ int tizenclaw_llm_response_is_success(tizenclaw_llm_response_h response,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_response_set_text(tizenclaw_llm_response_h response,
+API int tizenclaw_llm_response_set_text(tizenclaw_llm_response_h response,
                                     const char* text) {
   if (!response || !text) {
     LOG(ERROR) << "Invalid parameter: response or text is null";
@@ -585,7 +587,7 @@ int tizenclaw_llm_response_set_text(tizenclaw_llm_response_h response,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_response_get_text(tizenclaw_llm_response_h response,
+API int tizenclaw_llm_response_get_text(tizenclaw_llm_response_h response,
                                     char** text) {
   if (!response || !text) {
     LOG(ERROR) << "Invalid parameter: response or text is null";
@@ -595,7 +597,7 @@ int tizenclaw_llm_response_get_text(tizenclaw_llm_response_h response,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_response_set_error_message(tizenclaw_llm_response_h response,
+API int tizenclaw_llm_response_set_error_message(tizenclaw_llm_response_h response,
                                              const char* error_message) {
   if (!response || !error_message) {
     LOG(ERROR) << "Invalid parameter: response or error_message is null";
@@ -605,7 +607,7 @@ int tizenclaw_llm_response_set_error_message(tizenclaw_llm_response_h response,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_response_get_error_message(tizenclaw_llm_response_h response,
+API int tizenclaw_llm_response_get_error_message(tizenclaw_llm_response_h response,
                                              char** error_message) {
   if (!response || !error_message) {
     LOG(ERROR) << "Invalid parameter: response or error_message is null";
@@ -616,7 +618,7 @@ int tizenclaw_llm_response_get_error_message(tizenclaw_llm_response_h response,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_response_add_llm_tool_call(
+API int tizenclaw_llm_response_add_llm_tool_call(
     tizenclaw_llm_response_h response, tizenclaw_llm_tool_call_h tool_call) {
   if (!response || !tool_call) {
     LOG(ERROR) << "Invalid parameter: response or tool_call is null";
@@ -628,7 +630,7 @@ int tizenclaw_llm_response_add_llm_tool_call(
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_response_foreach_llm_tool_calls(
+API int tizenclaw_llm_response_foreach_llm_tool_calls(
     tizenclaw_llm_response_h response, tizenclaw_llm_tool_call_cb callback,
     void* user_data) {
   if (!response || !callback) {
@@ -642,7 +644,7 @@ int tizenclaw_llm_response_foreach_llm_tool_calls(
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_response_set_prompt_tokens(tizenclaw_llm_response_h response,
+API int tizenclaw_llm_response_set_prompt_tokens(tizenclaw_llm_response_h response,
                                              int prompt_tokens) {
   if (!response) {
     LOG(ERROR) << "Invalid parameter: response is null";
@@ -652,7 +654,7 @@ int tizenclaw_llm_response_set_prompt_tokens(tizenclaw_llm_response_h response,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_response_get_prompt_tokens(tizenclaw_llm_response_h response,
+API int tizenclaw_llm_response_get_prompt_tokens(tizenclaw_llm_response_h response,
                                              int* prompt_tokens) {
   if (!response || !prompt_tokens) {
     LOG(ERROR) << "Invalid parameter: response or prompt_tokens is null";
@@ -662,7 +664,7 @@ int tizenclaw_llm_response_get_prompt_tokens(tizenclaw_llm_response_h response,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_response_set_completion_tokens(
+API int tizenclaw_llm_response_set_completion_tokens(
     tizenclaw_llm_response_h response, int completion_tokens) {
   if (!response) {
     LOG(ERROR) << "Invalid parameter: response is null";
@@ -673,7 +675,7 @@ int tizenclaw_llm_response_set_completion_tokens(
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_response_get_completion_tokens(
+API int tizenclaw_llm_response_get_completion_tokens(
     tizenclaw_llm_response_h response, int* completion_tokens) {
   if (!response || !completion_tokens) {
     LOG(ERROR) << "Invalid parameter: response or completion_tokens is null";
@@ -684,7 +686,7 @@ int tizenclaw_llm_response_get_completion_tokens(
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_response_set_total_tokens(tizenclaw_llm_response_h response,
+API int tizenclaw_llm_response_set_total_tokens(tizenclaw_llm_response_h response,
                                             int total_tokens) {
   if (!response) {
     LOG(ERROR) << "Invalid parameter: response is null";
@@ -694,7 +696,7 @@ int tizenclaw_llm_response_set_total_tokens(tizenclaw_llm_response_h response,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_response_get_total_tokens(tizenclaw_llm_response_h response,
+API int tizenclaw_llm_response_get_total_tokens(tizenclaw_llm_response_h response,
                                             int* total_tokens) {
   if (!response || !total_tokens) {
     LOG(ERROR) << "Invalid parameter: response or total_tokens is null";
@@ -704,7 +706,7 @@ int tizenclaw_llm_response_get_total_tokens(tizenclaw_llm_response_h response,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_response_set_http_status(tizenclaw_llm_response_h response,
+API int tizenclaw_llm_response_set_http_status(tizenclaw_llm_response_h response,
                                            int http_status) {
   if (!response) {
     LOG(ERROR) << "Invalid parameter: response is null";
@@ -714,7 +716,7 @@ int tizenclaw_llm_response_set_http_status(tizenclaw_llm_response_h response,
   return TIZENCLAW_ERROR_NONE;
 }
 
-int tizenclaw_llm_response_get_http_status(tizenclaw_llm_response_h response,
+API int tizenclaw_llm_response_get_http_status(tizenclaw_llm_response_h response,
                                            int* http_status) {
   if (!response || !http_status) {
     LOG(ERROR) << "Invalid parameter: response or http_status is null";
@@ -727,24 +729,22 @@ int tizenclaw_llm_response_get_http_status(tizenclaw_llm_response_h response,
 // -----------------------------------------------------------------------------
 // Plugin Default Stubs
 // -----------------------------------------------------------------------------
-__attribute__((weak)) bool TIZENCLAW_LLM_BACKEND_INITIALIZE(
+API __attribute__((weak)) bool TIZENCLAW_LLM_BACKEND_INITIALIZE(
     const char* config_json_str) {
   return false;
 }
 
-__attribute__((weak)) const char* TIZENCLAW_LLM_BACKEND_GET_NAME(void) {
+API __attribute__((weak)) const char* TIZENCLAW_LLM_BACKEND_GET_NAME(void) {
   return nullptr;
 }
 
-__attribute__((weak)) tizenclaw_llm_response_h TIZENCLAW_LLM_BACKEND_CHAT(
+API __attribute__((weak)) tizenclaw_llm_response_h TIZENCLAW_LLM_BACKEND_CHAT(
     tizenclaw_llm_messages_h messages, tizenclaw_llm_tools_h tools,
     tizenclaw_llm_backend_chunk_cb on_chunk, void* user_data,
     const char* system_prompt) {
   return nullptr;
 }
 
-__attribute__((weak)) void TIZENCLAW_LLM_BACKEND_SHUTDOWN(void) {}
+API __attribute__((weak)) void TIZENCLAW_LLM_BACKEND_SHUTDOWN(void) {}
 
-#ifdef __cplusplus
-}
-#endif
+
