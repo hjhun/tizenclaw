@@ -36,7 +36,7 @@ PluginManager::~PluginManager() {
 }
 
 bool PluginManager::Initialize() {
-  StartListening();
+  PkgmgrClient::GetInstance().AddListener(this);
 
   pkgmgrinfo_pkginfo_metadata_filter_h filter;
   int ret = pkgmgrinfo_pkginfo_metadata_filter_create(&filter);
@@ -65,7 +65,7 @@ bool PluginManager::Initialize() {
 }
 
 void PluginManager::Shutdown() {
-  StopListening();
+  PkgmgrClient::GetInstance().RemoveListener(this);
   std::lock_guard<std::mutex> lock(llm_backends_mutex_);
   for (auto& backend : llm_backends_) {
     backend->Shutdown();
@@ -79,57 +79,35 @@ PluginManager::GetLlmBackends() {
   return llm_backends_;
 }
 
-void PluginManager::StartListening() {
-  if (pkgmgr_handle_) return;
+void PluginManager::OnPkgmgrEvent(std::shared_ptr<PkgmgrEventArgs> args) {
+  if (args->GetEventStatus() == "start") {
+    std::lock_guard<std::mutex> lock(map_mutex_);
+    package_events_[args->GetTag()] = args;
+  } else if (args->GetEventStatus() == "end" && args->GetEventName() == "ok") {
+    std::shared_ptr<PkgmgrEventArgs> start_event;
+    {
+      std::lock_guard<std::mutex> lock(map_mutex_);
+      auto it = package_events_.find(args->GetTag());
+      if (it != package_events_.end()) {
+        start_event = it->second;
+        package_events_.erase(it);
+      }
+    }
 
-  auto* handle = pkgmgr_client_new(PC_LISTENING);
-  if (!handle) {
-    LOG(ERROR) << "Failed to create pkgmgr_client";
-    return;
+    if (start_event) {
+      const auto& evt = start_event->GetEventName();
+      if (evt == "install" || evt == "recoverinstall") {
+        HandleInstallEvent(args->GetPkgId());
+      } else if (evt == "upgrade" || evt == "recoverupgrade") {
+        HandleUpdateEvent(args->GetPkgId());
+      } else if (evt == "uninstall" || evt == "recoveruninstall") {
+        HandleUninstallEvent(args->GetPkgId());
+      }
+    }
+  } else if (args->GetEventStatus() == "error") {
+    std::lock_guard<std::mutex> lock(map_mutex_);
+    package_events_.erase(args->GetTag());
   }
-  
-  pkgmgr_handle_ =
-      std::unique_ptr<pkgmgr_client, decltype(pkgmgr_client_free)*>(
-          handle, pkgmgr_client_free);
-  
-  int ret = pkgmgr_client_set_status_type(handle, PKGMGR_CLIENT_STATUS_ALL);
-  if (ret < 0) {
-    LOG(ERROR) << "Failed to set pkgmgr_client status type: " << ret;
-  }
-
-  ret = pkgmgr_client_listen_status(handle, PkgmgrHandler, this);
-  if (ret < 0) {
-    LOG(ERROR) << "Failed to listen pkgmgr status: " << ret;
-  }
-}
-
-void PluginManager::StopListening() {
-  pkgmgr_handle_.reset();
-}
-
-int PluginManager::PkgmgrHandler(uid_t target_uid, int req_id,
-                                 const char* pkg_type, const char* pkgid,
-                                 const char* key, const char* val,
-                                 const void* pmsg, void* user_data) {
-  if (!pkgid || !key || !val) return 0;
-  
-  PluginManager* self = static_cast<PluginManager*>(user_data);
-  std::string s_key = key;
-  std::string s_val = val;
-  std::string s_pkgid = pkgid;
-
-  // We only care about successful completion of install/upgrade/uninstall
-  if (s_val != "ok") return 0;
-
-  if (s_key == "install" || s_key == "recoverinstall") {
-    self->HandleInstallEvent(s_pkgid);
-  } else if (s_key == "upgrade" || s_key == "recoverupgrade") {
-    self->HandleUpdateEvent(s_pkgid);
-  } else if (s_key == "uninstall" || s_key == "recoveruninstall") {
-    self->HandleUninstallEvent(s_pkgid);
-  }
-
-  return 0;
 }
 
 void PluginManager::HandleInstallEvent(const std::string& pkgid) {

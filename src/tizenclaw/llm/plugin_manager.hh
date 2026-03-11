@@ -21,14 +21,15 @@
 #include <string>
 #include <vector>
 #include <mutex>
+#include <map>
 #include <functional>
-#include <package-manager.h>
+#include "../infra/pkgmgr_client.hh"
 
 namespace tizenclaw {
 
 class PluginLlmBackend;
 
-class PluginManager {
+class PluginManager : public PkgmgrClient::IListener {
  public:
   static PluginManager& GetInstance();
   
@@ -50,13 +51,7 @@ class PluginManager {
   PluginManager(const PluginManager&) = delete;
   PluginManager& operator=(const PluginManager&) = delete;
 
-  // Pkgmgr monitoring
-  void StartListening();
-  void StopListening();
-  
-  static int PkgmgrHandler(uid_t target_uid, int req_id, const char* pkg_type,
-                           const char* pkgid, const char* key, const char* val,
-                           const void* pmsg, void* user_data);
+  void OnPkgmgrEvent(std::shared_ptr<PkgmgrEventArgs> args) override;
 
   void HandleInstallEvent(const std::string& pkgid);
   void HandleUpdateEvent(const std::string& pkgid);
@@ -64,9 +59,10 @@ class PluginManager {
 
   bool LoadPluginFromPkg(const std::string& pkgid);
   void UnloadPluginFromPkg(const std::string& pkgid);
-
-  std::unique_ptr<pkgmgr_client, decltype(pkgmgr_client_free)*> pkgmgr_handle_{nullptr, pkgmgr_client_free};
   
+  std::mutex map_mutex_;
+  std::map<std::string, std::shared_ptr<PkgmgrEventArgs>> package_events_;
+
   std::mutex llm_backends_mutex_;
   std::vector<std::shared_ptr<PluginLlmBackend>> llm_backends_;
   ChangeCallback change_callback_;
