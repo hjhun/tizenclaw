@@ -9,6 +9,7 @@ This workflow defines the core development process (Plan -> Develop -> Verify) f
 ## 1. Plan
 - Accurately understand the objectives and requirements.
 - Analyze existing code and check applicable workflows (e.g., `/coding_rules`, `/commit_guidelines`). **CRITICAL**: The Agent MUST strictly adhere to the project's coding style as defined in `coding_rules.md` (e.g., Google C++ Style, 2-space indentation, trailing underscore `_` for members). Do not introduce or mimic inconsistent styles found in older legacy parts of the codebase.
+- **CRITICAL BRANCH POLICY**: Do not create or switch to new branches for development or feature work. Always apply patches, make commits, and push changes directly to the **current branch** you are currently on. Maintain this single-branch development policy at all times.
 - Write a work unit (`task.md`) and establish a detailed plan before implementation.
 
 ## 2. Develop & Deploy
