@@ -203,7 +203,6 @@ bool AgentCore::Initialize() {
   pipeline_executor_->LoadPipelines();
   LOG(INFO) << "Pipeline executor ready";
 
-#ifdef TIZEN_ACTION_ENABLED
   // Initialize Tizen Action Framework bridge
   action_bridge_ = std::make_unique<ActionBridge>();
   if (action_bridge_->Start()) {
@@ -219,7 +218,6 @@ bool AgentCore::Initialize() {
     LOG(WARNING) << "Tizen Action bridge init failed " << "(non-fatal)";
     action_bridge_.reset();
   }
-#endif
 
   // Start background maintenance thread immediately
   UpdateActivityTime();
@@ -248,12 +246,12 @@ void AgentCore::Shutdown() {
       backend_.reset();
     }
   }
-#ifdef TIZEN_ACTION_ENABLED
+
   if (action_bridge_) {
     action_bridge_->Stop();
     action_bridge_.reset();
   }
-#endif
+
   embedding_store_.Close();
   container_.reset();
   curl_global_cleanup();
@@ -1195,7 +1193,7 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
       {"required", nlohmann::json::array({"pipeline_id"})}};
   tools.push_back(delete_pipeline_tool);
 
-#ifdef TIZEN_ACTION_ENABLED
+
   if (action_bridge_) {
     // Load per-action tools from cached MD files
     auto cached = action_bridge_->LoadCachedActions();
@@ -1248,7 +1246,7 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
         {"required", nlohmann::json::array({"name"})}};
     tools.push_back(exec_action_tool);
   }
-#endif
+
 
   cached_tools_ = tools;
   cached_tools_loaded_.store(true);

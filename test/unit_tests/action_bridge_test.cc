@@ -1,8 +1,5 @@
 #include <gtest/gtest.h>
 
-// ActionBridge tests are only meaningful when
-// Tizen Action Framework is available.
-#ifdef TIZEN_ACTION_ENABLED
 
 #include "core/action_bridge.hh"
 
@@ -66,14 +63,3 @@ TEST_F(ActionBridgeTest,
 
 }  // namespace tizenclaw
 
-#else  // !TIZEN_ACTION_ENABLED
-
-// Placeholder test when action framework
-// is not available to prevent empty test suite.
-TEST(ActionBridgeSkipped,
-     NotAvailableInThisBuild) {
-  GTEST_SKIP()
-      << "capi-appfw-tizen-action not found";
-}
-
-#endif  // TIZEN_ACTION_ENABLED

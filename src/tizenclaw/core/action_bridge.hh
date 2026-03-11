@@ -16,8 +16,6 @@
 #ifndef ACTION_BRIDGE_HH
 #define ACTION_BRIDGE_HH
 
-#ifdef TIZEN_ACTION_ENABLED
-
 #include <action.h>
 #include <tizen_core.h>
 #include <tizen_core_channel.h>
@@ -148,6 +146,6 @@ class ActionBridge {
 
 }  // namespace tizenclaw
 
-#endif  // TIZEN_ACTION_ENABLED
+
 
 #endif  // ACTION_BRIDGE_HH

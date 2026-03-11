@@ -57,7 +57,6 @@ APPLY_PKG_CONFIG(tizenclaw-unittests PUBLIC
 TARGET_LINK_LIBRARIES(tizenclaw-unittests PUBLIC pthread tizenclaw-llm-backend)
 
 TARGET_COMPILE_DEFINITIONS(tizenclaw-unittests PUBLIC
-  TIZEN_ACTION_ENABLED
   APP_DATA_DIR="${APP_DATA_DIR}"
 )
 

@@ -31,9 +31,7 @@
 #include "../storage/session_store.hh"
 #include "agent_role.hh"
 #include "tool_policy.hh"
-#ifdef TIZEN_ACTION_ENABLED
 #include "action_bridge.hh"
-#endif
 #include <mutex>
 
 #include "../scheduler/task_scheduler.hh"
@@ -219,10 +217,8 @@ class AgentCore {
   // Pipeline executor for workflows
   std::unique_ptr<PipelineExecutor> pipeline_executor_;
 
-#ifdef TIZEN_ACTION_ENABLED
   // Tizen Action Framework bridge
   std::unique_ptr<ActionBridge> action_bridge_;
-#endif
 
   // Get session-specific system prompt
   // (falls back to global system_prompt_)

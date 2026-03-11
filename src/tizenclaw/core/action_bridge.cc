@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifdef TIZEN_ACTION_ENABLED
 
 #include "action_bridge.hh"
 
@@ -739,4 +738,3 @@ void ActionBridge::SendResponse(int id, const std::string& result) {
 
 }  // namespace tizenclaw
 
-#endif  // TIZEN_ACTION_ENABLED
