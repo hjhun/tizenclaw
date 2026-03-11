@@ -213,6 +213,10 @@ bool PluginManager::LoadPluginFromPkg(const std::string& pkgid) {
   LOG(INFO) << "Successfully loaded " << backend->GetName() << " from "
             << pkgid;
 
+  if (change_callback_) {
+    change_callback_();
+  }
+
   return true;
 }
 
@@ -239,6 +243,9 @@ void PluginManager::UnloadPluginFromPkg(const std::string& pkgid) {
   
   if (!to_shutdown.empty()) {
     LOG(INFO) << "Unloaded plugin(s) for pkg " << pkgid;
+    if (change_callback_) {
+      change_callback_();
+    }
   }
 }
 

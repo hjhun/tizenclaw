@@ -26,6 +26,8 @@
 #include "../infra/http_client.hh"
 #include "../storage/audit_logger.hh"
 #include "../infra/key_store.hh"
+#include "../llm/plugin_manager.hh"
+#include "../llm/plugin_llm_backend.hh"
 #include "../../common/logging.hh"
 
 #include <malloc.h>
@@ -135,9 +137,27 @@ bool AgentCore::Initialize() {
     };
   }
 
-  // Create backend from config
+  // Create backend from config or forcibly use a discovered plugin
   std::string backend_name =
       llm_config.value("active_backend", "gemini");
+
+  auto plugins = PluginManager::GetInstance().GetLlmBackends();
+  if (!plugins.empty()) {
+    std::shared_ptr<PluginLlmBackend> highest;
+    int max_prio = -1;
+    for (auto& plugin : plugins) {
+      int p = plugin->GetConfig().value("priority", 0);
+      if (p > max_prio) {
+        max_prio = p;
+        highest = plugin;
+      }
+    }
+    if (highest) {
+      backend_name = highest->GetName();
+      LOG(INFO) << "Overriding active_backend to plugin: " << backend_name 
+                << " (priority: " << max_prio << ")";
+    }
+  }
 
   backend_ =
       LlmBackendFactory::Create(backend_name);
@@ -244,6 +264,11 @@ bool AgentCore::Initialize() {
             << backend_->GetName();
   initialized_ = true;
 
+  // React to plugin install/uninstall
+  PluginManager::GetInstance().SetChangeCallback([this]() {
+    ReloadBackend();
+  });
+
   // Initialize embedding store for RAG
   std::string rag_db =
       std::string(APP_DATA_DIR) +
@@ -335,9 +360,12 @@ void AgentCore::Shutdown() {
     }
     sessions_.clear();
   }
-  if (backend_) {
-    backend_->Shutdown();
-    backend_.reset();
+  {
+    std::lock_guard<std::mutex> lock(backend_mutex_);
+    if (backend_) {
+      backend_->Shutdown();
+      backend_.reset();
+    }
   }
 #ifdef TIZEN_ACTION_ENABLED
   if (action_bridge_) {
@@ -356,7 +384,13 @@ std::string AgentCore::ProcessPrompt(
     const std::string& session_id,
     const std::string& prompt,
     std::function<void(const std::string&)> on_chunk) {
-  if (!initialized_ || !backend_) {
+  std::shared_ptr<LlmBackend> current_backend;
+  {
+    std::lock_guard<std::mutex> lock(backend_mutex_);
+    current_backend = backend_;
+  }
+
+  if (!initialized_ || !current_backend) {
     LOG(ERROR) << "AgentCore not initialized.";
     return "Error: AgentCore is not initialized.";
   }
@@ -406,7 +440,7 @@ std::string AgentCore::ProcessPrompt(
         GetSessionPrompt(session_id, tools);
 
     // Query LLM backend without holding lock
-    LlmResponse resp = backend_->Chat(
+    LlmResponse resp = current_backend->Chat(
         local_history, tools, on_chunk,
         full_prompt);
 
@@ -446,7 +480,7 @@ std::string AgentCore::ProcessPrompt(
     if (resp.total_tokens > 0) {
       session_store_.LogTokenUsage(
           session_id,
-          backend_->GetName(),
+          current_backend->GetName(),
           resp.prompt_tokens,
           resp.completion_tokens);
       LOG(INFO) << "Tokens: prompt="
@@ -738,6 +772,64 @@ std::string AgentCore::ExecuteCode(
 
   LOG(INFO) << "Code output: " << response;
   return response;
+}
+
+void AgentCore::ReloadBackend() {
+  LOG(INFO) << "Reloading active backend based on plugin changes...";
+  std::string new_backend_name = llm_config_.value("active_backend", "openai");
+  
+  auto plugins = PluginManager::GetInstance().GetLlmBackends();
+  if (!plugins.empty()) {
+    std::shared_ptr<PluginLlmBackend> highest;
+    int max_prio = -1;
+    for (auto& plugin : plugins) {
+      int p = plugin->GetConfig().value("priority", 0);
+      if (p > max_prio) {
+        max_prio = p;
+        highest = plugin;
+      }
+    }
+    if (highest) {
+      new_backend_name = highest->GetName();
+      LOG(INFO) << "ReloadBackend selected plugin: " << new_backend_name 
+                << " (priority: " << max_prio << ")";
+    }
+  }
+
+  std::shared_ptr<LlmBackend> new_backend = LlmBackendFactory::Create(new_backend_name);
+  if (new_backend) {
+    nlohmann::json backend_config;
+    if (llm_config_.contains("backends") &&
+        llm_config_["backends"].contains(new_backend_name)) {
+      backend_config = llm_config_["backends"][new_backend_name];
+    }
+    
+    // For xAI, inject provider_name so OpenAiBackend knows its identity
+    if (new_backend_name == "xai" || new_backend_name == "grok") {
+      backend_config["provider_name"] = "xai";
+      if (!backend_config.contains("endpoint")) {
+        backend_config["endpoint"] = "https://api.x.ai/v1";
+      }
+    }
+
+    if (new_backend->Initialize(backend_config)) {
+      std::lock_guard<std::mutex> lock(backend_mutex_);
+      if (backend_) {
+        backend_->Shutdown();
+      }
+      backend_ = new_backend;
+      LOG(INFO) << "Successfully reloaded backend to: " << new_backend_name;
+      AuditLogger::Instance().Log(
+          AuditLogger::MakeEvent(
+              AuditEventType::kConfigChange,
+              "",
+              {{"backend", backend_->GetName()}}));
+    } else {
+      LOG(ERROR) << "Failed to initialize new backend: " << new_backend_name;
+    }
+  } else {
+    LOG(ERROR) << "Failed to create new backend: " << new_backend_name;
+  }
 }
 
 std::string AgentCore::ExecuteFileOp(

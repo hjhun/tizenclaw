@@ -114,6 +114,7 @@ bool PluginLlmBackend::Initialize() {
   // by the plugin itself per singleton dlopen anyway.
   is_initialized_ = true;
 
+  LOG(INFO) << "Plugin backend loaded and initialized: " << pkgid_;
   return true;
 }
 

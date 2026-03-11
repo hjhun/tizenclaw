@@ -191,8 +191,12 @@ private:
         const std::string& session_id);
 
     std::unique_ptr<ContainerEngine> container_;
-    std::unique_ptr<LlmBackend> backend_;
+    std::shared_ptr<LlmBackend> backend_;
+    std::mutex backend_mutex_;  // Protects backend_
     bool initialized_ = false;
+
+    // Reload the active backend (e.g., when a new plugin is installed)
+    void ReloadBackend();
 
     // Memory flush tracking
     std::atomic<int64_t> last_activity_time_{0};

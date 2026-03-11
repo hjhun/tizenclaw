@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 #include <mutex>
+#include <functional>
 #include <package-manager.h>
 
 namespace tizenclaw {
@@ -37,6 +38,9 @@ class PluginManager {
 
   // Get currently loaded plugin backends
   std::vector<std::shared_ptr<PluginLlmBackend>> GetLlmBackends();
+
+  using ChangeCallback = std::function<void()>;
+  void SetChangeCallback(ChangeCallback cb) { change_callback_ = cb; }
 
  private:
   PluginManager();
@@ -65,6 +69,7 @@ class PluginManager {
   
   std::mutex llm_backends_mutex_;
   std::vector<std::shared_ptr<PluginLlmBackend>> llm_backends_;
+  ChangeCallback change_callback_;
 };
 
 } // namespace tizenclaw
