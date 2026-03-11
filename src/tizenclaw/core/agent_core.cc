@@ -264,6 +264,19 @@ void AgentCore::Shutdown() {
 std::string AgentCore::ProcessPrompt(
     const std::string& session_id, const std::string& prompt,
     std::function<void(const std::string&)> on_chunk) {
+  struct DurationLogger {
+    std::string session;
+    std::chrono::steady_clock::time_point start;
+    explicit DurationLogger(const std::string& s) 
+        : session(s), start(std::chrono::steady_clock::now()) {}
+    ~DurationLogger() {
+      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now() - start).count();
+      LOG(INFO) << "Prompt processing for session [" << session << "] took " << elapsed << " ms";
+    }
+  };
+  DurationLogger dlogger(session_id);
+
   std::shared_ptr<LlmBackend> current_backend;
   {
     std::lock_guard<std::mutex> lock(backend_mutex_);

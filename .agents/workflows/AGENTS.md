@@ -20,7 +20,9 @@ This workflow defines the core development process (Plan -> Develop -> Verify) f
 ## 3. Verify
 Once `deploy.sh` successfully finishes:
 - Check the log output of the TizenClaw daemon to verify correct startup and runtime execution:
-  - Command: `sdb shell dlogutil TizenClaw`
+  - Command: `sdb shell dlogutil TIZENCLAW TizenClawWebView`
+- Verify the Web Dashboard is accessible:
+  - Dashboard Port: `9090` (e.g., `http://<device-ip>:9090`)
 - If you need a more advanced component test, refer to `/gtest_integration.md`.
 
 > [!TIP]
