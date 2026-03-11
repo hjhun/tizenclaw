@@ -19,6 +19,7 @@
 #include <thread>
 
 #include "../../libtizenclaw-llm-backend/inc/tizenclaw_llm_backend.h"
+#include "../../libtizenclaw-llm-backend/inc/tizenclaw_curl.h"
 #include "../../common/logging.hh"
 
 namespace tizenclaw {
@@ -55,44 +56,44 @@ HttpResponse HttpClient::Post(
     result.body.clear();
     result.error.clear();
 
-    tizenclaw_llm_curl_h curl = nullptr;
-    if (tizenclaw_llm_curl_create(&curl) != TIZENCLAW_ERROR_NONE) {
-      result.error = "tizenclaw_llm_curl_create() failed";
+    tizenclaw_curl_h curl = nullptr;
+    if (tizenclaw_curl_create(&curl) != TIZENCLAW_ERROR_NONE) {
+      result.error = "tizenclaw_curl_create() failed";
       continue;
     }
 
-    tizenclaw_llm_curl_set_url(curl, url.c_str());
+    tizenclaw_curl_set_url(curl, url.c_str());
 
     for (auto& [k, v] : hdrs) {
       std::string h = k + ": " + v;
-      tizenclaw_llm_curl_add_header(curl, h.c_str());
+      tizenclaw_curl_add_header(curl, h.c_str());
     }
 
-    tizenclaw_llm_curl_set_post_data(curl, json_body.c_str());
+    tizenclaw_curl_set_post_data(curl, json_body.c_str());
 
     WriteContext write_ctx;
     write_ctx.body = &result.body;
     write_ctx.stream_cb = stream_cb;
 
-    tizenclaw_llm_curl_set_write_callback(curl, LlmWrapperChunkCb, &write_ctx);
-    tizenclaw_llm_curl_set_timeout(curl, connect_timeout_sec, request_timeout_sec);
+    tizenclaw_curl_set_write_callback(curl, LlmWrapperChunkCb, &write_ctx);
+    tizenclaw_curl_set_timeout(curl, connect_timeout_sec, request_timeout_sec);
 
-    int res = tizenclaw_llm_curl_perform(curl);
+    int res = tizenclaw_curl_perform(curl);
     
     long scode = 0;
-    tizenclaw_llm_curl_get_response_code(curl, &scode);
+    tizenclaw_curl_get_response_code(curl, &scode);
     result.status_code = static_cast<int>(scode);
 
     if (res != TIZENCLAW_ERROR_NONE) {
-      const char* err = tizenclaw_llm_curl_get_error_message(curl);
+      const char* err = tizenclaw_curl_get_error_message(curl);
       result.error = err ? err : "Unknown error";
       LOG(ERROR) << "curl failed: " << result.error << " (" << (attempt + 1)
                  << "/" << max_retries << ")";
-      tizenclaw_llm_curl_destroy(curl);
+      tizenclaw_curl_destroy(curl);
       continue;
     }
     
-    tizenclaw_llm_curl_destroy(curl);
+    tizenclaw_curl_destroy(curl);
 
     if (result.status_code == 429 || result.status_code >= 500) {
       result.error =
@@ -130,44 +131,44 @@ HttpResponse HttpClient::Get(const std::string& url,
     result.body.clear();
     result.error.clear();
 
-    tizenclaw_llm_curl_h curl = nullptr;
-    if (tizenclaw_llm_curl_create(&curl) != TIZENCLAW_ERROR_NONE) {
-      result.error = "tizenclaw_llm_curl_create() failed";
+    tizenclaw_curl_h curl = nullptr;
+    if (tizenclaw_curl_create(&curl) != TIZENCLAW_ERROR_NONE) {
+      result.error = "tizenclaw_curl_create() failed";
       continue;
     }
 
-    tizenclaw_llm_curl_set_url(curl, url.c_str());
+    tizenclaw_curl_set_url(curl, url.c_str());
 
     for (auto& [k, v] : hdrs) {
       std::string h = k + ": " + v;
-      tizenclaw_llm_curl_add_header(curl, h.c_str());
+      tizenclaw_curl_add_header(curl, h.c_str());
     }
 
-    tizenclaw_llm_curl_set_method_get(curl);
+    tizenclaw_curl_set_method_get(curl);
 
     WriteContext write_ctx;
     write_ctx.body = &result.body;
     write_ctx.stream_cb = nullptr;
 
-    tizenclaw_llm_curl_set_write_callback(curl, LlmWrapperChunkCb, &write_ctx);
-    tizenclaw_llm_curl_set_timeout(curl, connect_timeout_sec, request_timeout_sec);
+    tizenclaw_curl_set_write_callback(curl, LlmWrapperChunkCb, &write_ctx);
+    tizenclaw_curl_set_timeout(curl, connect_timeout_sec, request_timeout_sec);
 
-    int res = tizenclaw_llm_curl_perform(curl);
+    int res = tizenclaw_curl_perform(curl);
     
     long scode = 0;
-    tizenclaw_llm_curl_get_response_code(curl, &scode);
+    tizenclaw_curl_get_response_code(curl, &scode);
     result.status_code = static_cast<int>(scode);
 
     if (res != TIZENCLAW_ERROR_NONE) {
-      const char* err = tizenclaw_llm_curl_get_error_message(curl);
+      const char* err = tizenclaw_curl_get_error_message(curl);
       result.error = err ? err : "Unknown error";
       LOG(ERROR) << "curl failed: " << result.error << " (" << (attempt + 1)
                  << "/" << max_retries << ")";
-      tizenclaw_llm_curl_destroy(curl);
+      tizenclaw_curl_destroy(curl);
       continue;
     }
     
-    tizenclaw_llm_curl_destroy(curl);
+    tizenclaw_curl_destroy(curl);
 
     if (result.status_code == 429 || result.status_code >= 500) {
       result.error =

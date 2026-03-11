@@ -50,19 +50,7 @@ Requires: %{name} = %{version}-%{release}
 %description devel
 Development files for TizenClaw (C-API headers and library symlinks).
 
-%package -n tizenclaw-llm-backend
-Summary: TizenClaw LLM Backend Shared Library
 
-%description -n tizenclaw-llm-backend
-Shared library implementation of the TizenClaw LLM Backend C-API.
-
-%package -n tizenclaw-llm-backend-devel
-Summary: TizenClaw LLM Backend Plugin Development Files
-Requires: tizenclaw-llm-backend = %{version}-%{release}
-Requires: %{name}-devel = %{version}-%{release}
-
-%description -n tizenclaw-llm-backend-devel
-Development files for writing custom TizenClaw LLM Backend Plugins.
 
 %prep
 %setup -q -n %{name}-%{version}
@@ -102,6 +90,7 @@ ln -sf ../tizenclaw-skills-secure.service %{buildroot}%{_unitdir}/multi-user.tar
 %{_bindir}/tizenclaw-cli
 %{_bindir}/start_mcp_tunnel.sh
 %{_libdir}/libtizenclaw.so.*
+%{_libdir}/libtizenclaw-llm-backend.so.*
 %{_unitdir}/tizenclaw.service
 %{_unitdir}/tizenclaw-skills-secure.service
 %{_unitdir}/multi-user.target.wants/tizenclaw.service
@@ -135,13 +124,6 @@ ln -sf ../tizenclaw-skills-secure.service %{buildroot}%{_unitdir}/multi-user.tar
 %defattr(-,root,root,-)
 %{_includedir}/tizenclaw/
 %{_libdir}/libtizenclaw.so
-%{_libdir}/pkgconfig/tizenclaw.pc
-
-%files -n tizenclaw-llm-backend
-%defattr(-,root,root,-)
 %{_libdir}/libtizenclaw-llm-backend.so
-
-%files -n tizenclaw-llm-backend-devel
-%defattr(-,root,root,-)
-%{_includedir}/tizenclaw/llm-backend/
+%{_libdir}/pkgconfig/tizenclaw.pc
 %{_libdir}/pkgconfig/tizenclaw-llm-backend.pc

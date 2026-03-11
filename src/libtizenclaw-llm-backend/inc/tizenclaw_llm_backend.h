@@ -34,7 +34,7 @@ typedef void* tizenclaw_llm_message_h;
 typedef void* tizenclaw_llm_tools_h;
 typedef void* tizenclaw_llm_tool_h;
 typedef void* tizenclaw_llm_tool_call_h;
-typedef void* tizenclaw_llm_curl_h;
+
 
 // -----------------------------------------------------------------------------
 // Callbacks
@@ -213,24 +213,6 @@ int tizenclaw_llm_response_set_http_status(tizenclaw_llm_response_h response,
                                            int http_status);
 int tizenclaw_llm_response_get_http_status(tizenclaw_llm_response_h response,
                                            int* http_status);
-
-// -----------------------------------------------------------------------------
-// HttpClient (Curl Wrapper) API
-// -----------------------------------------------------------------------------
-int tizenclaw_llm_curl_create(tizenclaw_llm_curl_h* curl);
-int tizenclaw_llm_curl_destroy(tizenclaw_llm_curl_h curl);
-
-int tizenclaw_llm_curl_set_url(tizenclaw_llm_curl_h curl, const char* url);
-int tizenclaw_llm_curl_add_header(tizenclaw_llm_curl_h curl, const char* header);
-int tizenclaw_llm_curl_set_post_data(tizenclaw_llm_curl_h curl, const char* data);
-int tizenclaw_llm_curl_set_method_get(tizenclaw_llm_curl_h curl);
-int tizenclaw_llm_curl_set_timeout(tizenclaw_llm_curl_h curl, long connect_timeout, long request_timeout);
-int tizenclaw_llm_curl_set_write_callback(tizenclaw_llm_curl_h curl,
-                                          tizenclaw_llm_backend_chunk_cb callback,
-                                          void* user_data);
-int tizenclaw_llm_curl_perform(tizenclaw_llm_curl_h curl);
-int tizenclaw_llm_curl_get_response_code(tizenclaw_llm_curl_h curl, long* code);
-const char* tizenclaw_llm_curl_get_error_message(tizenclaw_llm_curl_h curl);
 
 // -----------------------------------------------------------------------------
 // Plugin Exported APIs
