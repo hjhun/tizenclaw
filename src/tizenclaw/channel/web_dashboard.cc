@@ -89,19 +89,28 @@ bool WebDashboard::LoadConfig() {
   return true;
 }
 
-void WebDashboard::HandleRequest(SoupServer* /*server*/, SoupMessage* msg,
-                                 const char* path, GHashTable* /*query*/,
+void WebDashboard::HandleRequest(SoupServer* /*server*/,
+                                 SoupMessage* msg,
+                                 const char* path,
+                                 GHashTable* query,
                                  SoupClientContext* /*client*/,
                                  gpointer user_data) {
   auto* self = static_cast<WebDashboard*>(user_data);
 
   // Add CORS headers
-  SoupMessageHeaders* resp_headers = msg->response_headers;
-  soup_message_headers_append(resp_headers, "Access-Control-Allow-Origin", "*");
-  soup_message_headers_append(resp_headers, "Access-Control-Allow-Methods",
-                              "GET, POST, OPTIONS");
-  soup_message_headers_append(resp_headers, "Access-Control-Allow-Headers",
-                              "Content-Type, Authorization");
+  SoupMessageHeaders* resp_headers =
+      msg->response_headers;
+  soup_message_headers_append(
+      resp_headers,
+      "Access-Control-Allow-Origin", "*");
+  soup_message_headers_append(
+      resp_headers,
+      "Access-Control-Allow-Methods",
+      "GET, POST, OPTIONS");
+  soup_message_headers_append(
+      resp_headers,
+      "Access-Control-Allow-Headers",
+      "Content-Type, Authorization");
 
   // Handle OPTIONS (CORS preflight)
   if (msg->method == SOUP_METHOD_OPTIONS) {
@@ -119,7 +128,7 @@ void WebDashboard::HandleRequest(SoupServer* /*server*/, SoupMessage* msg,
 
   // Route API requests
   if (req_path.substr(0, 5) == "/api/") {
-    self->HandleApi(msg, req_path);
+    self->HandleApi(msg, req_path, query);
     return;
   }
 
@@ -127,37 +136,60 @@ void WebDashboard::HandleRequest(SoupServer* /*server*/, SoupMessage* msg,
   self->ServeStaticFile(msg, req_path);
 }
 
-void WebDashboard::HandleApi(SoupMessage* msg, const std::string& path) const {
-  if (health_monitor_) health_monitor_->IncrementRequestCount();
+void WebDashboard::HandleApi(
+    SoupMessage* msg, const std::string& path,
+    GHashTable* query) const {
+  if (health_monitor_)
+    health_monitor_->IncrementRequestCount();
 
   if (path == "/api/status") {
     ApiStatus(msg);
   } else if (path == "/api/metrics") {
     ApiMetrics(msg);
+  } else if (path == "/api/sessions/dates") {
+    ApiSessionDates(msg);
   } else if (path == "/api/sessions") {
     ApiSessions(msg);
-  } else if (path.substr(0, 14) == "/api/sessions/") {
+  } else if (path.substr(0, 14) ==
+             "/api/sessions/") {
     std::string id = path.substr(14);
     ApiSessionDetail(msg, id);
+  } else if (path == "/api/tasks/dates") {
+    ApiTaskDates(msg);
   } else if (path == "/api/tasks") {
     ApiTasks(msg);
-  } else if (path.substr(0, 11) == "/api/tasks/") {
+  } else if (path.substr(0, 11) ==
+             "/api/tasks/") {
     std::string file = path.substr(11);
     ApiTaskDetail(msg, file);
+  } else if (path == "/api/logs/dates") {
+    ApiLogDates(msg);
   } else if (path == "/api/logs") {
-    ApiLogs(msg);
+    // Extract ?date=YYYY-MM-DD query param
+    std::string date;
+    if (query) {
+      const char* dv = static_cast<const char*>(
+          g_hash_table_lookup(query, "date"));
+      if (dv) date = dv;
+    }
+    ApiLogs(msg, date);
   } else if (path == "/api/chat") {
     ApiChat(msg);
   } else if (path == "/api/auth/login") {
-    const_cast<WebDashboard*>(this)->ApiAuthLogin(msg);
-  } else if (path == "/api/auth/change_password") {
-    const_cast<WebDashboard*>(this)->ApiAuthChangePassword(msg);
+    const_cast<WebDashboard*>(this)->
+        ApiAuthLogin(msg);
+  } else if (path ==
+             "/api/auth/change_password") {
+    const_cast<WebDashboard*>(this)->
+        ApiAuthChangePassword(msg);
   } else if (path == "/api/config/list") {
     ApiConfigList(msg);
-  } else if (path.substr(0, 12) == "/api/config/") {
+  } else if (path.substr(0, 12) ==
+             "/api/config/") {
     std::string name = path.substr(12);
     if (msg->method == SOUP_METHOD_POST) {
-      const_cast<WebDashboard*>(this)->ApiConfigSet(msg, name);
+      const_cast<WebDashboard*>(this)->
+          ApiConfigSet(msg, name);
     } else {
       ApiConfigGet(msg, name);
     }
@@ -166,13 +198,18 @@ void WebDashboard::HandleApi(SoupMessage* msg, const std::string& path) const {
   } else if (path == "/api/ota/check") {
     ApiOtaCheck(msg);
   } else if (path == "/api/ota/update") {
-    const_cast<WebDashboard*>(this)->ApiOtaUpdate(msg);
+    const_cast<WebDashboard*>(this)->
+        ApiOtaUpdate(msg);
   } else if (path == "/api/ota/rollback") {
-    const_cast<WebDashboard*>(this)->ApiOtaRollback(msg);
+    const_cast<WebDashboard*>(this)->
+        ApiOtaRollback(msg);
   } else {
-    soup_message_set_status(msg, SOUP_STATUS_NOT_FOUND);
-    soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
-                              "{\"error\":\"Not found\"}", 21);
+    soup_message_set_status(
+        msg, SOUP_STATUS_NOT_FOUND);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        "{\"error\":\"Not found\"}", 21);
   }
 }
 
@@ -332,32 +369,117 @@ void WebDashboard::ApiOtaRollback(SoupMessage* msg) {
                             body.c_str(), static_cast<gsize>(body.size()));
 }
 
-void WebDashboard::ApiSessions(SoupMessage* msg) const {
-  // List session files from sessions directory
-  nlohmann::json sessions = nlohmann::json::array();
+namespace {
 
-  fs::path sessions_dir = std::string(APP_DATA_DIR) + "/sessions";
+// Convert fs::file_time_type to epoch seconds.
+int64_t FileTimeToEpoch(
+    const fs::file_time_type& ft) {
+  auto sctp = std::chrono::time_point_cast<
+      std::chrono::seconds>(
+      ft - fs::file_time_type::clock::now() +
+      std::chrono::system_clock::now());
+  return sctp.time_since_epoch().count();
+}
+
+// Convert epoch seconds to "YYYY-MM-DD" string.
+std::string EpochToDateStr(int64_t epoch) {
+  auto t = static_cast<std::time_t>(epoch);
+  std::tm tm_buf{};
+  localtime_r(&t, &tm_buf);
+  std::ostringstream oss;
+  oss << std::put_time(&tm_buf, "%Y-%m-%d");
+  return oss.str();
+}
+
+// Get today's date as "YYYY-MM-DD".
+std::string TodayDateStr() {
+  auto now = std::chrono::system_clock::now();
+  auto t =
+      std::chrono::system_clock::to_time_t(now);
+  std::tm tm_buf{};
+  localtime_r(&t, &tm_buf);
+  std::ostringstream oss;
+  oss << std::put_time(&tm_buf, "%Y-%m-%d");
+  return oss.str();
+}
+
+}  // namespace
+
+void WebDashboard::ApiSessions(
+    SoupMessage* msg) const {
+  nlohmann::json sessions =
+      nlohmann::json::array();
+
+  fs::path sessions_dir =
+      std::string(APP_DATA_DIR) + "/sessions";
   std::error_code ec;
-  for (const auto& entry : fs::directory_iterator(sessions_dir, ec)) {
+  for (const auto& entry :
+       fs::directory_iterator(sessions_dir, ec)) {
     if (!entry.is_regular_file(ec)) continue;
-    std::string name = entry.path().filename().string();
+    std::string name =
+        entry.path().filename().string();
     if (name.empty() || name[0] == '.') continue;
-    if (name.size() <= 3 || name.substr(name.size() - 3) != ".md") continue;
+    if (name.size() <= 3 ||
+        name.substr(name.size() - 3) != ".md")
+      continue;
 
-    std::string id = name.substr(0, name.size() - 3);
+    std::string id =
+        name.substr(0, name.size() - 3);
 
     nlohmann::json entry_j;
     entry_j["id"] = id;
     entry_j["file"] = name;
     std::error_code fec;
-    entry_j["size_bytes"] = static_cast<int64_t>(entry.file_size(fec));
+    entry_j["size_bytes"] =
+        static_cast<int64_t>(entry.file_size(fec));
+
+    auto lwt = entry.last_write_time(fec);
+    int64_t mod = FileTimeToEpoch(lwt);
+    entry_j["modified"] = mod;
+    entry_j["date"] = EpochToDateStr(mod);
     sessions.push_back(std::move(entry_j));
   }
 
   std::string body = sessions.dump();
   soup_message_set_status(msg, SOUP_STATUS_OK);
-  soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
-                            body.c_str(), static_cast<gsize>(body.size()));
+  soup_message_set_response(
+      msg, "application/json", SOUP_MEMORY_COPY,
+      body.c_str(),
+      static_cast<gsize>(body.size()));
+}
+
+void WebDashboard::ApiSessionDates(
+    SoupMessage* msg) const {
+  std::set<std::string> dates;
+  fs::path sessions_dir =
+      std::string(APP_DATA_DIR) + "/sessions";
+  std::error_code ec;
+  for (const auto& entry :
+       fs::directory_iterator(sessions_dir, ec)) {
+    if (!entry.is_regular_file(ec)) continue;
+    std::string name =
+        entry.path().filename().string();
+    if (name.empty() || name[0] == '.') continue;
+    if (name.size() <= 3 ||
+        name.substr(name.size() - 3) != ".md")
+      continue;
+
+    std::error_code fec;
+    auto lwt = entry.last_write_time(fec);
+    dates.insert(
+        EpochToDateStr(FileTimeToEpoch(lwt)));
+  }
+
+  nlohmann::json arr = nlohmann::json::array();
+  for (const auto& d : dates) arr.push_back(d);
+
+  nlohmann::json resp = {{"dates", arr}};
+  std::string body = resp.dump();
+  soup_message_set_status(msg, SOUP_STATUS_OK);
+  soup_message_set_response(
+      msg, "application/json", SOUP_MEMORY_COPY,
+      body.c_str(),
+      static_cast<gsize>(body.size()));
 }
 
 void WebDashboard::ApiSessionDetail(SoupMessage* msg,
@@ -392,36 +514,85 @@ void WebDashboard::ApiSessionDetail(SoupMessage* msg,
                             body.c_str(), static_cast<gsize>(body.size()));
 }
 
-void WebDashboard::ApiTasks(SoupMessage* msg) const {
-  // List task files from tasks directory
+void WebDashboard::ApiTasks(
+    SoupMessage* msg) const {
   nlohmann::json tasks = nlohmann::json::array();
 
-  fs::path tasks_dir = std::string(APP_DATA_DIR) + "/tasks";
+  fs::path tasks_dir =
+      std::string(APP_DATA_DIR) + "/tasks";
   std::error_code ec;
-  for (const auto& entry : fs::directory_iterator(tasks_dir, ec)) {
+  for (const auto& entry :
+       fs::directory_iterator(tasks_dir, ec)) {
     if (!entry.is_regular_file(ec)) continue;
-    std::string name = entry.path().filename().string();
+    std::string name =
+        entry.path().filename().string();
     if (name.empty() || name[0] == '.') continue;
-    if (name.size() <= 3 || name.substr(name.size() - 3) != ".md") continue;
+    if (name.size() <= 3 ||
+        name.substr(name.size() - 3) != ".md")
+      continue;
 
     // Read task file for metadata
     std::ifstream tf(entry.path());
     std::string content;
     if (tf.is_open()) {
-      content.assign((std::istreambuf_iterator<char>(tf)),
-                     std::istreambuf_iterator<char>());
+      content.assign(
+          (std::istreambuf_iterator<char>(tf)),
+          std::istreambuf_iterator<char>());
     }
 
     nlohmann::json task_j;
     task_j["file"] = name;
-    task_j["content_preview"] = content.substr(0, 200);
+    task_j["content_preview"] =
+        content.substr(0, 200);
+
+    std::error_code fec;
+    auto lwt = entry.last_write_time(fec);
+    int64_t mod = FileTimeToEpoch(lwt);
+    task_j["modified"] = mod;
+    task_j["date"] = EpochToDateStr(mod);
     tasks.push_back(std::move(task_j));
   }
 
   std::string body = tasks.dump();
   soup_message_set_status(msg, SOUP_STATUS_OK);
-  soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
-                            body.c_str(), static_cast<gsize>(body.size()));
+  soup_message_set_response(
+      msg, "application/json", SOUP_MEMORY_COPY,
+      body.c_str(),
+      static_cast<gsize>(body.size()));
+}
+
+void WebDashboard::ApiTaskDates(
+    SoupMessage* msg) const {
+  std::set<std::string> dates;
+  fs::path tasks_dir =
+      std::string(APP_DATA_DIR) + "/tasks";
+  std::error_code ec;
+  for (const auto& entry :
+       fs::directory_iterator(tasks_dir, ec)) {
+    if (!entry.is_regular_file(ec)) continue;
+    std::string name =
+        entry.path().filename().string();
+    if (name.empty() || name[0] == '.') continue;
+    if (name.size() <= 3 ||
+        name.substr(name.size() - 3) != ".md")
+      continue;
+
+    std::error_code fec;
+    auto lwt = entry.last_write_time(fec);
+    dates.insert(
+        EpochToDateStr(FileTimeToEpoch(lwt)));
+  }
+
+  nlohmann::json arr = nlohmann::json::array();
+  for (const auto& d : dates) arr.push_back(d);
+
+  nlohmann::json resp = {{"dates", arr}};
+  std::string body = resp.dump();
+  soup_message_set_status(msg, SOUP_STATUS_OK);
+  soup_message_set_response(
+      msg, "application/json", SOUP_MEMORY_COPY,
+      body.c_str(),
+      static_cast<gsize>(body.size()));
 }
 
 void WebDashboard::ApiTaskDetail(SoupMessage* msg,
@@ -462,37 +633,80 @@ void WebDashboard::ApiTaskDetail(SoupMessage* msg,
                             body.c_str(), static_cast<gsize>(body.size()));
 }
 
-void WebDashboard::ApiLogs(SoupMessage* msg) const {
-  // Read today's audit log
+void WebDashboard::ApiLogs(
+    SoupMessage* msg,
+    const std::string& date_param) const {
   nlohmann::json logs = nlohmann::json::array();
 
-  // Get today's date
-  auto now = std::chrono::system_clock::now();
-  auto t = std::chrono::system_clock::to_time_t(now);
-  std::tm tm_buf{};
-  localtime_r(&t, &tm_buf);
-  std::ostringstream date_oss;
-  date_oss << std::put_time(&tm_buf, "%Y-%m-%d");
-  std::string date = date_oss.str();
+  // Use provided date or default to today
+  std::string date =
+      date_param.empty() ? TodayDateStr()
+                         : date_param;
 
-  std::string log_path = std::string(APP_DATA_DIR) + "/audit/" + date + ".md";
+  // Validate date format (YYYY-MM-DD)
+  if (date.size() != 10 || date[4] != '-' ||
+      date[7] != '-') {
+    std::string err =
+        "{\"error\":\"Invalid date format\"}";
+    soup_message_set_status(
+        msg, SOUP_STATUS_BAD_REQUEST);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY, err.c_str(),
+        static_cast<gsize>(err.size()));
+    return;
+  }
+
+  std::string log_path =
+      std::string(APP_DATA_DIR) + "/audit/" +
+      date + ".md";
   std::ifstream lf(log_path);
   if (lf.is_open()) {
-    std::string content((std::istreambuf_iterator<char>(lf)),
-                        std::istreambuf_iterator<char>());
-
-    // Return last 2000 chars of the log
-    size_t start = 0;
-    if (content.size() > 2000) {
-      start = content.size() - 2000;
-    }
-    logs.push_back({{"date", date}, {"content", content.substr(start)}});
+    std::string content(
+        (std::istreambuf_iterator<char>(lf)),
+        std::istreambuf_iterator<char>());
+    logs.push_back(
+        {{"date", date},
+         {"content", std::move(content)}});
   }
 
   std::string body = logs.dump();
   soup_message_set_status(msg, SOUP_STATUS_OK);
-  soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
-                            body.c_str(), static_cast<gsize>(body.size()));
+  soup_message_set_response(
+      msg, "application/json", SOUP_MEMORY_COPY,
+      body.c_str(),
+      static_cast<gsize>(body.size()));
+}
+
+void WebDashboard::ApiLogDates(
+    SoupMessage* msg) const {
+  std::set<std::string> dates;
+  fs::path audit_dir =
+      std::string(APP_DATA_DIR) + "/audit";
+  std::error_code ec;
+  for (const auto& entry :
+       fs::directory_iterator(audit_dir, ec)) {
+    if (!entry.is_regular_file(ec)) continue;
+    std::string name =
+        entry.path().filename().string();
+    // Match YYYY-MM-DD.md pattern
+    if (name.size() == 13 &&
+        name.substr(10) == ".md" &&
+        name[4] == '-' && name[7] == '-') {
+      dates.insert(name.substr(0, 10));
+    }
+  }
+
+  nlohmann::json arr = nlohmann::json::array();
+  for (const auto& d : dates) arr.push_back(d);
+
+  nlohmann::json resp = {{"dates", arr}};
+  std::string body = resp.dump();
+  soup_message_set_status(msg, SOUP_STATUS_OK);
+  soup_message_set_response(
+      msg, "application/json", SOUP_MEMORY_COPY,
+      body.c_str(),
+      static_cast<gsize>(body.size()));
 }
 
 void WebDashboard::ApiChat(SoupMessage* msg) const {

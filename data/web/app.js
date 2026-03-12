@@ -73,6 +73,238 @@
         });
     }
 
+    // --- Date Breadcrumb Navigator ---
+    const MONTHS = [
+        'Jan', 'Feb', 'Mar', 'Apr',
+        'May', 'Jun', 'Jul', 'Aug',
+        'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+
+    class DateNav {
+        constructor(elementId, onSelect) {
+            this.el = document.getElementById(
+                elementId);
+            this.onSelect = onSelect;
+            this.dates = [];
+            this.level = 'year';
+            this.selYear = null;
+            this.selMonth = null;
+            this.selDay = null;
+        }
+
+        setDates(dateStrings) {
+            this.dates = (dateStrings || [])
+                .slice().sort().reverse();
+            this.level = 'year';
+            this.selYear = null;
+            this.selMonth = null;
+            this.selDay = null;
+            this.render();
+        }
+
+        getYears() {
+            const s = new Set();
+            this.dates.forEach(d =>
+                s.add(d.substring(0, 4)));
+            return [...s].sort().reverse();
+        }
+
+        getMonths(year) {
+            const s = new Set();
+            this.dates.forEach(d => {
+                if (d.substring(0, 4) === year)
+                    s.add(d.substring(5, 7));
+            });
+            return [...s].sort().reverse();
+        }
+
+        getDays(year, month) {
+            return this.dates
+                .filter(d =>
+                    d.substring(0, 4) === year &&
+                    d.substring(5, 7) === month)
+                .map(d => d.substring(8, 10))
+                .sort().reverse();
+        }
+
+        render() {
+            if (!this.el) return;
+            let html =
+                '<span class="date-nav-label">' +
+                '📅 Browse</span>';
+
+            if (this.level === 'year') {
+                const years = this.getYears();
+                if (years.length === 0) {
+                    html += '<span class=' +
+                        '"date-nav-chip" ' +
+                        'style="cursor:default;' +
+                        'opacity:0.5">' +
+                        'No dates</span>';
+                } else {
+                    years.forEach(y => {
+                        html +=
+                            '<span class=' +
+                            '"date-nav-chip" ' +
+                            'data-year="' +
+                            y + '">' +
+                            y + '</span>';
+                    });
+                }
+            } else if (this.level === 'month') {
+                html +=
+                    '<span class="date-nav-chip' +
+                    ' breadcrumb" data-reset=' +
+                    '"year">' +
+                    'All Years</span>' +
+                    '<span class="date-nav-sep"' +
+                    '>›</span>' +
+                    '<span class="date-nav-chip' +
+                    ' active">' +
+                    this.selYear + '</span>' +
+                    '<span class="date-nav-sep"' +
+                    '>›</span>';
+                const months =
+                    this.getMonths(this.selYear);
+                months.forEach(m => {
+                    const mi = parseInt(m, 10) - 1;
+                    html +=
+                        '<span class=' +
+                        '"date-nav-chip" ' +
+                        'data-month="' + m +
+                        '">' +
+                        MONTHS[mi] +
+                        '</span>';
+                });
+            } else if (this.level === 'day') {
+                html +=
+                    '<span class="date-nav-chip' +
+                    ' breadcrumb" data-reset=' +
+                    '"year">' +
+                    'All Years</span>' +
+                    '<span class="date-nav-sep"' +
+                    '>›</span>' +
+                    '<span class="date-nav-chip' +
+                    ' breadcrumb" data-reset=' +
+                    '"month">' +
+                    this.selYear + '</span>' +
+                    '<span class="date-nav-sep"' +
+                    '>›</span>' +
+                    '<span class="date-nav-chip' +
+                    ' active">' +
+                    MONTHS[
+                        parseInt(this.selMonth,
+                            10) - 1] +
+                    '</span>' +
+                    '<span class="date-nav-sep"' +
+                    '>›</span>';
+                const days = this.getDays(
+                    this.selYear, this.selMonth);
+                days.forEach(d => {
+                    const full =
+                        this.selYear + '-' +
+                        this.selMonth + '-' + d;
+                    const cls =
+                        (this.selDay === d)
+                            ? 'date-nav-chip active'
+                            : 'date-nav-chip';
+                    html +=
+                        '<span class="' + cls +
+                        '" data-day="' + d +
+                        '" data-full="' +
+                        full + '">' +
+                        parseInt(d, 10) +
+                        '</span>';
+                });
+            }
+
+            // Show All button when filtered
+            if (this.selYear || this.selDay) {
+                html += '<span class=' +
+                    '"date-nav-all" ' +
+                    'data-reset="all">' +
+                    '✕ Show All</span>';
+            }
+
+            this.el.innerHTML = html;
+            this.bind();
+        }
+
+        bind() {
+            if (!this.el) return;
+            const self = this;
+            this.el.querySelectorAll(
+                '[data-year]').forEach(el => {
+                    el.addEventListener(
+                        'click', () => {
+                            self.selYear =
+                                el.dataset.year;
+                            self.level = 'month';
+                            self.render();
+                        });
+                });
+            this.el.querySelectorAll(
+                '[data-month]').forEach(el => {
+                    el.addEventListener(
+                        'click', () => {
+                            self.selMonth =
+                                el.dataset.month;
+                            self.level = 'day';
+                            self.selDay = null;
+                            self.render();
+                            self.onSelect(null);
+                        });
+                });
+            this.el.querySelectorAll(
+                '[data-day]').forEach(el => {
+                    el.addEventListener(
+                        'click', () => {
+                            self.selDay =
+                                el.dataset.day;
+                            self.render();
+                            self.onSelect(
+                                el.dataset.full);
+                        });
+                });
+            this.el.querySelectorAll(
+                '[data-reset]').forEach(el => {
+                    el.addEventListener(
+                        'click', () => {
+                            const r =
+                                el.dataset.reset;
+                            if (r === 'year' ||
+                                r === 'all') {
+                                self.selYear = null;
+                                self.selMonth = null;
+                                self.selDay = null;
+                                self.level = 'year';
+                            } else if (
+                                r === 'month') {
+                                self.selMonth = null;
+                                self.selDay = null;
+                                self.level =
+                                    'month';
+                            }
+                            self.render();
+                            if (r === 'all')
+                                self.onSelect(null);
+                        });
+                });
+        }
+
+        getFilter() {
+            if (!this.selYear) return null;
+            if (!this.selMonth)
+                return this.selYear;
+            if (!this.selDay)
+                return this.selYear + '-' +
+                    this.selMonth;
+            return this.selYear + '-' +
+                this.selMonth + '-' +
+                this.selDay;
+        }
+    }
+
     // --- Dashboard ---
     let metricsInterval = null;
 
@@ -142,7 +374,10 @@
     }
 
     // --- Sessions ---
-    async function loadSessions() {
+    let sessionDateNav = null;
+    let allSessions = null;
+
+    async function loadSessions(filterDate) {
         const data = await apiFetch('sessions');
         const list =
             document.getElementById('session-list');
@@ -151,21 +386,61 @@
         viewer.style.display = 'none';
         list.style.display = '';
 
-        if (!data || data.length === 0) {
+        allSessions = data || [];
+
+        // Init date nav once
+        if (!sessionDateNav) {
+            sessionDateNav = new DateNav(
+                'session-date-nav',
+                function (date) {
+                    renderSessions(date);
+                });
+        }
+        // Collect unique dates
+        const dates = allSessions.map(
+            s => s.date).filter(Boolean);
+        sessionDateNav.setDates(
+            [...new Set(dates)]);
+
+        renderSessions(filterDate || null);
+    }
+
+    function renderSessions(filterDate) {
+        const list =
+            document.getElementById('session-list');
+        let items = allSessions || [];
+
+        if (filterDate) {
+            items = items.filter(
+                s => s.date === filterDate);
+        } else {
+            // If nav has partial filter
+            // (year or year-month)
+            const f = sessionDateNav
+                ? sessionDateNav.getFilter()
+                : null;
+            if (f) {
+                items = items.filter(
+                    s => s.date &&
+                        s.date.startsWith(f));
+            }
+        }
+
+        if (items.length === 0) {
             list.innerHTML =
                 '<p class="empty-state">' +
-                'No active sessions</p>';
+                'No sessions found</p>';
             return;
         }
 
-        list.innerHTML = data.map(s => {
+        list.innerHTML = items.map(s => {
             const sizeKB =
                 (s.size_bytes / 1024).toFixed(1);
             const modified = s.modified ?
                 new Date(s.modified * 1000)
                     .toLocaleString() : '—';
-            return '<div class="card-item clickable"' +
-                ' data-session-id="' +
+            return '<div class="card-item ' +
+                'clickable" data-session-id="' +
                 escHtml(s.id) + '">' +
                 '<div class="card-item-title">' +
                 escHtml(s.id) + '</div>' +
@@ -174,12 +449,14 @@
                 modified + '</div></div>';
         }).join('');
 
-        list.querySelectorAll('.card-item').forEach(
-            card => {
-                card.addEventListener('click', () => {
-                    showSessionDetail(
-                        card.dataset.sessionId);
-                });
+        list.querySelectorAll('.card-item')
+            .forEach(card => {
+                card.addEventListener(
+                    'click', () => {
+                        showSessionDetail(
+                            card.dataset
+                                .sessionId);
+                    });
             });
     }
 
@@ -217,7 +494,10 @@
         });
 
     // --- Tasks ---
-    async function loadTasks() {
+    let taskDateNav = null;
+    let allTasks = null;
+
+    async function loadTasks(filterDate) {
         const data = await apiFetch('tasks');
         const list =
             document.getElementById('task-list');
@@ -226,30 +506,75 @@
         viewer.style.display = 'none';
         list.style.display = '';
 
-        if (!data || data.length === 0) {
+        allTasks = data || [];
+
+        // Init date nav once
+        if (!taskDateNav) {
+            taskDateNav = new DateNav(
+                'task-date-nav',
+                function (date) {
+                    renderTasks(date);
+                });
+        }
+        const dates = allTasks.map(
+            t => t.date).filter(Boolean);
+        taskDateNav.setDates(
+            [...new Set(dates)]);
+
+        renderTasks(filterDate || null);
+    }
+
+    function renderTasks(filterDate) {
+        const list =
+            document.getElementById('task-list');
+        let items = allTasks || [];
+
+        if (filterDate) {
+            items = items.filter(
+                t => t.date === filterDate);
+        } else {
+            const f = taskDateNav
+                ? taskDateNav.getFilter()
+                : null;
+            if (f) {
+                items = items.filter(
+                    t => t.date &&
+                        t.date.startsWith(f));
+            }
+        }
+
+        if (items.length === 0) {
             list.innerHTML =
                 '<p class="empty-state">' +
-                'No scheduled tasks</p>';
+                'No tasks found</p>';
             return;
         }
 
-        list.innerHTML = data.map(t =>
-            '<div class="card-item clickable"' +
-            ' data-task-file="' +
-            escHtml(t.file) + '">' +
-            '<div class="card-item-title">' +
-            escHtml(t.file) + '</div>' +
-            '<div class="card-item-meta">' +
-            escHtml(t.content_preview || '') +
-            '</div></div>'
-        ).join('');
+        list.innerHTML = items.map(t => {
+            const modified = t.modified ?
+                new Date(t.modified * 1000)
+                    .toLocaleString() : '';
+            return '<div class="card-item ' +
+                'clickable" data-task-file="' +
+                escHtml(t.file) + '">' +
+                '<div class="card-item-title">' +
+                escHtml(t.file) + '</div>' +
+                '<div class="card-item-meta">' +
+                (modified ? modified + ' · '
+                    : '') +
+                escHtml(
+                    t.content_preview || '') +
+                '</div></div>';
+        }).join('');
 
-        list.querySelectorAll('.card-item').forEach(
-            card => {
-                card.addEventListener('click', () => {
-                    showTaskDetail(
-                        card.dataset.taskFile);
-                });
+        list.querySelectorAll('.card-item')
+            .forEach(card => {
+                card.addEventListener(
+                    'click', () => {
+                        showTaskDetail(
+                            card.dataset
+                                .taskFile);
+                    });
             });
     }
 
@@ -287,18 +612,50 @@
         });
 
     // --- Logs ---
-    async function loadLogs() {
-        const data = await apiFetch('logs');
+    let logDateNav = null;
+
+    async function loadLogs(dateStr) {
+        // Init date nav once
+        if (!logDateNav) {
+            logDateNav = new DateNav(
+                'log-date-nav',
+                function (date) {
+                    loadLogContent(date);
+                });
+            // Load available dates
+            const datesResp =
+                await apiFetch('logs/dates');
+            if (datesResp && datesResp.dates) {
+                logDateNav.setDates(
+                    datesResp.dates);
+            }
+        }
+
+        // Load today by default
+        loadLogContent(dateStr || null);
+    }
+
+    async function loadLogContent(dateStr) {
         const logEl =
             document.getElementById('log-content');
+        logEl.textContent = 'Loading...';
+
+        const endpoint = dateStr
+            ? 'logs?date=' +
+            encodeURIComponent(dateStr)
+            : 'logs';
+        const data = await apiFetch(endpoint);
 
         if (!data || data.length === 0) {
-            logEl.textContent = 'No logs available.';
+            logEl.textContent = dateStr
+                ? 'No logs for ' + dateStr
+                : 'No logs available.';
             return;
         }
 
         logEl.textContent =
-            data.map(l => l.content).join('\n\n');
+            data.map(l => l.content)
+                .join('\n\n');
     }
 
     // --- Chat ---

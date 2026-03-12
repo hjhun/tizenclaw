@@ -30,7 +30,7 @@ body {
     background: var(--bg-primary);
     color: var(--text-primary);
     min-height: 100vh;
-    overflow: hidden;
+    overflow-x: hidden;
 }
 
 .app {
@@ -147,6 +147,101 @@ body {
     font-weight: 600;
     margin-bottom: 24px;
     color: #fff;
+}
+
+/* --- Date Breadcrumb Navigator --- */
+.date-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    background: var(--bg-card);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    min-height: 44px;
+    animation: fadeIn 0.25s ease;
+}
+
+.date-nav-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-right: 6px;
+}
+
+.date-nav-sep {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    user-select: none;
+}
+
+.date-nav-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--bg-glass);
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+    user-select: none;
+}
+
+.date-nav-chip:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+    background: rgba(99, 102, 241, 0.1);
+    transform: translateY(-1px);
+}
+
+.date-nav-chip.active {
+    background: linear-gradient(135deg,
+        rgba(99, 102, 241, 0.25),
+        rgba(139, 92, 246, 0.15));
+    border-color: var(--accent);
+    color: #fff;
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.2);
+}
+
+.date-nav-chip.breadcrumb {
+    background: transparent;
+    border: none;
+    color: var(--accent);
+    padding: 4px 8px;
+    font-weight: 500;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.date-nav-chip.breadcrumb:hover {
+    color: #a78bfa;
+    border: none;
+    background: transparent;
+    transform: none;
+}
+
+.date-nav-all {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px 10px;
+    border-radius: 6px;
+    transition: all 0.2s;
+    margin-left: auto;
+}
+
+.date-nav-all:hover {
+    color: var(--accent);
+    background: rgba(99, 102, 241, 0.08);
 }
 
 /* --- Stats Grid --- */

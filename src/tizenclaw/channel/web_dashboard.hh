@@ -58,20 +58,28 @@ class WebDashboard : public Channel {
   // libsoup request handler
   static void HandleRequest(SoupServer* server, SoupMessage* msg,
                             const char* path, GHashTable* query,
-                            SoupClientContext* client, gpointer user_data);
+                            SoupClientContext* client,
+                            gpointer user_data);
 
   // Route API requests
-  void HandleApi(SoupMessage* msg, const std::string& path) const;
+  void HandleApi(SoupMessage* msg, const std::string& path,
+                 GHashTable* query) const;
 
   // Serve static files (HTML/CSS/JS)
   void ServeStaticFile(SoupMessage* msg, const std::string& path) const;
 
   // API endpoint handlers
   void ApiSessions(SoupMessage* msg) const;
-  void ApiSessionDetail(SoupMessage* msg, const std::string& id) const;
+  void ApiSessionDetail(SoupMessage* msg,
+                        const std::string& id) const;
+  void ApiSessionDates(SoupMessage* msg) const;
   void ApiTasks(SoupMessage* msg) const;
-  void ApiTaskDetail(SoupMessage* msg, const std::string& file) const;
-  void ApiLogs(SoupMessage* msg) const;
+  void ApiTaskDetail(SoupMessage* msg,
+                     const std::string& file) const;
+  void ApiTaskDates(SoupMessage* msg) const;
+  void ApiLogs(SoupMessage* msg,
+               const std::string& date) const;
+  void ApiLogDates(SoupMessage* msg) const;
   void ApiChat(SoupMessage* msg) const;
   void ApiStatus(SoupMessage* msg) const;
 
