@@ -363,13 +363,14 @@
     // ==========================
 
     const CONFIG_LABELS = {
-        'llm_config': 'LLM Configuration',
-        'telegram_config': 'Telegram Bot',
-        'slack_config': 'Slack Integration',
-        'discord_config': 'Discord Bot',
-        'webhook_config': 'Webhook Routes',
-        'tool_policy': 'Tool Policy',
-        'system_prompt': 'System Prompt'
+        'llm_config.json': 'LLM Configuration',
+        'telegram_config.json': 'Telegram Bot',
+        'slack_config.json': 'Slack Integration',
+        'discord_config.json': 'Discord Bot',
+        'webhook_config.json': 'Webhook Routes',
+        'tool_policy.json': 'Tool Policy',
+        'agent_roles.json': 'Agent Roles',
+        'tunnel_config.json': 'Tunnel Configuration'
     };
 
     function loadAdmin() {

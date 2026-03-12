@@ -874,11 +874,11 @@ bool WebDashboard::IsAllowedConfig(const std::string& name) const {
 }
 
 std::string WebDashboard::ConfigFilePath(const std::string& name) const {
-  return config_dir_ + "/" + name + ".json";
+  return config_dir_ + "/" + name;
 }
 
 std::string WebDashboard::SampleFilePath(const std::string& name) const {
-  return config_dir_ + "/" + name + ".json.sample";
+  return config_dir_ + "/" + name + ".sample";
 }
 
 void WebDashboard::ApiConfigList(SoupMessage* msg) const {
