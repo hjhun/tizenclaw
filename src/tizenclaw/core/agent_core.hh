@@ -148,6 +148,10 @@ class AgentCore {
   // Execute custom skill management operations
   std::string ExecuteCustomSkillOp(const nlohmann::json& args);
 
+  // Execute CLI tool operations
+  std::string ExecuteCli(const std::string& tool_name,
+                         const std::string& arguments);
+
   // Generate embedding vector via LLM API
   std::vector<float> GenerateEmbedding(const std::string& text);
 
@@ -225,6 +229,12 @@ class AgentCore {
   // Skill directory map: manifest_name -> actual_dirname
   // (e.g. "get_sample_info" -> "org.tizen....__get_sample_info")
   std::map<std::string, std::string> skill_dirs_;
+
+  // CLI tool directory map: cli_name -> actual_dirname
+  std::map<std::string, std::string> cli_dirs_;
+
+  // CLI tool documentation cache: cli_name -> tool.md content
+  std::map<std::string, std::string> cli_tool_docs_;
 
   // Model fallback configuration
   std::vector<std::string> fallback_names_;

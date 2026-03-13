@@ -1,6 +1,6 @@
 # TizenClaw 스킬 레퍼런스
 
-TizenClaw는 **35개 컨테이너 스킬** (Python, OCI 샌드박스)과 **10개 이상의 내장 도구** (네이티브 C++)를 제공합니다.
+TizenClaw는 **35개 컨테이너 스킬** (Python, OCI 샌드박스), **10개 이상의 내장 도구** (네이티브 C++), 그리고 **CLI 도구 플러그인** (TPK 기반 네이티브 실행 파일)을 제공합니다.
 
 > 컨테이너 스킬은 `ctypes` FFI를 통해 Tizen C-API를 직접 호출합니다. 비동기 스킬은 **tizen-core** 이벤트 루프를 사용합니다.
 
@@ -93,6 +93,7 @@ TizenClaw는 **35개 컨테이너 스킬** (Python, OCI 샌드박스)과 **10개
 | `search_knowledge` | RAG 스토어 시맨틱 검색 |
 | `execute_action` | Tizen Action Framework 액션 실행 |
 | `action_<name>` | Per-action 도구 (Action Framework에서 자동 발견) |
+| `execute_cli` | TPK 패키지로 설치된 CLI 도구 플러그인 실행 |
 
 ---
 
@@ -111,6 +112,35 @@ RPK 도구 패키지는 다음을 포함할 수 있습니다:
 - 필수적인 샌드박스 및 Tizen 시스템 보안(SMACK) 권한 규정.
 
 시스템 패키지 관리자(예: `pkgcmd`)를 통해 RPK가 설치되면 TizenClaw는 즉시 이를 감지하고 등록 기능을 Planning Agent가 이용할 수 있도록 노출합니다. 별도의 데몬 재컴파일은 필요하지 않습니다.
+
+---
+
+## CLI 도구 플러그인 (TPK 기반)
+
+Python 스킬 외에도, TizenClaw는 **TPK (Tizen Package)** 로 패키징된 **네이티브 CLI 도구 플러그인**을 지원합니다. CLI 도구는 Tizen C-API에 직접 접근하기 위해 호스트에서 직접 실행되며, 각 도구는 LLM이 커맨드, 인자, 출력 형식을 이해할 수 있도록 `.tool.md` 설명서를 포함합니다.
+
+### 아키텍처
+
+| 컴포넌트 | 역할 |
+|----------|------|
+| `CliPluginManager` | `http://tizen.org/metadata/tizenclaw/cli` 메타데이터를 가진 TPK를 발견하고 `tools/cli/`에 symlink 생성 |
+| `tizenclaw-metadata-cli-plugin.so` | 설치 시 플랫폼 수준 인증서 서명을 강제하는 파서 플러그인 |
+| `execute_cli` (내장 도구) | `popen()`을 통해 CLI 도구를 실행하고 JSON 출력을 LLM에 반환 |
+| `.tool.md` 설명서 | 시스템 프롬프트에 주입되는 리치 Markdown 파일로 LLM 도구 발견 지원 |
+
+### 매니페스트 선언
+
+CLI 도구는 `tizen-manifest.xml`에서 `<service-application>`을 사용합니다:
+
+```xml
+<service-application appid="org.tizen.sample.get_package_info"
+                     exec="get_package_info" type="capp">
+    <metadata key="http://tizen.org/metadata/tizenclaw/cli"
+              value="get_package_info"/>
+</service-application>
+```
+
+> **보안**: 플랫폼 서명된 TPK만 CLI 도구를 등록할 수 있습니다.
 
 ---
 

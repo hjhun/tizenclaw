@@ -127,7 +127,7 @@ graph TB
 - **엣지 메모리 최적화**: `MaintenanceLoop`가 유휴 시간을 적극 모니터링하여, 5분 비활성 시 `malloc_trim(0)` 및 `sqlite3_release_memory`를 호출해 PSS 메모리를 회수합니다.
 - **멀티 세션**: 세션별 시스템 프롬프트와 히스토리 격리를 통한 동시 에이전트 세션
 - **통합 백엔드 선택**: `SwitchToBestBackend()` 알고리즘을 통해 단일 우선순위 큐(`Plugin` > `active_backend` > `fallback_backends`)를 기반으로 동적으로 활성 백엔드를 선택합니다.
-- **내장 도구**: `execute_code`, `file_manager`, `create_task`, `list_tasks`, `cancel_task`, `create_session`, `list_sessions`, `send_to_session`, `ingest_document`, `search_knowledge`, `execute_action`, `action_<name>` (Per-action 도구), `remember`, `recall`, `forget` (영속 메모리)
+- **내장 도구**: `execute_code`, `file_manager`, `create_task`, `list_tasks`, `cancel_task`, `create_session`, `list_sessions`, `send_to_session`, `ingest_document`, `search_knowledge`, `execute_action`, `action_<name>` (Per-action 도구), `remember`, `recall`, `forget` (영속 메모리), `execute_cli` (CLI 도구 플러그인)
 - **도구 디스패치**: `std::unordered_map<string, ToolHandler>` O(1) 조회, 동적 이름 도구(예: `action_*`)는 `starts_with` 폴백 처리
 
 ### 3.3 LLM 백엔드 계층
@@ -210,6 +210,9 @@ class Channel {
 ├── tasks/task-{id}.md               ← 예약 태스크
 ├── tools/actions/{name}.md          ← Action 스키마 캐시 (디바이스별, 자동 동기화)
 ├── tools/embedded/{name}.md         ← 내장 도구 스키마 (RPM으로 설치)
+├── tools/cli/{pkgid__name}/         ← CLI 도구 플러그인 (TPK에서 symlink)
+│   ├── executable                   ← CLI 바이너리 symlink
+│   └── tool.md                      ← LLM 도구 설명서 symlink
 ├── memory/
 │   ├── memory.md                    ← 자동 생성 요약 (idle 시 dirty-flag 기반 갱신)
 │   ├── long-term/{date}-{title}.md  ← 사용자 선호, 영속 사실
@@ -267,8 +270,9 @@ Markdown 스키마 파일을 통한 LLM 도구 발견:
 
 - **내장 도구**: `/opt/usr/share/tizenclaw/tools/embedded/` 아래 13개 MD 파일이 내장 도구를 기술 (execute_code, file_manager, 파이프라인, 태스크, RAG 등)
 - **Action 도구**: Action Framework MD 파일이 Tizen Action Framework 액션을 기술 (디바이스별, 자동 동기화)
-- **시스템 프롬프트 통합**: 프롬프트 빌드 시 양쪽 디렉터리를 스캔하여 전체 MD 내용을 `{{AVAILABLE_TOOLS}}` 섹션에 추가
-- **스키마-실행 분리**: MD 파일은 LLM 컨텍스트만 제공; 실행 로직은 `AgentCore` 디스패치 (내장) 또는 `ActionBridge` (액션)가 독립적으로 처리
+- **CLI 도구**: `/opt/usr/share/tizenclaw/tools/cli/` 아래 `.tool.md` 설명서가 CLI 도구 플러그인을 기술 (커맨드, 인자, 출력 형식). `CliPluginManager`가 TPK 패키지에서 symlink 생성 후 시스템 프롬프트에 주입.
+- **시스템 프롬프트 통합**: 프롬프트 빌드 시 모든 디렉터리를 스캔하여 전체 MD 내용을 `{{AVAILABLE_TOOLS}}` 섹션에 추가
+- **스키마-실행 분리**: MD 파일은 LLM 컨텍스트만 제공; 실행 로직은 `AgentCore` 디스패치 (내장), `ActionBridge` (액션), `ExecuteCli` (CLI 도구)가 독립적으로 처리
 
 ---
 

@@ -62,6 +62,12 @@ class ToolIndexer {
   static void GenerateEmbeddedIndex(
       const std::string& embedded_dir);
 
+  // Generate index.md for cli/ directory
+  // by extracting H1 titles and first paragraphs
+  // from each tool.md file.
+  static void GenerateCliIndex(
+      const std::string& cli_dir);
+
   // Generate tools.md by reading all index.md files.
   static void GenerateToolsMd(
       const std::string& tools_dir);

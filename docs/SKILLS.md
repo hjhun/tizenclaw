@@ -1,6 +1,6 @@
 # TizenClaw Skills Reference
 
-TizenClaw provides **35 container skills** (Python, sandboxed via OCI) and **10+ built-in tools** (native C++).
+TizenClaw provides **35 container skills** (Python, sandboxed via OCI), **10+ built-in tools** (native C++), and **CLI tool plugins** (TPK-based native executables).
 
 > Container skills use `ctypes` FFI to call Tizen C-API directly. Async skills use the **tizen-core** event loop for callback-based APIs.
 
@@ -93,6 +93,7 @@ TizenClaw provides **35 container skills** (Python, sandboxed via OCI) and **10+
 | `search_knowledge` | Semantic search in RAG store |
 | `execute_action` | Execute a Tizen Action Framework action |
 | `action_<name>` | Per-action tools (auto-discovered from Action Framework) |
+| `execute_cli` | Execute CLI tool plugins installed via TPK packages |
 
 ---
 
@@ -111,6 +112,54 @@ All dynamic RPK plugins, along with CLI tools and built-in skills, must register
 - Required Sandbox and Tizen (SMACK) permissions.
 
 Once an RPK is installed via the system package manager (e.g. `pkgcmd`), TizenClaw automatically discovers and registers its capabilities, making them immediately available to the Planning Agent without daemon recompilation.
+
+---
+
+## CLI Tool Plugins (TPK-based)
+
+In addition to Python skills, TizenClaw supports **native CLI tool plugins** packaged as TPKs (Tizen Packages). CLI tools run directly on the host for full Tizen C-API access, making them ideal for device queries that require privileged APIs.
+
+### Architecture
+
+| Component | Role |
+|-----------|------|
+| `CliPluginManager` | Discovers TPKs with `http://tizen.org/metadata/tizenclaw/cli` metadata, creates symlinks into `tools/cli/` |
+| `tizenclaw-metadata-cli-plugin.so` | Parser plugin enforcing platform-level certificate signing at install |
+| `execute_cli` (built-in tool) | Executes CLI tools via `popen()`, returns JSON output to LLM |
+| `.tool.md` descriptors | Rich Markdown files injected into system prompt for LLM tool discovery |
+
+### Tool Descriptor Format (`.tool.md`)
+
+Each CLI tool ships a `.tool.md` file describing its commands, arguments, and output format. This enables the LLM to construct correct invocations:
+
+```markdown
+# get_package_info
+
+**Category**: Package Management
+
+Query Tizen package information.
+
+## Commands
+
+| Command | Description | Arguments |
+|---------|-------------|-----------|
+| `list` | List all packages | `--type <tpk\|wgt>` (optional) |
+| `info` | Get package details | `--pkgid <id>` (required) |
+```
+
+### Manifest Declaration
+
+CLI tools use `<service-application>` in `tizen-manifest.xml`:
+
+```xml
+<service-application appid="org.tizen.sample.get_package_info"
+                     exec="get_package_info" type="capp">
+    <metadata key="http://tizen.org/metadata/tizenclaw/cli"
+              value="get_package_info"/>
+</service-application>
+```
+
+> **Security**: Only platform-signed TPKs can register CLI tools.
 
 ---
 

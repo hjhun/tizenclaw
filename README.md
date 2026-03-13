@@ -46,7 +46,8 @@ TizenClaw is part of the **Claw** family of AI agent runtimes, each targeting di
 - 📱 **Direct Tizen C-API** — ctypes wrappers for device hardware (battery, Wi-Fi, BT, display, volume, sensors, notifications, alarm, app management)
 - 🎯 **Tizen Action Framework** — Native integration with per-action LLM tools, MD schema caching, event-driven updates
 - 🤖 **Dynamic LLM Backends** — Built-in support for Gemini, OpenAI, Anthropic, xAI, Ollama with unified priority-based switching, seamlessly cascading between active, fallbacks, and dynamically loaded built-in/RPK Plugins.
-- 🧩 **RPK Tool Distribution** — Extend the skill ecosystem dynamically using Tizen Resource Packages (RPKs) bundling Python skills and CLI tools without daemon recompilation. Platform-signed RPK packages are automatically discovered and symlinked into the skills directory.
+- 🧩 **RPK Tool Distribution** — Extend the skill ecosystem dynamically using Tizen Resource Packages (RPKs) bundling Python skills without daemon recompilation. Platform-signed RPK packages are automatically discovered and symlinked into the skills directory.
+- 🔧 **CLI Tool Plugins** — Extend agent capabilities with native CLI tools packaged as TPKs. CLI tools run directly on the host for Tizen C-API access, with rich Markdown descriptors (`.tool.md`) for LLM tool discovery.
 - 📦 **Lightweight Deployment** — systemd + RPM, standalone device execution without Node.js/Docker
 - 🔧 **Native MCP Server** — C++ MCP server integrated into daemon, Claude Desktop controls Tizen via sdb
 - 📊 **Health Monitoring** — Built-in Prometheus-style metrics endpoint + live dashboard panel
@@ -229,9 +230,11 @@ TizenClaw ships with **35 container skills** (Python, OCI sandbox) and **10+ bui
 | **Display & Hardware** | 6 | `control_display`, `control_volume`, `control_haptic`, `control_led` |
 | **Media & Content** | 5 | `get_metadata`, `get_media_content`, `get_mime_type`, `get_sound_devices` |
 | **System Actions** | 6 | `download_file` ⚡, `send_notification`, `schedule_alarm`, `play_tone`, `web_search` |
-| **Built-in Tools** | 15+ | `execute_code`, `file_manager`, `manage_custom_skill`, `create_task`, `search_knowledge`, `remember`, `recall`, `forget` |
 
 > ⚡ = Async skill using tizen-core event loop
+
+- **Built-in Tools**: `execute_code`, `file_manager`, `create_task`, `list_tasks`, `cancel_task`, `create_session`, `list_sessions`, `send_to_session`, `ingest_document`, `search_knowledge`, `execute_action`, `action_<name>` (per-action tools), `remember`, `recall`, `forget` (persistent memory), `execute_cli` (CLI tool plugins)
+- **Tool Dispatch**: `std::unordered_map<string, ToolHandler>` for O(1) dispatch with `starts_with` fallback for dynamically named tools (e.g., `action_*`)
 
 📖 **Full reference**: [Skills Reference](docs/SKILLS.md)
 
@@ -263,6 +266,35 @@ lib/
 > **Note**: Only packages signed with a **platform-level certificate** are allowed to register skills. Multiple skills can be declared using `|` as a delimiter or via multiple `<metadata>` entries.
 
 📦 **Sample project**: [tizenclaw-skill-plugin-sample](https://github.com/hjhun/tizenclaw-skill-plugin-sample)
+
+### CLI Tool Plugins
+
+TizenClaw also supports native **CLI tool plugins** packaged as TPKs (Tizen Package). Unlike containerized Python skills, CLI tools run directly on the host to access Tizen C-APIs without sandbox overhead. Each CLI tool includes a rich Markdown descriptor (`.tool.md`) that enables the LLM to understand commands, subcommands, arguments, and output formats.
+
+**TPK Structure:**
+```
+bin/
+├── get_package_info          # Native CLI executable
+└── get_app_info              # Native CLI executable
+res/
+├── get_package_info.tool.md  # LLM tool descriptor
+└── get_app_info.tool.md      # LLM tool descriptor
+```
+
+**Metadata Declaration** (`tizen-manifest.xml`):
+```xml
+<service-application appid="org.tizen.sample.get_package_info"
+                     exec="get_package_info" type="capp">
+    <metadata key="http://tizen.org/metadata/tizenclaw/cli"
+              value="get_package_info"/>
+</service-application>
+```
+
+`CliPluginManager` discovers installed CLI TPKs via `pkgmgrinfo_appinfo_metadata_filter`, creates symlinks for the executable and `.tool.md` descriptor into `/opt/usr/share/tizenclaw/tools/cli/`, and injects the tool documentation into the LLM system prompt. The LLM invokes CLI tools through the `execute_cli` built-in tool.
+
+> **Note**: Only packages signed with a **platform-level certificate** are allowed to register CLI tools. The `tizenclaw-metadata-cli-plugin.so` parser plugin enforces this at install time.
+
+📦 **Sample project**: [tizenclaw-cli-plugin-sample](https://github.com/hjhun/tizenclaw-cli-plugin-sample)
 
 ### Multi-Agent System
 
@@ -460,6 +492,7 @@ tizenclaw/
 │           └── task_scheduler.cc  #   Cron/interval tasks
 ├── tools/skills/                  # Python skill scripts
 ├── tools/embedded/                # Embedded tool MD schemas (13 files)
+├── tools/cli/                     # CLI tool plugins (symlinks from TPKs)
 ├── scripts/                       # Container setup, CI, hooks
 ├── test/unit_tests/               # Google Test unit tests
 ├── data/                          # Config samples, rootfs, web SPA
@@ -477,6 +510,7 @@ tizenclaw/
 - [tizenclaw-webview](https://github.com/hjhun/tizenclaw-webview): A companion Tizen web application that provides an on-device Web Admin Dashboard for TizenClaw.
 - [tizenclaw-llm-plugin-sample](https://github.com/hjhun/tizenclaw-llm-plugin-sample): A sample project demonstrating how to build an RPM to RPK (Resource Package) plugin to dynamically inject new customized LLM backends into TizenClaw at runtime.
 - [tizenclaw-skill-plugin-sample](https://github.com/hjhun/tizenclaw-skill-plugin-sample): A sample project demonstrating how to build an RPK skill plugin to dynamically inject Python skills into TizenClaw via platform-signed packages.
+- [tizenclaw-cli-plugin-sample](https://github.com/hjhun/tizenclaw-cli-plugin-sample): A sample project demonstrating how to build a TPK CLI tool plugin providing native device query tools (`get_package_info`, `get_app_info`) with LLM-readable Markdown descriptors.
 
 ---
 

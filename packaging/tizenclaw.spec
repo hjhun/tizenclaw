@@ -102,6 +102,8 @@ ln -sf ../tizenclaw-skills-secure.service %{buildroot}%{_unitdir}/multi-user.tar
 %{_datarootdir}/parser-plugins/tizenclaw-metadata-llm-backend-plugin.info
 %{_sysconfdir}/package-manager/parserlib/metadata/libtizenclaw-metadata-skill-plugin.so
 %{_datarootdir}/parser-plugins/tizenclaw-metadata-skill-plugin.info
+%{_sysconfdir}/package-manager/parserlib/metadata/libtizenclaw-metadata-cli-plugin.so
+%{_datarootdir}/parser-plugins/tizenclaw-metadata-cli-plugin.info
 
 %files unittests
 %defattr(-,root,root,-)

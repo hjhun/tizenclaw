@@ -35,6 +35,7 @@
 #include "../llm/plugin_llm_backend.hh"
 #include "../llm/plugin_manager.hh"
 #include "../storage/audit_logger.hh"
+#include "cli_plugin_manager.hh"
 #include "skill_plugin_manager.hh"
 #include "skill_verifier.hh"
 #include "tool_indexer.hh"
@@ -189,6 +190,13 @@ bool AgentCore::Initialize() {
     cached_tools_loaded_.store(false);
   });
   SkillPluginManager::GetInstance().Initialize();
+
+  // React to CLI TPK install/uninstall
+  CliPluginManager::GetInstance().SetChangeCallback([this]() {
+    LOG(INFO) << "CLI TPK change detected, invalidating tool cache";
+    cached_tools_loaded_.store(false);
+  });
+  CliPluginManager::GetInstance().Initialize();
 
   // Initialize embedding store for RAG
   std::string rag_db = std::string(APP_DATA_DIR) + "/rag/embeddings.db";
@@ -1511,6 +1519,72 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
            {"type", "filename"})}};
   tools.push_back(forget_tool);
 
+  // Built-in tool: execute_cli
+  LlmToolDecl cli_tool;
+  cli_tool.name = "execute_cli";
+  cli_tool.description =
+      "Execute a CLI tool installed on the device. "
+      "CLI tools provide rich command-line interfaces "
+      "with subcommands and options. Refer to the "
+      "CLI tool documentation in the system prompt "
+      "for available tools and their usage.";
+  cli_tool.parameters = {
+      {"type", "object"},
+      {"properties",
+       {{"tool_name",
+         {{"type", "string"},
+          {"description",
+           "Name of the CLI tool to execute"}}},
+        {"arguments",
+         {{"type", "string"},
+          {"description",
+           "Command-line arguments to pass "
+           "to the CLI tool"}}}}},
+      {"required",
+       nlohmann::json::array(
+           {"tool_name", "arguments"})}};
+  tools.push_back(cli_tool);
+
+  // Scan CLI tools directory for tool.md descriptors
+  {
+    const std::string cli_dir =
+        "/opt/usr/share/tizenclaw/tools/cli";
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    if (fs::is_directory(cli_dir, ec)) {
+      for (const auto& entry :
+           fs::directory_iterator(cli_dir, ec)) {
+        if (!entry.is_directory()) continue;
+        auto dirname = entry.path().filename().string();
+        if (dirname[0] == '.') continue;
+
+        // Extract CLI name from dirname
+        // (format: pkgid__cli_name)
+        std::string cli_name = dirname;
+        auto sep = dirname.find("__");
+        if (sep != std::string::npos) {
+          cli_name = dirname.substr(sep + 2);
+        }
+
+        // Map CLI name -> directory name
+        cli_dirs_[cli_name] = dirname;
+
+        // Read tool.md descriptor
+        std::string md_path =
+            entry.path().string() + "/tool.md";
+        std::ifstream mf(md_path);
+        if (mf.is_open()) {
+          std::string content(
+              (std::istreambuf_iterator<char>(mf)),
+              std::istreambuf_iterator<char>());
+          if (!content.empty()) {
+            cli_tool_docs_[cli_name] = content;
+          }
+        }
+      }
+    }
+  }
+
 
   // Regenerate tool index files
   ToolIndexer::RegenerateAll(
@@ -1610,6 +1684,19 @@ std::string AgentCore::BuildSystemPrompt(
           std::istreambuf_iterator<char>());
       if (!catalog.empty()) {
         tool_list += "\n" + catalog + "\n";
+      }
+    }
+  }
+
+  // Inject CLI tool documentation into prompt
+  {
+    std::lock_guard<std::mutex> lock(tools_mutex_);
+    if (!cli_tool_docs_.empty()) {
+      tool_list += "\n## CLI Tools\n";
+      tool_list += "Use the `execute_cli` tool to ";
+      tool_list += "invoke these CLI tools.\n\n";
+      for (const auto& [name, doc] : cli_tool_docs_) {
+        tool_list += doc + "\n\n---\n\n";
       }
     }
   }
@@ -2715,6 +2802,82 @@ std::string AgentCore::ExecuteCustomSkillOp(const nlohmann::json& args) {
   return "{\"error\": \"Unknown operation: " + op + "\"}";
 }
 
+std::string AgentCore::ExecuteCli(const std::string& tool_name,
+                                  const std::string& arguments) {
+  LOG(INFO) << "ExecuteCli: tool=" << tool_name
+            << " args=" << arguments;
+
+  if (tool_name.empty()) {
+    return "{\"error\": \"tool_name is required\"}";
+  }
+
+  // Resolve tool directory
+  std::string dir_name;
+  {
+    std::lock_guard<std::mutex> lock(tools_mutex_);
+    auto it = cli_dirs_.find(tool_name);
+    if (it != cli_dirs_.end()) {
+      dir_name = it->second;
+    } else {
+      // Try exact directory name
+      dir_name = tool_name;
+    }
+  }
+
+  std::string cli_dir =
+      std::string("/opt/usr/share/tizenclaw/tools/cli/") + dir_name;
+  std::string exec_path = cli_dir + "/executable";
+
+  namespace fs = std::filesystem;
+  std::error_code ec;
+  if (!fs::exists(exec_path, ec)) {
+    LOG(ERROR) << "CLI executable not found: " << exec_path;
+    return "{\"error\": \"CLI tool not found: " + tool_name + "\"}";
+  }
+
+  // Build command with shell escaping
+  std::string cmd = exec_path + " " + arguments + " 2>&1";
+
+  LOG(INFO) << "Executing CLI: " << cmd;
+
+  // Execute via popen with output capture
+  std::string output;
+  FILE* pipe = popen(cmd.c_str(), "r");
+  if (!pipe) {
+    LOG(ERROR) << "Failed to execute CLI tool: " << tool_name;
+    return "{\"error\": \"Failed to execute CLI tool\"}";
+  }
+
+  char buffer[4096];
+  while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+    output += buffer;
+  }
+  int status = pclose(pipe);
+
+  // Trim trailing newline
+  while (!output.empty() && output.back() == '\n') {
+    output.pop_back();
+  }
+
+  if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
+    LOG(WARNING) << "CLI tool " << tool_name
+                 << " exited with code " << WEXITSTATUS(status);
+  }
+
+  // Try to parse as JSON; if it fails, wrap in JSON
+  try {
+    auto j = nlohmann::json::parse(output);
+    return j.dump();
+  } catch (...) {
+    return nlohmann::json(
+               {{"tool", tool_name},
+                {"exit_code", WIFEXITED(status)
+                                  ? WEXITSTATUS(status) : -1},
+                {"output", output}})
+        .dump();
+  }
+}
+
 }  // namespace tizenclaw
 
 // clang-format off
@@ -2832,6 +2995,16 @@ void AgentCore::InitializeToolDispatcher() {
           return ExecuteMemoryOp(name, args);
         };
   }
+
+  // CLI tool
+  tool_dispatch_["execute_cli"] =
+      [this](const nlohmann::json& args,
+             const std::string&,
+             const std::string&) {
+        return ExecuteCli(
+            args.value("tool_name", ""),
+            args.value("arguments", ""));
+      };
 
   LOG(INFO) << "Tool dispatcher initialized ("
             << tool_dispatch_.size()

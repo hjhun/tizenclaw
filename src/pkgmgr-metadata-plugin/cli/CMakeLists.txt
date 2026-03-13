@@ -1,0 +1,27 @@
+SET(TARGET_TIZENCLAW_METADATA_CLI_PLUGIN "tizenclaw-metadata-cli-plugin")
+
+ADD_LIBRARY(${TARGET_TIZENCLAW_METADATA_CLI_PLUGIN} SHARED
+    tizenclaw_metadata_cli_plugin.cc
+    ../../common/logging.cc
+)
+
+APPLY_PKG_CONFIG(${TARGET_TIZENCLAW_METADATA_CLI_PLUGIN} PRIVATE
+  DLOG_DEPS
+  GLIB_DEPS
+  PKGMGR_DEPS
+  PKGMGR_INFO_DEPS
+  PKGMGR_INSTALLER_DEPS
+  PKGMGR_PARSER_DEPS
+)
+
+TARGET_INCLUDE_DIRECTORIES(${TARGET_TIZENCLAW_METADATA_CLI_PLUGIN} PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../common
+)
+
+# Standard pkgmgr plugin install paths
+INSTALL(TARGETS ${TARGET_TIZENCLAW_METADATA_CLI_PLUGIN}
+    DESTINATION /etc/package-manager/parserlib/metadata
+)
+INSTALL(FILES tizenclaw-metadata-cli-plugin.info
+    DESTINATION /usr/share/parser-plugins
+)

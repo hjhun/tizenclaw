@@ -127,7 +127,7 @@ The central orchestration engine implementing the **Agentic Loop**:
 - **Edge Memory Management**: The `MaintenanceLoop` aggressively monitors idle time, calling `malloc_trim(0)` and `sqlite3_release_memory` after 5 minutes of inactivity to reclaim PSS memory.
 - **Multi-Session**: Concurrent agent sessions with per-session system prompt and history isolation
 - **Unified Backend Selection**: `SwitchToBestBackend()` algorithm dynamically selects the active backend based on a unified priority queue (`Plugin` > `active_backend` > `fallback_backends`).
-- **Built-in Tools**: `execute_code`, `file_manager`, `create_task`, `list_tasks`, `cancel_task`, `create_session`, `list_sessions`, `send_to_session`, `ingest_document`, `search_knowledge`, `execute_action`, `action_<name>` (per-action tools), `remember`, `recall`, `forget` (persistent memory)
+- **Built-in Tools**: `execute_code`, `file_manager`, `create_task`, `list_tasks`, `cancel_task`, `create_session`, `list_sessions`, `send_to_session`, `ingest_document`, `search_knowledge`, `execute_action`, `action_<name>` (per-action tools), `remember`, `recall`, `forget` (persistent memory), `execute_cli` (CLI tool plugins)
 - **Tool Dispatch**: `std::unordered_map<string, ToolHandler>` for O(1) dispatch with `starts_with` fallback for dynamically named tools (e.g., `action_*`)
 
 ### 3.3 LLM Backend Layer
@@ -210,6 +210,9 @@ All storage uses **Markdown with YAML frontmatter** (no external DB dependency e
 ├── tasks/task-{id}.md               ← Scheduled tasks
 ├── tools/actions/{name}.md          ← Action schema cache (auto-synced, device-specific)
 ├── tools/embedded/{name}.md         ← Embedded tool schemas (installed via RPM)
+├── tools/cli/{pkgid__name}/         ← CLI tool plugins (symlinked from TPKs)
+│   ├── executable                   ← Symlink to CLI binary
+│   └── tool.md                      ← Symlink to LLM tool descriptor
 ├── memory/
 │   ├── memory.md                    ← Auto-generated summary (idle-time dirty-flag update)
 │   ├── long-term/{date}-{title}.md  ← User preferences, persistent facts
@@ -269,8 +272,9 @@ LLM tool discovery through Markdown schema files:
 
 - **Embedded Tools**: 13 MD files under `/opt/usr/share/tizenclaw/tools/embedded/` describe built-in tools (execute_code, file_manager, pipelines, tasks, RAG, etc.)
 - **Action Tools**: MD files describe Tizen Action Framework actions (auto-synced, device-specific)
-- **System Prompt Integration**: Both directories are scanned at prompt build time, and full MD content is appended to the `{{AVAILABLE_TOOLS}}` section
-- **Schema-Execution Separation**: MD files provide LLM context only; execution logic is handled independently by `AgentCore` dispatch (embedded) or `ActionBridge` (actions)
+- **CLI Tools**: `.tool.md` descriptors under `/opt/usr/share/tizenclaw/tools/cli/` describe CLI tool plugins (commands, arguments, output format). `CliPluginManager` symlinks these from TPK packages and injects content into the system prompt.
+- **System Prompt Integration**: All directories are scanned at prompt build time, and full MD content is appended to the `{{AVAILABLE_TOOLS}}` section
+- **Schema-Execution Separation**: MD files provide LLM context only; execution logic is handled independently by `AgentCore` dispatch (embedded), `ActionBridge` (actions), or `ExecuteCli` (CLI tools)
 
 ---
 

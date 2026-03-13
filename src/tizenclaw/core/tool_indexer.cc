@@ -335,6 +335,53 @@ void ToolIndexer::GenerateEmbeddedIndex(
             << embedded_dir << "/index.md";
 }
 
+void ToolIndexer::GenerateCliIndex(
+    const std::string& cli_dir) {
+  std::error_code ec;
+  if (!fs::is_directory(cli_dir, ec)) return;
+
+  std::ostringstream md;
+  md << "# CLI Tools\n\n";
+
+  int count = 0;
+  for (const auto& entry :
+       fs::directory_iterator(cli_dir, ec)) {
+    if (!entry.is_directory()) continue;
+    auto dirname = entry.path().filename().string();
+    if (dirname[0] == '.') continue;
+
+    // Extract CLI name
+    std::string cli_name = dirname;
+    auto sep = dirname.find("__");
+    if (sep != std::string::npos) {
+      cli_name = dirname.substr(sep + 2);
+    }
+
+    // Read tool.md for description
+    std::string tool_md =
+        entry.path().string() + "/tool.md";
+    std::string content = ReadFile(tool_md);
+    std::string title =
+        content.empty() ? cli_name
+                        : ExtractTitle(content);
+    std::string desc = ExtractFirstParagraph(content);
+    if (title.empty()) title = cli_name;
+
+    md << "- **" << title << "**: " << desc << "\n";
+    count++;
+  }
+
+  if (count == 0) {
+    md << "_No CLI tools registered._\n";
+  } else {
+    md << "\nTotal: " << count << " CLI tools\n";
+  }
+
+  WriteFile(cli_dir + "/index.md", md.str());
+  LOG(INFO) << "ToolIndexer: Generated "
+            << cli_dir << "/index.md";
+}
+
 void ToolIndexer::GenerateToolsMd(
     const std::string& tools_dir) {
   std::ostringstream md;
@@ -374,6 +421,7 @@ void ToolIndexer::GenerateToolsMd(
   append_section("custom_skills", "Custom Skills");
   append_section("actions", "Device Actions");
   append_section("embedded", "Embedded Tools");
+  append_section("cli", "CLI Tools");
 
   WriteFile(tools_dir + "/tools.md", md.str());
   LOG(INFO) << "ToolIndexer: Generated "
@@ -387,6 +435,7 @@ void ToolIndexer::RegenerateAll(
       tools_dir + "/custom_skills");
   GenerateActionsIndex(tools_dir + "/actions");
   GenerateEmbeddedIndex(tools_dir + "/embedded");
+  GenerateCliIndex(tools_dir + "/cli");
   GenerateToolsMd(tools_dir);
   LOG(INFO) << "ToolIndexer: Regenerated all "
             << "indexes under " << tools_dir;
