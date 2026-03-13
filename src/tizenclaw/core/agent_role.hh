@@ -68,6 +68,10 @@ class SupervisorEngine {
   // Get all role names
   [[nodiscard]] std::vector<std::string> GetRoleNames() const;
 
+  // Dynamic role management
+  void RegisterRole(const AgentRole& role);
+  void UnregisterRole(const std::string& name);
+
  private:
   // Decompose goal into (role, sub_task) pairs
   // via LLM

@@ -125,6 +125,25 @@ std::vector<std::string> SupervisorEngine::GetRoleNames() const {
   return names;
 }
 
+void SupervisorEngine::RegisterRole(
+    const AgentRole& role) {
+  std::lock_guard<std::mutex> lock(roles_mutex_);
+  roles_[role.name] = role;
+  LOG(INFO) << "SupervisorEngine: registered "
+            << "dynamic role '" << role.name << "'";
+}
+
+void SupervisorEngine::UnregisterRole(
+    const std::string& name) {
+  std::lock_guard<std::mutex> lock(roles_mutex_);
+  auto it = roles_.find(name);
+  if (it != roles_.end()) {
+    roles_.erase(it);
+    LOG(INFO) << "SupervisorEngine: unregistered "
+              << "role '" << name << "'";
+  }
+}
+
 std::string SupervisorEngine::RunSupervisor(const std::string& goal,
                                             const std::string& strategy,
                                             const std::string& session_id) {

@@ -258,6 +258,11 @@ bool AgentCore::Initialize() {
   system_context_->Start();
   LOG(INFO) << "SystemContextProvider ready";
 
+  // Initialize agent factory
+  agent_factory_ = std::make_unique<AgentFactory>(
+      this, supervisor_.get());
+  LOG(INFO) << "AgentFactory ready";
+
   // Initialize pipeline executor
   pipeline_executor_ = std::make_unique<PipelineExecutor>(this);
   pipeline_executor_->LoadPipelines();
@@ -1183,6 +1188,79 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
                                 {"properties", nlohmann::json::object()},
                                 {"required", nlohmann::json::array()}};
   tools.push_back(list_roles_tool);
+
+  // Built-in tool: spawn_agent
+  LlmToolDecl spawn_agent_tool;
+  spawn_agent_tool.name = "spawn_agent";
+  spawn_agent_tool.description =
+      "Create a new specialized agent with a "
+      "custom role definition. The agent is "
+      "dynamically registered and can be "
+      "delegated tasks via run_supervisor. "
+      "Use this when existing agents are "
+      "insufficient for a new task domain.";
+  spawn_agent_tool.parameters = {
+      {"type", "object"},
+      {"properties",
+       {{"name",
+         {{"type", "string"},
+          {"description",
+           "Unique name (3-30 lowercase "
+           "letters/underscores)"}}},
+        {"system_prompt",
+         {{"type", "string"},
+          {"description",
+           "System prompt defining the "
+           "agent's expertise"}}},
+        {"allowed_tools",
+         {{"type", "array"},
+          {"items", {{"type", "string"}}},
+          {"description",
+           "Tool names this agent can "
+           "use (empty = all)"}}},
+        {"max_iterations",
+         {{"type", "integer"},
+          {"description",
+           "Max LLM iterations "
+           "(default: 10)"}}},
+        {"persistent",
+         {{"type", "boolean"},
+          {"description",
+           "If true, save to "
+           "agent_roles.json"}}}}},
+      {"required",
+       nlohmann::json::array(
+           {"name", "system_prompt"})}};
+  tools.push_back(spawn_agent_tool);
+
+  // Built-in tool: list_dynamic_agents
+  LlmToolDecl list_dynamic_tool;
+  list_dynamic_tool.name = "list_dynamic_agents";
+  list_dynamic_tool.description =
+      "List all dynamically created agents "
+      "that were spawned at runtime.";
+  list_dynamic_tool.parameters = {
+      {"type", "object"},
+      {"properties", nlohmann::json::object()},
+      {"required", nlohmann::json::array()}};
+  tools.push_back(list_dynamic_tool);
+
+  // Built-in tool: remove_agent
+  LlmToolDecl remove_agent_tool;
+  remove_agent_tool.name = "remove_agent";
+  remove_agent_tool.description =
+      "Remove a dynamically created agent.";
+  remove_agent_tool.parameters = {
+      {"type", "object"},
+      {"properties",
+       {{"name",
+         {{"type", "string"},
+          {"description",
+           "Name of the dynamic agent "
+           "to remove"}}}}},
+      {"required",
+       nlohmann::json::array({"name"})}};
+  tools.push_back(remove_agent_tool);
 
   // Built-in tool: create_pipeline
   LlmToolDecl create_pipeline_tool;
@@ -2981,6 +3059,54 @@ void AgentCore::InitializeToolDispatcher() {
               name, args, sid);
         };
   }
+
+  // Agent factory tools
+  tool_dispatch_["spawn_agent"] =
+      [this](const nlohmann::json& args,
+             const std::string&,
+             const std::string&) {
+        if (!agent_factory_) {
+          return std::string(
+              "{\"error\": \"AgentFactory "
+              "not available\"}");
+        }
+        return agent_factory_->SpawnAgent(args);
+      };
+
+  tool_dispatch_["list_dynamic_agents"] =
+      [this](const nlohmann::json&,
+             const std::string&,
+             const std::string&) {
+        if (!agent_factory_) {
+          return std::string(
+              "{\"error\": \"AgentFactory "
+              "not available\"}");
+        }
+        nlohmann::json result = {
+            {"status", "ok"},
+            {"agents",
+             agent_factory_->ListDynamicAgents()}};
+        return result.dump();
+      };
+
+  tool_dispatch_["remove_agent"] =
+      [this](const nlohmann::json& args,
+             const std::string&,
+             const std::string&) {
+        if (!agent_factory_) {
+          return std::string(
+              "{\"error\": \"AgentFactory "
+              "not available\"}");
+        }
+        std::string name =
+            args.value("name", "");
+        if (name.empty()) {
+          return std::string(
+              "{\"error\": \"name is "
+              "required\"}");
+        }
+        return agent_factory_->RemoveAgent(name);
+      };
 
   for (const auto& n :
        {"create_pipeline", "list_pipelines",
