@@ -492,7 +492,7 @@ tizenclaw/
 │           └── task_scheduler.cc  #   Cron/interval tasks
 ├── tools/skills/                  # Python skill scripts
 ├── tools/embedded/                # Embedded tool MD schemas (13 files)
-├── tools/cli/                     # CLI tool plugins (symlinks from TPKs)
+├── tools/cli/                     # CLI tools (aurum-cli + plugin symlinks from TPKs)
 ├── scripts/                       # Container setup, CI, hooks
 ├── test/unit_tests/               # Google Test unit tests
 ├── data/                          # Config samples, rootfs, web SPA

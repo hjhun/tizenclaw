@@ -161,6 +161,21 @@ CLI tools use `<service-application>` in `tizen-manifest.xml`:
 
 > **Security**: Only platform-signed TPKs can register CLI tools.
 
+### Built-in CLI Tool: `aurum-cli`
+
+`aurum-cli` is a built-in native C++ CLI tool for **Aurum UI Automation**. It supports two backends:
+
+| Mode | Usage | Backend |
+|------|-------|---------|
+| **Default** | `aurum-cli <cmd>` | Direct `libaurum` (AT-SPI2) |
+| **gRPC** | `aurum-cli --grpc <cmd>` | `aurum-bootstrap` server (port 50051) |
+
+**Subcommands** (22): `screen-size`, `screenshot`, `get-angle`, `device-time`, `click`, `flick`, `send-key`, `touch-down/move/up`, `mouse-down/move/up`, `find-element`, `find-elements`, `dump-tree`, `click-element`, `set-focus`, `do-action`, `set-value`, `wait-event`, `watch`
+
+**Installation**: `/opt/usr/share/tizenclaw/tools/cli/aurum-cli/aurum-cli`
+
+> gRPC mode requires `aurum-bootstrap` running on the device (`app_launcher -s org.tizen.aurum-bootstrap`). Use `--grpc-addr HOST:PORT` for custom addresses.
+
 ---
 
 ## Multi-Agent Ecosystem

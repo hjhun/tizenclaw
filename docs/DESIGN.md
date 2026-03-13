@@ -210,7 +210,7 @@ All storage uses **Markdown with YAML frontmatter** (no external DB dependency e
 ├── tasks/task-{id}.md               ← Scheduled tasks
 ├── tools/actions/{name}.md          ← Action schema cache (auto-synced, device-specific)
 ├── tools/embedded/{name}.md         ← Embedded tool schemas (installed via RPM)
-├── tools/cli/{pkgid__name}/         ← CLI tool plugins (symlinked from TPKs)
+├── tools/cli/{pkgid__name}/         ← CLI tool plugins (aurum-cli + symlinks from TPKs)
 │   ├── executable                   ← Symlink to CLI binary
 │   └── tool.md                      ← Symlink to LLM tool descriptor
 ├── memory/

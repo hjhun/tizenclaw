@@ -107,6 +107,12 @@ write_config() {
       "type": "bind",
       "source": "/tmp",
       "options": ["rbind", "rw"]
+    },
+    {
+      "destination": "/opt/usr/share/tizenclaw/tools/cli",
+      "type": "bind",
+      "source": "/opt/usr/share/tizenclaw/tools/cli",
+      "options": ["rbind", "ro"]
     }
   ],
   "linux": {
@@ -212,6 +218,11 @@ run_without_container() {
 
     # Read-write mount: /run (D-Bus runtime sockets)
     mount --rbind /run \"${BUNDLE_DIR}/rootfs/run\" || true
+
+    # Read-only mount: CLI tools (aurum-cli, etc.)
+    mkdir -p \"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw/tools/cli\" || true
+    mount --rbind \"${APP_DATA_DIR}/tools/cli\" \"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw/tools/cli\" || true
+    mount -o remount,bind,ro \"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw/tools/cli\" || true
 
     exec chroot \"${BUNDLE_DIR}/rootfs\" python3 /skills/skill_executor.py
   "

@@ -22,6 +22,9 @@ BuildRequires:  pkgconfig(pkgmgr-parser)
 BuildRequires:  jsoncpp-devel
 BuildRequires:  pkgconfig(sqlite3)
 BuildRequires:  pkgconfig(capi-appfw-tizen-action)
+BuildRequires:  pkgconfig(libaurum)
+BuildRequires:  pkgconfig(grpc++)
+BuildRequires:  pkgconfig(protobuf)
 
 %description
 TizenClaw Native Agent running as a System Service, utilizing LXC for skills execution.

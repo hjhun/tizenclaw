@@ -773,6 +773,12 @@ bool ContainerEngine::WriteSkillsConfig() const {
       "type": "bind",
       "source": "/tmp",
       "options": ["rbind", "rw"]
+    },
+    {
+      "destination": "/opt/usr/share/tizenclaw/tools/cli",
+      "type": "bind",
+      "source": "/opt/usr/share/tizenclaw/tools/cli",
+      "options": ["rbind", "ro"]
     }
   ],
   "linux": {
