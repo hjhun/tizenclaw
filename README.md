@@ -236,7 +236,7 @@ TizenClaw ships with **35 container skills** (Python, OCI sandbox) and **10+ bui
 - **Built-in Tools**: `execute_code`, `file_manager`, `create_task`, `list_tasks`, `cancel_task`, `create_session`, `list_sessions`, `send_to_session`, `ingest_document`, `search_knowledge`, `execute_action`, `action_<name>` (per-action tools), `remember`, `recall`, `forget` (persistent memory), `execute_cli` (CLI tool plugins)
 - **Tool Dispatch**: `std::unordered_map<string, ToolHandler>` for O(1) dispatch with `starts_with` fallback for dynamically named tools (e.g., `action_*`)
 
-📖 **Full reference**: [Skills Reference](docs/SKILLS.md)
+📖 **Full reference**: [Tools Reference](docs/TOOLS.md)
 
 ### Tizen Action Framework (Native Device Actions)
 

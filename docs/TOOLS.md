@@ -1,4 +1,4 @@
-# TizenClaw Skills Reference
+# TizenClaw Tools Reference
 
 TizenClaw provides **35 container skills** (Python, sandboxed via OCI), **10+ built-in tools** (native C++), and **CLI tool plugins** (TPK-based native executables).
 
