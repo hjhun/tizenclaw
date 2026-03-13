@@ -35,6 +35,35 @@
 
 #include "../../common/logging.hh"
 
+namespace {
+
+std::pair<std::string, std::string> DetectSkillRuntime(
+    const std::string& skill_dir,
+    const std::string& skill_name) {
+  std::string runtime = "python";
+  std::string entry_point = skill_name + ".py";
+
+  std::string manifest_path =
+      skill_dir + "/" + skill_name + "/manifest.json";
+  std::ifstream mf(manifest_path);
+  if (mf.is_open()) {
+    try {
+      nlohmann::json j;
+      mf >> j;
+      runtime = j.value("runtime", "python");
+      entry_point = j.value("entry_point", "");
+      if (entry_point.empty()) {
+        if (runtime == "python") entry_point = skill_name + ".py";
+        else if (runtime == "node") entry_point = skill_name + ".js";
+        else entry_point = skill_name;  // native
+      }
+    } catch (...) {}
+  }
+  return {runtime, entry_point};
+}
+
+}  // namespace
+
 namespace tizenclaw {
 
 // Custom command runner using fork/exec with /bin/bash.
@@ -185,18 +214,30 @@ std::string ContainerEngine::ExecuteSkill(const std::string& skill_name,
 
   // 3rd priority: host-direct fallback
   LOG(WARNING) << "crun exec failed, trying " << "host-direct fallback";
+
+  auto [rt, ep] = DetectSkillRuntime(skills_dir_, skill_name);
   std::string host_skill_path =
-      skills_dir_ + "/" + skill_name + "/" + skill_name + ".py";
+      skills_dir_ + "/" + skill_name + "/" + ep;
   if (access(host_skill_path.c_str(), R_OK) != 0) {
     LOG(ERROR) << "Skill not found: " << host_skill_path;
     nlohmann::json err;
-    err["error"] = "Skill script not found: " + host_skill_path;
+    err["error"] = "Skill entry point not found: " + host_skill_path;
     return err.dump();
   }
 
-  std::string run_cmd = "CLAW_ARGS=" + EscapeShellArg(arg_str) +
-                        " /usr/bin/python3 " + EscapeShellArg(host_skill_path);
-  LOG(INFO) << "Host-direct skill: " << run_cmd;
+  std::string run_cmd;
+  if (rt == "python") {
+    run_cmd = "CLAW_ARGS=" + EscapeShellArg(arg_str) +
+              " /usr/bin/python3 " + EscapeShellArg(host_skill_path);
+  } else if (rt == "node") {
+    run_cmd = "CLAW_ARGS=" + EscapeShellArg(arg_str) +
+              " /usr/bin/node " + EscapeShellArg(host_skill_path);
+  } else {
+    // native binary
+    run_cmd = "CLAW_ARGS=" + EscapeShellArg(arg_str) +
+              " " + EscapeShellArg(host_skill_path);
+  }
+  LOG(INFO) << "Host-direct skill (" << rt << "): " << run_cmd;
   auto [output, rc] = RunCommand(run_cmd);
   if (rc != 0 || output.empty()) {
     LOG(ERROR) << "Host skill failed: rc=" << rc;
@@ -520,11 +561,25 @@ std::string ContainerEngine::ExecuteSkillViaCrun(const std::string& skill_name,
   }
 
   std::string claw_env = "CLAW_ARGS=" + arg_str;
-  std::string skill_path = "/skills/" + skill_name + "/" + skill_name + ".py";
+
+  // Detect runtime from manifest
+  auto [rt, ep] = DetectSkillRuntime("/skills", skill_name);
+  std::string skill_path = "/skills/" + skill_name + "/" + ep;
+
+  std::string exec_cmd;
+  if (rt == "python") {
+    exec_cmd = "python3 " + EscapeShellArg(skill_path);
+  } else if (rt == "node") {
+    exec_cmd = "node " + EscapeShellArg(skill_path);
+  } else {
+    // native binary
+    exec_cmd = EscapeShellArg(skill_path);
+  }
+
   std::string run_cmd =
       CrunCmd("exec --env " + EscapeShellArg(claw_env) + " " + container_id_ +
-              " python3 " + EscapeShellArg(skill_path));
-  LOG(INFO) << "crun exec skill: " << skill_name;
+              " " + exec_cmd);
+  LOG(INFO) << "crun exec skill (" << rt << "): " << skill_name;
 
   auto [output, rc] = RunCommand(run_cmd);
   LOG(INFO) << "crun exec result: rc=" << rc << " len=" << output.length();

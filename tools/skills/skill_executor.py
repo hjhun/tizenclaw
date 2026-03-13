@@ -23,6 +23,7 @@ import threading
 SOCKET_PATH = "/tmp/tizenclaw_skill.sock"
 SKILLS_DIR = "/skills"
 PYTHON_BIN = "/usr/bin/python3"
+NODE_BIN = "/usr/bin/node"
 MAX_PAYLOAD = 10 * 1024 * 1024  # 10 MB
 EXEC_TIMEOUT = 30  # seconds
 CODE_EXEC_TIMEOUT = 15  # seconds for dynamic code
@@ -67,23 +68,71 @@ def extract_json_output(stdout_text):
     return output
 
 
+def detect_runtime(skill_name):
+    """Read manifest.json to determine runtime and entry point."""
+    manifest_path = os.path.join(
+        SKILLS_DIR, skill_name, "manifest.json"
+    )
+    runtime = "python"
+    entry_point = f"{skill_name}.py"
+
+    if os.path.isfile(manifest_path):
+        try:
+            with open(manifest_path) as f:
+                manifest = json.load(f)
+            runtime = manifest.get("runtime", "python")
+            entry_point = manifest.get("entry_point", None)
+            if not entry_point:
+                ext_map = {
+                    "python": ".py",
+                    "node": ".js",
+                    "native": "",
+                }
+                entry_point = (
+                    skill_name + ext_map.get(runtime, ".py")
+                )
+        except (json.JSONDecodeError, IOError) as e:
+            log(f"Failed to read manifest for "
+                f"{skill_name}: {e}")
+
+    return runtime, entry_point
+
+
 def execute_skill(skill_name, args_str):
     """Run a skill script and capture its output."""
+    runtime, entry_point = detect_runtime(skill_name)
+
     script = os.path.join(
-        SKILLS_DIR, skill_name, f"{skill_name}.py"
+        SKILLS_DIR, skill_name, entry_point
     )
-    if not os.path.isfile(script):
+    if not os.path.exists(script):
         return {
             "status": "error",
-            "output": f"Skill not found: {script}",
+            "output": f"Entry point not found: {script}",
         }
 
     env = os.environ.copy()
     env["CLAW_ARGS"] = args_str
 
+    # Dispatch by runtime
+    if runtime == "python":
+        cmd = [PYTHON_BIN, script]
+    elif runtime == "node":
+        cmd = [NODE_BIN, script]
+    elif runtime == "native":
+        cmd = [script]
+    else:
+        return {
+            "status": "error",
+            "output": f"Unknown runtime: {runtime}",
+        }
+
+    log(f"Exec skill={skill_name} "
+        f"runtime={runtime} cmd={cmd[0]}")
+
     try:
         result = subprocess.run(
-            [PYTHON_BIN, script],
+            cmd,
             capture_output=True,
             text=True,
             timeout=EXEC_TIMEOUT,

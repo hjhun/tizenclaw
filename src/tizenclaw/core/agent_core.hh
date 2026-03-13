@@ -219,6 +219,13 @@ class AgentCore {
   std::atomic<bool> cached_tools_loaded_{false};
   std::mutex tools_mutex_;  // Protects cached_tools_
 
+  // Skill runtime map: skill_name -> "python"|"node"|"native"
+  std::map<std::string, std::string> skill_runtimes_;
+
+  // Skill directory map: manifest_name -> actual_dirname
+  // (e.g. "get_sample_info" -> "org.tizen....__get_sample_info")
+  std::map<std::string, std::string> skill_dirs_;
+
   // Model fallback configuration
   std::vector<std::string> fallback_names_;
   nlohmann::json llm_config_;

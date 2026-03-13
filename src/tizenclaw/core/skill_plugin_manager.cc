@@ -19,9 +19,14 @@
 #include <pkgmgr-info.h>
 
 #include <filesystem>
+#include <fstream>
 #include <sstream>
 
+#include <json.hpp>
+#include <sys/stat.h>
+
 #include "../../common/logging.hh"
+#include "skill_verifier.hh"
 
 namespace tizenclaw {
 
@@ -225,6 +230,36 @@ bool SkillPluginManager::LoadSkillsFromPkg(const std::string& pkgid) {
     std::string target = std::string(kSkillsDir) + "/" + target_name;
 
     if (LinkSkillDir(source, target)) {
+      // Set +x permission for native entry points
+      std::string manifest = source + "/manifest.json";
+      std::ifstream mfin(manifest);
+      if (mfin.is_open()) {
+        try {
+          nlohmann::json mj;
+          mfin >> mj;
+          if (mj.value("runtime", "python") == "native") {
+            std::string ep = mj.value(
+                "entry_point", skill_name);
+            std::string ep_path = target + "/" + ep;
+            chmod(ep_path.c_str(), 0755);
+          }
+        } catch (...) {}
+      }
+
+      // Verify the skill
+      auto result = SkillVerifier::Verify(target);
+      if (!result.passed) {
+        SkillVerifier::DisableSkill(target);
+        LOG(WARNING) << "Skill " << skill_name
+                     << " from " << pkgid
+                     << " failed verification";
+        for (const auto& e : result.errors) {
+          LOG(WARNING) << "  error: " << e;
+        }
+      } else {
+        SkillVerifier::EnableSkill(target);
+      }
+
       installed_skills.push_back(target_name);
       LOG(INFO) << "Linked skill: " << skill_name << " from " << pkgid
                 << " -> " << target;

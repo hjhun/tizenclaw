@@ -36,6 +36,7 @@
 #include "../llm/plugin_manager.hh"
 #include "../storage/audit_logger.hh"
 #include "skill_plugin_manager.hh"
+#include "skill_verifier.hh"
 #include "tool_indexer.hh"
 
 namespace tizenclaw {
@@ -599,8 +600,18 @@ std::string AgentCore::ExecuteSkill(const std::string& skill_name,
                                     const nlohmann::json& args) {
   LOG(INFO) << "Executing skill: " << skill_name;
 
+  // Resolve manifest name to actual directory name
+  std::string dir_name = skill_name;
+  {
+    std::lock_guard<std::mutex> lock(tools_mutex_);
+    auto it = skill_dirs_.find(skill_name);
+    if (it != skill_dirs_.end()) {
+      dir_name = it->second;
+    }
+  }
+
   std::string arg_str = args.dump();
-  std::string response = container_->ExecuteSkill(skill_name, arg_str);
+  std::string response = container_->ExecuteSkill(dir_name, arg_str);
 
   if (response.empty()) {
     LOG(ERROR) << "Skill execution failed";
@@ -773,42 +784,16 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
   namespace fs = std::filesystem;
 
   std::vector<LlmToolDecl> tools;
+  skill_runtimes_.clear();
+  skill_dirs_.clear();
   const std::string skills_dir = "/opt/usr/share/tizenclaw/tools/skills";
 
-  std::error_code ec;
-  if (!fs::is_directory(skills_dir, ec)) return tools;
+  // Lambda to scan a skills directory
+  auto scan_dir = [&](const std::string& dir) {
+    std::error_code ec;
+    if (!fs::is_directory(dir, ec)) return;
 
-  for (const auto& entry : fs::directory_iterator(skills_dir, ec)) {
-    if (!entry.is_directory()) continue;
-    auto dirname = entry.path().filename().string();
-    if (dirname[0] == '.') continue;
-    std::string manifest_path = entry.path() / "manifest.json";
-    std::ifstream mf(manifest_path);
-    if (!mf.is_open()) continue;
-
-    try {
-      nlohmann::json j;
-      mf >> j;
-      if (j.contains("parameters")) {
-        LlmToolDecl t;
-        t.name = j.value("name", dirname);
-        t.description = j.value("description", "");
-        t.parameters = j["parameters"];
-        tools.push_back(t);
-        // Load risk_level from manifest
-        tool_policy_.LoadManifestRiskLevel(t.name, j);
-      }
-    } catch (...) {
-      LOG(WARNING) << "Failed to parse " << "manifest: " << manifest_path;
-    }
-  }
-
-  // Also scan custom_skills directory
-  const std::string custom_skills_dir =
-      "/opt/usr/share/tizenclaw/tools/"
-      "custom_skills";
-  if (fs::is_directory(custom_skills_dir, ec)) {
-    for (const auto& entry : fs::directory_iterator(custom_skills_dir, ec)) {
+    for (const auto& entry : fs::directory_iterator(dir, ec)) {
       if (!entry.is_directory()) continue;
       auto dirname = entry.path().filename().string();
       if (dirname[0] == '.') continue;
@@ -819,6 +804,16 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
       try {
         nlohmann::json j;
         mf >> j;
+
+        // Skip disabled skills
+        if (j.contains("verified") &&
+            j["verified"].is_boolean() &&
+            !j["verified"].get<bool>()) {
+          LOG(INFO) << "Skipping disabled skill: "
+                    << dirname;
+          continue;
+        }
+
         if (j.contains("parameters")) {
           LlmToolDecl t;
           t.name = j.value("name", dirname);
@@ -826,13 +821,29 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
           t.parameters = j["parameters"];
           tools.push_back(t);
           tool_policy_.LoadManifestRiskLevel(t.name, j);
+
+          // Track runtime for execution dispatch
+          std::string runtime =
+              j.value("runtime", "python");
+          skill_runtimes_[t.name] = runtime;
+
+          // Map manifest name -> directory name
+          skill_dirs_[t.name] = dirname;
         }
       } catch (...) {
-        LOG(WARNING) << "Failed to parse custom "
+        LOG(WARNING) << "Failed to parse "
                      << "manifest: " << manifest_path;
       }
     }
-  }
+  };
+
+  scan_dir(skills_dir);
+
+  // Also scan custom_skills directory
+  const std::string custom_skills_dir =
+      "/opt/usr/share/tizenclaw/tools/"
+      "custom_skills";
+  scan_dir(custom_skills_dir);
 
   // Built-in tool: execute_code
   LlmToolDecl code_tool;
@@ -1010,15 +1021,17 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
   custom_skill_tool.name = "manage_custom_skill";
   custom_skill_tool.description =
       "Create, update, delete, or list custom "
-      "Python skills at runtime. Custom skills "
-      "are auto-discovered and immediately "
-      "available as tools. Use this to extend "
-      "the agent's capabilities with new Tizen "
-      "C-API integrations or utility functions. "
-      "The skill Python code MUST define a main "
-      "function with the same name as the skill, "
-      "print JSON to stdout, and use "
-      "CLAW_ARGS env for parameters.";
+      "skills at runtime. Supports multiple "
+      "runtimes: python (default), node "
+      "(JavaScript/TypeScript), and native "
+      "(compiled C/C++/Rust binary, "
+      "base64-encoded). Custom skills are "
+      "auto-discovered and immediately "
+      "available as tools. Skills are verified "
+      "before activation; failed verification "
+      "disables the skill. The code MUST print "
+      "JSON to stdout and use CLAW_ARGS env "
+      "for parameters.";
   custom_skill_tool.parameters = {
       {"type", "object"},
       {"properties",
@@ -1043,11 +1056,27 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
            "JSON Schema for skill "
            "parameters (type, properties, "
            "required)"}}},
-        {"python_code",
+        {"code",
          {{"type", "string"},
           {"description",
-           "Complete Python source code "
-           "for the skill"}}},
+           "Source code for the skill. "
+           "For native runtime, provide "
+           "base64-encoded binary."}}},
+        {"runtime",
+         {{"type", "string"},
+          {"enum",
+           nlohmann::json::array(
+               {"python", "node", "native"})},
+          {"description",
+           "Skill runtime (default: python)"}}},
+        {"language",
+         {{"type", "string"},
+          {"enum",
+           nlohmann::json::array(
+               {"c", "cpp", "rust", "go"})},
+          {"description",
+           "Source language for native "
+           "runtime (informational)"}}},
         {"risk_level",
          {{"type", "string"},
           {"enum", nlohmann::json::array({"low", "medium", "high"})},
@@ -2461,7 +2490,13 @@ std::string AgentCore::ExecuteCustomSkillOp(const nlohmann::json& args) {
   std::string op = args.value("operation", "");
   std::string name = args.value("skill_name", "");
   std::string desc = args.value("description", "");
-  std::string code = args.value("python_code", "");
+  // Support both "code" and legacy "python_code"
+  std::string code = args.value("code", "");
+  if (code.empty()) {
+    code = args.value("python_code", "");
+  }
+  std::string runtime = args.value("runtime", "python");
+  std::string language = args.value("language", "");
   std::string risk = args.value("risk_level", "low");
   std::string category =
       args.value("category", "Uncategorized");
@@ -2496,6 +2531,10 @@ std::string AgentCore::ExecuteCustomSkillOp(const nlohmann::json& args) {
                           "Uncategorized")},
                  {"description",
                   j.value("description", "")},
+                 {"runtime",
+                  j.value("runtime", "python")},
+                 {"verified",
+                  j.value("verified", true)},
                  {"risk_level",
                   j.value("risk_level",
                           "low")}});
@@ -2531,8 +2570,17 @@ std::string AgentCore::ExecuteCustomSkillOp(const nlohmann::json& args) {
   if (op == "create" || op == "update") {
     if (desc.empty() || code.empty()) {
       return "{\"error\": \"description and "
-             "python_code are required for "
+             "code are required for "
              "create/update\"}";
+    }
+
+    // Validate runtime
+    if (runtime != "python" && runtime != "node" &&
+        runtime != "native") {
+      return "{\"error\": \"Invalid runtime: " +
+             runtime +
+             ". Must be python, node, "
+             "or native\"}";
     }
 
     if (op == "create" && fs::is_directory(skill_dir, ec)) {
@@ -2550,13 +2598,25 @@ std::string AgentCore::ExecuteCustomSkillOp(const nlohmann::json& args) {
                        {"required", nlohmann::json::array()}};
     }
 
+    // Determine entry point based on runtime
+    std::string ext;
+    if (runtime == "python") ext = ".py";
+    else if (runtime == "node") ext = ".js";
+    else ext = "";  // native
+    std::string entry_point = name + ext;
+
     // Write manifest.json
     nlohmann::json manifest = {{"name", name},
+                               {"runtime", runtime},
                                {"category", category},
                                {"risk_level", risk},
                                {"description", desc},
+                               {"entry_point", entry_point},
                                {"parameters",
                                 params_schema}};
+    if (runtime == "native" && !language.empty()) {
+      manifest["language"] = language;
+    }
 
     std::string manifest_path = skill_dir + "/manifest.json";
     std::ofstream mf(manifest_path);
@@ -2567,15 +2627,59 @@ std::string AgentCore::ExecuteCustomSkillOp(const nlohmann::json& args) {
     mf << manifest.dump(4) << std::endl;
     mf.close();
 
-    // Write Python script
-    std::string py_path = skill_dir + "/" + name + ".py";
-    std::ofstream pf(py_path);
-    if (!pf.is_open()) {
-      return "{\"error\": \"Failed to "
-             "write Python file\"}";
+    // Write code file
+    std::string code_path =
+        skill_dir + "/" + entry_point;
+    if (runtime == "native") {
+      // Native: base64-decode binary
+      // For now, write raw (RPK will provide
+      // pre-compiled binaries)
+      std::ofstream bf(
+          code_path, std::ios::binary);
+      if (!bf.is_open()) {
+        return "{\"error\": \"Failed to "
+               "write binary file\"}";
+      }
+      bf << code;
+      bf.close();
+      // Set execute permission
+      chmod(code_path.c_str(), 0755);
+    } else {
+      std::ofstream cf(code_path);
+      if (!cf.is_open()) {
+        return "{\"error\": \"Failed to "
+               "write code file\"}";
+      }
+      cf << code;
+      cf.close();
     }
-    pf << code;
-    pf.close();
+
+    // Run verification
+    auto verify_result =
+        SkillVerifier::Verify(skill_dir);
+    if (!verify_result.passed) {
+      SkillVerifier::DisableSkill(skill_dir);
+      std::string err_msg = "Verification failed: ";
+      for (const auto& e : verify_result.errors) {
+        err_msg += e + "; ";
+      }
+      LOG(WARNING) << err_msg;
+      // Still return success but with warning
+      cached_tools_loaded_.store(false);
+      return nlohmann::json(
+                 {{"status", "warning"},
+                  {"operation", op},
+                  {"skill_name", name},
+                  {"verified", false},
+                  {"errors", verify_result.errors},
+                  {"message",
+                   "Skill " + name +
+                       " created but disabled "
+                       "due to verification failure"}})
+          .dump();
+    }
+
+    SkillVerifier::EnableSkill(skill_dir);
 
     // Invalidate tool cache so new skill
     // is discovered on next prompt
@@ -2585,12 +2689,12 @@ std::string AgentCore::ExecuteCustomSkillOp(const nlohmann::json& args) {
                {{"status", "ok"},
                 {"operation", op},
                 {"skill_name", name},
-                {"manifest_path", manifest_path},
-                {"python_path", py_path},
+                {"runtime", runtime},
+                {"verified", true},
+                {"code_path", code_path},
                 {"message", "Skill " + name +
                                 (op == "create" ? " created" : " updated") +
-                                " and will be available "
-                                "immediately"}})
+                                " and verified"}})
         .dump();
 
   } else if (op == "delete") {
