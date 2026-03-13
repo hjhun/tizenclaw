@@ -239,6 +239,31 @@ TizenClaw ships with **35 container skills** (Python, OCI sandbox) and **10+ bui
 
 Actions registered via the Tizen Action Framework are automatically discovered and exposed as **per-action LLM tools** (e.g., `action_<name>`). Schema files are cached as Markdown and kept in sync via `action_event_cb` events. Available actions vary by device.
 
+### RPK Skill Plugins
+
+TizenClaw supports dynamically injecting Python skills via **platform-signed RPK (Resource Package)** packages. When an RPK with the skill metadata key is installed through the Tizen package manager, `SkillPluginManager` automatically creates symbolic links from the RPK's `lib/<skill_name>/` directories into the TizenClaw skills directory, triggering a hot-reload.
+
+**RPK Structure:**
+```
+lib/
+├── get_sample_info/
+│   ├── manifest.json      # Skill schema (name, description, parameters)
+│   └── skill.py           # Python implementation
+└── get_sample_status/
+    ├── manifest.json
+    └── skill.py
+```
+
+**Metadata Declaration** (`tizen-manifest.xml`):
+```xml
+<metadata key="http://tizen.org/metadata/tizenclaw/skill"
+          value="get_sample_info|get_sample_status"/>
+```
+
+> **Note**: Only packages signed with a **platform-level certificate** are allowed to register skills. Multiple skills can be declared using `|` as a delimiter or via multiple `<metadata>` entries.
+
+📦 **Sample project**: [tizenclaw-skill-plugin-sample](https://github.com/hjhun/tizenclaw-skill-plugin-sample)
+
 ### Multi-Agent System
 
 TizenClaw includes a default multi-agent system designed to transition from a single monolithic agent toward a highly decentralized **11 MVP Agent Set** for robust device operation:
