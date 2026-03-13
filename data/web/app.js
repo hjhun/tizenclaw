@@ -727,7 +727,8 @@
         'webhook_config.json': 'Webhook Routes',
         'tool_policy.json': 'Tool Policy',
         'agent_roles.json': 'Agent Roles',
-        'tunnel_config.json': 'Tunnel Configuration'
+        'tunnel_config.json': 'Tunnel Configuration',
+        'web_search_config.json': 'Web Search'
     };
 
     function loadAdmin() {

@@ -1,8 +1,8 @@
 {
     "name": "web_search",
     "category": "System Actions",
-    "version": "2.0",
-    "description": "Search the web using Naver (default) or Google. Returns top search results with titles, snippets, and URLs. Daily usage is rate-limited.",
+    "version": "3.0",
+    "description": "Search the web using Naver (default), Google, Brave, Gemini, Grok, Kimi, or Perplexity. Returns top search results with titles, snippets, and URLs. Daily usage is rate-limited.",
     "entrypoint": "python3 web_search.py",
     "dependencies": [],
     "parameters": {
@@ -16,9 +16,14 @@
                 "type": "string",
                 "enum": [
                     "naver",
-                    "google"
+                    "google",
+                    "brave",
+                    "gemini",
+                    "grok",
+                    "kimi",
+                    "perplexity"
                 ],
-                "description": "Search engine to use. Default is naver. Use google only if user explicitly requests it."
+                "description": "Search engine to use. Default is naver. Options: naver, google, brave, gemini, grok, kimi, perplexity."
             }
         },
         "required": [

@@ -41,7 +41,7 @@ DRY_RUN=false
 DEVICE_SERIAL=""
 WITH_NGROK=false
 RUN_TESTS=false
-SKIP_RAG=false
+WITH_ASSETS=false
 RAG_PROJECT_DIR=""
 
 # ─────────────────────────────────────────────
@@ -130,6 +130,7 @@ ${CYAN}Options:${NC}
   -i, --incremental     Use --incremental and --skip-srcrpm for fast iterative build
   -s, --skip-build      Skip GBS build, deploy existing RPM
   -t, --test            Run E2E smoke tests after deployment
+      --with-assets     Also build and deploy tizenclaw-assets
   -w, --with-ngrok      Auto-download and push ngrok binary to the device
   -d, --device <serial> Target a specific sdb device
       --dry-run         Print commands without executing
@@ -141,7 +142,7 @@ ${CYAN}Examples:${NC}
   $(basename "$0") -i -n               # Fastest iterative rebuild + deploy + run
   $(basename "$0") -s                  # Deploy existing RPM + run
   $(basename "$0") -t                  # Build + deploy + run E2E tests
-  $(basename "$0") --skip-rag           # Skip tizenclaw-assets sub-project build
+  $(basename "$0") --with-assets       # Build + deploy including tizenclaw-assets
   $(basename "$0") -w                  # Deploy and install ngrok binary
   $(basename "$0") --dry-run           # Preview all steps
   $(basename "$0") -a aarch64          # Build for ARM64 target
@@ -161,7 +162,7 @@ parse_args() {
       -i|--incremental) INCREMENTAL=true; shift ;;
       -s|--skip-build) SKIP_BUILD=true; shift ;;
       -t|--test)      RUN_TESTS=true; shift ;;
-      --skip-rag)    SKIP_RAG=true; shift ;;
+      --with-assets)   WITH_ASSETS=true; shift ;;
       -w|--with-ngrok) WITH_NGROK=true; shift ;;
       -d|--device)     DEVICE_SERIAL="$2"; shift 2 ;;
       --dry-run)       DRY_RUN=true; shift ;;
@@ -266,7 +267,7 @@ do_build() {
 RAG_RPM_FILES=()
 
 do_build_rag() {
-  if [ "${SKIP_BUILD}" = true ] || [ "${SKIP_RAG}" = true ]; then
+  if [ "${SKIP_BUILD}" = true ] || [ "${WITH_ASSETS}" = false ]; then
     return 0
   fi
 

@@ -918,7 +918,7 @@ namespace tizenclaw {
 const std::vector<std::string> WebDashboard::kAllowedConfigs = {
     "llm_config.json",     "telegram_config.json", "slack_config.json",
     "discord_config.json", "webhook_config.json",  "tool_policy.json",
-    "agent_roles.json",    "tunnel_config.json"};
+    "agent_roles.json",    "tunnel_config.json",   "web_search_config.json"};
 
 // --- Auth helpers ---
 

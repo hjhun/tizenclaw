@@ -66,11 +66,6 @@ std::string JsonLong(const std::string& key,
   return "\"" + key + "\": " + std::to_string(val);
 }
 
-std::string JsonDouble(const std::string& key,
-                       double val) {
-  return "\"" + key + "\": " + std::to_string(val);
-}
-
 std::string JsonBool(const std::string& key, bool val) {
   return "\"" + key + "\": " +
          (val ? "true" : "false");
