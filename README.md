@@ -13,7 +13,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/Language-C%2B%2B20-orange.svg" alt="Language">
   <img src="https://img.shields.io/badge/Platform-Tizen_10.0%2B-brightgreen.svg" alt="Platform">
-  <img src="https://img.shields.io/badge/LLM_Backends-5-purple.svg" alt="LLM Backends">
+  <img src="https://img.shields.io/badge/LLM_Backends-5%2B_Extensible-purple.svg" alt="LLM Backends">
   <img src="https://img.shields.io/badge/Channels-7-blue.svg" alt="Channels">
 </p>
 
@@ -35,7 +35,7 @@ TizenClaw is part of the **Claw** family of AI agent runtimes, each targeting di
 | **Target** | Tizen embedded | Cloud / Desktop | Container hosts | Edge hardware |
 | **Binary** | ~812KB binary | Node.js runtime | Node.js runtime | ~8.8MB single binary |
 | **Channels** | 7 | 22+ | 5 | 17 |
-| **LLM Backends** | 5 | 4+ | 1 (Claude) | 5+ |
+| **LLM Backends** | 5+ (extensible) | 4+ | 1 (Claude) | 5+ |
 | **Sandboxing** | OCI (crun) | Docker | Docker | Docker |
 | **Unique** | Tizen C-API, MCP | Canvas/A2UI, ClawHub | SKILL.md, AI-native | <5MB RAM, traits |
 
@@ -45,7 +45,7 @@ TizenClaw is part of the **Claw** family of AI agent runtimes, each targeting di
 - 🔒 **OCI Container Isolation** — crun-based seccomp + namespace, finer syscall control than app-level sandboxing
 - 📱 **Direct Tizen C-API** — ctypes wrappers for device hardware (battery, Wi-Fi, BT, display, volume, sensors, notifications, alarm, app management)
 - 🎯 **Tizen Action Framework** — Native integration with per-action LLM tools, MD schema caching, event-driven updates
-- 🤖 **Dynamic LLM Backends** — Built-in support for Gemini, OpenAI, Anthropic, xAI, Ollama with unified priority-based switching, seamlessly cascading between active, fallbacks, and dynamically loaded built-in/RPK Plugins.
+- 🤖 **Extensible LLM Backends** — 5 built-in backends (Gemini, OpenAI, Anthropic, xAI, Ollama) with unified priority-based switching. Extend with unlimited additional backends via RPK plugins — no daemon recompilation required.
 - 🧩 **RPK Tool Distribution** — Extend the skill ecosystem dynamically using Tizen Resource Packages (RPKs) bundling Python skills without daemon recompilation. Platform-signed RPK packages are automatically discovered and symlinked into the skills directory.
 - 🔧 **CLI Tool Plugins** — Extend agent capabilities with native CLI tools packaged as TPKs. CLI tools run directly on the host for Tizen C-API access, with rich Markdown descriptors (`.tool.md`) for LLM tool discovery.
 - 📦 **Lightweight Deployment** — systemd + RPM, standalone device execution without Node.js/Docker
