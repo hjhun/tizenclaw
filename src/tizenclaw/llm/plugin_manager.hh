@@ -24,6 +24,7 @@
 #include <string>
 #include <vector>
 
+#include "../channel/plugin_channel.hh"
 #include "../infra/pkgmgr_client.hh"
 
 namespace tizenclaw {
@@ -40,6 +41,15 @@ class PluginManager : public PkgmgrClient::IListener {
 
   // Get currently loaded plugin backends
   std::vector<std::shared_ptr<PluginLlmBackend>> GetLlmBackends() const;
+
+  // Get currently loaded channel plugins
+  std::vector<std::shared_ptr<PluginChannel>>
+      GetChannelPlugins() const;
+
+  // Set AgentCore for channel plugins
+  void SetAgentCore(AgentCore* agent) {
+    agent_ = agent;
+  }
 
   using ChangeCallback = std::function<void()>;
   void SetChangeCallback(ChangeCallback cb) { change_callback_ = cb; }
@@ -61,11 +71,23 @@ class PluginManager : public PkgmgrClient::IListener {
   bool LoadPluginFromPkg(const std::string& pkgid);
   void UnloadPluginFromPkg(const std::string& pkgid);
 
+  bool LoadChannelPluginFromPkg(
+      const std::string& pkgid);
+  void UnloadChannelPluginFromPkg(
+      const std::string& pkgid);
+
   std::mutex map_mutex_;
   std::map<std::string, std::shared_ptr<PkgmgrEventArgs>> package_events_;
 
   mutable std::mutex llm_backends_mutex_;
-  std::vector<std::shared_ptr<PluginLlmBackend>> llm_backends_;
+  std::vector<std::shared_ptr<PluginLlmBackend>>
+      llm_backends_;
+
+  mutable std::mutex channel_plugins_mutex_;
+  std::vector<std::shared_ptr<PluginChannel>>
+      channel_plugins_;
+
+  AgentCore* agent_ = nullptr;
   ChangeCallback change_callback_;
 };
 

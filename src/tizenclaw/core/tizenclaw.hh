@@ -27,14 +27,9 @@
 #include <vector>
 
 #include "../../common/logging.hh"
+#include "../channel/channel_factory.hh"
 #include "../channel/channel_registry.hh"
-#include "../channel/discord_channel.hh"
 #include "../channel/mcp_server.hh"
-#include "../channel/slack_channel.hh"
-#include "../channel/telegram_client.hh"
-#include "../channel/voice_channel.hh"
-#include "../channel/web_dashboard.hh"
-#include "../channel/webhook_channel.hh"
 #include "../scheduler/task_scheduler.hh"
 #include "agent_core.hh"
 #include "event_bus.hh"

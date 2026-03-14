@@ -1,0 +1,31 @@
+{
+  "channels": [
+    { "name": "mcp", "enabled": true },
+    { "name": "web_dashboard", "enabled": true },
+    {
+      "name": "telegram",
+      "enabled": true,
+      "config_file": "telegram_config.json",
+      "required_keys": ["bot_token"]
+    },
+    {
+      "name": "webhook",
+      "enabled": true,
+      "config_file": "webhook_config.json",
+      "required_keys": []
+    },
+    {
+      "name": "slack",
+      "enabled": true,
+      "config_file": "slack_config.json",
+      "required_keys": ["app_token", "bot_token"]
+    },
+    {
+      "name": "discord",
+      "enabled": true,
+      "config_file": "discord_config.json",
+      "required_keys": ["bot_token"]
+    },
+    { "name": "voice", "enabled": true }
+  ]
+}

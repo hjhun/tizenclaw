@@ -31,7 +31,7 @@
 #include <string>
 #include <vector>
 
-#include "../infra/key_store.hh"
+#include "../channel/channel_factory.hh"
 #include "../llm/plugin_manager.hh"
 #include "../storage/audit_logger.hh"
 
@@ -43,35 +43,6 @@ void signal_handler(int sig) {
   LOG(INFO) << "Caught signal " << sig;
   if (g_daemon) {
     g_daemon->Quit();
-  }
-}
-
-static bool IsChannelEnabled(const std::string& config_file,
-                             const std::vector<std::string>& required_keys) {
-  std::string path = "/opt/usr/share/tizenclaw/config/" + config_file;
-  std::ifstream f(path);
-  if (!f.is_open()) return false;
-  try {
-    nlohmann::json j;
-    f >> j;
-
-    if (config_file == "webhook_config.json") {
-      return j.contains("routes") && j["routes"].is_array() &&
-             !j["routes"].empty();
-    }
-
-    for (const auto& key : required_keys) {
-      if (!j.contains(key)) return false;
-      if (j[key].is_string()) {
-        std::string val = j[key].get<std::string>();
-        if (val.empty() || val.find("YOUR_") != std::string::npos) {
-          return false;
-        }
-      }
-    }
-    return true;
-  } catch (...) {
-    return false;
   }
 }
 
@@ -154,31 +125,29 @@ void TizenClawDaemon::OnCreate() {
   agent_->SetScheduler(scheduler_.get());
   scheduler_->Start(agent_.get());
 
-  // Register channels
+  // Set AgentCore for plugin channel routing
   auto* a = agent_.get();
-  channel_registry_.Register(std::make_unique<McpServer>(a));
+  PluginManager::GetInstance().SetAgentCore(a);
 
-  if (IsChannelEnabled("telegram_config.json", {"bot_token"})) {
-    LOG(INFO) << "Telegram configured, registering channel";
-    channel_registry_.Register(std::make_unique<TelegramClient>(a));
-  }
-  if (IsChannelEnabled("webhook_config.json", {})) {
-    LOG(INFO) << "Webhook configured, registering channel";
-    channel_registry_.Register(std::make_unique<WebhookChannel>(a));
-  }
-  if (IsChannelEnabled("slack_config.json", {"app_token", "bot_token"})) {
-    LOG(INFO) << "Slack configured, registering channel";
-    channel_registry_.Register(std::make_unique<SlackChannel>(a));
-  }
-  if (IsChannelEnabled("discord_config.json", {"bot_token"})) {
-    LOG(INFO) << "Discord configured, registering channel";
-    channel_registry_.Register(std::make_unique<DiscordChannel>(a));
-  }
+  // Register channels from config
+  ChannelFactory::CreateFromConfig(
+      std::string(APP_DATA_DIR)
+      + "/config/channels.json",
+      a, scheduler_.get(), channel_registry_);
 
-  channel_registry_.Register(
-      std::make_unique<WebDashboard>(a, scheduler_.get()));
-  channel_registry_.Register(std::make_unique<VoiceChannel>(a));
   channel_registry_.StartAll();
+
+  // Start plugin channels (owned by PluginManager)
+  for (auto& pc :
+       PluginManager::GetInstance()
+           .GetChannelPlugins()) {
+    if (pc && !pc->IsRunning()) {
+      if (!pc->Start()) {
+        LOG(WARNING) << "Plugin channel failed: "
+                     << pc->GetName();
+      }
+    }
+  }
 
   ipc_running_ = true;
   ipc_thread_ = std::thread(&TizenClawDaemon::IpcServerLoop, this);
@@ -596,6 +565,7 @@ constexpr uid_t TizenClawDaemon::kAllowedUids[];
 
 #include "../../common/file_log_backend.hh"
 #include "../channel/mcp_server.hh"
+#include "../infra/key_store.hh"
 
 int main(int argc, char* argv[]) {
   using namespace tizenclaw;

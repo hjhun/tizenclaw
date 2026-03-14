@@ -62,21 +62,73 @@ bool PluginManager::Initialize() {
       this);
 
   pkgmgrinfo_pkginfo_metadata_filter_destroy(filter);
+
+  // Scan for channel plugins
+  pkgmgrinfo_pkginfo_metadata_filter_h ch_filter;
+  ret = pkgmgrinfo_pkginfo_metadata_filter_create(
+      &ch_filter);
+  if (ret == PMINFO_R_OK) {
+    pkgmgrinfo_pkginfo_metadata_filter_add(
+        ch_filter,
+        "http://tizen.org/metadata/"
+        "tizenclaw/channel",
+        nullptr);
+
+    pkgmgrinfo_pkginfo_metadata_filter_foreach(
+        ch_filter,
+        [](pkgmgrinfo_pkginfo_h handle,
+           void* user_data) {
+          auto* mgr =
+              static_cast<PluginManager*>(user_data);
+          char* pkgid = nullptr;
+          if (pkgmgrinfo_pkginfo_get_pkgid(
+                  handle, &pkgid) == PMINFO_R_OK &&
+              pkgid) {
+            mgr->LoadChannelPluginFromPkg(pkgid);
+          }
+          return 0;
+        },
+        this);
+
+    pkgmgrinfo_pkginfo_metadata_filter_destroy(
+        ch_filter);
+  }
+
   return true;
 }
 
 void PluginManager::Shutdown() {
   PkgmgrClient::GetInstance().RemoveListener(this);
-  std::lock_guard<std::mutex> lock(llm_backends_mutex_);
-  for (auto& backend : llm_backends_) {
-    backend->Shutdown();
+
+  {
+    std::lock_guard<std::mutex> lock(
+        llm_backends_mutex_);
+    for (auto& backend : llm_backends_)
+      backend->Shutdown();
+    llm_backends_.clear();
   }
-  llm_backends_.clear();
+
+  {
+    std::lock_guard<std::mutex> lock(
+        channel_plugins_mutex_);
+    for (auto& ch : channel_plugins_)
+      ch->Stop();
+    channel_plugins_.clear();
+  }
 }
 
-std::vector<std::shared_ptr<PluginLlmBackend>> PluginManager::GetLlmBackends() const {
-  std::lock_guard<std::mutex> lock(llm_backends_mutex_);
+std::vector<std::shared_ptr<PluginLlmBackend>>
+PluginManager::GetLlmBackends() const {
+  std::lock_guard<std::mutex> lock(
+      llm_backends_mutex_);
   return llm_backends_;
+}
+
+std::vector<std::shared_ptr<PluginChannel>>
+PluginManager::GetChannelPlugins() const {
+  std::lock_guard<std::mutex> lock(
+      channel_plugins_mutex_);
+  return channel_plugins_;
 }
 
 void PluginManager::OnPkgmgrEvent(std::shared_ptr<PkgmgrEventArgs> args) {
@@ -110,20 +162,27 @@ void PluginManager::OnPkgmgrEvent(std::shared_ptr<PkgmgrEventArgs> args) {
   }
 }
 
-void PluginManager::HandleInstallEvent(const std::string& pkgid) {
+void PluginManager::HandleInstallEvent(
+    const std::string& pkgid) {
   LOG(INFO) << "Install event for " << pkgid;
   LoadPluginFromPkg(pkgid);
+  LoadChannelPluginFromPkg(pkgid);
 }
 
-void PluginManager::HandleUpdateEvent(const std::string& pkgid) {
+void PluginManager::HandleUpdateEvent(
+    const std::string& pkgid) {
   LOG(INFO) << "Update event for " << pkgid;
   UnloadPluginFromPkg(pkgid);
+  UnloadChannelPluginFromPkg(pkgid);
   LoadPluginFromPkg(pkgid);
+  LoadChannelPluginFromPkg(pkgid);
 }
 
-void PluginManager::HandleUninstallEvent(const std::string& pkgid) {
+void PluginManager::HandleUninstallEvent(
+    const std::string& pkgid) {
   LOG(INFO) << "Uninstall event for " << pkgid;
   UnloadPluginFromPkg(pkgid);
+  UnloadChannelPluginFromPkg(pkgid);
 }
 
 bool PluginManager::LoadPluginFromPkg(const std::string& pkgid) {
@@ -229,4 +288,108 @@ void PluginManager::UnloadPluginFromPkg(const std::string& pkgid) {
   }
 }
 
+bool PluginManager::LoadChannelPluginFromPkg(
+    const std::string& pkgid) {
+  pkgmgrinfo_pkginfo_h pkginfo = nullptr;
+  int ret = pkgmgrinfo_pkginfo_get_usr_pkginfo(
+      pkgid.c_str(), getuid(), &pkginfo);
+  if (ret != PMINFO_R_OK || !pkginfo) return false;
+
+  char* so_value = nullptr;
+  ret = pkgmgrinfo_pkginfo_get_metadata_value(
+      pkginfo,
+      "http://tizen.org/metadata/"
+      "tizenclaw/channel",
+      &so_value);
+  if (ret != PMINFO_R_OK || !so_value) {
+    pkgmgrinfo_pkginfo_destroy_pkginfo(pkginfo);
+    return false;  // Not a channel plugin
+  }
+  std::string so_local = so_value;
+
+  char* root_path = nullptr;
+  ret = pkgmgrinfo_pkginfo_get_root_path(
+      pkginfo, &root_path);
+  if (ret != PMINFO_R_OK || !root_path) {
+    LOG(ERROR) << "No root path for " << pkgid;
+    pkgmgrinfo_pkginfo_destroy_pkginfo(pkginfo);
+    return false;
+  }
+  std::string path(root_path);
+  pkgmgrinfo_pkginfo_destroy_pkginfo(pkginfo);
+
+  // Load optional config
+  nlohmann::json config;
+  std::string cfg_path =
+      path + "/res/plugin_channel_config.json";
+  if (!std::filesystem::exists(cfg_path))
+    cfg_path = path + "/plugin_channel_config.json";
+  if (std::filesystem::exists(cfg_path)) {
+    std::ifstream f(cfg_path);
+    try {
+      f >> config;
+    } catch (const std::exception& e) {
+      LOG(ERROR) << "Bad channel plugin config: "
+                 << e.what();
+    }
+  }
+
+  std::string full_so =
+      path + "/lib/" + so_local;
+
+  auto ch = std::make_shared<PluginChannel>(
+      pkgid, full_so, config, agent_);
+  if (!ch->Initialize()) {
+    LOG(ERROR) << "Channel plugin init failed: "
+               << full_so;
+    return false;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(
+        channel_plugins_mutex_);
+    channel_plugins_.push_back(ch);
+  }
+  LOG(INFO) << "Channel plugin loaded: "
+            << ch->GetName() << " from " << pkgid;
+
+  if (change_callback_) change_callback_();
+  return true;
+}
+
+void PluginManager::UnloadChannelPluginFromPkg(
+    const std::string& pkgid) {
+  std::vector<std::shared_ptr<PluginChannel>>
+      to_stop;
+  {
+    std::lock_guard<std::mutex> lock(
+        channel_plugins_mutex_);
+    auto it = std::remove_if(
+        channel_plugins_.begin(),
+        channel_plugins_.end(),
+        [&pkgid](
+            const std::shared_ptr<PluginChannel>& c) {
+          return c->GetPkgId() == pkgid;
+        });
+    if (it != channel_plugins_.end()) {
+      to_stop.insert(
+          to_stop.end(),
+          std::make_move_iterator(it),
+          std::make_move_iterator(
+              channel_plugins_.end()));
+      channel_plugins_.erase(
+          it, channel_plugins_.end());
+    }
+  }
+
+  for (auto& ch : to_stop) ch->Stop();
+
+  if (!to_stop.empty()) {
+    LOG(INFO) << "Unloaded channel plugin(s) for "
+              << pkgid;
+    if (change_callback_) change_callback_();
+  }
+}
+
 }  // namespace tizenclaw
+
