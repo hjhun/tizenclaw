@@ -42,6 +42,7 @@
 #include "../storage/embedding_store.hh"
 #include "../embedding/on_device_embedding.hh"
 #include "pipeline_executor.hh"
+#include "tool_dispatcher.hh"
 #include "workflow_engine.hh"
 
 namespace tizenclaw {
@@ -261,6 +262,9 @@ class AgentCore {
       const std::string&)>;
   std::unordered_map<std::string, ToolHandler>
       tool_dispatch_;
+
+  // Modular tool dispatcher (TODO-07)
+  std::unique_ptr<ToolDispatcher> tool_dispatcher_;
 
   // Task scheduler (owned by daemon)
   TaskScheduler* scheduler_ = nullptr;

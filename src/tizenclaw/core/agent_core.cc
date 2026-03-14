@@ -37,6 +37,7 @@
 #include "../storage/audit_logger.hh"
 #include "cli_plugin_manager.hh"
 #include "skill_plugin_manager.hh"
+#include "capability_registry.hh"
 #include "skill_verifier.hh"
 #include "tool_indexer.hh"
 
@@ -295,6 +296,10 @@ bool AgentCore::Initialize() {
       "/config/memory_config.json";
   memory_store_.LoadConfig(mem_config_path);
   LOG(INFO) << "MemoryStore initialized";
+
+  // Initialize modular tool dispatcher
+  tool_dispatcher_ =
+      std::make_unique<ToolDispatcher>();
 
   // Initialize tool dispatcher map
   InitializeToolDispatcher();
@@ -839,6 +844,25 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
           t.parameters = j["parameters"];
           tools.push_back(t);
           tool_policy_.LoadManifestRiskLevel(t.name, j);
+
+          // Register to CapabilityRegistry
+          Capability cap;
+          cap.name = t.name;
+          cap.description = t.description;
+          cap.source = CapabilitySource::kSkill;
+          cap.category =
+              j.contains("metadata") &&
+              j["metadata"].contains("category")
+                  ? j["metadata"]["category"]
+                        .get<std::string>()
+                  : "general";
+          if (j.contains("contract")) {
+            cap.contract =
+                CapabilityRegistry::ParseContract(
+                    j["contract"]);
+          }
+          CapabilityRegistry::GetInstance()
+              .Register(t.name, cap);
 
           // Track runtime for execution dispatch
           std::string runtime =
@@ -1819,6 +1843,27 @@ std::string AgentCore::BuildSystemPrompt(
     } else if (!sys_ctx.empty()) {
       // If no placeholder, append system context
       prompt += "\n\n## Current System Context\n" + sys_ctx;
+    }
+  }
+
+  // Replace {{CAPABILITY_SUMMARY}} placeholder
+  {
+    const std::string cap_ph =
+        "{{CAPABILITY_SUMMARY}}";
+    size_t cap_pos = prompt.find(cap_ph);
+    std::string cap_ctx;
+    auto summary =
+        CapabilityRegistry::GetInstance()
+            .GetCapabilitySummary();
+    if (!summary.empty())
+      cap_ctx = summary.dump(2);
+    if (cap_pos != std::string::npos) {
+      prompt.replace(
+          cap_pos, cap_ph.size(), cap_ctx);
+    } else if (!cap_ctx.empty()) {
+      prompt +=
+          "\n\n## Tool Capabilities\n" +
+          cap_ctx;
     }
   }
 
@@ -3175,9 +3220,93 @@ void AgentCore::InitializeToolDispatcher() {
             args.value("arguments", ""));
       };
 
+  // Register built-in tools to CapabilityRegistry
+  auto& reg = CapabilityRegistry::GetInstance();
+  auto register_builtin =
+      [&](const std::string& name,
+          const std::string& desc,
+          const std::string& category,
+          SideEffect se) {
+        Capability cap;
+        cap.name = name;
+        cap.description = desc;
+        cap.category = category;
+        cap.source = CapabilitySource::kBuiltin;
+        cap.contract.side_effect = se;
+        cap.contract.execution_env = "host";
+        reg.Register(name, cap);
+      };
+
+  register_builtin(
+      "execute_code", "Execute Python code",
+      "code_execution",
+      SideEffect::kIrreversible);
+  register_builtin(
+      "file_manager", "File operations",
+      "file_system", SideEffect::kReversible);
+  register_builtin(
+      "create_task", "Create scheduled task",
+      "scheduler", SideEffect::kReversible);
+  register_builtin(
+      "list_tasks", "List scheduled tasks",
+      "scheduler", SideEffect::kNone);
+  register_builtin(
+      "cancel_task", "Cancel scheduled task",
+      "scheduler", SideEffect::kReversible);
+  register_builtin(
+      "create_session", "Create agent session",
+      "multi_agent", SideEffect::kReversible);
+  register_builtin(
+      "list_sessions", "List agent sessions",
+      "multi_agent", SideEffect::kNone);
+  register_builtin(
+      "send_to_session", "Send to agent session",
+      "multi_agent", SideEffect::kReversible);
+  register_builtin(
+      "ingest_document", "Ingest RAG document",
+      "knowledge", SideEffect::kReversible);
+  register_builtin(
+      "search_knowledge", "Search knowledge base",
+      "knowledge", SideEffect::kNone);
+  register_builtin(
+      "run_supervisor", "Run supervisor agent",
+      "multi_agent", SideEffect::kReversible);
+  register_builtin(
+      "list_agent_roles", "List agent roles",
+      "multi_agent", SideEffect::kNone);
+  register_builtin(
+      "spawn_agent", "Create dynamic agent",
+      "multi_agent", SideEffect::kReversible);
+  register_builtin(
+      "create_workflow", "Create workflow",
+      "workflow", SideEffect::kReversible);
+  register_builtin(
+      "list_workflows", "List workflows",
+      "workflow", SideEffect::kNone);
+  register_builtin(
+      "run_workflow", "Run workflow",
+      "workflow", SideEffect::kReversible);
+  register_builtin(
+      "delete_workflow", "Delete workflow",
+      "workflow", SideEffect::kIrreversible);
+  register_builtin(
+      "remember", "Store memory",
+      "memory", SideEffect::kReversible);
+  register_builtin(
+      "recall", "Recall memory",
+      "memory", SideEffect::kNone);
+  register_builtin(
+      "forget", "Forget memory",
+      "memory", SideEffect::kIrreversible);
+  register_builtin(
+      "execute_cli", "Execute CLI tool",
+      "cli", SideEffect::kReversible);
+
   LOG(INFO) << "Tool dispatcher initialized ("
             << tool_dispatch_.size()
-            << " handlers)";
+            << " handlers, "
+            << reg.Size()
+            << " capabilities)";
 }
 
 std::string AgentCore::ExecuteMemoryOp(

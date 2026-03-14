@@ -55,6 +55,21 @@ class EmbeddingStore {
   [[nodiscard]] std::vector<SearchResult> Search(
       const std::vector<float>& query_embedding, int top_k = 5) const;
 
+  // Hybrid search: combines BM25 keyword search
+  // (via FTS5) with vector cosine similarity
+  // using Reciprocal Rank Fusion (RRF).
+  // Falls back to vector-only if FTS5 unavailable.
+  [[nodiscard]] std::vector<SearchResult>
+  HybridSearch(
+      const std::string& query_text,
+      const std::vector<float>& query_embedding,
+      int top_k = 5) const;
+
+  // Estimate token count for a text string.
+  // Uses whitespace split * 1.3 factor.
+  [[nodiscard]] static int EstimateTokens(
+      const std::string& text);
+
   // Attach a pre-built knowledge database
   // (read-only, for RAG from Tizen docs etc.)
   [[nodiscard]] bool AttachKnowledgeDB(const std::string& path);
@@ -82,6 +97,8 @@ class EmbeddingStore {
  private:
   bool CreateTable();
 
+  // Create FTS5 virtual table for keyword search
+  bool CreateFtsTable();
   // BLOB <-> float vector conversion
   static std::vector<uint8_t> FloatsToBlob(const std::vector<float>& v);
   static std::vector<float> BlobToFloats(const void* data, int size);

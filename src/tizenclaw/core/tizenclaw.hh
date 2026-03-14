@@ -40,7 +40,9 @@
 #include "event_bus.hh"
 #include "system_event_collector.hh"
 #include "autonomous_trigger.hh"
+#include "skill_repository.hh"
 #include "skill_watcher.hh"
+#include "../infra/fleet_agent.hh"
 
 namespace tizenclaw {
 
@@ -72,6 +74,8 @@ class TizenClawDaemon {
   SkillWatcher skill_watcher_;
   std::unique_ptr<SystemEventCollector> event_collector_;
   std::unique_ptr<AutonomousTrigger> auto_trigger_;
+  std::unique_ptr<SkillRepository> skill_repo_;
+  std::unique_ptr<FleetAgent> fleet_agent_;
 
   // Concurrency control
   std::atomic<int> active_clients_{0};

@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <map>
 #include <numeric>
 #include <sstream>
 
@@ -47,6 +48,7 @@ bool EmbeddingStore::Initialize(const std::string& db_path) {
     Close();
     return false;
   }
+  CreateFtsTable();
 
   LOG(INFO) << "EmbeddingStore initialized: " << db_path;
   return true;
@@ -83,6 +85,54 @@ bool EmbeddingStore::CreateTable() {
     sqlite3_free(err);
     return false;
   }
+  return true;
+}
+
+bool EmbeddingStore::CreateFtsTable() {
+  const char* sql =
+      "CREATE VIRTUAL TABLE IF NOT EXISTS "
+      "documents_fts USING fts5("
+      "  chunk_text, "
+      "  content=documents, "
+      "  content_rowid=id"
+      ");";
+  char* err = nullptr;
+  int rc = sqlite3_exec(
+      db_, sql, nullptr, nullptr, &err);
+  if (rc != SQLITE_OK) {
+    LOG(WARNING) << "FTS5 table creation failed: "
+                 << (err ? err : "unknown")
+                 << " (keyword search disabled)";
+    sqlite3_free(err);
+    return false;
+  }
+
+  // Create triggers to keep FTS in sync
+  const char* trigger_insert =
+      "CREATE TRIGGER IF NOT EXISTS "
+      "documents_ai AFTER INSERT ON documents "
+      "BEGIN "
+      "  INSERT INTO documents_fts(rowid, "
+      "    chunk_text) "
+      "  VALUES (new.id, new.chunk_text); "
+      "END;";
+  sqlite3_exec(db_, trigger_insert,
+               nullptr, nullptr, nullptr);
+
+  const char* trigger_delete =
+      "CREATE TRIGGER IF NOT EXISTS "
+      "documents_ad AFTER DELETE ON documents "
+      "BEGIN "
+      "  INSERT INTO documents_fts("
+      "    documents_fts, rowid, chunk_text) "
+      "  VALUES ('delete', old.id, "
+      "    old.chunk_text); "
+      "END;";
+  sqlite3_exec(db_, trigger_delete,
+               nullptr, nullptr, nullptr);
+
+  LOG(INFO) << "FTS5 table ready for hybrid "
+            << "search";
   return true;
 }
 
@@ -396,6 +446,135 @@ std::vector<float> EmbeddingStore::BlobToFloats(const void* data, int size) {
   }
 
   return {};
+}
+
+std::vector<EmbeddingStore::SearchResult>
+EmbeddingStore::HybridSearch(
+    const std::string& query_text,
+    const std::vector<float>& query_embedding,
+    int top_k) const {
+  // Step 1: Vector search
+  auto vector_results = Search(
+      query_embedding, top_k * 2);
+
+  // Step 2: BM25 keyword search (via FTS5)
+  std::vector<SearchResult> bm25_results;
+  if (db_ && !query_text.empty()) {
+    std::string fts_sql =
+        "SELECT d.source, d.chunk_text, "
+        "  bm25(documents_fts) AS score "
+        "FROM documents_fts "
+        "JOIN documents d ON d.id = "
+        "  documents_fts.rowid "
+        "WHERE documents_fts MATCH ? "
+        "ORDER BY score "
+        "LIMIT ?;";
+    sqlite3_stmt* stmt = nullptr;
+    int rc = sqlite3_prepare_v2(
+        db_, fts_sql.c_str(), -1,
+        &stmt, nullptr);
+    if (rc == SQLITE_OK) {
+      sqlite3_bind_text(
+          stmt, 1, query_text.c_str(),
+          static_cast<int>(query_text.size()),
+          SQLITE_TRANSIENT);
+      sqlite3_bind_int(stmt, 2, top_k * 2);
+
+      while (sqlite3_step(stmt) == SQLITE_ROW) {
+        SearchResult r;
+        const char* src =
+            reinterpret_cast<const char*>(
+                sqlite3_column_text(stmt, 0));
+        const char* txt =
+            reinterpret_cast<const char*>(
+                sqlite3_column_text(stmt, 1));
+        r.source = src ? src : "";
+        r.chunk_text = txt ? txt : "";
+        r.score = static_cast<float>(
+            sqlite3_column_double(stmt, 2));
+        bm25_results.push_back(std::move(r));
+      }
+      sqlite3_finalize(stmt);
+    }
+  }
+
+  // If no BM25 results, fall back to vector only
+  if (bm25_results.empty()) {
+    vector_results.resize(
+        std::min(static_cast<int>(
+                     vector_results.size()),
+                 top_k));
+    return vector_results;
+  }
+
+  // Step 3: Reciprocal Rank Fusion (RRF)
+  // score(d) = sum(1 / (k + rank_i(d)))
+  constexpr int kRrfK = 60;
+  std::map<std::string, float> rrf_scores;
+  std::map<std::string, SearchResult> result_map;
+
+  for (int i = 0;
+       i < static_cast<int>(vector_results.size());
+       ++i) {
+    const auto& r = vector_results[i];
+    std::string key =
+        r.source + "::" + r.chunk_text.substr(
+            0, std::min((size_t)50,
+                        r.chunk_text.size()));
+    rrf_scores[key] +=
+        1.0f / (kRrfK + i + 1);
+    result_map[key] = r;
+  }
+  for (int i = 0;
+       i < static_cast<int>(bm25_results.size());
+       ++i) {
+    const auto& r = bm25_results[i];
+    std::string key =
+        r.source + "::" + r.chunk_text.substr(
+            0, std::min((size_t)50,
+                        r.chunk_text.size()));
+    rrf_scores[key] +=
+        1.0f / (kRrfK + i + 1);
+    if (!result_map.contains(key))
+      result_map[key] = r;
+  }
+
+  // Sort by RRF score
+  std::vector<std::pair<std::string, float>> sorted(
+      rrf_scores.begin(), rrf_scores.end());
+  std::sort(sorted.begin(), sorted.end(),
+            [](const auto& a, const auto& b) {
+              return a.second > b.second;
+            });
+
+  std::vector<SearchResult> results;
+  for (int i = 0;
+       i < std::min(top_k,
+                    static_cast<int>(
+                        sorted.size()));
+       ++i) {
+    auto it = result_map.find(sorted[i].first);
+    if (it != result_map.end()) {
+      auto r = it->second;
+      r.score = sorted[i].second;
+      results.push_back(std::move(r));
+    }
+  }
+
+  return results;
+}
+
+int EmbeddingStore::EstimateTokens(
+    const std::string& text) {
+  if (text.empty()) return 0;
+  // Approximate: count whitespace-separated
+  // words and multiply by 1.3
+  int words = 1;
+  for (char c : text) {
+    if (c == ' ' || c == '\n' || c == '\t')
+      words++;
+  }
+  return static_cast<int>(words * 1.3);
 }
 
 }  // namespace tizenclaw

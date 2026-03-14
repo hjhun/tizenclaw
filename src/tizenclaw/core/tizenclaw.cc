@@ -189,6 +189,28 @@ void TizenClawDaemon::OnCreate() {
       agent_->ReloadSkills();
     }
   });
+
+  // Initialize Skill Repository
+  skill_repo_ = std::make_unique<SkillRepository>();
+  std::string skill_repo_config =
+      std::string(APP_DATA_DIR)
+      + "/config/skill_repo.json";
+  skill_repo_->Initialize(skill_repo_config);
+  LOG(INFO) << "SkillRepository initialized"
+            << (skill_repo_->IsEnabled()
+                    ? " (enabled)" : " (disabled)");
+
+  // Initialize Fleet Agent
+  fleet_agent_ = std::make_unique<FleetAgent>();
+  std::string fleet_config =
+      std::string(APP_DATA_DIR)
+      + "/config/fleet_config.json";
+  fleet_agent_->Initialize(fleet_config);
+  if (fleet_agent_->IsEnabled())
+    fleet_agent_->Start();
+  LOG(INFO) << "FleetAgent initialized"
+            << (fleet_agent_->IsEnabled()
+                    ? " (enabled)" : " (disabled)");
 }
 
 void TizenClawDaemon::OnDestroy() {
@@ -196,6 +218,9 @@ void TizenClawDaemon::OnDestroy() {
 
   // Stop Plugin Manager
   PluginManager::GetInstance().Shutdown();
+
+  // Stop Fleet Agent
+  if (fleet_agent_) fleet_agent_->Stop();
 
   // Stop AutonomousTrigger, EventBus and Collector
   if (auto_trigger_) auto_trigger_->Stop();

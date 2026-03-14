@@ -1,0 +1,9 @@
+{
+  "enabled": false,
+  "fleet_server_url": "https://fleet.tizenclaw.io/api",
+  "device_name": "TizenClaw Device",
+  "device_group": "default",
+  "heartbeat_interval_sec": 60,
+  "auto_accept_commands": false,
+  "allowed_commands": ["deploy_skill", "update_config"]
+}
