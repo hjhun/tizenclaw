@@ -4,7 +4,25 @@ build_local/
 *.o
 *.d
 *.rpm
+*.so
 crun-stage/
+third_party/crun/crun-*/
+third_party/crun/build_crun.sh
+
+# CMake build artifacts (local cmake, not gbs)
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+CTestTestfile.cmake
+install_manifest.txt
+debugfiles.list
+debuglinks.list
+debugsourcefiles.list
+debugsources.list
+documentation.list
+elfbins.list
+*.manifest
 
 # IDE
 .vscode/
