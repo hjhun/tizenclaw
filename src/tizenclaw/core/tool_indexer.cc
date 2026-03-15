@@ -423,6 +423,16 @@ void ToolIndexer::GenerateCliIndex(
             << cli_dir << "/index.md";
 }
 
+void ToolIndexer::GenerateSystemCliIndex(
+    const std::string& system_cli_dir) {
+  std::string content = BuildMdSummaryTable(
+      system_cli_dir, "System CLI Tools");
+  if (content.empty()) return;
+  WriteFile(system_cli_dir + "/index.md", content);
+  LOG(INFO) << "ToolIndexer: Generated "
+            << system_cli_dir << "/index.md";
+}
+
 void ToolIndexer::GenerateToolsMd(
     const std::string& tools_dir) {
   std::ostringstream md;
@@ -463,6 +473,7 @@ void ToolIndexer::GenerateToolsMd(
   append_section("actions", "Device Actions");
   append_section("embedded", "Embedded Tools");
   append_section("cli", "CLI Tools");
+  append_section("system_cli", "System CLI Tools");
 
   WriteFile(tools_dir + "/tools.md", md.str());
   LOG(INFO) << "ToolIndexer: Generated "
@@ -477,6 +488,7 @@ void ToolIndexer::RegenerateAll(
   GenerateActionsIndex(tools_dir + "/actions");
   GenerateEmbeddedIndex(tools_dir + "/embedded");
   GenerateCliIndex(tools_dir + "/cli");
+  GenerateSystemCliIndex(tools_dir + "/system_cli");
   GenerateToolsMd(tools_dir);
   LOG(INFO) << "ToolIndexer: Regenerated all "
             << "indexes under " << tools_dir;
