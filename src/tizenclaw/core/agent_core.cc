@@ -269,6 +269,10 @@ bool AgentCore::Initialize() {
       this, supervisor_.get());
   LOG(INFO) << "AgentFactory ready";
 
+  // Initialize auto skill generation agent
+  auto_skill_agent_ = std::make_unique<AutoSkillAgent>(this);
+  LOG(INFO) << "AutoSkillAgent ready";
+
   // Initialize pipeline executor
   pipeline_executor_ = std::make_unique<PipelineExecutor>(this);
   pipeline_executor_->LoadPipelines();
@@ -469,6 +473,23 @@ std::string AgentCore::ProcessPrompt(
       }
 
       LOG(INFO) << "Final response: " << resp.text;
+
+      // Auto skill generation: detect capability gap
+      // and attempt to create a new skill
+      if (auto_skill_agent_ &&
+          auto_skill_agent_->DetectCapabilityGap(resp.text)) {
+        LOG(INFO) << "Capability gap detected, "
+                  << "triggering auto skill generation";
+        auto gen_result = auto_skill_agent_->TryGenerate(
+            session_id, prompt, on_chunk);
+        if (gen_result.success) {
+          LOG(INFO) << "Auto skill generated: "
+                    << gen_result.skill_name;
+          return gen_result.output;
+        }
+        LOG(WARNING) << "Auto skill generation failed: "
+                     << gen_result.error;
+      }
 
       return resp.text.empty() ? "No response text." : resp.text;
     }

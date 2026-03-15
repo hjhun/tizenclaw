@@ -34,6 +34,7 @@
 #include "agent_factory.hh"
 #include "tool_policy.hh"
 #include "action_bridge.hh"
+#include "auto_skill_agent.hh"
 #include "system_context_provider.hh"
 #include <functional>
 #include <mutex>
@@ -289,6 +290,9 @@ class AgentCore {
 
   // Agent factory for dynamic agent creation
   std::unique_ptr<AgentFactory> agent_factory_;
+
+  // Auto skill generation agent
+  std::unique_ptr<AutoSkillAgent> auto_skill_agent_;
 
   // Get session-specific system prompt
   // (falls back to global system_prompt_)
