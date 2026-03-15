@@ -220,7 +220,7 @@ def execute_dynamic_code(code_str, timeout=None):
     }
 
 
-ALLOWED_PATHS = ["/skills", "/data"]
+ALLOWED_PATHS = ["/tools/custom_skills", "/data"]
 MAX_READ_SIZE = 1024 * 1024  # 1 MB
 
 

@@ -920,9 +920,10 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
       "Manage files on the Tizen device. "
       "Create, read, delete files or list "
       "directory contents. Paths MUST start "
-      "with /tools/skills/ or /data/ — other paths "
-      "are rejected. Use /tools/skills/ to save new "
-      "skill scripts, /data/ for persistent data.";
+      "with /tools/custom_skills/ or /data/ — other "
+      "paths are rejected. Use /tools/custom_skills/ "
+      "to save new skill scripts, /data/ for "
+      "persistent data.";
   file_tool.parameters = {
       {"type", "object"},
       {"properties",
@@ -935,7 +936,7 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
          {{"type", "string"},
           {"description",
            "File or directory path. Must start "
-           "with /tools/skills/ or /data/"}}},
+           "with /tools/custom_skills/ or /data/"}}},
         {"content",
          {{"type", "string"},
           {"description", "File content (for write_file only)"}}}}},

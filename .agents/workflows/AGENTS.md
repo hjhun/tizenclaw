@@ -22,7 +22,7 @@ This workflow defines the core development process (Plan -> Develop -> Verify) f
 ## 3. Verify
 Once `deploy.sh` successfully finishes:
 - Check the log output of the TizenClaw daemon to verify correct startup and runtime execution:
-  - Command: `sdb shell dlogutil TIZENCLAW TizenClawWebView`
+  - Command: `sdb shell dlogutil TIZENCLAW TIZENCLAW_WEBVIEW`
 - **Functional Testing via `tizenclaw-cli`**:
   - Use the CLI to send natural language prompts to the daemon and verify new features work end-to-end.
   - Single-shot mode: `sdb shell tizenclaw-cli "your prompt here"`

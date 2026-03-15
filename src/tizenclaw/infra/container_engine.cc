@@ -165,8 +165,9 @@ bool ContainerEngine::Initialize() {
   RunCommand("mkdir -p " + EscapeShellArg(crun_root_));
   LOG(INFO) << "crun root dir: " << crun_root_;
 
-  // Ensure data directory exists
+  // Ensure data and custom_skills directories exist
   RunCommand("mkdir -p " + EscapeShellArg(app_data_dir_ + "/data"));
+  RunCommand("mkdir -p " + EscapeShellArg(app_data_dir_ + "/tools/custom_skills"));
 
   initialized_ = true;
   return true;
@@ -742,6 +743,13 @@ bool ContainerEngine::WriteSkillsConfig() const {
       "type": "bind",
       "source": ")" + app_data_dir_ +
                             R"(/data",
+      "options": ["rbind", "rw"]
+    },
+    {
+      "destination": "/tools/custom_skills",
+      "type": "bind",
+      "source": ")" + app_data_dir_ +
+                            R"(/tools/custom_skills",
       "options": ["rbind", "rw"]
     },
     {
