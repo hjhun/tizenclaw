@@ -1227,6 +1227,21 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
       {"required", nlohmann::json::array()}};
   tools.push_back(agent_status_tool);
 
+  // Built-in tool: list_agents
+  LlmToolDecl list_agents_tool;
+  list_agents_tool.name = "list_agents";
+  list_agents_tool.description =
+      "List all running agents with their "
+      "status. Returns configured roles, "
+      "dynamically created agents, active "
+      "delegations, event bus sources, and "
+      "autonomous trigger status.";
+  list_agents_tool.parameters = {
+      {"type", "object"},
+      {"properties", nlohmann::json::object()},
+      {"required", nlohmann::json::array()}};
+  tools.push_back(list_agents_tool);
+
   // Built-in tool: spawn_agent
   LlmToolDecl spawn_agent_tool;
   spawn_agent_tool.name = "spawn_agent";
@@ -2502,6 +2517,52 @@ std::string AgentCore::ExecuteSupervisorOp(const std::string& operation,
     result = {{"status", "ok"},
               {"agent_status", status},
               {"delegations", delegations}};
+  } else if (operation == "list_agents") {
+    // Configured roles
+    auto roles = supervisor_->ListRoles();
+
+    // Dynamic agents
+    nlohmann::json dynamic_agents =
+        nlohmann::json::array();
+    if (agent_factory_)
+      dynamic_agents =
+          agent_factory_->ListDynamicAgents();
+
+    // Active delegations
+    auto delegations =
+        supervisor_->ListActiveDelegations();
+
+    // Event bus sources
+    auto sources =
+        EventBus::GetInstance().ListEventSources();
+    auto bus_sources = nlohmann::json::array();
+    for (const auto& s : sources) {
+      bus_sources.push_back(
+          {{"name", s.name},
+           {"plugin_id", s.plugin_id},
+           {"collect_method", s.collect_method}});
+    }
+
+    // Autonomous trigger status
+    nlohmann::json trigger_info =
+        {{"enabled", false}};
+    if (system_context_) {
+      trigger_info["system_context"] = true;
+    }
+
+    result = {
+        {"status", "ok"},
+        {"configured_roles", roles},
+        {"configured_roles_count",
+         (int)roles.size()},
+        {"dynamic_agents", dynamic_agents},
+        {"dynamic_agents_count",
+         (int)dynamic_agents.size()},
+        {"active_delegations", delegations},
+        {"event_bus_sources", bus_sources},
+        {"event_bus_sources_count",
+         (int)bus_sources.size()},
+        {"autonomous_trigger", trigger_info}};
   } else {
     result = {{"error", "Unknown supervisor operation: " + operation}};
   }
@@ -3117,7 +3178,8 @@ void AgentCore::InitializeToolDispatcher() {
   for (const auto& n :
        {"run_supervisor",
         "list_agent_roles",
-        "get_agent_status"}) {
+        "get_agent_status",
+        "list_agents"}) {
     tool_dispatch_[n] =
         [this](const nlohmann::json& args,
                const std::string& name,
@@ -3273,6 +3335,10 @@ void AgentCore::InitializeToolDispatcher() {
       "multi_agent", SideEffect::kReversible);
   register_builtin(
       "list_agent_roles", "List agent roles",
+      "multi_agent", SideEffect::kNone);
+  register_builtin(
+      "list_agents",
+      "List all running agents",
       "multi_agent", SideEffect::kNone);
   register_builtin(
       "spawn_agent", "Create dynamic agent",

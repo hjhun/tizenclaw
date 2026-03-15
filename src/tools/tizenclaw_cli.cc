@@ -35,6 +35,8 @@
 #include <string>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "tizenclaw.h"
 
 namespace {
@@ -119,6 +121,7 @@ void PrintUsage() {
             << "  --stream      Enable streaming\n"
             << "  --send-to <channel> <text>\n"
             << "                Send outbound message via channel\n"
+            << "  --list-agents List all running agents\n"
             << "  -h, --help    Show this help\n\n"
             << "If no prompt given, interactive mode.\n";
 }
@@ -189,6 +192,144 @@ int SendToChannel(const std::string& channel,
   return 0;
 }
 
+// Direct IPC for list_agents (bypasses CAPI)
+int ListAgents() {
+  int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (sock < 0) {
+    std::cerr << "Failed to create socket\n";
+    return 1;
+  }
+
+  struct sockaddr_un addr = {};
+  addr.sun_family = AF_UNIX;
+  const char kName[] = "tizenclaw.sock";
+  for (size_t i = 0; i < sizeof(kName) - 1; ++i)
+    addr.sun_path[1 + i] = kName[i];
+  socklen_t addr_len =
+      offsetof(struct sockaddr_un, sun_path)
+      + 1 + sizeof(kName) - 1;
+
+  if (connect(sock,
+              reinterpret_cast<struct sockaddr*>(
+                  &addr),
+              addr_len) < 0) {
+    close(sock);
+    std::cerr << "Failed to connect to daemon\n";
+    return 1;
+  }
+
+  std::string req =
+      "{\"jsonrpc\":\"2.0\",\"method\":"
+      "\"list_agents\",\"id\":1,\"params\":{}}";
+
+  uint32_t net_len = htonl(req.size());
+  write(sock, &net_len, 4);
+  write(sock, req.data(), req.size());
+
+  // Read response
+  uint32_t resp_len = 0;
+  if (read(sock, &resp_len, 4) != 4) {
+    close(sock);
+    std::cerr << "Failed to read response\n";
+    return 1;
+  }
+  resp_len = ntohl(resp_len);
+  std::vector<char> buf(resp_len);
+  size_t got = 0;
+  while (got < resp_len) {
+    auto r = read(sock, buf.data() + got,
+                  resp_len - got);
+    if (r <= 0) break;
+    got += r;
+  }
+  close(sock);
+
+  std::string body(buf.data(), got);
+
+  // Parse and pretty-print
+  try {
+    auto j = nlohmann::json::parse(body);
+    auto res = j.value("result",
+                       nlohmann::json::object());
+
+    // Configured roles
+    if (res.contains("configured_roles")) {
+      auto& roles = res["configured_roles"];
+      std::cout << "=== Configured Roles ("
+                << roles.size() << ") ===\n";
+      for (auto& r : roles) {
+        std::cout << "  - "
+                  << r.value("name", "?")
+                  << "  tools: ["
+                  << r.value("allowed_tools",
+                             nlohmann::json::array())
+                         .dump()
+                  << "]\n";
+      }
+    }
+
+    // Dynamic agents
+    if (res.contains("dynamic_agents") &&
+        !res["dynamic_agents"].empty()) {
+      auto& da = res["dynamic_agents"];
+      std::cout << "\n=== Dynamic Agents ("
+                << da.size() << ") ===\n";
+      for (auto& a : da) {
+        std::cout << "  - "
+                  << a.value("name", "?") << "\n";
+      }
+    }
+
+    // Active delegations
+    if (res.contains("active_delegations")) {
+      auto& del = res["active_delegations"];
+      if (del.contains("active") &&
+          !del["active"].empty()) {
+        std::cout << "\n=== Active Delegations ("
+                  << del["active"].size()
+                  << ") ===\n";
+        for (auto& d : del["active"]) {
+          std::cout << "  - ["
+                    << d.value("role", "?")
+                    << "] " << d.value("task", "")
+                    << " ("
+                    << d.value("elapsed_sec", 0)
+                    << "s)\n";
+        }
+      }
+    }
+
+    // Event bus sources
+    if (res.contains("event_bus_sources") &&
+        !res["event_bus_sources"].empty()) {
+      auto& src = res["event_bus_sources"];
+      std::cout << "\n=== Event Bus Sources ("
+                << src.size() << ") ===\n";
+      for (auto& s : src) {
+        std::cout << "  - "
+                  << s.value("name", "?")
+                  << " (" << s.value("plugin_id", "")
+                  << ")\n";
+      }
+    }
+
+    // Autonomous trigger
+    if (res.contains("autonomous_trigger")) {
+      auto& at = res["autonomous_trigger"];
+      std::cout << "\n=== Autonomous Trigger ==="
+                << "\n  enabled: "
+                << (at.value("enabled", false)
+                        ? "yes" : "no")
+                << "\n";
+    }
+  } catch (...) {
+    // Fallback: raw JSON
+    std::cout << body << "\n";
+  }
+
+  return 0;
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -209,6 +350,8 @@ int main(int argc, char* argv[]) {
         text += argv[j];
       }
       return SendToChannel(channel, text);
+    } else if (arg == "--list-agents") {
+      return ListAgents();
     } else if (arg == "-s" && i + 1 < argc) {
       session_id = argv[++i];
     } else if (arg == "--stream") {

@@ -540,6 +540,23 @@ void TizenClawDaemon::HandleIpcClient(int client_sock) {
                  {{"sent", sent},
                   {"channel", channel}}}};
           }
+        } else if (method == "list_agents") {
+          auto result_str =
+              agent_->ExecuteSupervisorOp(
+                  "list_agents", params, "ipc");
+          try {
+            response_json = {
+                {"jsonrpc", "2.0"},
+                {"id", req_id},
+                {"result",
+                 nlohmann::json::parse(
+                     result_str)}};
+          } catch (...) {
+            response_json = {
+                {"jsonrpc", "2.0"},
+                {"id", req_id},
+                {"result", {{"text", result_str}}}};
+          }
         } else {
           response_json = {
               {"jsonrpc", "2.0"},
