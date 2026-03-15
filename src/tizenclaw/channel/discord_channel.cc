@@ -306,4 +306,18 @@ void DiscordChannel::Stop() {
   LOG(INFO) << "DiscordChannel stopped";
 }
 
+bool DiscordChannel::SendMessage(
+    const std::string& text) {
+  if (!running_ || bot_token_.empty()) return false;
+  if (allowed_channels_.empty()) {
+    LOG(WARNING) << "Discord: no channels for "
+                 << "outbound message";
+    return false;
+  }
+  for (const auto& ch : allowed_channels_) {
+    SendReply(ch, text);
+  }
+  return true;
+}
+
 }  // namespace tizenclaw

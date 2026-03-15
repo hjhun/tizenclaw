@@ -84,6 +84,12 @@ bool PluginChannel::Initialize() {
           dlsym(dl_handle_,
                 "TIZENCLAW_CHANNEL_STOP"));
 
+  // Optional: outbound messaging
+  fn_send_message_ =
+      reinterpret_cast<decltype(fn_send_message_)>(
+          dlsym(dl_handle_,
+                "TIZENCLAW_CHANNEL_SEND_MESSAGE"));
+
   if (!fn_initialize_ || !fn_get_name_ ||
       !fn_start_ || !fn_stop_) {
     LOG(ERROR) << "Missing TIZENCLAW_CHANNEL_* "
@@ -126,6 +132,12 @@ void PluginChannel::Stop() {
   if (!running_) return;
   if (fn_stop_) fn_stop_();
   running_ = false;
+}
+
+bool PluginChannel::SendMessage(
+    const std::string& text) {
+  if (!running_ || !fn_send_message_) return false;
+  return fn_send_message_(text.c_str());
 }
 
 }  // namespace tizenclaw

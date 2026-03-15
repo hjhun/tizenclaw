@@ -42,8 +42,11 @@ int64_t NowMinutes() {
 
 AutonomousTrigger::AutonomousTrigger(
     AgentCore* agent,
-    SystemContextProvider* context)
-    : agent_(agent), context_(context) {}
+    SystemContextProvider* context,
+    ChannelRegistry* channels)
+    : agent_(agent),
+      context_(context),
+      channels_(channels) {}
 
 AutonomousTrigger::~AutonomousTrigger() {
   Stop();
@@ -397,18 +400,18 @@ void AutonomousTrigger::Notify(
     const std::string& message) {
   if (!agent_) return;
 
-  // Use AgentCore's channel notification
-  // mechanism by sending to the configured
-  // notification channel
   LOG(INFO) << "AutonomousTrigger: notify via "
             << notification_channel_;
 
-  // For now, log. Channel notification
-  // integration requires ChannelRegistry
-  // access which is in tizenclaw.cc
-  // The message is delivered through
-  // agent_->ProcessPrompt which already
-  // produces output via the autonomous session.
+  if (channels_) {
+    if (!channels_->SendTo(
+            notification_channel_, message)) {
+      LOG(WARNING) << "Failed to send via "
+                   << notification_channel_
+                   << ", broadcasting";
+      channels_->Broadcast(message);
+    }
+  }
 }
 
 }  // namespace tizenclaw

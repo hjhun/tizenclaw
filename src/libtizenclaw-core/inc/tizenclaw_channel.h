@@ -72,6 +72,20 @@ bool TIZENCLAW_CHANNEL_START(
  */
 void TIZENCLAW_CHANNEL_STOP(void);
 
+/**
+ * @brief Sends a proactive outbound message through
+ *        the channel plugin.
+ * @since_tizen 10.0
+ * @remarks This function is optional. If the plugin
+ *          does not export it, outbound messaging
+ *          is not supported.
+ * @param[in] text  The message text to send.
+ * @return @c true if the message was delivered,
+ *         @c false otherwise.
+ */
+bool TIZENCLAW_CHANNEL_SEND_MESSAGE(
+    const char* text);
+
 #ifdef __cplusplus
 }
 #endif

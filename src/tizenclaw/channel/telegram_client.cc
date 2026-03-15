@@ -89,6 +89,20 @@ void TelegramClient::Stop() {
   }
 }
 
+bool TelegramClient::SendMessage(
+    const std::string& text) {
+  if (!running_ || bot_token_.empty()) return false;
+  if (allowed_chat_ids_.empty()) {
+    LOG(WARNING) << "Telegram: no chat_ids for "
+                 << "outbound message";
+    return false;
+  }
+  for (long chat_id : allowed_chat_ids_) {
+    SendMessage(chat_id, text);
+  }
+  return true;
+}
+
 void TelegramClient::SendMessage(long chat_id, const std::string& text) {
   if (bot_token_.empty()) return;
 

@@ -252,4 +252,17 @@ void VoiceChannel::Stop() {
   LOG(INFO) << "VoiceChannel stopped";
 }
 
+bool VoiceChannel::SendMessage(
+    const std::string& text) {
+  if (!running_ || text.empty()) return false;
+#ifdef TIZEN_TTS_ENABLED
+  Speak(text);
+  return true;
+#else
+  LOG(WARNING) << "Voice SendMessage: TTS "
+               << "not available";
+  return false;
+#endif
+}
+
 }  // namespace tizenclaw

@@ -50,6 +50,16 @@ class ChannelRegistry {
   // List names of all registered channels.
   [[nodiscard]] std::vector<std::string> ListChannels() const;
 
+  // Send a message to a specific channel by name.
+  // Returns false if channel not found or send
+  // not supported.
+  bool SendTo(const std::string& channel_name,
+              const std::string& text);
+
+  // Broadcast a message to all running channels
+  // that support outbound messaging.
+  void Broadcast(const std::string& text);
+
   // Number of registered channels.
   [[nodiscard]] size_t Size() const { return channels_.size(); }
 

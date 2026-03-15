@@ -22,6 +22,7 @@
 #include <string>
 #include <vector>
 
+#include "../channel/channel_registry.hh"
 #include "event_bus.hh"
 #include "system_context_provider.hh"
 
@@ -45,7 +46,8 @@ struct EventRule {
 class AutonomousTrigger {
  public:
   AutonomousTrigger(AgentCore* agent,
-                    SystemContextProvider* context);
+                    SystemContextProvider* context,
+                    ChannelRegistry* channels = nullptr);
   ~AutonomousTrigger();
 
   // Load trigger rules from JSON config
@@ -100,6 +102,7 @@ class AutonomousTrigger {
 
   AgentCore* agent_;
   SystemContextProvider* context_;
+  ChannelRegistry* channels_;
   std::vector<EventRule> rules_;
   mutable std::mutex rules_mutex_;
 

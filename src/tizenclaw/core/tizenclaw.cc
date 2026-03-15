@@ -113,7 +113,8 @@ void TizenClawDaemon::OnCreate() {
 
   // Initialize AutonomousTrigger
   auto_trigger_ = std::make_unique<AutonomousTrigger>(
-      agent_.get(), agent_->GetSystemContext());
+      agent_.get(), agent_->GetSystemContext(),
+      &channel_registry_);
   std::string trigger_config =
       std::string(APP_DATA_DIR)
       + "/config/autonomous_trigger.json";

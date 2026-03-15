@@ -47,6 +47,8 @@ class PluginChannel : public Channel {
   [[nodiscard]] bool IsRunning() const override {
     return running_;
   }
+  bool SendMessage(
+      const std::string& text) override;
 
   const std::string& GetPkgId() const { return pkgid_; }
 
@@ -66,6 +68,8 @@ class PluginChannel : public Channel {
       nullptr;
   decltype(TIZENCLAW_CHANNEL_START)* fn_start_ = nullptr;
   decltype(TIZENCLAW_CHANNEL_STOP)* fn_stop_ = nullptr;
+  decltype(TIZENCLAW_CHANNEL_SEND_MESSAGE)*
+      fn_send_message_ = nullptr;  // optional
 };
 
 }  // namespace tizenclaw

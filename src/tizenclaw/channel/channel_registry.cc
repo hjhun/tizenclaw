@@ -65,4 +65,24 @@ std::vector<std::string> ChannelRegistry::ListChannels() const {
   return names;
 }
 
+bool ChannelRegistry::SendTo(
+    const std::string& channel_name,
+    const std::string& text) {
+  auto* ch = Get(channel_name);
+  if (!ch || !ch->IsRunning()) return false;
+  return ch->SendMessage(text);
+}
+
+void ChannelRegistry::Broadcast(
+    const std::string& text) {
+  for (auto& ch : channels_) {
+    if (ch->IsRunning()) {
+      if (ch->SendMessage(text)) {
+        LOG(INFO) << "Broadcast sent to: "
+                  << ch->GetName();
+      }
+    }
+  }
+}
+
 }  // namespace tizenclaw

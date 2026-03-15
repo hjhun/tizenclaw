@@ -38,6 +38,7 @@ class TelegramClient : public Channel {
   bool Start() override;
   void Stop() override;
   bool IsRunning() const override { return running_; }
+  bool SendMessage(const std::string& text) override;
 
  private:
   // Main loop for fetching updates using long-polling

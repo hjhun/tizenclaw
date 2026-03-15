@@ -42,6 +42,16 @@ class Channel {
 
   // Whether the channel is currently active.
   [[nodiscard]] virtual bool IsRunning() const = 0;
+
+  // Send a proactive outbound message through this
+  // channel (e.g. LLM-initiated notification).
+  // Returns true if the message was delivered.
+  // Default: false (channel does not support
+  // outbound push).
+  virtual bool SendMessage(
+      const std::string& /*text*/) {
+    return false;
+  }
 };
 
 }  // namespace tizenclaw
