@@ -612,9 +612,11 @@ std::string AgentCore::ProcessPrompt(
       tool_msg.tool_name = result.name;
       tool_msg.tool_call_id = result.id;
       try {
-        tool_msg.tool_result = nlohmann::json::parse(result.output);
-      } catch (...) {
-        tool_msg.tool_result = {{"output", result.output}};
+        tool_msg.tool_result =
+            nlohmann::json::parse(result.output);
+      } catch (const nlohmann::json::exception&) {
+        tool_msg.tool_result =
+            {{"output", result.output}};
       }
 
       tool_msgs.push_back(tool_msg);
@@ -857,6 +859,9 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
 
   std::lock_guard<std::mutex> lock(tools_mutex_);
 
+  // Double-check after acquiring lock
+  if (cached_tools_loaded_.load()) return cached_tools_;
+
   namespace fs = std::filesystem;
 
   std::vector<LlmToolDecl> tools;
@@ -925,9 +930,10 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
           // Map manifest name -> directory name
           skill_dirs_[t.name] = dirname;
         }
-      } catch (...) {
+      } catch (const std::exception& e) {
         LOG(WARNING) << "Failed to parse "
-                     << "manifest: " << manifest_path;
+                     << "manifest: " << manifest_path
+                     << ": " << e.what();
       }
     }
   };
@@ -2052,9 +2058,10 @@ void AgentCore::CompactHistory(const std::string& session_id) {
     resp = backend_->Chat(compact_msgs, {},  // no tools for compaction
                           nullptr,           // no streaming
                           "");               // no system prompt
-  } catch (...) {
+  } catch (const std::exception& e) {
     session_mutex_.lock();
-    LOG(WARNING) << "Compaction LLM call failed";
+    LOG(WARNING) << "Compaction LLM call failed: "
+                 << e.what();
     return;
   }
 
@@ -2934,9 +2941,10 @@ std::string AgentCore::ExecuteCustomSkillOp(const nlohmann::json& args) {
                  {"risk_level",
                   j.value("risk_level",
                           "low")}});
-          } catch (...) {
+          } catch (const std::exception& e) {
             skills.push_back(
-                {{"name", dirname}, {"error", "Failed to parse manifest"}});
+                {{"name", dirname},
+                 {"error", e.what()}});
           }
         }
       }
@@ -3160,7 +3168,7 @@ std::string AgentCore::ExecuteCli(const std::string& tool_name,
     try {
       auto j = nlohmann::json::parse(output);
       return j.dump();
-    } catch (...) {
+    } catch (const nlohmann::json::exception&) {
       return nlohmann::json(
                  {{"tool", tool_name},
                   {"source", "system_cli"},
@@ -3228,7 +3236,7 @@ std::string AgentCore::ExecuteCli(const std::string& tool_name,
   try {
     auto j = nlohmann::json::parse(output);
     return j.dump();
-  } catch (...) {
+  } catch (const nlohmann::json::exception&) {
     return nlohmann::json(
                {{"tool", tool_name},
                 {"exit_code", WIFEXITED(status)

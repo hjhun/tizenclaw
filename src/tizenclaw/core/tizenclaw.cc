@@ -39,6 +39,9 @@
 #include "../infra/app_lifecycle_adapter.hh"
 #include "../infra/recent_app_adapter.hh"
 #include "../infra/vconf_event_adapter.hh"
+#include "../../common/file_log_backend.hh"
+#include "../channel/mcp_server.hh"
+#include "../infra/key_store.hh"
 
 namespace tizenclaw {
 
@@ -242,15 +245,10 @@ void TizenClawDaemon::OnDestroy() {
     ipc_thread_.join();
   }
 
-  // Wait for all active client threads
-  {
-    std::lock_guard<std::mutex> lock(threads_mutex_);
-    for (auto& t : client_threads_) {
-      if (t.joinable()) {
-        t.join();
-      }
-    }
-    client_threads_.clear();
+  // Wait for active client threads to finish
+  while (active_clients_.load() > 0) {
+    std::this_thread::sleep_for(
+        std::chrono::milliseconds(100));
   }
 
   // Stop Task Scheduler (before AgentCore)
@@ -366,20 +364,12 @@ void TizenClawDaemon::IpcServerLoop() {
       continue;
     }
 
-    // Spawn tracked thread to handle this client
-    {
-      std::lock_guard<std::mutex> lock(threads_mutex_);
-      // Clean up finished threads
-      std::erase_if(client_threads_,
-                    [](std::thread& t) { return !t.joinable(); });
-
-      client_threads_.emplace_back([this, client_sock]() {
-        active_clients_.fetch_add(1);
-        HandleIpcClient(client_sock);
-        active_clients_.fetch_sub(1);
-      });
-      client_threads_.back().detach();
-    }
+    // Spawn detached thread for this client
+    std::thread([this, client_sock]() {
+      active_clients_.fetch_add(1);
+      HandleIpcClient(client_sock);
+      active_clients_.fetch_sub(1);
+    }).detach();
   }
 }
 
@@ -648,9 +638,6 @@ constexpr uid_t TizenClawDaemon::kAllowedUids[];
 
 }  // namespace tizenclaw
 
-#include "../../common/file_log_backend.hh"
-#include "../channel/mcp_server.hh"
-#include "../infra/key_store.hh"
 
 int main(int argc, char* argv[]) {
   using namespace tizenclaw;

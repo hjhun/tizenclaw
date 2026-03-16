@@ -79,8 +79,6 @@ class TizenClawDaemon {
   // Concurrency control
   std::atomic<int> active_clients_{0};
   static constexpr int kMaxConcurrentClients = 4;
-  std::vector<std::thread> client_threads_;
-  std::mutex threads_mutex_;
 
   // Allowed UIDs for IPC connections
   // 0=root, 301=app_fw, 200=system, 5001=developer
