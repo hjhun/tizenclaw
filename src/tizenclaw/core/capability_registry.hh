@@ -20,6 +20,7 @@
 #include <map>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace tizenclaw {
@@ -104,6 +105,13 @@ class CapabilityRegistry {
 
   // Get count of registered capabilities
   [[nodiscard]] size_t Size() const;
+
+  // Detect overlapping tools: same category,
+  // different source priority. Returns pairs of
+  // (lower_priority_name, higher_priority_name).
+  [[nodiscard]] std::vector<std::pair<
+      std::string, std::string>>
+  DetectOverlaps() const;
 
   // Generate JSON summary for LLM system prompt
   [[nodiscard]] nlohmann::json

@@ -57,10 +57,19 @@ bool ToolPolicy::LoadConfig(const std::string& config_path) {
       config_.max_iterations = j["max_iterations"].get<int>();
     }
 
+    if (j.contains("aliases") && j["aliases"].is_object()) {
+      for (auto& [k, v] : j["aliases"].items()) {
+        if (v.is_string()) {
+          config_.aliases[k] = v.get<std::string>();
+        }
+      }
+    }
+
     LOG(INFO) << "Tool policy loaded: " << "max_repeat="
               << config_.max_repeat_count
               << ", blocked=" << config_.blocked_skills.size()
-              << ", overrides=" << config_.risk_levels.size();
+              << ", overrides=" << config_.risk_levels.size()
+              << ", aliases=" << config_.aliases.size();
     return true;
   } catch (const std::exception& e) {
     LOG(ERROR) << "Failed to parse tool policy: " << e.what();
@@ -156,6 +165,11 @@ RiskLevel ToolPolicy::GetRiskLevel(const std::string& skill_name) const {
     return it->second;
   }
   return RiskLevel::kNormal;
+}
+
+const std::map<std::string, std::string>&
+ToolPolicy::GetAliases() const {
+  return config_.aliases;
 }
 
 std::string ToolPolicy::RiskLevelToString(RiskLevel level) {

@@ -170,6 +170,15 @@ bool AgentCore::Initialize() {
     LOG(WARNING) << "Tool policy config not loaded (using defaults)";
   }
 
+  // Initialize ToolRouter with policy aliases
+  {
+    const auto& aliases = tool_policy_.GetAliases();
+    if (!aliases.empty()) {
+      nlohmann::json alias_json(aliases);
+      tool_router_.LoadAliases(alias_json);
+    }
+  }
+
   if (!SwitchToBestBackend(false)) {
     LOG(ERROR) << "Failed to switch to best backend during Initialize.";
     return false;
@@ -538,16 +547,34 @@ std::string AgentCore::ProcessPrompt(
           return r;
         }
 
+        // Resolve tool name via ToolRouter
+        std::string resolved_name =
+            tool_router_.Resolve(tc.name);
+        bool was_routed =
+            (resolved_name != tc.name);
+        std::string routed_hint;
+        if (was_routed) {
+          routed_hint =
+              " [Routed: " + tc.name +
+              " -> " + resolved_name + "]";
+          r.name = resolved_name;
+        }
+
         auto start = std::chrono::steady_clock::now();
-        auto it = tool_dispatch_.find(tc.name);
+        auto it = tool_dispatch_.find(resolved_name);
         if (it != tool_dispatch_.end()) {
           r.output = it->second(
-              tc.args, tc.name, session_id);
-        } else if (tc.name == "execute_action" ||
-                   tc.name.starts_with("action_")) {
-          r.output = ExecuteActionOp(tc.name, tc.args);
+              tc.args, resolved_name, session_id);
+        } else if (resolved_name == "execute_action" ||
+                   resolved_name.starts_with("action_")) {
+          r.output = ExecuteActionOp(resolved_name, tc.args);
         } else {
-          r.output = ExecuteSkill(tc.name, tc.args);
+          r.output = ExecuteSkill(resolved_name, tc.args);
+        }
+
+        // Append routing hint to output
+        if (was_routed && !r.output.empty()) {
+          r.output += routed_hint;
         }
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                            std::chrono::steady_clock::now() - start)
@@ -1752,6 +1779,22 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
   // Regenerate tool index files
   ToolIndexer::RegenerateAll(
       "/opt/usr/share/tizenclaw/tools");
+
+  // Detect and register capability overlaps
+  // for automatic tool routing
+  {
+    auto overlaps =
+        CapabilityRegistry::GetInstance()
+            .DetectOverlaps();
+    for (const auto& [lower, higher] : overlaps) {
+      tool_router_.RegisterOverlap(lower, higher);
+    }
+    if (!overlaps.empty()) {
+      LOG(INFO) << "ToolRouter: " << overlaps.size()
+                << " auto-detected overlaps "
+                << "registered";
+    }
+  }
 
   cached_tools_ = tools;
   cached_tools_loaded_.store(true);

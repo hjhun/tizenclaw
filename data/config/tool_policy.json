@@ -2,5 +2,9 @@
     "max_repeat_count": 3,
     "blocked_skills": [],
     "risk_overrides": {},
-    "max_iterations": 5
+    "max_iterations": 5,
+    "aliases": {
+        "control_display": "action_brightness",
+        "control_volume": "action_volume"
+    }
 }

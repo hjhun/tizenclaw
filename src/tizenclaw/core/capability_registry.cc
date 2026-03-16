@@ -18,6 +18,7 @@
 #include <algorithm>
 
 #include "../../common/logging.hh"
+#include "tool_router.hh"
 
 namespace tizenclaw {
 
@@ -103,6 +104,63 @@ CapabilityRegistry::GetAllNames() const {
 size_t CapabilityRegistry::Size() const {
   std::lock_guard<std::mutex> lock(mutex_);
   return capabilities_.size();
+}
+
+std::vector<std::pair<std::string, std::string>>
+CapabilityRegistry::DetectOverlaps() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  // Group capabilities by category
+  std::map<std::string,
+           std::vector<
+               std::pair<std::string,
+                         CapabilitySource>>>
+      by_category;
+
+  for (const auto& [name, cap] : capabilities_) {
+    std::string cat =
+        cap.category.empty() ? "general"
+                             : cap.category;
+    by_category[cat].emplace_back(
+        name, cap.source);
+  }
+
+  std::vector<
+      std::pair<std::string, std::string>>
+      overlaps;
+
+  for (const auto& [cat, tools] : by_category) {
+    if (tools.size() < 2) continue;
+
+    // Find the highest-priority tool in category
+    const std::string* best_name = nullptr;
+    int best_prio = 99;
+    for (const auto& [tname, src] : tools) {
+      int prio = ToolRouter::SourcePriority(src);
+      if (prio < best_prio) {
+        best_prio = prio;
+        best_name = &tname;
+      }
+    }
+
+    if (!best_name) continue;
+
+    // All lower-priority tools redirect to best
+    for (const auto& [tname, src] : tools) {
+      int prio = ToolRouter::SourcePriority(src);
+      if (prio > best_prio) {
+        overlaps.emplace_back(tname, *best_name);
+        LOG(WARNING)
+            << "CapabilityRegistry: Overlap "
+            << "detected in '" << cat
+            << "': '" << tname << "' ("
+            << prio << ") -> '" << *best_name
+            << "' (" << best_prio << ")";
+      }
+    }
+  }
+
+  return overlaps;
 }
 
 nlohmann::json

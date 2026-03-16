@@ -264,3 +264,37 @@ TEST_F(ToolPolicyTest,
     EXPECT_FALSE(policy->CheckIdleProgress(
         "s1", same));
 }
+
+TEST_F(ToolPolicyTest,
+       LoadConfigWithAliases) {
+    std::ofstream f(config_path_);
+    f << R"({
+      "aliases": {
+        "control_display": "action_brightness",
+        "control_volume": "action_volume"
+      }
+    })" << std::endl;
+    f.close();
+
+    ASSERT_TRUE(policy->LoadConfig(config_path_));
+
+    auto& aliases = policy->GetAliases();
+    EXPECT_EQ(aliases.size(), 2u);
+    EXPECT_EQ(aliases.at("control_display"),
+              "action_brightness");
+    EXPECT_EQ(aliases.at("control_volume"),
+              "action_volume");
+}
+
+TEST_F(ToolPolicyTest,
+       MissingAliasesFieldUsesEmpty) {
+    std::ofstream f(config_path_);
+    f << R"({"max_repeat_count": 3})"
+      << std::endl;
+    f.close();
+
+    ASSERT_TRUE(policy->LoadConfig(config_path_));
+
+    auto& aliases = policy->GetAliases();
+    EXPECT_TRUE(aliases.empty());
+}

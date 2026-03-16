@@ -40,6 +40,8 @@ struct ToolPolicyConfig {
   std::set<std::string> blocked_skills;
   // Max agentic loop iterations
   int max_iterations = 5;
+  // Tool alias redirections: old_name -> new_name
+  std::map<std::string, std::string> aliases;
 };
 
 class ToolPolicy {
@@ -77,6 +79,10 @@ class ToolPolicy {
 
   // Get risk level for a skill
   [[nodiscard]] RiskLevel GetRiskLevel(const std::string& skill_name) const;
+
+  // Get alias mappings for ToolRouter
+  [[nodiscard]] const std::map<std::string, std::string>&
+  GetAliases() const;
 
   // Convert RiskLevel to string
   static std::string RiskLevelToString(RiskLevel level);

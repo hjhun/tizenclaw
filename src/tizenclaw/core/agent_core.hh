@@ -33,6 +33,7 @@
 #include "agent_role.hh"
 #include "agent_factory.hh"
 #include "tool_policy.hh"
+#include "tool_router.hh"
 #include "action_bridge.hh"
 #include "auto_skill_agent.hh"
 #include "system_context_provider.hh"
@@ -224,6 +225,7 @@ class AgentCore {
 
   SessionStore session_store_;
   ToolPolicy tool_policy_;
+  ToolRouter tool_router_;
 
   // Cached skill declarations
   std::vector<LlmToolDecl> cached_tools_;

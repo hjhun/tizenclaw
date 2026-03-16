@@ -80,3 +80,25 @@ than handling everything in the main session.
 - **"Find documentation about Tizen WiFi API"** → `run_supervisor` → `knowledge_retriever`
 - **"Create a daily battery check automation"** → `run_supervisor` → `task_planner` + `device_monitor`
 - **"Analyze security of recent operations"** → `run_supervisor` → `security_auditor`
+
+## 5. Automatic Tool Routing
+
+TizenClaw includes a **ToolRouter** that automatically redirects tool calls to higher-priority alternatives at runtime. If a duplicate tool redirection occurs, the system has already chosen the best tool — you do not need to retry.
+
+### Priority Order (highest to lowest)
+1. **Tizen Actions** (`action_*`) — Native platform features
+2. **Embedded Tools** — C++ built-in tools
+3. **System CLI Tools** — Host-level CLI tools
+4. **Standard Skills** — Python container skills
+5. **CLI Tool Plugins** — TPK-based CLI tools
+6. **RPK Plugins** — Resource package tools
+
+### Routing Mechanisms
+- **Manual Aliases**: Configured in `tool_policy.json` (e.g., `control_display` → `action_brightness`)
+- **Auto-Detection**: If two tools share the same category but different source priorities, the lower-priority tool is automatically redirected
+
+### Behavior
+- When routing occurs, the output includes a `[Routed: original → target]` hint
+- You do **NOT** need to call the redirected tool again — it was already executed with the correct target
+- If the higher-priority tool fails, the error is returned as-is (no automatic fallback to the original)
+
