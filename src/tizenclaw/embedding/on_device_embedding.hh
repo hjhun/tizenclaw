@@ -76,9 +76,6 @@ class OnDeviceEmbedding {
   struct OrtApi;
   const OrtApi* api_ = nullptr;
 
-  // Loaded via dlsym
-  using GetApiBaseFn = const void* (*)();
-  GetApiBaseFn get_api_base_ = nullptr;
 };
 
 }  // namespace tizenclaw
