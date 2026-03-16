@@ -248,10 +248,11 @@ run_without_container() {
     mount -o remount,bind,ro \\\"${BUNDLE_DIR}/rootfs/usr\\\" || true"
   else
     # No overlay: rootfs /usr is used directly (has python3.11).
-    # Bind-mount host /usr/lib64 and /usr/lib for CAPI access.
-    USR_MOUNT_CMD="mkdir -p \\\"${BUNDLE_DIR}/rootfs/usr/lib64\\\" 2>/dev/null || true
-    mount --rbind /usr/lib64 \\\"${BUNDLE_DIR}/rootfs/usr/lib64\\\" 2>/dev/null || true
-    mount --rbind /usr/lib \\\"${BUNDLE_DIR}/rootfs/usr/lib\\\" 2>/dev/null || true"
+    # Mount host /usr/lib and /usr/lib64 at SEPARATE paths to
+    # avoid hiding rootfs /usr/lib/python3.11/ (stdlib).
+    USR_MOUNT_CMD="mkdir -p \\\"${BUNDLE_DIR}/rootfs/host_usr_lib\\\" \\\"${BUNDLE_DIR}/rootfs/host_usr_lib64\\\" 2>/dev/null || true
+    mount --rbind /usr/lib \\\"${BUNDLE_DIR}/rootfs/host_usr_lib\\\" 2>/dev/null || true
+    mount --rbind /usr/lib64 \\\"${BUNDLE_DIR}/rootfs/host_usr_lib64\\\" 2>/dev/null || true"
   fi
 
   exec unshare -m /bin/sh -c "
@@ -284,7 +285,7 @@ run_without_container() {
     mount --rbind \"${APP_DATA_DIR}/tools/cli\" \"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw/tools/cli\" || true
     mount -o remount,bind,ro \"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw/tools/cli\" || true
 
-    exec chroot \"${BUNDLE_DIR}/rootfs\" /bin/sh -c 'LD_LIBRARY_PATH=/lib64:/usr/lib64:/lib:/host_lib:/usr/lib exec python3.11 /skills/skill_executor.py'
+    exec chroot \"${BUNDLE_DIR}/rootfs\" /bin/sh -c 'LD_LIBRARY_PATH=/lib64:/usr/lib64:/lib:/host_lib:/host_usr_lib:/host_usr_lib64:/usr/lib exec python3.11 /skills/skill_executor.py'
   "
 }
 
