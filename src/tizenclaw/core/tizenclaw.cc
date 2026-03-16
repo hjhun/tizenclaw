@@ -38,6 +38,7 @@
 #include "../infra/package_event_adapter.hh"
 #include "../infra/app_lifecycle_adapter.hh"
 #include "../infra/recent_app_adapter.hh"
+#include "../infra/vconf_event_adapter.hh"
 
 namespace tizenclaw {
 
@@ -124,6 +125,8 @@ void TizenClawDaemon::OnCreate() {
       std::make_unique<AppLifecycleAdapter>());
   adapter_manager_.RegisterAdapter(
       std::make_unique<RecentAppAdapter>());
+  adapter_manager_.RegisterAdapter(
+      std::make_unique<VconfEventAdapter>());
   adapter_manager_.StartAll();
 
   // Initialize AutonomousTrigger
