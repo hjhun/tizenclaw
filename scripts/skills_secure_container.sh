@@ -91,6 +91,12 @@ write_config() {
       "options": ["rbind", "ro"]
     },
     {
+      "destination": "/opt/etc",
+      "type": "bind",
+      "source": "/opt/etc",
+      "options": ["rbind", "ro"]
+    },
+    {
       "destination": "/lib64",
       "type": "bind",
       "source": "/lib64",
@@ -196,6 +202,7 @@ run_without_container() {
   mkdir -p "${BUNDLE_DIR}/rootfs/skills" "${BUNDLE_DIR}/rootfs/proc" \
            "${BUNDLE_DIR}/rootfs/dev" "${BUNDLE_DIR}/rootfs/tmp" \
            "${BUNDLE_DIR}/rootfs/usr" "${BUNDLE_DIR}/rootfs/etc" \
+           "${BUNDLE_DIR}/rootfs/opt/etc" \
            "${BUNDLE_DIR}/rootfs/lib64" "${BUNDLE_DIR}/rootfs/run" \
            "${BUNDLE_DIR}/rootfs/data" "${APP_DATA_DIR}/data"
 
@@ -213,6 +220,8 @@ run_without_container() {
     mount -o remount,bind,ro \"${BUNDLE_DIR}/rootfs/usr\" || true
     mount --rbind /etc \"${BUNDLE_DIR}/rootfs/etc\" || true
     mount -o remount,bind,ro \"${BUNDLE_DIR}/rootfs/etc\" || true
+    mount --rbind /opt/etc \"${BUNDLE_DIR}/rootfs/opt/etc\" || true
+    mount -o remount,bind,ro \"${BUNDLE_DIR}/rootfs/opt/etc\" || true
     mount --rbind /lib64 \"${BUNDLE_DIR}/rootfs/lib64\" || true
     mount -o remount,bind,ro \"${BUNDLE_DIR}/rootfs/lib64\" || true
 

@@ -49,9 +49,10 @@ run_without_container() {
   fi
 
   exec unshare -m /bin/sh -c "
-    mkdir -p \"${BUNDLE_DIR}/rootfs/proc\" \"${BUNDLE_DIR}/rootfs/dev\" \"${BUNDLE_DIR}/rootfs/sys\" \
-             \"${BUNDLE_DIR}/rootfs/usr\" \"${BUNDLE_DIR}/rootfs/lib\" \"${BUNDLE_DIR}/rootfs/lib64\" \
-             \"${BUNDLE_DIR}/rootfs/etc/dbus-1\" \"${BUNDLE_DIR}/rootfs/etc/dlog.conf.d\" \
+    mkdir -p \"${BUNDLE_DIR}/rootfs/proc\" \"${BUNDLE_DIR}/rootfs/dev\" \"${BUNDLE_DIR}/rootfs/sys\" \\
+             \"${BUNDLE_DIR}/rootfs/usr\" \"${BUNDLE_DIR}/rootfs/lib\" \"${BUNDLE_DIR}/rootfs/lib64\" \\
+             \"${BUNDLE_DIR}/rootfs/etc/dbus-1\" \"${BUNDLE_DIR}/rootfs/etc/dlog.conf.d\" \\
+             \"${BUNDLE_DIR}/rootfs/opt/etc\" \\
              \"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw\" \"${BUNDLE_DIR}/rootfs/run\" \"${BUNDLE_DIR}/rootfs/tmp\"
     
     mount --make-rslave / || true
@@ -72,6 +73,8 @@ run_without_container() {
     mount --bind /etc/passwd \"${BUNDLE_DIR}/rootfs/etc/passwd\" || true
     touch \"${BUNDLE_DIR}/rootfs/etc/group\" 2>/dev/null || true
     mount --bind /etc/group \"${BUNDLE_DIR}/rootfs/etc/group\" || true
+    mount --rbind /opt/etc \"${BUNDLE_DIR}/rootfs/opt/etc\" || true
+    mount -o remount,bind,ro \"${BUNDLE_DIR}/rootfs/opt/etc\" || true
     mount --rbind /opt/usr/share/tizenclaw \"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw\" || true
     mount --rbind /run \"${BUNDLE_DIR}/rootfs/run\" || true
     mount --rbind /tmp \"${BUNDLE_DIR}/rootfs/tmp\" || true
@@ -147,6 +150,12 @@ write_config() {
       "destination": "/lib64",
       "type": "bind",
       "source": "/lib64",
+      "options": ["rbind", "ro"]
+    },
+    {
+      "destination": "/opt/etc",
+      "type": "bind",
+      "source": "/opt/etc",
       "options": ["rbind", "ro"]
     },
     {
