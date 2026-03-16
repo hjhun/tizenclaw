@@ -461,6 +461,7 @@ body {
     font-size: 0.88rem;
     line-height: 1.5;
     word-wrap: break-word;
+    white-space: pre-wrap;
 }
 
 .chat-msg.user {
