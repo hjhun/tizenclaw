@@ -772,7 +772,10 @@ bool AgentCore::SwitchToBestBackend(bool is_reload) {
     std::string bname = cand.name;
 
     std::shared_ptr<LlmBackend> new_backend = LlmBackendFactory::Create(bname);
-    if (!new_backend) continue;
+    if (!new_backend) {
+      LOG(WARNING) << "Failed to create backend: " << bname;
+      continue;
+    }
 
     nlohmann::json backend_config;
     if (cand.plugin) {
@@ -805,6 +808,7 @@ bool AgentCore::SwitchToBestBackend(bool is_reload) {
     }
 
     if (!new_backend->Initialize(backend_config)) {
+      LOG(WARNING) << "Failed to initialize backend: " << bname;
       continue;
     }
 
@@ -816,9 +820,11 @@ bool AgentCore::SwitchToBestBackend(bool is_reload) {
           {{"backend", backend_->GetName()}}));
     }
 
-    // Populate fallback_names_ with the remaining candidates
+    // Populate fallback_names_ with all other candidates
+    // (including previously failed ones for runtime retry)
     fallback_names_.clear();
-    for (size_t j = i + 1; j < candidates.size(); ++j) {
+    for (size_t j = 0; j < candidates.size(); ++j) {
+      if (j == i) continue;  // Skip the primary backend
       if (std::find(fallback_names_.begin(), fallback_names_.end(),
                     candidates[j].name) == fallback_names_.end()) {
         fallback_names_.push_back(candidates[j].name);
@@ -1370,6 +1376,8 @@ LlmResponse AgentCore::TryFallbackBackends(
   last_resp.error_message = "No fallback backends configured";
 
   if (fallback_names_.empty()) {
+    LOG(WARNING) << "No fallback backends available; "
+                << "primary backend failure is unrecoverable";
     return last_resp;
   }
 
