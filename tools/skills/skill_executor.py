@@ -22,7 +22,21 @@ import threading
 
 SOCKET_PATH = "/tmp/tizenclaw_skill.sock"
 SKILLS_DIR = "/skills"
-PYTHON_BIN = sys.executable or "/usr/bin/python3"
+def _find_python3():
+    """Find a working Python3 binary.
+
+    Priority: sys.executable > /proc/self/exe > hardcoded path.
+    /proc/self/exe always works on Linux even if the original
+    binary was deleted from disk (kernel keeps the inode alive).
+    """
+    if sys.executable and os.path.isfile(sys.executable):
+        return sys.executable
+    if os.path.exists("/proc/self/exe"):
+        return "/proc/self/exe"
+    return "/usr/bin/python3"
+
+
+PYTHON_BIN = _find_python3()
 NODE_BIN = "/usr/bin/node"
 MAX_PAYLOAD = 10 * 1024 * 1024  # 10 MB
 EXEC_TIMEOUT = 30  # seconds

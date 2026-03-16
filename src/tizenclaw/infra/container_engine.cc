@@ -170,6 +170,14 @@ bool ContainerEngine::Initialize() {
   RunCommand("mkdir -p " + EscapeShellArg(app_data_dir_ + "/data"));
   RunCommand("mkdir -p " + EscapeShellArg(app_data_dir_ + "/tools/custom_skills"));
 
+  // Kill any stale container from a previous daemon run.
+  // This ensures we always start a fresh container with the
+  // latest skill_executor.py after RPM deployment.
+  if (!runtime_bin_.empty()) {
+    RunCommand(CrunCmd("delete -f " + container_id_));
+  }
+  CleanupOverlayUsr();
+
   initialized_ = true;
   return true;
 }
