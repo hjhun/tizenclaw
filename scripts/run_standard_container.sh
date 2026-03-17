@@ -48,10 +48,10 @@ run_without_container() {
     CMD="/usr/bin/tizenclaw"
   fi
 
-  exec unshare -m /bin/sh -c "
+  exec unshare -m --propagation unchanged /usr/bin/sh -c "
     mkdir -p \"${BUNDLE_DIR}/rootfs/proc\" \"${BUNDLE_DIR}/rootfs/dev\" \"${BUNDLE_DIR}/rootfs/sys\" \\
-             \"${BUNDLE_DIR}/rootfs/usr\" \"${BUNDLE_DIR}/rootfs/lib\" \"${BUNDLE_DIR}/rootfs/lib64\" \\
-             \"${BUNDLE_DIR}/rootfs/etc/dbus-1\" \"${BUNDLE_DIR}/rootfs/etc/dlog.conf.d\" \\
+             \"${BUNDLE_DIR}/rootfs/usr\" \"${BUNDLE_DIR}/rootfs/lib\" \\
+             \"${BUNDLE_DIR}/rootfs/etc/dbus-1\" \\
              \"${BUNDLE_DIR}/rootfs/opt/etc\" \\
              \"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw\" \"${BUNDLE_DIR}/rootfs/run\" \"${BUNDLE_DIR}/rootfs/tmp\"
 
@@ -60,20 +60,28 @@ run_without_container() {
     touch \"${BUNDLE_DIR}/rootfs/etc/nsswitch.conf\" 2>/dev/null || true
     mount --bind /etc/nsswitch.conf \"${BUNDLE_DIR}/rootfs/etc/nsswitch.conf\" || true
     
-    mount --make-rslave / || true
+    mount --make-rprivate / || true
     
     mount -t proc proc \"${BUNDLE_DIR}/rootfs/proc\" || true
     mount --rbind /sys \"${BUNDLE_DIR}/rootfs/sys\" || true
     mount --rbind /dev \"${BUNDLE_DIR}/rootfs/dev\" || true
     mount --rbind /usr \"${BUNDLE_DIR}/rootfs/usr\" || true
     mount --rbind /lib \"${BUNDLE_DIR}/rootfs/lib\" || true
-    mount --rbind /lib64 \"${BUNDLE_DIR}/rootfs/lib64\" || true
+    if [ -d /lib64 ]; then
+      mkdir -p \"${BUNDLE_DIR}/rootfs/lib64\"
+      mount --rbind /lib64 \"${BUNDLE_DIR}/rootfs/lib64\" || true
+    fi
     touch \"${BUNDLE_DIR}/rootfs/etc/tizen-platform.conf\" 2>/dev/null || true
     mount --bind /etc/tizen-platform.conf \"${BUNDLE_DIR}/rootfs/etc/tizen-platform.conf\" || true
     mount --rbind /etc/dbus-1 \"${BUNDLE_DIR}/rootfs/etc/dbus-1\" || true
-    touch \"${BUNDLE_DIR}/rootfs/etc/dlog.conf\" 2>/dev/null || true
-    mount --bind /etc/dlog.conf \"${BUNDLE_DIR}/rootfs/etc/dlog.conf\" || true
-    mount --rbind /etc/dlog.conf.d \"${BUNDLE_DIR}/rootfs/etc/dlog.conf.d\" || true
+    if [ -f /etc/dlog.conf ]; then
+      touch \"${BUNDLE_DIR}/rootfs/etc/dlog.conf\" 2>/dev/null || true
+      mount --bind /etc/dlog.conf \"${BUNDLE_DIR}/rootfs/etc/dlog.conf\" || true
+    fi
+    if [ -d /etc/dlog.conf.d ]; then
+      mkdir -p \"${BUNDLE_DIR}/rootfs/etc/dlog.conf.d\"
+      mount --rbind /etc/dlog.conf.d \"${BUNDLE_DIR}/rootfs/etc/dlog.conf.d\" || true
+    fi
     touch \"${BUNDLE_DIR}/rootfs/etc/passwd\" 2>/dev/null || true
     mount --bind /etc/passwd \"${BUNDLE_DIR}/rootfs/etc/passwd\" || true
     touch \"${BUNDLE_DIR}/rootfs/etc/group\" 2>/dev/null || true
@@ -95,6 +103,36 @@ write_config() {
     process_args_json='["/usr/bin/sleep", "2147483647"]'
   else
     process_args_json='["/usr/bin/tizenclaw"]'
+  fi
+
+  # Build optional mount entries based on host filesystem
+  local OPTIONAL_MOUNTS=""
+  if [ -d /lib64 ]; then
+    OPTIONAL_MOUNTS="${OPTIONAL_MOUNTS},
+    {
+      \"destination\": \"/lib64\",
+      \"type\": \"bind\",
+      \"source\": \"/lib64\",
+      \"options\": [\"rbind\", \"ro\"]
+    }"
+  fi
+  if [ -f /etc/dlog.conf ]; then
+    OPTIONAL_MOUNTS="${OPTIONAL_MOUNTS},
+    {
+      \"destination\": \"/etc/dlog.conf\",
+      \"type\": \"bind\",
+      \"source\": \"/etc/dlog.conf\",
+      \"options\": [\"bind\", \"ro\"]
+    }"
+  fi
+  if [ -d /etc/dlog.conf.d ]; then
+    OPTIONAL_MOUNTS="${OPTIONAL_MOUNTS},
+    {
+      \"destination\": \"/etc/dlog.conf.d\",
+      \"type\": \"bind\",
+      \"source\": \"/etc/dlog.conf.d\",
+      \"options\": [\"rbind\", \"ro\"]
+    }"
   fi
 
   cat >"${BUNDLE_DIR}/config.json" <<EOF
@@ -152,12 +190,6 @@ write_config() {
       "options": ["rbind", "ro"]
     },
     {
-      "destination": "/lib64",
-      "type": "bind",
-      "source": "/lib64",
-      "options": ["rbind", "ro"]
-    },
-    {
       "destination": "/opt/etc",
       "type": "bind",
       "source": "/opt/etc",
@@ -194,18 +226,6 @@ write_config() {
       "options": ["rbind", "rw"]
     },
     {
-      "destination": "/etc/dlog.conf",
-      "type": "bind",
-      "source": "/etc/dlog.conf",
-      "options": ["bind", "ro"]
-    },
-    {
-      "destination": "/etc/dlog.conf.d",
-      "type": "bind",
-      "source": "/etc/dlog.conf.d",
-      "options": ["rbind", "ro"]
-    },
-    {
       "destination": "/etc/resolv.conf",
       "type": "bind",
       "source": "/etc/resolv.conf",
@@ -228,13 +248,11 @@ write_config() {
       "type": "bind",
       "source": "/etc/group",
       "options": ["bind", "ro"]
-    }
+    }${OPTIONAL_MOUNTS}
   ],
   "linux": {
     "namespaces": [
-      {"type": "mount"},
-      {"type": "ipc"},
-      {"type": "uts"}
+      {"type": "mount"}
     ],
     "maskedPaths": [
       "/proc/acpi",

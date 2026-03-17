@@ -981,12 +981,6 @@ bool ContainerEngine::WriteSkillsConfig() const {
       "options": ["rbind", "ro"]
     },
     {
-      "destination": "/lib64",
-      "type": "bind",
-      "source": "/lib64",
-      "options": ["rbind", "ro"]
-    },
-    {
       "destination": "/opt/usr",
       "type": "bind",
       "source": "/opt/usr",
@@ -997,7 +991,22 @@ bool ContainerEngine::WriteSkillsConfig() const {
       "type": "bind",
       "source": "/opt/usr/share/tizenclaw/tools/cli",
       "options": ["rbind", "ro"]
-    }
+    })";
+
+  // Conditionally add /lib64 mount if it exists on host
+  namespace fs = std::filesystem;
+  std::error_code ec;
+  if (fs::is_directory("/lib64", ec)) {
+    config_json += R"(,
+    {
+      "destination": "/lib64",
+      "type": "bind",
+      "source": "/lib64",
+      "options": ["rbind", "ro"]
+    })";
+  }
+
+  config_json += R"(
   ],
   "linux": {
     "cgroupsPath": "",

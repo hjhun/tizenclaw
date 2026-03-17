@@ -26,6 +26,18 @@ detect_runtime() {
 RUNTIME_BIN="$(detect_runtime)"
 
 write_config() {
+  # Build optional mount entries based on host filesystem
+  local OPTIONAL_MOUNTS=""
+  if [ -d /lib64 ]; then
+    OPTIONAL_MOUNTS="${OPTIONAL_MOUNTS},
+    {
+      \"destination\": \"/lib64\",
+      \"type\": \"bind\",
+      \"source\": \"/lib64\",
+      \"options\": [\"rbind\", \"ro\"]
+    }"
+  fi
+
   cat >"${BUNDLE_DIR}/config.json" <<EOF
 {
   "ociVersion": "1.0.2",
@@ -105,12 +117,6 @@ write_config() {
       "options": ["rbind", "ro"]
     },
     {
-      "destination": "/lib64",
-      "type": "bind",
-      "source": "/lib64",
-      "options": ["rbind", "ro"]
-    },
-    {
       "destination": "/run",
       "type": "bind",
       "source": "/run",
@@ -133,7 +139,7 @@ write_config() {
       "type": "bind",
       "source": "/opt/usr/share/tizenclaw/tools/cli",
       "options": ["rbind", "ro"]
-    }
+    }${OPTIONAL_MOUNTS}
   ],
   "linux": {
     "cgroupsPath": "",
