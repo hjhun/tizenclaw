@@ -255,6 +255,15 @@ run_without_container() {
     fi
   done
 
+  # Create variant symlinks for name mismatches between Tizen and
+  # Debian.  Tizen armv7l uses ld-linux.so.3 but Debian armhf
+  # python3.11 expects ld-linux-armhf.so.3 as its ELF interpreter.
+  RLIB="${BUNDLE_DIR}/rootfs/lib"
+  if [ -f "$RLIB/ld-linux.so.3" ] && [ ! -f "$RLIB/ld-linux-armhf.so.3" ]; then
+    ln -sf ld-linux.so.3 "$RLIB/ld-linux-armhf.so.3"
+    echo "Symlinked ld-linux-armhf.so.3 -> ld-linux.so.3"
+  fi
+
   # Determine /usr mount strategy
   USR_MOUNT_CMD=""
   if [ "${OVERLAY_OK}" = "true" ]; then
