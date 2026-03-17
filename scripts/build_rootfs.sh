@@ -162,7 +162,26 @@ dpkg -x /tmp/stdlib.deb /
 # 4. Create python3 symlink
 ln -sf python3.11 /usr/bin/python3
 
-# 5. Clean up
+# 5. Create glibc dynamic linker symlinks.
+# Debian Python's ELF interpreter points to /lib64/ld-linux-x86-64.so.2
+# (amd64) or /lib/ld-linux-armhf.so.3 (armhf) or
+# /lib/ld-linux-aarch64.so.1 (arm64).  At runtime, host /lib is
+# bind-mounted at /host_lib.  Without these symlinks the kernel
+# cannot find the interpreter when chroot executes python3.11.
+case "\${DEB_ARCH}" in
+    amd64)
+        mkdir -p /lib64
+        ln -sf /host_lib/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2
+        ;;
+    armhf)
+        ln -sf /host_lib/ld-linux-armhf.so.3 /lib/ld-linux-armhf.so.3
+        ;;
+    arm64)
+        ln -sf /host_lib/ld-linux-aarch64.so.1 /lib/ld-linux-aarch64.so.1
+        ;;
+esac
+
+# 6. Clean up
 rm -f /tmp/python3.deb /tmp/libpython3.deb /tmp/stdlib.deb /tmp/Packages
 apk del dpkg
 rm -rf /var/cache/apk/*
