@@ -2377,12 +2377,18 @@ std::string AgentCore::ExecuteCli(const std::string& tool_name,
 
   std::string cli_dir =
       std::string("/opt/usr/share/tizenclaw/tools/cli/") + dir_name;
-  std::string exec_path = cli_dir + "/executable";
 
+  // Try executable name matching directory name first (e.g., aurum-cli/aurum-cli),
+  // then fall back to generic "executable" name for backward compatibility
+  std::string exec_path = cli_dir + "/" + dir_name;
   namespace fs = std::filesystem;
   std::error_code ec;
   if (!fs::exists(exec_path, ec)) {
-    LOG(ERROR) << "CLI executable not found: " << exec_path;
+    exec_path = cli_dir + "/executable";
+  }
+  if (!fs::exists(exec_path, ec)) {
+    LOG(ERROR) << "CLI executable not found: " << cli_dir
+               << "/{" << dir_name << ",executable}";
     return "{\"error\": \"CLI tool not found: " + tool_name + "\"}";
   }
 
