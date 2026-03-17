@@ -32,10 +32,10 @@ write_config() {
   "process": {
     "terminal": false,
     "user": {"uid": 0, "gid": 0},
-    "args": ["python3.11", "/skills/skill_executor.py"],
+    "args": ["python3", "/skills/skill_executor.py"],
     "env": [
       "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-      "LD_LIBRARY_PATH=/host_lib:/lib64:/usr/lib64:/host_usr_lib:/host_usr_lib64:/usr/lib"
+      "LD_LIBRARY_PATH=/usr/lib:/usr/lib64:/host_lib:/lib64"
     ],
     "cwd": "/",
     "noNewPrivileges": true,
@@ -241,74 +241,44 @@ run_without_container() {
            "${BUNDLE_DIR}/rootfs/host_lib" "${BUNDLE_DIR}/rootfs/run" \
            "${BUNDLE_DIR}/rootfs/data" "${APP_DATA_DIR}/data"
 
-  # Copy host glibc dynamic linker into rootfs so the kernel can
-  # find the ELF interpreter for Debian Python (python3.11).
-  # Symlinks won't work because the kernel resolves the interpreter
-  # path before mount namespaces / bind-mounts are visible.
-  # Use glob to handle all architectures and path variations.
-  for ldso in /lib/ld-linux*.so* /lib64/ld-linux*.so* /usr/lib/ld-linux*.so*; do
-    if [ -f "$ldso" ]; then
-      destdir="${BUNDLE_DIR}/rootfs$(dirname "$ldso")"
-      mkdir -p "$destdir"
-      cp -f "$ldso" "$destdir/" 2>/dev/null || true
-      echo "Copied glibc ld-linux: $ldso -> $destdir/"
-    fi
-  done
-
-  # Create variant symlinks for name mismatches between Tizen and
-  # Debian.  Tizen armv7l uses ld-linux.so.3 but Debian armhf
-  # python3.11 expects ld-linux-armhf.so.3 as its ELF interpreter.
-  RLIB="${BUNDLE_DIR}/rootfs/lib"
-  if [ -f "$RLIB/ld-linux.so.3" ] && [ ! -f "$RLIB/ld-linux-armhf.so.3" ]; then
-    ln -sf ld-linux.so.3 "$RLIB/ld-linux-armhf.so.3"
-    echo "Symlinked ld-linux-armhf.so.3 -> ld-linux.so.3"
-  fi
-
   # Determine /usr mount strategy
   USR_MOUNT_CMD=""
   if [ "${OVERLAY_OK}" = "true" ]; then
     USR_MOUNT_CMD="mount --rbind \\\"${MERGED_USR}\\\" \\\"${BUNDLE_DIR}/rootfs/usr\\\" || true
     mount -o remount,bind,ro \\\"${BUNDLE_DIR}/rootfs/usr\\\" || true"
-  else
-    # No overlay: rootfs /usr is used directly (has python3.11).
-    # Mount host /usr/lib and /usr/lib64 at SEPARATE paths to
-    # avoid hiding rootfs /usr/lib/python3.11/ (stdlib).
-    USR_MOUNT_CMD="mkdir -p \\\"${BUNDLE_DIR}/rootfs/host_usr_lib\\\" \\\"${BUNDLE_DIR}/rootfs/host_usr_lib64\\\" 2>/dev/null || true
-    mount --rbind /usr/lib \\\"${BUNDLE_DIR}/rootfs/host_usr_lib\\\" 2>/dev/null || true
-    mount --rbind /usr/lib64 \\\"${BUNDLE_DIR}/rootfs/host_usr_lib64\\\" 2>/dev/null || true"
   fi
 
   exec unshare -m /bin/sh -c "
     mount --make-rprivate / || true
-    mount -t proc proc \"${BUNDLE_DIR}/rootfs/proc\" || true
-    mount --rbind /dev \"${BUNDLE_DIR}/rootfs/dev\" || true
-    mount --rbind \"${APP_DATA_DIR}/tools/skills\" \"${BUNDLE_DIR}/rootfs/skills\" || true
-    mount --rbind \"${APP_DATA_DIR}/data\" \"${BUNDLE_DIR}/rootfs/data\" || true
-    mount --rbind /tmp \"${BUNDLE_DIR}/rootfs/tmp\" || true
+    mount -t proc proc \\\"${BUNDLE_DIR}/rootfs/proc\\\" || true
+    mount --rbind /dev \\\"${BUNDLE_DIR}/rootfs/dev\\\" || true
+    mount --rbind \\\"${APP_DATA_DIR}/tools/skills\\\" \\\"${BUNDLE_DIR}/rootfs/skills\\\" || true
+    mount --rbind \\\"${APP_DATA_DIR}/data\\\" \\\"${BUNDLE_DIR}/rootfs/data\\\" || true
+    mount --rbind /tmp \\\"${BUNDLE_DIR}/rootfs/tmp\\\" || true
 
-    # Mount /usr (overlay or direct + host libs)
-    ${USR_MOUNT_CMD}
-    mount --rbind /etc \"${BUNDLE_DIR}/rootfs/etc\" || true
-    mount -o remount,bind,ro \"${BUNDLE_DIR}/rootfs/etc\" || true
-    mount --rbind /opt/etc \"${BUNDLE_DIR}/rootfs/opt/etc\" || true
-    mount -o remount,bind,ro \"${BUNDLE_DIR}/rootfs/opt/etc\" || true
-    mount --rbind /lib \"${BUNDLE_DIR}/rootfs/host_lib\" || true
-    mount -o remount,bind,ro \"${BUNDLE_DIR}/rootfs/host_lib\" || true
+    # Mount /usr (overlay or rootfs-direct)
+    \${USR_MOUNT_CMD}
+    mount --rbind /etc \\\"${BUNDLE_DIR}/rootfs/etc\\\" || true
+    mount -o remount,bind,ro \\\"${BUNDLE_DIR}/rootfs/etc\\\" || true
+    mount --rbind /opt/etc \\\"${BUNDLE_DIR}/rootfs/opt/etc\\\" || true
+    mount -o remount,bind,ro \\\"${BUNDLE_DIR}/rootfs/opt/etc\\\" || true
+    mount --rbind /lib \\\"${BUNDLE_DIR}/rootfs/host_lib\\\" || true
+    mount -o remount,bind,ro \\\"${BUNDLE_DIR}/rootfs/host_lib\\\" || true
     if [ -d /lib64 ]; then
-      mkdir -p \"${BUNDLE_DIR}/rootfs/lib64\"
-      mount --rbind /lib64 \"${BUNDLE_DIR}/rootfs/lib64\" || true
-      mount -o remount,bind,ro \"${BUNDLE_DIR}/rootfs/lib64\" || true
+      mkdir -p \\\"${BUNDLE_DIR}/rootfs/lib64\\\"
+      mount --rbind /lib64 \\\"${BUNDLE_DIR}/rootfs/lib64\\\" || true
+      mount -o remount,bind,ro \\\"${BUNDLE_DIR}/rootfs/lib64\\\" || true
     fi
 
     # Read-write mount: /run (D-Bus runtime sockets)
-    mount --rbind /run \"${BUNDLE_DIR}/rootfs/run\" || true
+    mount --rbind /run \\\"${BUNDLE_DIR}/rootfs/run\\\" || true
 
-    # Read-only mount: CLI tools (aurum-cli, etc.)
-    mkdir -p \"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw/tools/cli\" || true
-    mount --rbind \"${APP_DATA_DIR}/tools/cli\" \"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw/tools/cli\" || true
-    mount -o remount,bind,ro \"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw/tools/cli\" || true
+    # Read-only mount: CLI tools
+    mkdir -p \\\"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw/tools/cli\\\" || true
+    mount --rbind \\\"${APP_DATA_DIR}/tools/cli\\\" \\\"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw/tools/cli\\\" || true
+    mount -o remount,bind,ro \\\"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw/tools/cli\\\" || true
 
-    exec chroot \"${BUNDLE_DIR}/rootfs\" /bin/sh -c 'LD_LIBRARY_PATH=/host_lib:/lib64:/usr/lib64:/host_usr_lib:/host_usr_lib64:/usr/lib exec python3.11 /skills/skill_executor.py'
+    exec chroot \\\"${BUNDLE_DIR}/rootfs\\\" /bin/sh -c 'LD_LIBRARY_PATH=/usr/lib:/usr/lib64:/host_lib:/lib64 exec python3 /skills/skill_executor.py'
   "
 }
 
