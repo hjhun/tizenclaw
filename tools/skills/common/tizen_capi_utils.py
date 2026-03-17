@@ -52,12 +52,29 @@ def load_library(libnames):
 
     _preload_glibc()
 
+    # Debug: log LD_LIBRARY_PATH in this process
+    ldpath = os.environ.get("LD_LIBRARY_PATH", "")
+    import sys
+    print(f"[CAPI_DEBUG] LD_LIBRARY_PATH={ldpath}", file=sys.stderr, flush=True)
+
     errors = []
     for libname in libnames:
+        # Try bare name first (uses LD_LIBRARY_PATH + ld.so.cache)
         try:
             return ctypes.CDLL(libname)
         except OSError as e:
             errors.append(f"{libname}: {e}")
+
+        # Fallback: try full path in each LD_LIBRARY_PATH dir
+        for d in ldpath.split(":"):
+            full = os.path.join(d, libname) if d else None
+            if full and os.path.exists(full):
+                print(f"[CAPI_DEBUG] Found {full}, loading by path",
+                      file=sys.stderr, flush=True)
+                try:
+                    return ctypes.CDLL(full)
+                except OSError as e2:
+                    errors.append(f"{full}: {e2}")
 
     raise ImportError(f"Failed to load any of the libraries {libnames}. Errors: {'; '.join(errors)}")
 
