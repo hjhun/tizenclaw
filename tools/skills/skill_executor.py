@@ -48,7 +48,24 @@ def _log_startup_info():
     log(f"sys.executable: {sys.executable}")
     log(f"sys.version: {sys.version}")
     log(f"PATH: {os.environ.get('PATH', '')}")
-    log(f"LD_LIBRARY_PATH: {os.environ.get('LD_LIBRARY_PATH', '')}")
+    ldpath = os.environ.get('LD_LIBRARY_PATH', '')
+    log(f"LD_LIBRARY_PATH: {ldpath}")
+    # Debug: check CAPI lib visibility in each LD_LIBRARY_PATH dir
+    capi_lib = "libcapi-appfw-app-manager.so.0"
+    for d in ldpath.split(":"):
+        if not d:
+            continue
+        full = os.path.join(d, capi_lib)
+        exists = os.path.exists(full)
+        if exists:
+            log(f"  FOUND: {full}")
+        else:
+            # List first few .so files in the dir for context
+            try:
+                sos = [f for f in os.listdir(d) if '.so' in f][:5]
+                log(f"  NOT in {d} (has {len(sos)} .so: {sos})")
+            except OSError as e:
+                log(f"  NOT in {d} (error: {e})")
 
 MAX_PAYLOAD = 10 * 1024 * 1024  # 10 MB
 EXEC_TIMEOUT = 30  # seconds
