@@ -123,6 +123,12 @@ write_config() {
       "options": ["rbind", "rw"]
     },
     {
+      "destination": "/opt/usr",
+      "type": "bind",
+      "source": "/opt/usr",
+      "options": ["rbind", "rw"]
+    },
+    {
       "destination": "/opt/usr/share/tizenclaw/tools/cli",
       "type": "bind",
       "source": "/opt/usr/share/tizenclaw/tools/cli",
