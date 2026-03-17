@@ -200,6 +200,10 @@ def execute_skill(skill_name, args_str):
             "output": f"Failed to run skill: {e}",
         }
 
+    # Always log subprocess stderr for CAPI debug visibility
+    if result.stderr:
+        log(f"Skill stderr: {result.stderr[:500]}")
+
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "")[:500]
         return {
