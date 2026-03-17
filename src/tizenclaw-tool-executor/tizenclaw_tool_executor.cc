@@ -51,6 +51,9 @@
 
 #include <json.hpp>
 
+#undef PROJECT_TAG
+#define PROJECT_TAG "TIZENCLAW_TOOL_EXECUTOR"
+
 #include "../common/logging.hh"
 
 namespace {
