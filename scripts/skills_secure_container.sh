@@ -238,7 +238,8 @@ run_without_container() {
 
   mkdir -p "$R/skills" "$R/proc" "$R/dev" "$R/tmp" \
            "$R/usr" "$R/etc" "$R/opt/etc" \
-           "$R/host_lib" "$R/run" "$R/data" "${APP_DATA_DIR}/data"
+           "$R/host_lib" "$R/host_usr_lib" "$R/host_usr_lib64" \
+           "$R/run" "$R/data" "${APP_DATA_DIR}/data"
 
   # Build the mount + chroot command as a single string for unshare
   local CMD="mount --make-rprivate / || true"
@@ -252,6 +253,10 @@ run_without_container() {
   if [ "${OVERLAY_OK}" = "true" ]; then
     CMD="$CMD; mount --rbind \"${MERGED_USR}\" \"$R/usr\" || true"
     CMD="$CMD; mount -o remount,bind,ro \"$R/usr\" || true"
+  else
+    # No overlay: mount host CAPI libs at separate paths
+    CMD="$CMD; mount --rbind /usr/lib \"$R/host_usr_lib\" 2>/dev/null || true"
+    CMD="$CMD; mount --rbind /usr/lib64 \"$R/host_usr_lib64\" 2>/dev/null || true"
   fi
 
   CMD="$CMD; mount --rbind /etc \"$R/etc\" || true"
@@ -274,7 +279,7 @@ run_without_container() {
   CMD="$CMD; mount --rbind \"${APP_DATA_DIR}/tools/cli\" \"$R/opt/usr/share/tizenclaw/tools/cli\" || true"
   CMD="$CMD; mount -o remount,bind,ro \"$R/opt/usr/share/tizenclaw/tools/cli\" || true"
 
-  CMD="$CMD; exec chroot \"$R\" /bin/sh -c 'LD_LIBRARY_PATH=/usr/lib:/usr/lib64:/host_lib:/lib64 exec python3 /skills/skill_executor.py'"
+  CMD="$CMD; exec chroot \"$R\" /bin/sh -c 'LD_LIBRARY_PATH=/usr/lib:/usr/lib64:/host_lib:/host_usr_lib:/host_usr_lib64:/lib64 exec python3 /skills/skill_executor.py'"
 
   exec unshare -m /bin/sh -c "$CMD"
 }
