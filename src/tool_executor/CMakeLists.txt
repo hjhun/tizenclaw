@@ -1,41 +1,42 @@
-PROJECT(tizenclaw-tool-executor CXX)
+SET(TARGET_TOOL_EXECUTOR "tizenclaw-tool-executor")
 
-SET(TOOL_EXECUTOR_SRCS
-    tool_executor_main.cc
-    ${CMAKE_SOURCE_DIR}/src/common/logging.cc
+AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR} TOOL_EXECUTOR_SRCS)
+
+ADD_EXECUTABLE(${TARGET_TOOL_EXECUTOR}
+  ${TOOL_EXECUTOR_SRCS}
+  "${CMAKE_CURRENT_SOURCE_DIR}/../common/logging.cc"
 )
 
-ADD_EXECUTABLE(tizenclaw-tool-executor ${TOOL_EXECUTOR_SRCS})
-
-# Find Python3 include/lib paths from sysconfig
+# Python3 include/lib paths via sysconfig
 EXECUTE_PROCESS(
-    COMMAND python3 -c "import sysconfig; print(sysconfig.get_config_var('INCLUDEPY'))"
-    OUTPUT_VARIABLE PYTHON3_INCLUDE_DIR
-    OUTPUT_STRIP_TRAILING_WHITESPACE
+  COMMAND python3 -c "import sysconfig; print(sysconfig.get_config_var('INCLUDEPY'))"
+  OUTPUT_VARIABLE PYTHON3_INCLUDE_DIR
+  OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 EXECUTE_PROCESS(
-    COMMAND python3 -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))"
-    OUTPUT_VARIABLE PYTHON3_LIB_DIR
-    OUTPUT_STRIP_TRAILING_WHITESPACE
+  COMMAND python3 -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))"
+  OUTPUT_VARIABLE PYTHON3_LIB_DIR
+  OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 EXECUTE_PROCESS(
-    COMMAND python3 -c "import sysconfig; v=sysconfig.get_config_var('VERSION'); print(f'python{v}')"
-    OUTPUT_VARIABLE PYTHON3_LIB_NAME
-    OUTPUT_STRIP_TRAILING_WHITESPACE
+  COMMAND python3 -c "import sysconfig; v=sysconfig.get_config_var('VERSION'); print(f'python{v}')"
+  OUTPUT_VARIABLE PYTHON3_LIB_NAME
+  OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
 MESSAGE(STATUS "Python3 include: ${PYTHON3_INCLUDE_DIR}")
 MESSAGE(STATUS "Python3 libdir:  ${PYTHON3_LIB_DIR}")
 MESSAGE(STATUS "Python3 lib:     ${PYTHON3_LIB_NAME}")
 
-TARGET_INCLUDE_DIRECTORIES(tizenclaw-tool-executor PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/common/nlohmann
-    ${PYTHON3_INCLUDE_DIR}
+TARGET_INCLUDE_DIRECTORIES(${TARGET_TOOL_EXECUTOR} PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/../common"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../common/nlohmann"
+  "${PYTHON3_INCLUDE_DIR}"
 )
 
-APPLY_PKG_CONFIG(tizenclaw-tool-executor PUBLIC DLOG_DEPS)
+APPLY_PKG_CONFIG(${TARGET_TOOL_EXECUTOR} PUBLIC DLOG_DEPS)
 
-TARGET_LINK_DIRECTORIES(tizenclaw-tool-executor PRIVATE ${PYTHON3_LIB_DIR})
-TARGET_LINK_LIBRARIES(tizenclaw-tool-executor PRIVATE ${PYTHON3_LIB_NAME} pthread)
+TARGET_LINK_DIRECTORIES(${TARGET_TOOL_EXECUTOR} PRIVATE ${PYTHON3_LIB_DIR})
+TARGET_LINK_LIBRARIES(${TARGET_TOOL_EXECUTOR} PRIVATE ${PYTHON3_LIB_NAME} pthread)
 
-INSTALL(TARGETS tizenclaw-tool-executor DESTINATION ${BINDIR})
+INSTALL(TARGETS ${TARGET_TOOL_EXECUTOR} DESTINATION ${BINDIR})
