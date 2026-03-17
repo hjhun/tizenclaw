@@ -866,7 +866,7 @@ bool ContainerEngine::WriteSkillsConfig() const {
              "/skills/skill_executor.py"],
     "env": [
       "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-      "LD_LIBRARY_PATH=/lib64:/usr/lib64:/lib:/host_lib:/usr/lib"
+      "LD_LIBRARY_PATH=/host_lib:/lib64:/usr/lib64:/host_usr_lib:/host_usr_lib64:/usr/lib"
     ],
     "cwd": "/",
     "noNewPrivileges": true,
