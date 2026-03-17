@@ -1002,9 +1002,7 @@ bool ContainerEngine::WriteSkillsConfig() const {
   "linux": {
     "cgroupsPath": "",
     "namespaces": [
-      {"type": "mount"},
-      {"type": "pid"},
-      {"type": "ipc"}
+      {"type": "mount"}
     ],
     "seccomp": {
       "defaultAction": "SCMP_ACT_ERRNO",
