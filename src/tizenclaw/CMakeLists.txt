@@ -124,3 +124,7 @@ INSTALL(FILES "${CMAKE_SOURCE_DIR}/data/sample/system_cli_config.json.sample"
         RENAME "system_cli_config.json")
 INSTALL(DIRECTORY ${CMAKE_SOURCE_DIR}/data/system_cli/
         DESTINATION /opt/usr/share/tizenclaw/tools/system_cli/)
+
+# RAG data (compressed; unzipped during %post in spec)
+INSTALL(FILES ${CMAKE_SOURCE_DIR}/data/rag/web.zip
+        DESTINATION /opt/usr/share/tizenclaw/rag/)

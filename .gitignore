@@ -48,3 +48,6 @@ dlog_dump.txt
 
 # Plans (local only)
 plan/
+
+# RAG generated data (only data/rag/*.zip is committed)
+/rag/

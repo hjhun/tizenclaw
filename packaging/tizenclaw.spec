@@ -32,6 +32,7 @@ BuildRequires:  pkgconfig(vconf)
 BuildRequires:  pkgconfig(vconf-internal-keys)
 BuildRequires:  python3-devel
 BuildRequires:  python3-base
+Requires:       unzip
 
 %description
 TizenClaw Native Agent running as a System Service, utilizing LXC for skills execution.
@@ -85,6 +86,7 @@ mkdir -p %{buildroot}/opt/usr/share/tizenclaw/tools/cli
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/sandbox/packages/pip
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/sandbox/packages/npm
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/wgt
+mkdir -p %{buildroot}/opt/usr/share/tizenclaw/rag
 mkdir -p %{buildroot}/opt/usr/share/crash/dump
 
 # Install Bridge WGT
@@ -96,6 +98,13 @@ fi
 ln -sf ../tizenclaw.service %{buildroot}%{_unitdir}/multi-user.target.wants/tizenclaw.service
 ln -sf ../tizenclaw-tool-executor.socket %{buildroot}%{_unitdir}/sockets.target.wants/tizenclaw-tool-executor.socket
 ln -sf ../tizenclaw-code-sandbox.socket %{buildroot}%{_unitdir}/sockets.target.wants/tizenclaw-code-sandbox.socket
+
+%post
+# Unzip RAG web docs for LLM reference
+if [ -f /opt/usr/share/tizenclaw/rag/web.zip ]; then
+  mkdir -p /opt/usr/share/tizenclaw/rag/web
+  unzip -o -q /opt/usr/share/tizenclaw/rag/web.zip -d /opt/usr/share/tizenclaw/rag/web
+fi
 
 %files
 %defattr(-,root,root,-)
@@ -133,6 +142,8 @@ ln -sf ../tizenclaw-code-sandbox.socket %{buildroot}%{_unitdir}/sockets.target.w
 %dir /opt/usr/share/tizenclaw/sandbox/packages/pip/
 %dir /opt/usr/share/tizenclaw/sandbox/packages/npm/
 %dir /opt/usr/share/tizenclaw/
+%dir /opt/usr/share/tizenclaw/rag/
+/opt/usr/share/tizenclaw/rag/web.zip
 %dir /opt/usr/share/tizenclaw/wgt/
 /opt/usr/share/tizenclaw/wgt/*
 %dir /opt/usr/share/crash/
