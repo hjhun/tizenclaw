@@ -2461,10 +2461,32 @@ void AgentCore::InitializeToolDispatcher() {
       [this](const nlohmann::json& args,
              const std::string&,
              const std::string&) {
-        return ExecuteFileOp(
-            args.value("operation", ""),
-            args.value("path", ""),
-            args.value("content", ""));
+        std::string op = args.value("operation", "");
+        std::string path = args.value("path", "");
+        std::string result = ExecuteFileOp(
+            op, path, args.value("content", ""));
+
+        // Auto-reload bridge app when web app
+        // files are modified
+        if ((op == "write_file" ||
+             op == "delete_file") &&
+            path.find("/web/apps/") !=
+                std::string::npos) {
+          // Extract app_id from path:
+          // .../web/apps/<app_id>/...
+          auto pos = path.find("/web/apps/");
+          std::string after =
+              path.substr(pos + 10);  // skip /web/apps/
+          auto slash = after.find('/');
+          std::string app_id =
+              (slash != std::string::npos)
+                  ? after.substr(0, slash)
+                  : after;
+          if (!app_id.empty()) {
+            LaunchBridgeApp(app_id);
+          }
+        }
+        return result;
       };
 
   for (const auto& n :
@@ -3025,47 +3047,7 @@ std::string AgentCore::GenerateWebApp(
       "http://localhost:9090/apps/" + app_id + "/";
 
   // Auto-launch bridge app to display the generated app
-  // tizenclaw-bridge is a WGT app running on WRT,
-  // providing tizen.* Web Device API access to the generated web app
-  bool launched = false;
-  constexpr const char* kBridgeAppId =
-      "QvaPeQ7RDA.tizenclawbridge";
-
-  // Try launching with url key via bundle
-  bundle* b = bundle_create();
-  if (b) {
-    bundle_add_str(b, "url", app_url.c_str());
-    int launch_ret =
-        aul_launch_app(kBridgeAppId, b);
-    bundle_free(b);
-    if (launch_ret >= 0) {
-      LOG(INFO) << "GenerateWebApp: launched "
-                << kBridgeAppId
-                << " with url=" << app_url;
-      launched = true;
-    } else {
-      LOG(WARNING) << "GenerateWebApp: "
-                   << kBridgeAppId
-                   << " launch failed (ret="
-                   << launch_ret << ")";
-    }
-  }
-
-  // Fallback: try plain open
-  if (!launched) {
-    int open_ret = aul_open_app(kBridgeAppId);
-    if (open_ret >= 0) {
-      LOG(INFO) << "GenerateWebApp: opened "
-                << kBridgeAppId
-                << " (without url param)";
-      launched = true;
-    } else {
-      LOG(WARNING) << "GenerateWebApp: "
-                   << kBridgeAppId
-                   << " not available (ret="
-                   << open_ret << ")";
-    }
-  }
+  bool launched = LaunchBridgeApp(app_id);
 
   nlohmann::json result = {
       {"status", "ok"},
@@ -3082,6 +3064,44 @@ std::string AgentCore::GenerateWebApp(
   }
 
   return result.dump();
+}
+
+bool AgentCore::LaunchBridgeApp(
+    const std::string& app_id) {
+  constexpr const char* kBridgeAppId =
+      "QvaPeQ7RDA.tizenclawbridge";
+  std::string app_url =
+      "http://localhost:9090/apps/" + app_id + "/";
+
+  // Try launching with url key via bundle
+  bundle* b = bundle_create();
+  if (b) {
+    bundle_add_str(b, "url", app_url.c_str());
+    int ret = aul_launch_app(kBridgeAppId, b);
+    bundle_free(b);
+    if (ret >= 0) {
+      LOG(INFO) << "LaunchBridgeApp: launched "
+                << kBridgeAppId
+                << " with url=" << app_url;
+      return true;
+    }
+    LOG(WARNING) << "LaunchBridgeApp: launch "
+                 << "failed (ret=" << ret << ")";
+  }
+
+  // Fallback: try plain open
+  int ret = aul_open_app(kBridgeAppId);
+  if (ret >= 0) {
+    LOG(INFO) << "LaunchBridgeApp: opened "
+              << kBridgeAppId
+              << " (without url param)";
+    return true;
+  }
+  LOG(WARNING) << "LaunchBridgeApp: "
+               << kBridgeAppId
+               << " not available (ret="
+               << ret << ")";
+  return false;
 }
 
 }  // namespace tizenclaw

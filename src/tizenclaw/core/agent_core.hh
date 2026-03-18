@@ -163,6 +163,9 @@ class AgentCore {
   // Generate a dynamic web app (built-in tool)
   std::string GenerateWebApp(const nlohmann::json& args);
 
+  // Launch the Bridge WGT app with a web app URL
+  bool LaunchBridgeApp(const std::string& app_id);
+
 
   // Generate embedding vector via LLM API
   std::vector<float> GenerateEmbedding(const std::string& text);
