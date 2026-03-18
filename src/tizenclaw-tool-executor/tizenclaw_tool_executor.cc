@@ -116,27 +116,7 @@ class UniqueFd {
   int fd_;
 };
 
-// ─── Diagnostics ────────────────────────────────────────────
-nlohmann::json HandleDiag(
-    const tizenclaw::tool_executor::PythonEngine& python_engine) {
-  nlohmann::json diag;
-  diag["pid"] = getpid();
-  diag["python3_path"] =
-      tizenclaw::tool_executor::PythonEngine::FindPython3();
-  diag["python_embedded"] = python_engine.IsInitialized();
 
-  namespace fs = std::filesystem;
-  std::error_code ec;
-  nlohmann::json tools = nlohmann::json::array();
-  if (fs::is_directory(kToolsDir, ec)) {
-    for (const auto& e : fs::directory_iterator(kToolsDir, ec))
-      if (e.is_directory())
-        tools.push_back(e.path().filename().string());
-  }
-  diag["tools"] = tools;
-
-  return {{"status", "ok"}, {"output", diag.dump()}};
-}
 
 // ─── Client handler ─────────────────────────────────────────
 void HandleClient(

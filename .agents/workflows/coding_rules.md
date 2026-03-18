@@ -35,10 +35,15 @@ When implementing TizenClaw in this repository, the Agent (AI) must **strictly**
   - `std::ranges`: Prioritize range-based algorithms.
   - `using enum`: Apply for repeated enumeration use within scope.
 - **Variable Shadowing (`-Wshadow`)**:
-  - **NEVER** declare a variable with the same name as an existing variable in an outer scope. Some build environments treat `-Wshadow` as `-Werror=shadow`, causing build failures.
+  - **NEVER** declare a variable with the same name as an existing variable in an outer scope. The project compiles with `-Wshadow`, and some build environments treat this as `-Werror=shadow`, causing build failures.
   - This is especially critical inside **lambdas** and **nested blocks** (e.g., `if`/`for` bodies). When a lambda captures or receives a variable from its enclosing scope, the inner variable must use a distinct name.
   - **Bad**: Reusing `ret`, `ctx`, `manifest` inside a lambda/inner block when the same name exists in the outer function scope.
   - **Good**: Use descriptive, disambiguated names like `metadata_ret`, `iter_ctx`, `manifest_path` for inner variables.
+- **Unused Code (`-Wunused`)**:
+  - The project compiles with `-Wunused`. **NEVER** leave unused functions, variables, or includes in the code.
+  - If a helper function is no longer called, **remove it immediately** rather than leaving it for later.
+  - If a function parameter is intentionally unused (e.g., callback signatures), cast to `void` or use `[[maybe_unused]]`: `[[maybe_unused]] int fd`.
+  - **Note**: `-Wno-unused-parameter` and `-Wno-unused-result` are currently suppressed project-wide, so unused *parameters* and *return values* won't trigger warnings. But unused *functions* and *local variables* will.
 
 ## 2. Clean Code & Effective C++ Principles
 - **Effective C++ (Scott Meyers)**:
@@ -54,6 +59,7 @@ When implementing TizenClaw in this repository, the Agent (AI) must **strictly**
 ## 3. CMake and Build Support
 - Written targeting the Tizen GBS (Gerrit Build System) environment, `gbs build` must always succeed via CMake.
 - When adding new C++ source files, you must update the `SOURCES` list in `CMakeLists.txt`.
+- **Warning Flags**: The project compiles with `-Wall -Wextra -Wshadow -Wunused -fPIC`. All code must compile **warning-free** under these flags.
 
 ## 4. Tizen-Specific Rules
 - Features requiring privileges (Network, LXC execution, AppManager, etc.) must be explicitly stated in the `<privileges>` block of `tizen-manifest.xml`.

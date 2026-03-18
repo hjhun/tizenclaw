@@ -5,7 +5,7 @@ PROJECT(tizenclaw CXX)
 ## Compiler flags
 SET(CMAKE_CXX_STANDARD 20)
 SET(CMAKE_CXX_STANDARD_REQUIRED ON)
-SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -fPIC")
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wshadow -Wunused -fPIC")
 
 # Add IPO/LTO Support
 cmake_policy(SET CMP0069 NEW)
