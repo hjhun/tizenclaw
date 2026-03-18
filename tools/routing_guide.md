@@ -13,6 +13,7 @@ Native Tizen Platform features. These are the fastest and most reliable for core
 C++ built-in tools for system management and agent coordination.
 - **Core Operations**: `file_manager` (file I/O), `task_scheduler` (automation).
 - **Agent Coordination**: `supervisor_engine` (multi-agent delegation), `session_manager` (context handling).
+- **Web App Generation**: `generate_web_app` (dynamic HTML/CSS/JS apps served at `/apps/<id>/`).
 
 ### C. Standard Skills (`skills/`) - Medium Priority
 Pre-defined Python scripts for specific functionalities (e.g., `web_search`, `get_battery_info`).

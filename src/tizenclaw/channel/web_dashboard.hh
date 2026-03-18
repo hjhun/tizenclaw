@@ -112,6 +112,15 @@ class WebDashboard : public Channel {
   std::string ConfigFilePath(const std::string& name) const;
   std::string SampleFilePath(const std::string& name) const;
 
+  // Dynamic web app endpoints
+  void ApiAppsList(SoupMessage* msg) const;
+  void ApiAppDetail(SoupMessage* msg,
+                    const std::string& app_id) const;
+  void ApiAppDelete(SoupMessage* msg,
+                    const std::string& app_id);
+  void ServeAppFile(SoupMessage* msg,
+                    const std::string& path) const;
+
   AgentCore* agent_;
   TaskScheduler* scheduler_;
   SoupServer* server_ = nullptr;

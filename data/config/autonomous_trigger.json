@@ -48,6 +48,28 @@
       "cooldown_minutes": 5,
       "action": "direct",
       "direct_prompt": "Perception Engine이 디바이스 위험 상태를 감지했습니다. 현재 복합적 위험 요인을 분석하고, 사용자에게 구체적인 해결 방법을 제안해주세요."
+    },
+    {
+      "name": "storage_low",
+      "event_type": "storage.low_space",
+      "condition": {"available_percent": {"$lt": 10}},
+      "cooldown_minutes": 60,
+      "action": "evaluate"
+    },
+    {
+      "name": "app_crash_detected",
+      "event_type": "app.crashed",
+      "condition": {},
+      "cooldown_minutes": 5,
+      "action": "evaluate"
+    },
+    {
+      "name": "thermal_warning",
+      "event_type": "thermal.high",
+      "condition": {"temperature": {"$gt": 45}},
+      "cooldown_minutes": 15,
+      "action": "direct",
+      "direct_prompt": "디바이스 온도가 높습니다. CPU 부하를 분석하고 불필요한 작업을 줄이는 방법을 제안해주세요."
     }
   ]
 }

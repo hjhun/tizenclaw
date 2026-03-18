@@ -922,6 +922,77 @@ void ToolDeclarationBuilder::AppendBuiltinTools(
              {"tool_name", "arguments"})}};
     tools.push_back(t);
   }
+
+  // generate_web_app
+  {
+    LlmToolDecl t;
+    t.name = "generate_web_app";
+    t.description =
+        "Generate a dynamic web application and "
+        "serve it via the built-in web server. "
+        "Creates a complete HTML/CSS/JS app "
+        "accessible at "
+        "http://<device-ip>:9090/apps/<app_id>/. "
+        "Use this to create dashboards, data "
+        "visualizations, device control panels, "
+        "or any interactive web UI on demand. "
+        "The generated app can use the TizenClaw "
+        "REST API (same origin) for live data.";
+    t.parameters = {
+        {"type", "object"},
+        {"properties",
+         {{"app_id",
+           {{"type", "string"},
+            {"description",
+             "Unique identifier for the app "
+             "(lowercase alphanumeric + "
+             "underscore, max 64 chars)"}}},
+          {"title",
+           {{"type", "string"},
+            {"description",
+             "Display title for the web app"}}},
+          {"html",
+           {{"type", "string"},
+            {"description",
+             "Complete HTML content. Can be a "
+             "single-file app with inline "
+             "CSS/JS, or just the HTML "
+             "structure referencing "
+             "style.css and app.js"}}},
+          {"css",
+           {{"type", "string"},
+            {"description",
+             "Optional separate CSS stylesheet "
+             "(saved as style.css)"}}},
+          {"js",
+           {{"type", "string"},
+            {"description",
+             "Optional separate JavaScript "
+             "code (saved as app.js)"}}},
+          {"assets",
+           {{"type", "array"},
+            {"description",
+             "Optional array of external assets "
+             "to download (images, fonts, etc). "
+             "Each item: {\"url\": \"...\", "
+             "\"filename\": \"...\"}."},
+            {"items",
+             {{"type", "object"},
+              {"properties",
+               {{"url",
+                 {{"type", "string"},
+                  {"description",
+                   "URL to download"}}},
+                {"filename",
+                 {{"type", "string"},
+                  {"description",
+                   "Local filename to save "
+                   "as (e.g. logo.png)"}}}}}}}}}}},
+        {"required",
+         nlohmann::json::array(
+             {"app_id", "title", "html"})}};
+    tools.push_back(t);
+  }
 }
 
 void ToolDeclarationBuilder::AppendActionTools(

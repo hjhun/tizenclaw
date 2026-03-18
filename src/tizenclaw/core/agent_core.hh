@@ -160,6 +160,10 @@ class AgentCore {
   std::string ExecuteCli(const std::string& tool_name,
                          const std::string& arguments);
 
+  // Generate a dynamic web app (built-in tool)
+  std::string GenerateWebApp(const nlohmann::json& args);
+
+
   // Generate embedding vector via LLM API
   std::vector<float> GenerateEmbedding(const std::string& text);
 

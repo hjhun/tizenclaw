@@ -132,6 +132,12 @@ void WebDashboard::HandleRequest(SoupServer* /*server*/,
     return;
   }
 
+  // Serve generated web apps from /apps/ path
+  if (req_path.substr(0, 6) == "/apps/") {
+    self->ServeAppFile(msg, req_path);
+    return;
+  }
+
   // Serve static files
   self->ServeStaticFile(msg, req_path);
 }
@@ -203,6 +209,17 @@ void WebDashboard::HandleApi(
   } else if (path == "/api/ota/rollback") {
     const_cast<WebDashboard*>(this)->
         ApiOtaRollback(msg);
+  } else if (path == "/api/apps") {
+    ApiAppsList(msg);
+  } else if (path.substr(0, 10) ==
+             "/api/apps/") {
+    std::string app_id = path.substr(10);
+    if (msg->method == SOUP_METHOD_DELETE) {
+      const_cast<WebDashboard*>(this)->
+          ApiAppDelete(msg, app_id);
+    } else {
+      ApiAppDetail(msg, app_id);
+    }
   } else {
     soup_message_set_status(
         msg, SOUP_STATUS_NOT_FOUND);
@@ -1226,4 +1243,274 @@ void WebDashboard::ApiConfigSet(SoupMessage* msg, const std::string& name) {
                             r.c_str(), static_cast<gsize>(r.size()));
 }
 
+void WebDashboard::ApiAppsList(
+    SoupMessage* msg) const {
+  nlohmann::json apps = nlohmann::json::array();
+
+  fs::path apps_dir =
+      std::string(APP_DATA_DIR) + "/web/apps";
+  std::error_code ec;
+  if (!fs::is_directory(apps_dir, ec)) {
+    std::string body = apps.dump();
+    soup_message_set_status(
+        msg, SOUP_STATUS_OK);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        body.c_str(),
+        static_cast<gsize>(body.size()));
+    return;
+  }
+
+  for (const auto& entry :
+       fs::directory_iterator(apps_dir, ec)) {
+    if (!entry.is_directory(ec)) continue;
+    std::string dirname =
+        entry.path().filename().string();
+    if (dirname.empty() || dirname[0] == '.')
+      continue;
+
+    nlohmann::json app_j;
+    app_j["app_id"] = dirname;
+    app_j["url"] = "/apps/" + dirname + "/";
+
+    // Read manifest.json if exists
+    std::string manifest_path =
+        entry.path().string() +
+        "/manifest.json";
+    std::ifstream mf(manifest_path);
+    if (mf.is_open()) {
+      try {
+        nlohmann::json manifest;
+        mf >> manifest;
+        app_j["title"] =
+            manifest.value("title", dirname);
+        app_j["created_at"] =
+            manifest.value("created_at", 0);
+        app_j["has_css"] =
+            manifest.value("has_css", false);
+        app_j["has_js"] =
+            manifest.value("has_js", false);
+      } catch (...) {
+        app_j["title"] = dirname;
+      }
+    } else {
+      app_j["title"] = dirname;
+    }
+
+    apps.push_back(std::move(app_j));
+  }
+
+  std::string body = apps.dump();
+  soup_message_set_status(msg, SOUP_STATUS_OK);
+  soup_message_set_response(
+      msg, "application/json",
+      SOUP_MEMORY_COPY,
+      body.c_str(),
+      static_cast<gsize>(body.size()));
+}
+
+void WebDashboard::ApiAppDetail(
+    SoupMessage* msg,
+    const std::string& app_id) const {
+  // Prevent path traversal
+  if (app_id.empty() ||
+      app_id.find("..") != std::string::npos ||
+      app_id.find('/') != std::string::npos) {
+    soup_message_set_status(
+        msg, SOUP_STATUS_BAD_REQUEST);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        "{\"error\":\"Invalid app_id\"}", 25);
+    return;
+  }
+
+  fs::path app_dir =
+      std::string(APP_DATA_DIR) +
+      "/web/apps/" + app_id;
+  std::error_code ec;
+  if (!fs::is_directory(app_dir, ec)) {
+    soup_message_set_status(
+        msg, SOUP_STATUS_NOT_FOUND);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        "{\"error\":\"App not found\"}", 24);
+    return;
+  }
+
+  nlohmann::json app_j;
+  app_j["app_id"] = app_id;
+  app_j["url"] = "/apps/" + app_id + "/";
+
+  // Read manifest
+  std::string manifest_path =
+      app_dir.string() + "/manifest.json";
+  std::ifstream mf(manifest_path);
+  if (mf.is_open()) {
+    try {
+      nlohmann::json manifest;
+      mf >> manifest;
+      app_j.merge_patch(manifest);
+    } catch (...) {}
+  }
+
+  // List files
+  nlohmann::json files =
+      nlohmann::json::array();
+  for (const auto& f :
+       fs::directory_iterator(app_dir, ec)) {
+    if (!f.is_regular_file(ec)) continue;
+    files.push_back(
+        f.path().filename().string());
+  }
+  app_j["files"] = files;
+
+  std::string body = app_j.dump();
+  soup_message_set_status(msg, SOUP_STATUS_OK);
+  soup_message_set_response(
+      msg, "application/json",
+      SOUP_MEMORY_COPY,
+      body.c_str(),
+      static_cast<gsize>(body.size()));
+}
+
+void WebDashboard::ApiAppDelete(
+    SoupMessage* msg,
+    const std::string& app_id) {
+  // Prevent path traversal
+  if (app_id.empty() ||
+      app_id.find("..") != std::string::npos ||
+      app_id.find('/') != std::string::npos) {
+    soup_message_set_status(
+        msg, SOUP_STATUS_BAD_REQUEST);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        "{\"error\":\"Invalid app_id\"}", 25);
+    return;
+  }
+
+  fs::path app_dir =
+      std::string(APP_DATA_DIR) +
+      "/web/apps/" + app_id;
+  std::error_code ec;
+  if (!fs::is_directory(app_dir, ec)) {
+    soup_message_set_status(
+        msg, SOUP_STATUS_NOT_FOUND);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        "{\"error\":\"App not found\"}", 24);
+    return;
+  }
+
+  fs::remove_all(app_dir, ec);
+  if (ec) {
+    std::string err =
+        "{\"error\":\"Delete failed: " +
+        ec.message() + "\"}";
+    soup_message_set_status(
+        msg, SOUP_STATUS_INTERNAL_SERVER_ERROR);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        err.c_str(),
+        static_cast<gsize>(err.size()));
+    return;
+  }
+
+  LOG(INFO) << "WebDashboard: deleted app '"
+            << app_id << "'";
+
+  nlohmann::json resp = {
+      {"status", "deleted"},
+      {"app_id", app_id}};
+  std::string body = resp.dump();
+  soup_message_set_status(msg, SOUP_STATUS_OK);
+  soup_message_set_response(
+      msg, "application/json",
+      SOUP_MEMORY_COPY,
+      body.c_str(),
+      static_cast<gsize>(body.size()));
+}
+
+void WebDashboard::ServeAppFile(
+    SoupMessage* msg,
+    const std::string& path) const {
+  // path format: /apps/{app_id}/[file]
+  // Extract app_id and file parts
+  std::string rel = path.substr(6);  // remove "/apps/"
+
+  // Prevent directory traversal
+  if (rel.find("..") != std::string::npos) {
+    soup_message_set_status(
+        msg, SOUP_STATUS_FORBIDDEN);
+    return;
+  }
+
+  std::string file_path =
+      std::string(APP_DATA_DIR) +
+      "/web/apps/" + rel;
+
+  // If path ends with /, serve index.html
+  if (rel.empty() || rel.back() == '/') {
+    file_path += "index.html";
+  }
+
+  std::ifstream f(file_path, std::ios::binary);
+  if (!f.is_open()) {
+    soup_message_set_status(
+        msg, SOUP_STATUS_NOT_FOUND);
+    soup_message_set_response(
+        msg, "text/html", SOUP_MEMORY_COPY,
+        "<h1>404 Not Found</h1>", 22);
+    return;
+  }
+
+  std::string content(
+      (std::istreambuf_iterator<char>(f)),
+      std::istreambuf_iterator<char>());
+
+  // Determine MIME type
+  std::string content_type = "text/html";
+  auto dot_pos = file_path.rfind('.');
+  if (dot_pos != std::string::npos) {
+    std::string ext =
+        file_path.substr(dot_pos);
+    if (ext == ".css") {
+      content_type = "text/css";
+    } else if (ext == ".js") {
+      content_type = "application/javascript";
+    } else if (ext == ".json") {
+      content_type = "application/json";
+    } else if (ext == ".png") {
+      content_type = "image/png";
+    } else if (ext == ".svg") {
+      content_type = "image/svg+xml";
+    } else if (ext == ".jpg" ||
+               ext == ".jpeg") {
+      content_type = "image/jpeg";
+    } else if (ext == ".gif") {
+      content_type = "image/gif";
+    } else if (ext == ".webp") {
+      content_type = "image/webp";
+    } else if (ext == ".ico") {
+      content_type = "image/x-icon";
+    } else if (ext == ".woff" ||
+               ext == ".woff2") {
+      content_type = "font/woff2";
+    }
+  }
+
+  soup_message_set_status(msg, SOUP_STATUS_OK);
+  soup_message_set_response(
+      msg, content_type.c_str(),
+      SOUP_MEMORY_COPY,
+      content.c_str(),
+      static_cast<gsize>(content.size()));
+}
+
 }  // namespace tizenclaw
+

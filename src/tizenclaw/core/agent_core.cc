@@ -2613,6 +2613,14 @@ void AgentCore::InitializeToolDispatcher() {
             args.value("arguments", ""));
       };
 
+  // Dynamic web app generation
+  tool_dispatch_["generate_web_app"] =
+      [this](const nlohmann::json& args,
+             const std::string&,
+             const std::string&) {
+        return GenerateWebApp(args);
+      };
+
   // Register built-in tools to CapabilityRegistry
   auto& reg = CapabilityRegistry::GetInstance();
   auto register_builtin =
@@ -2698,6 +2706,10 @@ void AgentCore::InitializeToolDispatcher() {
   register_builtin(
       "execute_cli", "Execute CLI tool",
       "cli", SideEffect::kReversible);
+  register_builtin(
+      "generate_web_app",
+      "Generate dynamic web app",
+      "web_app", SideEffect::kReversible);
 
   LOG(INFO) << "Tool dispatcher initialized ("
             << tool_dispatch_.size()
@@ -2840,6 +2852,188 @@ std::string AgentCore::ExecuteMemoryOp(
   return "{\"error\": \"Unknown memory "
          "operation: " +
          operation + "\"}";
+}
+
+std::string AgentCore::GenerateWebApp(
+    const nlohmann::json& args) {
+  namespace fs = std::filesystem;
+
+  std::string app_id = args.value("app_id", "");
+  std::string title = args.value("title", "");
+  std::string html = args.value("html", "");
+  std::string css = args.value("css", "");
+  std::string js = args.value("js", "");
+
+  // Validate app_id
+  if (app_id.empty() || app_id.size() > 64) {
+    return "{\"error\": \"app_id is required "
+           "(max 64 chars)\"}";
+  }
+  for (char c : app_id) {
+    if (!std::isalnum(c) && c != '_') {
+      return "{\"error\": \"app_id must be "
+             "lowercase alphanumeric + "
+             "underscore only\"}";
+    }
+  }
+
+  if (html.empty()) {
+    return "{\"error\": \"html is required\"}";
+  }
+
+  // Create app directory
+  std::string apps_dir =
+      std::string(APP_DATA_DIR) + "/web/apps";
+  std::string app_dir = apps_dir + "/" + app_id;
+  std::error_code ec;
+  fs::create_directories(app_dir, ec);
+  if (ec) {
+    return "{\"error\": \"Failed to create "
+           "app directory: " +
+           ec.message() + "\"}";
+  }
+
+  // Write index.html
+  {
+    std::ofstream f(app_dir + "/index.html");
+    if (!f.is_open()) {
+      return "{\"error\": \"Failed to write "
+             "index.html\"}";
+    }
+    f << html;
+  }
+
+  // Write optional style.css
+  if (!css.empty()) {
+    std::ofstream f(app_dir + "/style.css");
+    if (f.is_open()) f << css;
+  }
+
+  // Write optional app.js
+  if (!js.empty()) {
+    std::ofstream f(app_dir + "/app.js");
+    if (f.is_open()) f << js;
+  }
+
+  // Download optional assets
+  nlohmann::json downloaded_assets =
+      nlohmann::json::array();
+  if (args.contains("assets") &&
+      args["assets"].is_array()) {
+    for (const auto& asset : args["assets"]) {
+      std::string url =
+          asset.value("url", "");
+      std::string filename =
+          asset.value("filename", "");
+
+      if (url.empty() || filename.empty())
+        continue;
+
+      // Prevent path traversal in filename
+      if (filename.find("..") !=
+              std::string::npos ||
+          filename.find('/') !=
+              std::string::npos ||
+          filename.find('\\') !=
+              std::string::npos) {
+        LOG(WARNING) << "GenerateWebApp: "
+                     << "skipping unsafe asset "
+                     << "filename: " << filename;
+        continue;
+      }
+
+      std::string asset_path =
+          app_dir + "/" + filename;
+
+      // Download using libcurl
+      CURL* curl = curl_easy_init();
+      if (!curl) continue;
+
+      FILE* fp = fopen(asset_path.c_str(), "wb");
+      if (!fp) {
+        curl_easy_cleanup(curl);
+        continue;
+      }
+
+      curl_easy_setopt(
+          curl, CURLOPT_URL, url.c_str());
+      curl_easy_setopt(
+          curl, CURLOPT_WRITEDATA, fp);
+      curl_easy_setopt(
+          curl, CURLOPT_FOLLOWLOCATION, 1L);
+      curl_easy_setopt(
+          curl, CURLOPT_TIMEOUT, 30L);
+      curl_easy_setopt(
+          curl, CURLOPT_MAXFILESIZE,
+          10 * 1024 * 1024L);  // 10MB limit
+
+      CURLcode res = curl_easy_perform(curl);
+      fclose(fp);
+
+      if (res == CURLE_OK) {
+        downloaded_assets.push_back(
+            {{"filename", filename},
+             {"status", "ok"}});
+        LOG(INFO) << "GenerateWebApp: downloaded "
+                  << "asset: " << filename;
+      } else {
+        // Remove failed download
+        fs::remove(asset_path, ec);
+        downloaded_assets.push_back(
+            {{"filename", filename},
+             {"status", "failed"},
+             {"error",
+              curl_easy_strerror(res)}});
+        LOG(WARNING) << "GenerateWebApp: asset "
+                     << "download failed: "
+                     << filename << " - "
+                     << curl_easy_strerror(res);
+      }
+      curl_easy_cleanup(curl);
+    }
+  }
+
+  // Write manifest.json
+  {
+    auto now =
+        std::chrono::system_clock::now();
+    auto epoch =
+        std::chrono::duration_cast<
+            std::chrono::seconds>(
+            now.time_since_epoch())
+            .count();
+
+    nlohmann::json manifest = {
+        {"app_id", app_id},
+        {"title", title},
+        {"created_at", epoch},
+        {"has_css", !css.empty()},
+        {"has_js", !js.empty()},
+        {"assets", downloaded_assets}};
+
+    std::ofstream mf(
+        app_dir + "/manifest.json");
+    if (mf.is_open()) mf << manifest.dump(2);
+  }
+
+  LOG(INFO) << "GenerateWebApp: created '"
+            << app_id << "' at " << app_dir;
+
+  nlohmann::json result = {
+      {"status", "ok"},
+      {"app_id", app_id},
+      {"title", title},
+      {"url", "/apps/" + app_id + "/"},
+      {"message",
+       "Web app created. Access at "
+       "http://<device-ip>:9090/apps/" +
+           app_id + "/"}};
+
+  if (!downloaded_assets.empty()) {
+    result["assets"] = downloaded_assets;
+  }
+
+  return result.dump();
 }
 
 }  // namespace tizenclaw
