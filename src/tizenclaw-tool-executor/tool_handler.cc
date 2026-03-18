@@ -17,9 +17,13 @@
 #include "tool_handler.hh"
 
 #include <fcntl.h>
+#include <poll.h>
+#include <signal.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
+#include <chrono>
 #include <fstream>
 
 #undef PROJECT_TAG
@@ -91,12 +95,38 @@ std::pair<std::string, int> RunCommand(const std::string& cmd,
   std::string output;
   char buf[4096];
 
-  ssize_t n;
-  while ((n = read(pipefd[0], buf, sizeof(buf))) > 0) {
+  // Use poll to enforce timeout on pipe read
+  struct pollfd pfd = {pipefd[0], POLLIN, 0};
+  auto deadline = std::chrono::steady_clock::now() +
+                  std::chrono::seconds(timeout_sec);
+  bool timed_out = false;
+
+  while (true) {
+    auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+        deadline - std::chrono::steady_clock::now());
+    int ms = std::max(0, static_cast<int>(remaining.count()));
+    if (ms == 0) { timed_out = true; break; }
+
+    int pr = poll(&pfd, 1, ms);
+    if (pr < 0) {
+      if (errno == EINTR) continue;
+      break;
+    }
+    if (pr == 0) { timed_out = true; break; }
+
+    ssize_t n = read(pipefd[0], buf, sizeof(buf));
+    if (n <= 0) break;
     output.append(buf, n);
     if (output.size() > kMaxPayload) break;
   }
   close(pipefd[0]);
+
+  if (timed_out) {
+    kill(pid, SIGKILL);
+    waitpid(pid, nullptr, 0);
+    return {"Execution timed out after " +
+            std::to_string(timeout_sec) + "s", -1};
+  }
 
   int status = 0;
   waitpid(pid, &status, 0);
@@ -201,6 +231,9 @@ nlohmann::json ToolHandler::HandleTool(const std::string& tool_name,
     return {{"status", "error"},
             {"output", "exit " + std::to_string(rc) + ": " +
                        output.substr(0, 500)}};
+  }
+  if (output.empty()) {
+    LOG(WARNING) << "Tool " << tool_name << " returned empty output (rc=0)";
   }
   return {{"status", "ok"}, {"output", ExtractJsonOutput(output)}};
 }

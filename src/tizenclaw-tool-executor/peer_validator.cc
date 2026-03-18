@@ -59,7 +59,10 @@ bool PeerValidator::Validate(int client_fd) const {
   auto slash = basename.rfind('/');
   if (slash != std::string::npos) basename = basename.substr(slash + 1);
   auto del = basename.find(" (deleted)");
-  if (del != std::string::npos) basename = basename.substr(0, del);
+  if (del != std::string::npos &&
+      del + std::string(" (deleted)").size() == basename.size()) {
+    basename = basename.substr(0, del);
+  }
   LOG(DEBUG) << "Peer basename: " << basename;
 
   for (const auto& allowed : allowed_callers_) {

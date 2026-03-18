@@ -48,6 +48,15 @@ bool PythonEngine::Initialize() {
   return true;
 }
 
+PythonEngine::~PythonEngine() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (initialized_) {
+    LOG(DEBUG) << "Finalizing embedded Python interpreter";
+    Py_FinalizeEx();
+    initialized_ = false;
+  }
+}
+
 std::pair<std::string, int> PythonEngine::RunCode(const std::string& code) {
   std::lock_guard<std::mutex> lock(mutex_);
   if (!initialized_) return {"Python not initialized", -1};
@@ -58,6 +67,13 @@ std::pair<std::string, int> PythonEngine::RunCode(const std::string& code) {
   int fd = mkstemp(out_path);
   if (fd < 0) return {"Failed to create temp file", -1};
   close(fd);
+
+  // RAII: ensure temp file is always cleaned up
+  auto cleanup = [&out_path]() { unlink(out_path); };
+  struct ScopeGuard {
+    std::function<void()> fn;
+    ~ScopeGuard() { fn(); }
+  } guard{cleanup};
 
   std::string wrapper =
       "import sys as _sys, io as _io\n"
@@ -89,7 +105,7 @@ std::pair<std::string, int> PythonEngine::RunCode(const std::string& code) {
     output.assign(std::istreambuf_iterator<char>(ifs),
                   std::istreambuf_iterator<char>());
   }
-  unlink(out_path);
+  // ScopeGuard in cleanup will unlink out_path automatically
 
   return {output, rc};
 }

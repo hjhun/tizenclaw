@@ -37,9 +37,12 @@ const std::vector<std::string> kAllowedPaths = {
     kAppDataDir + "/data",
 };
 
+constexpr size_t kMaxFileSize = 10 * 1024 * 1024;  // 10 MB
+
 }  // namespace
 
 nlohmann::json FileManager::Handle(const nlohmann::json& req) {
+  std::lock_guard<std::mutex> lock(mutex_);
   namespace fs = std::filesystem;
   std::string operation = req.value("operation", "");
   std::string path = req.value("path", "");
@@ -51,9 +54,20 @@ nlohmann::json FileManager::Handle(const nlohmann::json& req) {
   std::error_code ec;
   std::string real = fs::canonical(path, ec).string();
   if (ec) {
-    LOG(DEBUG) << "canonical() failed for path=" << path
-               << " error=" << ec.message() << ", using raw path";
-    real = path;
+    // Path does not exist yet (e.g., write_file for new files).
+    // Validate the canonical path of the parent directory instead
+    // to prevent symlink-based path traversal attacks.
+    fs::path parent = fs::path(path).parent_path();
+    if (parent.empty()) parent = ".";
+    std::string parent_real = fs::canonical(parent, ec).string();
+    if (ec) {
+      LOG(DEBUG) << "canonical() failed for parent=" << parent.string()
+                 << " error=" << ec.message();
+      return {{"status", "error"},
+              {"output", "Invalid path: parent directory does not exist"}};
+    }
+    real = parent_real + "/" + fs::path(path).filename().string();
+    LOG(DEBUG) << "Path resolved via parent canonical: " << real;
   } else {
     LOG(DEBUG) << "canonical path: " << real;
   }
@@ -89,6 +103,13 @@ nlohmann::json FileManager::Handle(const nlohmann::json& req) {
     if (operation == "read_file") {
       if (!fs::is_regular_file(path, ec))
         return {{"status", "error"}, {"output", "File not found: " + path}};
+      auto fsize = fs::file_size(path, ec);
+      if (!ec && fsize > kMaxFileSize) {
+        return {{"status", "error"},
+                {"output", "File too large: " +
+                           std::to_string(fsize) + " bytes (max " +
+                           std::to_string(kMaxFileSize) + ")"}};
+      }
       std::ifstream f(path);
       std::string content((std::istreambuf_iterator<char>(f)),
                            std::istreambuf_iterator<char>());

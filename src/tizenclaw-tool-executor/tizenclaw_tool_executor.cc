@@ -29,6 +29,7 @@
 #include <signal.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <poll.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -90,6 +91,31 @@ bool SendResponse(int fd, const nlohmann::json& resp) {
   return true;
 }
 
+// ─── Shell Argument Escaping ────────────────────────────────
+std::string EscapeShellArg(const std::string& s) {
+  std::string out = "'";
+  for (char c : s) {
+    if (c == '\'') out += "'\\''";
+    else out += c;
+  }
+  out += "'";
+  return out;
+}
+
+// ─── RAII fd wrapper ────────────────────────────────────────
+class UniqueFd {
+ public:
+  explicit UniqueFd(int fd = -1) : fd_(fd) {}
+  ~UniqueFd() { if (fd_ >= 0) close(fd_); }
+  UniqueFd(const UniqueFd&) = delete;
+  UniqueFd& operator=(const UniqueFd&) = delete;
+  UniqueFd(UniqueFd&& o) noexcept : fd_(o.fd_) { o.fd_ = -1; }
+  int Get() const { return fd_; }
+  int Release() { int f = fd_; fd_ = -1; return f; }
+ private:
+  int fd_;
+};
+
 // ─── Diagnostics ────────────────────────────────────────────
 nlohmann::json HandleDiag(
     const tizenclaw::tool_executor::PythonEngine& python_engine) {
@@ -114,43 +140,43 @@ nlohmann::json HandleDiag(
 
 // ─── Client handler ─────────────────────────────────────────
 void HandleClient(
-    int client_fd,
+    int raw_fd,
     tizenclaw::tool_executor::PeerValidator& validator,
     tizenclaw::tool_executor::PythonEngine& python_engine,
     tizenclaw::tool_executor::ToolHandler& tool_handler,
     tizenclaw::tool_executor::SandboxProxy& sandbox_proxy,
     tizenclaw::tool_executor::FileManager& file_manager) {
-  LOG(DEBUG) << "New client fd=" << client_fd;
-  if (!validator.Validate(client_fd)) {
+  UniqueFd client_fd(raw_fd);
+  LOG(DEBUG) << "New client fd=" << client_fd.Get();
+  if (!validator.Validate(client_fd.Get())) {
     LOG(WARNING) << "Rejecting unauthenticated peer";
     nlohmann::json resp = {
         {"status", "error"},
         {"output", "Permission denied: caller not authorized"}};
-    SendResponse(client_fd, resp);
-    close(client_fd);
+    SendResponse(client_fd.Get(), resp);
     return;
   }
 
   while (true) {
     uint32_t net_len = 0;
-    if (!RecvExact(client_fd, &net_len, 4)) break;
+    if (!RecvExact(client_fd.Get(), &net_len, 4)) break;
 
     uint32_t payload_len = ntohl(net_len);
     if (payload_len > kMaxPayload) {
       LOG(ERROR) << "Payload too large: " << payload_len;
-      SendResponse(client_fd, {{"status", "error"},
+      SendResponse(client_fd.Get(), {{"status", "error"},
                                {"output", "Payload too large"}});
       break;
     }
 
     std::vector<char> buf(payload_len);
-    if (!RecvExact(client_fd, buf.data(), payload_len)) break;
+    if (!RecvExact(client_fd.Get(), buf.data(), payload_len)) break;
 
     nlohmann::json req;
     try {
       req = nlohmann::json::parse(std::string(buf.data(), payload_len));
     } catch (const std::exception& e) {
-      SendResponse(client_fd, {{"status", "error"},
+      SendResponse(client_fd.Get(), {{"status", "error"},
                                {"output", std::string("Bad JSON: ") +
                                           e.what()}});
       continue;
@@ -207,7 +233,7 @@ void HandleClient(
           resp = {{"status", "error"},
                   {"output", "CLI binary not found: " + bin_path}};
         } else {
-          std::string cmd = bin_path + " " + cli_args + " 2>&1";
+          std::string cmd = bin_path + " " + EscapeShellArg(cli_args) + " 2>&1";
           LOG(INFO) << "execute_cli: " << cmd
                     << " (timeout=" << cli_timeout << "s)";
 
@@ -253,11 +279,11 @@ void HandleClient(
       }
     }
 
-    if (!SendResponse(client_fd, resp)) break;
+    if (!SendResponse(client_fd.Get(), resp)) break;
   }
 
-  close(client_fd);
-  LOG(DEBUG) << "Client fd=" << client_fd << " disconnected";
+  // UniqueFd automatically closes fd on scope exit
+  LOG(DEBUG) << "Client fd=" << client_fd.Get() << " disconnected";
 }
 
 }  // namespace
@@ -292,13 +318,21 @@ int main() {
   const char* listen_fds_env = getenv("LISTEN_FDS");
   const char* listen_pid_env = getenv("LISTEN_PID");
 
-  if (listen_fds_env && listen_pid_env &&
-      std::stoi(listen_pid_env) == getpid() &&
-      std::stoi(listen_fds_env) >= 1) {
-    // Socket-activated: fd 3 is SD_LISTEN_FDS_START
-    srv = 3;
-    LOG(INFO) << "Using systemd socket activation (fd=" << srv << ")";
-  } else {
+  if (listen_fds_env && listen_pid_env) {
+    try {
+      int lpid = std::stoi(listen_pid_env);
+      int lfds = std::stoi(listen_fds_env);
+      if (lpid == getpid() && lfds >= 1) {
+        // Socket-activated: fd 3 is SD_LISTEN_FDS_START
+        srv = 3;
+        LOG(INFO) << "Using systemd socket activation (fd=" << srv << ")";
+      }
+    } catch (const std::exception& e) {
+      LOG(WARNING) << "Invalid LISTEN_PID/LISTEN_FDS env: " << e.what();
+    }
+  }
+
+  if (srv < 0) {
     // Manual start: create abstract namespace socket
     srv = socket(AF_UNIX, SOCK_STREAM, 0);
     if (srv < 0) {
@@ -334,6 +368,15 @@ int main() {
   LOG(INFO) << "Listening on abstract socket: @" << kSocketName;
 
   while (g_running) {
+    struct pollfd pfd = {srv, POLLIN, 0};
+    int ret = poll(&pfd, 1, 1000);  // 1s timeout for shutdown check
+    if (ret < 0) {
+      if (errno == EINTR) continue;
+      LOG(ERROR) << "poll() failed: " << strerror(errno);
+      break;
+    }
+    if (ret == 0) continue;  // timeout, re-check g_running
+
     int client = accept(srv, nullptr, nullptr);
     if (client < 0) {
       if (errno == EINTR) continue;

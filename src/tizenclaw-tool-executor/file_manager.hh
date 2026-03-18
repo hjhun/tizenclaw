@@ -17,6 +17,8 @@
 #ifndef TIZENCLAW_TOOL_EXECUTOR_FILE_MANAGER_HH_
 #define TIZENCLAW_TOOL_EXECUTOR_FILE_MANAGER_HH_
 
+#include <mutex>
+
 #include <json.hpp>
 
 namespace tizenclaw {
@@ -25,6 +27,8 @@ namespace tool_executor {
 class FileManager {
  public:
   nlohmann::json Handle(const nlohmann::json& req);
+ private:
+  std::mutex mutex_;
 };
 
 }  // namespace tool_executor

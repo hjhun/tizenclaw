@@ -17,6 +17,7 @@
 #ifndef TIZENCLAW_TOOL_EXECUTOR_PYTHON_ENGINE_HH_
 #define TIZENCLAW_TOOL_EXECUTOR_PYTHON_ENGINE_HH_
 
+#include <functional>
 #include <mutex>
 #include <string>
 #include <utility>
@@ -26,6 +27,7 @@ namespace tool_executor {
 
 class PythonEngine {
  public:
+  ~PythonEngine();
   bool Initialize();
   bool IsInitialized() const { return initialized_; }
   std::pair<std::string, int> RunCode(const std::string& code);
