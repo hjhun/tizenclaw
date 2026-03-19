@@ -47,7 +47,6 @@ DEVICE_SERIAL=""
 WITH_NGROK=false
 RUN_TESTS=false
 WITH_ASSETS=false
-WITH_BRIDGE=false
 RAG_PROJECT_DIR=""
 
 # ─────────────────────────────────────────────
@@ -274,7 +273,6 @@ ${CYAN}Options:${NC}
   -s, --skip-build      Skip GBS build, deploy existing RPM
   -t, --test            Run E2E smoke tests after deployment
       --with-assets     Also build and deploy tizenclaw-assets
-      --with-bridge     Install TizenClawBridge WGT on the device
   -w, --with-ngrok      Auto-download and push ngrok binary to the device
   -d, --device <serial> Target a specific sdb device
       --dry-run         Print commands without executing
@@ -287,7 +285,6 @@ ${CYAN}Examples:${NC}
   $(basename "$0") -s                  # Deploy existing RPM + run
   $(basename "$0") -t                  # Build + deploy + run E2E tests
   $(basename "$0") --with-assets       # Build + deploy including tizenclaw-assets
-  $(basename "$0") --with-bridge       # Deploy and install TizenClawBridge WGT
   $(basename "$0") -w                  # Deploy and install ngrok binary
   $(basename "$0") --dry-run           # Preview all steps
   $(basename "$0") -a aarch64          # Build for ARM64 target
@@ -308,7 +305,6 @@ parse_args() {
       -s|--skip-build) SKIP_BUILD=true; shift ;;
       -t|--test)      RUN_TESTS=true; shift ;;
       --with-assets)   WITH_ASSETS=true; shift ;;
-      --with-bridge)   WITH_BRIDGE=true; shift ;;
       -w|--with-ngrok) WITH_NGROK=true; shift ;;
       -d|--device)     DEVICE_SERIAL="$2"; shift 2 ;;
       --dry-run)       DRY_RUN=true; shift ;;
@@ -659,19 +655,15 @@ do_deploy() {
     fi
   fi
 
-  # 3-7. Install TizenClaw Bridge WGT (only with --with-bridge)
-  if [ "${WITH_BRIDGE}" = true ]; then
-    local wgt_file="${PROJECT_DIR}/data/wgt/TizenClawBridge.wgt"
-    if [ -f "${wgt_file}" ]; then
-      log "Installing TizenClaw Bridge WGT..."
-      run sdb_cmd push "${wgt_file}" /tmp/TizenClawBridge.wgt
-      run sdb_shell pkgcmd -i -t wgt -p /tmp/TizenClawBridge.wgt -q 2>/dev/null || \
-        run sdb_shell pkgcmd -i -t wgt -p /tmp/TizenClawBridge.wgt -f -q 2>/dev/null || true
-      run sdb_shell rm -f /tmp/TizenClawBridge.wgt
-      ok "Bridge WGT installed"
-    else
-      warn "Bridge WGT not found: ${wgt_file}"
-    fi
+  # 3-7. Install TizenClaw Bridge WGT (if present)
+  local wgt_file="${PROJECT_DIR}/data/wgt/TizenClawBridge.wgt"
+  if [ -f "${wgt_file}" ]; then
+    log "Installing TizenClaw Bridge WGT..."
+    run sdb_cmd push "${wgt_file}" /tmp/TizenClawBridge.wgt
+    run sdb_shell pkgcmd -i -t wgt -p /tmp/TizenClawBridge.wgt -q 2>/dev/null || \
+      run sdb_shell pkgcmd -i -t wgt -p /tmp/TizenClawBridge.wgt -f -q 2>/dev/null || true
+    run sdb_shell rm -f /tmp/TizenClawBridge.wgt
+    ok "Bridge WGT installed"
   fi
 }
 

@@ -85,11 +85,15 @@ mkdir -p %{buildroot}/opt/usr/share/tizenclaw/tools/embedded
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/tools/cli
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/sandbox/packages/pip
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/sandbox/packages/npm
-
+mkdir -p %{buildroot}/opt/usr/share/tizenclaw/wgt
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/rag
 mkdir -p %{buildroot}/opt/usr/share/crash/dump
 
-
+# Install Bridge WGT
+if [ -f %{_builddir}/%{name}-%{version}/data/wgt/TizenClawBridge.wgt ]; then
+  install -m 644 %{_builddir}/%{name}-%{version}/data/wgt/TizenClawBridge.wgt \
+    %{buildroot}/opt/usr/share/tizenclaw/wgt/TizenClawBridge.wgt
+fi
 
 ln -sf ../tizenclaw.service %{buildroot}%{_unitdir}/multi-user.target.wants/tizenclaw.service
 ln -sf ../tizenclaw-tool-executor.socket %{buildroot}%{_unitdir}/sockets.target.wants/tizenclaw-tool-executor.socket
@@ -140,7 +144,8 @@ fi
 %dir /opt/usr/share/tizenclaw/
 %dir /opt/usr/share/tizenclaw/rag/
 /opt/usr/share/tizenclaw/rag/web.zip
-
+%dir /opt/usr/share/tizenclaw/wgt/
+/opt/usr/share/tizenclaw/wgt/*
 %dir /opt/usr/share/crash/
 %dir /opt/usr/share/crash/dump/
 %{_sysconfdir}/package-manager/parserlib/metadata/libtizenclaw-metadata-llm-backend-plugin.so
