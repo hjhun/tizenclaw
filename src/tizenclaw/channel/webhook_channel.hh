@@ -70,7 +70,6 @@ class WebhookChannel : public Channel {
   AgentCore* agent_;
   SoupServer* server_ = nullptr;
   std::thread server_thread_;
-  GMainContext* context_ = nullptr;
   GMainLoop* loop_ = nullptr;
   std::atomic<bool> running_{false};
 

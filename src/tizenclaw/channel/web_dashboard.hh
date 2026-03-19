@@ -125,7 +125,6 @@ class WebDashboard : public Channel {
   TaskScheduler* scheduler_;
   SoupServer* server_ = nullptr;
   std::thread server_thread_;
-  GMainContext* context_ = nullptr;
   GMainLoop* loop_ = nullptr;
   std::atomic<bool> running_{false};
 

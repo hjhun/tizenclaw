@@ -15,11 +15,9 @@
  */
 #include "webhook_channel.hh"
 
-#include <condition_variable>
 #include <cstring>
 #include <fstream>
 #include <iomanip>
-#include <mutex>
 #include <sstream>
 
 #include "../../common/logging.hh"
@@ -195,13 +193,12 @@ void WebhookChannel::HandleRequest(SoupServer* server, SoupMessage* msg,
     SoupServer* server;
     SoupMessage* msg;
     AgentCore* agent;
-    GMainContext* context;
     std::string session_id;
     std::string result;
   };
 
   auto* ctx = new WebhookCtx{
-      server, msg, self->agent_, self->context_, session_id, ""};
+      server, msg, self->agent_, session_id, ""};
 
   std::thread([ctx, prompt]() {
     if (ctx->agent) {
@@ -211,8 +208,7 @@ void WebhookChannel::HandleRequest(SoupServer* server, SoupMessage* msg,
       ctx->result = "Error: agent not available";
     }
 
-    g_main_context_invoke(
-        ctx->context,
+    g_idle_add(
         [](gpointer data) -> gboolean {
           auto* c = static_cast<WebhookCtx*>(data);
           nlohmann::json resp = {
@@ -246,79 +242,40 @@ bool WebhookChannel::Start() {
     return false;
   }
 
-  // Create a dedicated GMainContext so that SoupServer and
-  // g_main_context_invoke() callbacks all run on the server thread.
-  context_ = g_main_context_new();
+  GError* error = nullptr;
+  server_ =
+      soup_server_new(SOUP_SERVER_SERVER_HEADER, "TizenClaw-Webhook", nullptr);
 
-  std::mutex mtx;
-  std::condition_variable cv;
-  bool ready = false;
-  bool ok = false;
-
-  server_thread_ = std::thread([this, &mtx, &cv, &ready, &ok]() {
-    g_main_context_push_thread_default(context_);
-
-    server_ = soup_server_new(
-        SOUP_SERVER_SERVER_HEADER, "TizenClaw-Webhook", nullptr);
-    if (!server_) {
-      LOG(ERROR) << "Failed to create " << "SoupServer";
-      std::lock_guard<std::mutex> lk(mtx);
-      ok = false;
-      ready = true;
-      cv.notify_one();
-      g_main_context_pop_thread_default(context_);
-      return;
-    }
-
-    soup_server_add_handler(server_, "/", HandleRequest, this, nullptr);
-
-    GError* error = nullptr;
-    if (!soup_server_listen_all(
-            server_, port_,
-            static_cast<SoupServerListenOptions>(0), &error)) {
-      LOG(ERROR) << "Failed to listen on "
-                 << "port " << port_ << ": "
-                 << error->message;
-      g_error_free(error);
-      g_object_unref(server_);
-      server_ = nullptr;
-      std::lock_guard<std::mutex> lk(mtx);
-      ok = false;
-      ready = true;
-      cv.notify_one();
-      g_main_context_pop_thread_default(context_);
-      return;
-    }
-
-    loop_ = g_main_loop_new(context_, FALSE);
-
-    {
-      std::lock_guard<std::mutex> lk(mtx);
-      ok = true;
-      ready = true;
-      cv.notify_one();
-    }
-
-    LOG(INFO) << "Webhook server running on " << "port " << port_;
-    g_main_loop_run(loop_);
-    g_main_loop_unref(loop_);
-    loop_ = nullptr;
-    g_main_context_pop_thread_default(context_);
-  });
-
-  {
-    std::unique_lock<std::mutex> lk(mtx);
-    cv.wait(lk, [&ready]() { return ready; });
+  if (!server_) {
+    LOG(ERROR) << "Failed to create " << "SoupServer";
+    return false;
   }
 
-  if (!ok) {
-    if (server_thread_.joinable()) server_thread_.join();
-    g_main_context_unref(context_);
-    context_ = nullptr;
+  // Register handler for all paths
+  soup_server_add_handler(server_, "/", HandleRequest, this, nullptr);
+
+  // Listen on configured port
+  if (!soup_server_listen_all(
+          server_, port_, static_cast<SoupServerListenOptions>(0), &error)) {
+    LOG(ERROR) << "Failed to listen on " << "port " << port_ << ": "
+               << error->message;
+    g_error_free(error);
+    g_object_unref(server_);
+    server_ = nullptr;
     return false;
   }
 
   running_ = true;
+
+  // Run GMainLoop in a separate thread
+  server_thread_ = std::thread([this]() {
+    loop_ = g_main_loop_new(nullptr, FALSE);
+    LOG(INFO) << "Webhook server running on " << "port " << port_;
+    g_main_loop_run(loop_);
+    g_main_loop_unref(loop_);
+    loop_ = nullptr;
+  });
+
   LOG(INFO) << "WebhookChannel started on " << "port " << port_;
   return true;
 }
@@ -342,11 +299,6 @@ void WebhookChannel::Stop() {
     soup_server_disconnect(server_);
     g_object_unref(server_);
     server_ = nullptr;
-  }
-
-  if (context_) {
-    g_main_context_unref(context_);
-    context_ = nullptr;
   }
 
   LOG(INFO) << "WebhookChannel stopped.";
