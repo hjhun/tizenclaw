@@ -144,7 +144,7 @@ void WebDashboard::HandleRequest(SoupServer* /*server*/,
 
 void WebDashboard::HandleApi(
     SoupMessage* msg, const std::string& path,
-    GHashTable* query) const {
+    GHashTable* query) {
   if (health_monitor_)
     health_monitor_->IncrementRequestCount();
 
@@ -726,7 +726,7 @@ void WebDashboard::ApiLogDates(
       static_cast<gsize>(body.size()));
 }
 
-void WebDashboard::ApiChat(SoupMessage* msg) const {
+void WebDashboard::ApiChat(SoupMessage* msg) {
   // Only accept POST
   if (msg->method != SOUP_METHOD_POST) {
     soup_message_set_status(msg, SOUP_STATUS_METHOD_NOT_ALLOWED);
@@ -757,16 +757,48 @@ void WebDashboard::ApiChat(SoupMessage* msg) const {
     return;
   }
 
-  std::string result = agent_->ProcessPrompt(session_id, prompt);
+  // Pause the HTTP response so the GMainLoop thread is not blocked.
+  // ProcessPrompt runs on a worker thread; once it finishes, the
+  // result is dispatched back via g_idle_add and the message is
+  // unpaused, allowing the response to be sent.
+  soup_server_pause_message(server_, msg);
 
-  nlohmann::json resp = {
-      {"status", "ok"}, {"session_id", session_id}, {"response", result}};
-  std::string resp_str = resp.dump();
+  struct ChatCtx {
+    WebDashboard* self;
+    SoupMessage* msg;
+    std::string result;
+    std::string session_id;
+  };
 
-  soup_message_set_status(msg, SOUP_STATUS_OK);
-  soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
-                            resp_str.c_str(),
-                            static_cast<gsize>(resp_str.size()));
+  auto* ctx = new ChatCtx{this, msg, "", session_id};
+
+  std::thread([ctx, prompt]() {
+    ctx->result = ctx->self->agent_->ProcessPrompt(
+        ctx->session_id, prompt);
+
+    g_idle_add(
+        [](gpointer data) -> gboolean {
+          auto* c = static_cast<ChatCtx*>(data);
+          nlohmann::json resp = {
+              {"status", "ok"},
+              {"session_id", c->session_id},
+              {"response", c->result}};
+          std::string resp_str = resp.dump();
+
+          soup_message_set_status(
+              c->msg, SOUP_STATUS_OK);
+          soup_message_set_response(
+              c->msg, "application/json",
+              SOUP_MEMORY_COPY,
+              resp_str.c_str(),
+              static_cast<gsize>(resp_str.size()));
+          soup_server_unpause_message(
+              c->self->server_, c->msg);
+          delete c;
+          return G_SOURCE_REMOVE;
+        },
+        ctx);
+  }).detach();
 }
 
 bool WebDashboard::Start() {

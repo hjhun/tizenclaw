@@ -102,7 +102,7 @@ bool WebhookChannel::VerifyHmac(const std::string& secret,
   return match;
 }
 
-void WebhookChannel::HandleRequest(SoupServer* /*server*/, SoupMessage* msg,
+void WebhookChannel::HandleRequest(SoupServer* server, SoupMessage* msg,
                                    const char* path, GHashTable* /*query*/,
                                    SoupClientContext* /*client*/,
                                    gpointer user_data) {
@@ -185,24 +185,52 @@ void WebhookChannel::HandleRequest(SoupServer* /*server*/, SoupMessage* msg,
     return;
   }
 
-  // Process prompt synchronously
-  // (libsoup handles threading internally)
-  std::string result;
-  if (self->agent_) {
-    result = self->agent_->ProcessPrompt(session_id, prompt);
-  } else {
-    result = "Error: agent not available";
-  }
+  // Run ProcessPrompt on a worker thread to avoid
+  // blocking the GMainLoop (prevents deadlock).
+  soup_server_pause_message(server, msg);
 
-  // Build response
-  nlohmann::json resp = {
-      {"status", "ok"}, {"session_id", session_id}, {"response", result}};
-  std::string resp_str = resp.dump();
+  struct WebhookCtx {
+    SoupServer* server;
+    SoupMessage* msg;
+    AgentCore* agent;
+    std::string session_id;
+    std::string result;
+  };
 
-  soup_message_set_status(msg, SOUP_STATUS_OK);
-  soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
-                            resp_str.c_str(),
-                            static_cast<gsize>(resp_str.size()));
+  auto* ctx = new WebhookCtx{
+      server, msg, self->agent_, session_id, ""};
+
+  std::thread([ctx, prompt]() {
+    if (ctx->agent) {
+      ctx->result = ctx->agent->ProcessPrompt(
+          ctx->session_id, prompt);
+    } else {
+      ctx->result = "Error: agent not available";
+    }
+
+    g_idle_add(
+        [](gpointer data) -> gboolean {
+          auto* c = static_cast<WebhookCtx*>(data);
+          nlohmann::json resp = {
+              {"status", "ok"},
+              {"session_id", c->session_id},
+              {"response", c->result}};
+          std::string resp_str = resp.dump();
+
+          soup_message_set_status(
+              c->msg, SOUP_STATUS_OK);
+          soup_message_set_response(
+              c->msg, "application/json",
+              SOUP_MEMORY_COPY,
+              resp_str.c_str(),
+              static_cast<gsize>(resp_str.size()));
+          soup_server_unpause_message(
+              c->server, c->msg);
+          delete c;
+          return G_SOURCE_REMOVE;
+        },
+        ctx);
+  }).detach();
 }
 
 bool WebhookChannel::Start() {
