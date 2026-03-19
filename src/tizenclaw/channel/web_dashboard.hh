@@ -19,6 +19,7 @@
 #include <libsoup/soup.h>
 
 #include <atomic>
+#include <condition_variable>
 #include <mutex>
 #include <set>
 #include <string>
@@ -128,6 +129,11 @@ class WebDashboard : public Channel {
   GMainContext* context_ = nullptr;
   GMainLoop* loop_ = nullptr;
   std::atomic<bool> running_{false};
+
+  // Pending worker thread tracking (for safe Stop)
+  std::atomic<int> pending_workers_{0};
+  std::mutex workers_mutex_;
+  std::condition_variable workers_cv_;
 
   // Configuration
   int port_ = 9090;
