@@ -692,10 +692,27 @@
         chatInput.value = '';
         chatSend.disabled = true;
 
+        // Show thinking indicator
+        const thinking = document.createElement('div');
+        thinking.className = 'chat-thinking';
+        thinking.id = 'chat-thinking-indicator';
+        thinking.innerHTML =
+            '<span class="chat-thinking-dot"></span>' +
+            '<span class="chat-thinking-dot"></span>' +
+            '<span class="chat-thinking-dot"></span>';
+        chatMessages.appendChild(thinking);
+        chatMessages.scrollTop =
+            chatMessages.scrollHeight;
+
         const resp = await apiPost('chat', {
             prompt: prompt,
             session_id: sessionId
         });
+
+        // Remove thinking indicator
+        const indicator = document.getElementById(
+            'chat-thinking-indicator');
+        if (indicator) indicator.remove();
 
         chatSend.disabled = false;
 
