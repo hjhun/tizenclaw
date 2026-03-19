@@ -760,9 +760,8 @@ void WebDashboard::ApiChat(SoupMessage* msg) {
 
   // Pause the HTTP response so the GMainLoop thread is not blocked.
   // ProcessPrompt runs on a worker thread; once it finishes, the
-  // result is dispatched back via g_main_context_invoke and the message is
+  // result is dispatched back via g_idle_add and the message is
   // unpaused, allowing the response to be sent.
-  g_object_ref(msg);  // prevent libsoup from freeing msg early
   soup_server_pause_message(server_, msg);
 
   struct ChatCtx {
@@ -774,17 +773,12 @@ void WebDashboard::ApiChat(SoupMessage* msg) {
 
   auto* ctx = new ChatCtx{this, msg, "", session_id};
 
-  pending_workers_.fetch_add(1);
   std::thread([ctx, prompt]() {
     ctx->result = ctx->self->agent_->ProcessPrompt(
         ctx->session_id, prompt);
 
-    // Capture self before g_main_context_invoke, because the
-    // callback may delete ctx on the GMainLoop thread.
-    auto* self = ctx->self;
-
     g_main_context_invoke(
-        self->context_,
+        ctx->self->context_,
         [](gpointer data) -> gboolean {
           auto* c = static_cast<ChatCtx*>(data);
           nlohmann::json resp = {
@@ -802,18 +796,10 @@ void WebDashboard::ApiChat(SoupMessage* msg) {
               static_cast<gsize>(resp_str.size()));
           soup_server_unpause_message(
               c->self->server_, c->msg);
-          g_object_unref(c->msg);  // release our ref
           delete c;
           return G_SOURCE_REMOVE;
         },
         ctx);
-
-    // Decrement pending workers and notify Stop()
-    self->pending_workers_.fetch_sub(1);
-    {
-      std::lock_guard<std::mutex> lk(self->workers_mutex_);
-      self->workers_cv_.notify_all();
-    }
   }).detach();
 }
 
@@ -920,15 +906,6 @@ void WebDashboard::Stop() {
   if (!running_) return;
 
   running_ = false;
-
-  // Wait for all pending worker threads to finish
-  // before destroying server/context resources.
-  {
-    std::unique_lock<std::mutex> lk(workers_mutex_);
-    workers_cv_.wait(lk, [this]() {
-      return pending_workers_.load() == 0;
-    });
-  }
 
   if (loop_) {
     g_main_loop_quit(loop_);

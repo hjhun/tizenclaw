@@ -189,7 +189,6 @@ void WebhookChannel::HandleRequest(SoupServer* server, SoupMessage* msg,
 
   // Run ProcessPrompt on a worker thread to avoid
   // blocking the GMainLoop (prevents deadlock).
-  g_object_ref(msg);  // prevent libsoup from freeing msg early
   soup_server_pause_message(server, msg);
 
   struct WebhookCtx {
@@ -199,13 +198,11 @@ void WebhookChannel::HandleRequest(SoupServer* server, SoupMessage* msg,
     GMainContext* context;
     std::string session_id;
     std::string result;
-    WebhookChannel* channel;
   };
 
   auto* ctx = new WebhookCtx{
-      server, msg, self->agent_, self->context_, session_id, "", self};
+      server, msg, self->agent_, self->context_, session_id, ""};
 
-  self->pending_workers_.fetch_add(1);
   std::thread([ctx, prompt]() {
     if (ctx->agent) {
       ctx->result = ctx->agent->ProcessPrompt(
@@ -213,10 +210,6 @@ void WebhookChannel::HandleRequest(SoupServer* server, SoupMessage* msg,
     } else {
       ctx->result = "Error: agent not available";
     }
-
-    // Capture channel before g_main_context_invoke, because the
-    // callback may delete ctx on the GMainLoop thread.
-    auto* ch = ctx->channel;
 
     g_main_context_invoke(
         ctx->context,
@@ -237,18 +230,10 @@ void WebhookChannel::HandleRequest(SoupServer* server, SoupMessage* msg,
               static_cast<gsize>(resp_str.size()));
           soup_server_unpause_message(
               c->server, c->msg);
-          g_object_unref(c->msg);  // release our ref
           delete c;
           return G_SOURCE_REMOVE;
         },
         ctx);
-
-    // Decrement pending workers and notify Stop()
-    ch->pending_workers_.fetch_sub(1);
-    {
-      std::lock_guard<std::mutex> lk(ch->workers_mutex_);
-      ch->workers_cv_.notify_all();
-    }
   }).detach();
 }
 
@@ -344,15 +329,6 @@ void WebhookChannel::Stop() {
   }
 
   running_ = false;
-
-  // Wait for all pending worker threads to finish
-  // before destroying server/context resources.
-  {
-    std::unique_lock<std::mutex> lk(workers_mutex_);
-    workers_cv_.wait(lk, [this]() {
-      return pending_workers_.load() == 0;
-    });
-  }
 
   if (loop_) {
     g_main_loop_quit(loop_);

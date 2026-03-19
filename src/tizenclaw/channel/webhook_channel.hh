@@ -19,8 +19,6 @@
 #include <libsoup/soup.h>
 
 #include <atomic>
-#include <condition_variable>
-#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -75,11 +73,6 @@ class WebhookChannel : public Channel {
   GMainContext* context_ = nullptr;
   GMainLoop* loop_ = nullptr;
   std::atomic<bool> running_{false};
-
-  // Pending worker thread tracking (for safe Stop)
-  std::atomic<int> pending_workers_{0};
-  std::mutex workers_mutex_;
-  std::condition_variable workers_cv_;
 
   // Configuration
   int port_ = 8080;
