@@ -1,0 +1,11 @@
+prefix=/usr
+exec_prefix=/usr
+libdir=/usr/lib64
+includedir=${prefix}/include
+
+Name: tizenclaw-core
+Description: TizenClaw LLM Backend Plugin C-API for dynamic loading
+Version: 1.0.0
+Libs: -L${libdir} -ltizenclaw-core
+Cflags: -I${includedir}/tizenclaw/llm-backend -I${includedir}/tizenclaw
+Requires: tizenclaw, libcurl
