@@ -119,13 +119,13 @@ int ToolRouter::SourcePriority(
   switch (src) {
     case CapabilitySource::kAction:
       return 0;
-    case CapabilitySource::kSystemCli:
+    case CapabilitySource::kBuiltin:
       return 1;
-    case CapabilitySource::kCli:
+    case CapabilitySource::kSystemCli:
       return 2;
     case CapabilitySource::kSkill:
       return 3;
-    case CapabilitySource::kBuiltin:
+    case CapabilitySource::kCli:
       return 4;
     case CapabilitySource::kRpk:
       return 5;

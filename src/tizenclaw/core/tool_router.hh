@@ -31,8 +31,8 @@ namespace tizenclaw {
 // calls to higher-priority alternatives.
 //
 // Priority order (lower number = higher priority):
-//   kAction(0) > kSystemCli(1) > kCli(2)
-//   > kSkill(3) > kBuiltin(4) > kRpk(5)
+//   kAction(0) > kBuiltin(1) > kSystemCli(2)
+//   > kSkill(3) > kCli(4) > kRpk(5)
 //
 // Two resolution mechanisms:
 //   1. Manual aliases from tool_policy.json

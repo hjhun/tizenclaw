@@ -132,25 +132,25 @@ TEST_F(ToolRouterTest,
       ToolRouter::SourcePriority(
           CapabilitySource::kAction),
       ToolRouter::SourcePriority(
+          CapabilitySource::kBuiltin));
+  EXPECT_LT(
+      ToolRouter::SourcePriority(
+          CapabilitySource::kBuiltin),
+      ToolRouter::SourcePriority(
           CapabilitySource::kSystemCli));
   EXPECT_LT(
       ToolRouter::SourcePriority(
           CapabilitySource::kSystemCli),
-      ToolRouter::SourcePriority(
-          CapabilitySource::kCli));
-  EXPECT_LT(
-      ToolRouter::SourcePriority(
-          CapabilitySource::kCli),
       ToolRouter::SourcePriority(
           CapabilitySource::kSkill));
   EXPECT_LT(
       ToolRouter::SourcePriority(
           CapabilitySource::kSkill),
       ToolRouter::SourcePriority(
-          CapabilitySource::kBuiltin));
+          CapabilitySource::kCli));
   EXPECT_LT(
       ToolRouter::SourcePriority(
-          CapabilitySource::kBuiltin),
+          CapabilitySource::kCli),
       ToolRouter::SourcePriority(
           CapabilitySource::kRpk));
 }

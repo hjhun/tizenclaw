@@ -85,12 +85,9 @@ class SystemCliAdapter {
   bool LoadConfig(const std::string& config_path);
   void LoadToolDocs(const std::string& tools_dir);
   void RegisterCapabilities();
-  void ScanSystemdServices(const std::string& systemd_dir);
 
   bool enabled_ = false;
-  bool auto_discover_ = false;
   std::string tools_dir_;
-  std::string systemd_dir_;
   std::map<std::string, SystemCliToolConfig> tools_;
   std::map<std::string, std::string> tool_docs_;
   mutable std::mutex mutex_;

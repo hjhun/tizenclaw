@@ -43,17 +43,11 @@ bool SystemCliAdapter::Initialize(const std::string& config_path) {
     return true;
   }
 
-  // Auto-discover CLI tools from systemd service files
-  if (auto_discover_) {
-    ScanSystemdServices(systemd_dir_);
-  }
-
   LoadToolDocs(tools_dir_);
   RegisterCapabilities();
 
   LOG(INFO) << "SystemCliAdapter initialized with "
-            << tools_.size() << " tools"
-            << (auto_discover_ ? " (auto-discover enabled)" : "");
+            << tools_.size() << " tools";
   return true;
 }
 
@@ -133,12 +127,9 @@ bool SystemCliAdapter::LoadConfig(const std::string& config_path) {
 
     tools_dir_ = config.value("tools_dir",
         "/opt/usr/share/tizenclaw/tools/system_cli");
-    auto_discover_ = config.value("auto_discover", false);
-    systemd_dir_ = config.value("systemd_dir",
-        "/usr/lib/systemd/system");
 
     if (!config.contains("tools") || !config["tools"].is_object()) {
-      LOG(INFO) << "SystemCliAdapter: no tools defined in config";
+      LOG(WARNING) << "SystemCliAdapter: no tools defined in config";
       return true;
     }
 
@@ -217,94 +208,6 @@ void SystemCliAdapter::LoadToolDocs(const std::string& tools_dir) {
       }
     }
   }
-}
-
-void SystemCliAdapter::ScanSystemdServices(
-    const std::string& systemd_dir) {
-  namespace fs = std::filesystem;
-  std::error_code ec;
-  if (!fs::is_directory(systemd_dir, ec)) {
-    LOG(WARNING) << "SystemCliAdapter: systemd dir not found: "
-                 << systemd_dir;
-    return;
-  }
-
-  int discovered = 0;
-  for (const auto& entry : fs::directory_iterator(systemd_dir, ec)) {
-    if (!entry.is_regular_file()) continue;
-
-    auto filename = entry.path().filename().string();
-    if (filename.size() <= 8 ||
-        filename.compare(filename.size() - 8, 8, ".service") != 0) {
-      continue;
-    }
-
-    std::ifstream sf(entry.path());
-    if (!sf.is_open()) continue;
-
-    std::string line;
-    bool in_service_section = false;
-    while (std::getline(sf, line)) {
-      // Trim leading/trailing whitespace
-      size_t start = line.find_first_not_of(" \t");
-      if (start == std::string::npos) continue;
-      line = line.substr(start);
-
-      if (line.front() == '[') {
-        in_service_section = (line == "[Service]");
-        continue;
-      }
-
-      if (!in_service_section) continue;
-
-      static const std::string prefix = "ExecStart=";
-      if (line.compare(0, prefix.size(), prefix) != 0) continue;
-
-      std::string exec_value = line.substr(prefix.size());
-      // Strip leading '-' (optional prefix in systemd)
-      if (!exec_value.empty() && exec_value.front() == '-') {
-        exec_value = exec_value.substr(1);
-      }
-      // Trim whitespace
-      size_t pos = exec_value.find_first_not_of(" \t");
-      if (pos == std::string::npos) continue;
-      exec_value = exec_value.substr(pos);
-
-      // Extract binary path (first space-delimited token)
-      std::string bin_path = exec_value;
-      size_t space_pos = exec_value.find(' ');
-      if (space_pos != std::string::npos) {
-        bin_path = exec_value.substr(0, space_pos);
-      }
-
-      if (bin_path.empty() || bin_path.front() != '/') continue;
-
-      // If binary EXISTS on disk, it's a daemon — skip
-      if (fs::exists(bin_path, ec)) continue;
-
-      // Binary doesn't exist: likely a CLI tool candidate
-      std::string tool_name = fs::path(bin_path).filename().string();
-
-      std::lock_guard<std::mutex> lock(mutex_);
-      // Config-defined tools take precedence
-      if (tools_.contains(tool_name)) continue;
-
-      SystemCliToolConfig tool_cfg;
-      tool_cfg.binary_path = bin_path;
-      tool_cfg.timeout_seconds = 10;
-      tool_cfg.side_effect = "unknown";
-      tool_cfg.description =
-          "Auto-discovered from " + filename;
-
-      tools_[tool_name] = std::move(tool_cfg);
-      discovered++;
-      LOG(INFO) << "SystemCliAdapter: auto-discovered '"
-                << tool_name << "' from " << filename;
-    }
-  }
-
-  LOG(INFO) << "SystemCliAdapter: auto-discovered "
-            << discovered << " tools from " << systemd_dir;
 }
 
 void SystemCliAdapter::RegisterCapabilities() {

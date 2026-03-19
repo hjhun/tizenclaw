@@ -1,7 +1,5 @@
 {
   "enabled": true,
-  "auto_discover": true,
-  "systemd_dir": "/usr/lib/systemd/system",
   "tools_dir": "/opt/usr/share/tizenclaw/tools/system_cli",
   "tools": {
     "aul_test": {
