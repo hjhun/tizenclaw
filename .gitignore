@@ -5,6 +5,13 @@ build_local/
 *.d
 *.rpm
 *.so
+*.so.*
+
+# Protobuf / gRPC generated code
+*.pb.cc
+*.pb.h
+*.grpc.pb.cc
+*.grpc.pb.h
 crun-stage/
 third_party/crun/crun-*/
 third_party/crun/build_crun.sh
