@@ -58,3 +58,6 @@ plan/
 
 # RAG generated data (only data/rag/*.zip is committed)
 /rag/
+src/tizenclaw/tizenclaw
+test/unit_tests/tizenclaw-unittests
+tools/cli/aurum-cli/aurum-cli
