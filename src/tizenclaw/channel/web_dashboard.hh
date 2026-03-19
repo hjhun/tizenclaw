@@ -63,7 +63,7 @@ class WebDashboard : public Channel {
 
   // Route API requests
   void HandleApi(SoupMessage* msg, const std::string& path,
-                 GHashTable* query);
+                 GHashTable* query) const;
 
   // Serve static files (HTML/CSS/JS)
   void ServeStaticFile(SoupMessage* msg, const std::string& path) const;
@@ -80,7 +80,7 @@ class WebDashboard : public Channel {
   void ApiLogs(SoupMessage* msg,
                const std::string& date) const;
   void ApiLogDates(SoupMessage* msg) const;
-  void ApiChat(SoupMessage* msg);
+  void ApiChat(SoupMessage* msg) const;
   void ApiStatus(SoupMessage* msg) const;
 
   // A2A endpoints
