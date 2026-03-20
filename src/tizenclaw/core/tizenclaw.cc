@@ -39,6 +39,7 @@
 #include "../infra/app_lifecycle_adapter.hh"
 #include "../infra/recent_app_adapter.hh"
 #include "../infra/vconf_event_adapter.hh"
+#include "../../common/boot_status_logger.hh"
 #include "../../common/file_log_backend.hh"
 #include "../channel/mcp_server.hh"
 #include "../infra/key_store.hh"
@@ -101,115 +102,185 @@ void TizenClawDaemon::Quit() {
 
 void TizenClawDaemon::OnCreate() {
   LOG(INFO) << "TizenClaw Daemon OnCreate";
+  auto& boot = BootStatusLogger::GetInstance();
 
   // Initialize Plugin Manager before AgentCore
-  // so AgentCore can find installed plugins during backend creation
-  PluginManager::GetInstance().Initialize();
+  // so AgentCore can find installed plugins
+  // during backend creation
+  {
+    auto guard = boot.Track("PluginManager");
+    PluginManager::GetInstance().Initialize();
+  }
 
-  agent_ = std::make_unique<AgentCore>();
-  if (!agent_->Initialize()) {
-    LOG(ERROR) << "Failed to initialize AgentCore";
+  {
+    auto guard = boot.Track("AgentCore");
+    agent_ = std::make_unique<AgentCore>();
+    if (!agent_->Initialize()) {
+      guard.SetFailed("Initialize returned false");
+    }
   }
 
   // Start EventBus and SystemEventCollector
-  EventBus::GetInstance().Start();
-  std::string events_dir =
-      std::string(APP_DATA_DIR) + "/tools/events";
-  EventBus::GetInstance().LoadPlugins(events_dir);
-  event_collector_ = std::make_unique<SystemEventCollector>();
-  event_collector_->Start();
+  {
+    auto guard = boot.Track("EventBus");
+    EventBus::GetInstance().Start();
+    std::string events_dir =
+        std::string(APP_DATA_DIR)
+        + "/tools/events";
+    EventBus::GetInstance()
+        .LoadPlugins(events_dir);
+  }
+  {
+    auto guard =
+        boot.Track("SystemEventCollector");
+    event_collector_ =
+        std::make_unique<SystemEventCollector>();
+    event_collector_->Start();
+  }
 
   // Register Tizen native event adapters
-  adapter_manager_.RegisterAdapter(
-      std::make_unique<TizenSystemEventAdapter>());
-  adapter_manager_.RegisterAdapter(
-      std::make_unique<PackageEventAdapter>());
-  adapter_manager_.RegisterAdapter(
-      std::make_unique<AppLifecycleAdapter>());
-  adapter_manager_.RegisterAdapter(
-      std::make_unique<RecentAppAdapter>());
-  adapter_manager_.RegisterAdapter(
-      std::make_unique<VconfEventAdapter>());
-  adapter_manager_.StartAll();
+  {
+    auto guard =
+        boot.Track("EventAdapters");
+    adapter_manager_.RegisterAdapter(
+        std::make_unique
+            <TizenSystemEventAdapter>());
+    adapter_manager_.RegisterAdapter(
+        std::make_unique
+            <PackageEventAdapter>());
+    adapter_manager_.RegisterAdapter(
+        std::make_unique
+            <AppLifecycleAdapter>());
+    adapter_manager_.RegisterAdapter(
+        std::make_unique<RecentAppAdapter>());
+    adapter_manager_.RegisterAdapter(
+        std::make_unique<VconfEventAdapter>());
+    adapter_manager_.StartAll();
+  }
 
   // Initialize AutonomousTrigger
-  auto_trigger_ = std::make_unique<AutonomousTrigger>(
-      agent_.get(), agent_->GetSystemContext(),
-      &channel_registry_);
-  std::string trigger_config =
-      std::string(APP_DATA_DIR)
-      + "/config/autonomous_trigger.json";
-  auto_trigger_->LoadRules(trigger_config);
-  auto_trigger_->Start();
+  {
+    auto guard =
+        boot.Track("AutonomousTrigger");
+    auto_trigger_ =
+        std::make_unique<AutonomousTrigger>(
+            agent_.get(),
+            agent_->GetSystemContext(),
+            &channel_registry_);
+    std::string trigger_config =
+        std::string(APP_DATA_DIR)
+        + "/config/autonomous_trigger.json";
+    auto_trigger_->LoadRules(trigger_config);
+    auto_trigger_->Start();
+  }
 
   // Initialize Perception Engine
-  perception_engine_ =
-      std::make_unique<PerceptionEngine>(
-          agent_.get(),
-          agent_->GetSystemContext(),
-          &channel_registry_);
-  perception_engine_->Start();
+  {
+    auto guard =
+        boot.Track("PerceptionEngine");
+    perception_engine_ =
+        std::make_unique<PerceptionEngine>(
+            agent_.get(),
+            agent_->GetSystemContext(),
+            &channel_registry_);
+    perception_engine_->Start();
+  }
 
   // Initialize Task Scheduler
-  scheduler_ = std::make_unique<TaskScheduler>();
-  agent_->SetScheduler(scheduler_.get());
-  scheduler_->Start(agent_.get());
+  {
+    auto guard = boot.Track("TaskScheduler");
+    scheduler_ =
+        std::make_unique<TaskScheduler>();
+    agent_->SetScheduler(scheduler_.get());
+    scheduler_->Start(agent_.get());
+  }
 
   // Set AgentCore for plugin channel routing
   auto* a = agent_.get();
   PluginManager::GetInstance().SetAgentCore(a);
 
   // Register channels from config
-  ChannelFactory::CreateFromConfig(
-      std::string(APP_DATA_DIR)
-      + "/config/channels.json",
-      a, scheduler_.get(), channel_registry_);
+  {
+    auto guard =
+        boot.Track("ChannelRegistry");
+    ChannelFactory::CreateFromConfig(
+        std::string(APP_DATA_DIR)
+        + "/config/channels.json",
+        a, scheduler_.get(),
+        channel_registry_);
+    channel_registry_.StartAll();
+  }
 
-  channel_registry_.StartAll();
-
-  // Start plugin channels (owned by PluginManager)
-  for (auto& pc :
-       PluginManager::GetInstance()
-           .GetChannelPlugins()) {
-    if (pc && !pc->IsRunning()) {
-      if (!pc->Start()) {
-        LOG(WARNING) << "Plugin channel failed: "
-                     << pc->GetName();
+  // Start plugin channels
+  {
+    auto guard =
+        boot.Track("PluginChannels");
+    for (auto& pc :
+         PluginManager::GetInstance()
+             .GetChannelPlugins()) {
+      if (pc && !pc->IsRunning()) {
+        if (!pc->Start()) {
+          LOG(WARNING)
+              << "Plugin channel failed: "
+              << pc->GetName();
+        }
       }
     }
   }
 
-  ipc_running_ = true;
-  ipc_thread_ = std::thread(&TizenClawDaemon::IpcServerLoop, this);
+  {
+    auto guard = boot.Track("IpcServer");
+    ipc_running_ = true;
+    ipc_thread_ = std::thread(
+        &TizenClawDaemon::IpcServerLoop, this);
+  }
 
   // Start Skill Watcher (inotify)
-  skill_watcher_.Start("/opt/usr/share/tizenclaw/tools/skills", [this]() {
-    if (agent_) {
-      agent_->ReloadSkills();
-    }
-  });
+  {
+    auto guard = boot.Track("SkillWatcher");
+    skill_watcher_.Start(
+        "/opt/usr/share/tizenclaw/"
+        "tools/skills",
+        [this]() {
+          if (agent_) agent_->ReloadSkills();
+        });
+  }
 
   // Initialize Skill Repository
-  skill_repo_ = std::make_unique<SkillRepository>();
-  std::string skill_repo_config =
-      std::string(APP_DATA_DIR)
-      + "/config/skill_repo.json";
-  skill_repo_->Initialize(skill_repo_config);
-  LOG(INFO) << "SkillRepository initialized"
-            << (skill_repo_->IsEnabled()
-                    ? " (enabled)" : " (disabled)");
+  {
+    auto guard =
+        boot.Track("SkillRepository");
+    skill_repo_ =
+        std::make_unique<SkillRepository>();
+    std::string skill_repo_config =
+        std::string(APP_DATA_DIR)
+        + "/config/skill_repo.json";
+    skill_repo_->Initialize(
+        skill_repo_config);
+    LOG(INFO) << "SkillRepository initialized"
+              << (skill_repo_->IsEnabled()
+                      ? " (enabled)"
+                      : " (disabled)");
+  }
 
   // Initialize Fleet Agent
-  fleet_agent_ = std::make_unique<FleetAgent>();
-  std::string fleet_config =
-      std::string(APP_DATA_DIR)
-      + "/config/fleet_config.json";
-  fleet_agent_->Initialize(fleet_config);
-  if (fleet_agent_->IsEnabled())
-    fleet_agent_->Start();
-  LOG(INFO) << "FleetAgent initialized"
-            << (fleet_agent_->IsEnabled()
-                    ? " (enabled)" : " (disabled)");
+  {
+    auto guard = boot.Track("FleetAgent");
+    fleet_agent_ =
+        std::make_unique<FleetAgent>();
+    std::string fleet_config =
+        std::string(APP_DATA_DIR)
+        + "/config/fleet_config.json";
+    fleet_agent_->Initialize(fleet_config);
+    if (fleet_agent_->IsEnabled())
+      fleet_agent_->Start();
+    LOG(INFO) << "FleetAgent initialized"
+              << (fleet_agent_->IsEnabled()
+                      ? " (enabled)"
+                      : " (disabled)");
+  }
+
+  boot.PrintSummary();
 }
 
 void TizenClawDaemon::OnDestroy() {
@@ -693,6 +764,17 @@ int main(int argc, char* argv[]) {
     LOG(INFO) << "Encrypting keys in: " << config_path;
     bool ok = KeyStore::EncryptConfig(config_path);
     return ok ? 0 : 1;
+  }
+
+  // Initialize boot status logger
+  // Path: /opt/usr/share/tizenclaw/logs/boot.log
+  try {
+    BootStatusLogger::GetInstance().Initialize(
+        "/opt/usr/share/tizenclaw/"
+        "logs/boot.log");
+  } catch (const std::exception& init_ex) {
+    LOG(ERROR) << "Failed to init boot logger: "
+               << init_ex.what();
   }
 
   LOG(INFO) << "TizenClaw Service starting...";

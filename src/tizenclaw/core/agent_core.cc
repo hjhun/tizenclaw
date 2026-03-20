@@ -31,6 +31,7 @@
 #include <sstream>
 #include <thread>
 
+#include "../../common/boot_status_logger.hh"
 #include "../../common/logging.hh"
 #include "../infra/http_client.hh"
 #include "../infra/key_store.hh"
@@ -114,227 +115,373 @@ bool AgentCore::Initialize() {
   if (initialized_) return true;
 
   LOG(INFO) << "AgentCore Initializing...";
+  auto& boot = BootStatusLogger::GetInstance();
 
-  if (!container_->Initialize()) {
-    LOG(ERROR) << "Failed to initialize ContainerEngine";
-    return false;
+  {
+    auto guard = boot.Track("ContainerEngine");
+    if (!container_->Initialize()) {
+      guard.SetFailed("initialization error");
+      return false;
+    }
   }
 
   // Load LLM config
-  const char* env_path = std::getenv("TIZENCLAW_CONFIG_PATH");
-  std::string config_path = env_path ? env_path
-                                     : "/opt/usr/share/tizenclaw/"
-                                       "config/llm_config.json";
-  nlohmann::json llm_config;
+  {
+    auto guard = boot.Track("LlmConfig");
+    const char* env_path =
+        std::getenv("TIZENCLAW_CONFIG_PATH");
+    std::string config_path =
+        env_path
+            ? env_path
+            : "/opt/usr/share/tizenclaw/"
+              "config/llm_config.json";
+    nlohmann::json llm_config;
 
-  std::ifstream cf(config_path);
-  if (cf.is_open()) {
-    try {
-      cf >> llm_config;
-      cf.close();
-    } catch (const std::exception& e) {
-      LOG(ERROR) << "Failed to parse " << config_path << ": " << e.what();
+    std::ifstream cf(config_path);
+    if (cf.is_open()) {
+      try {
+        cf >> llm_config;
+        cf.close();
+      } catch (const std::exception& e) {
+        LOG(ERROR) << "Failed to parse "
+                   << config_path << ": "
+                   << e.what();
+      }
     }
-  }
 
-  // Fallback: try legacy gemini_api_key.txt
-  if (llm_config.empty()) {
-    LOG(WARNING) << "llm_config.json not found, using legacy gemini key file";
-    std::string api_key;
-    std::ifstream kf(
-        "/opt/usr/share/tizenclaw/config/"
-        "gemini_api_key.txt");
-    if (kf.is_open()) {
-      std::getline(kf, api_key);
-      kf.close();
+    // Fallback: try legacy gemini_api_key.txt
+    if (llm_config.empty()) {
+      LOG(WARNING)
+          << "llm_config.json not found, "
+          << "using legacy gemini key file";
+      std::string api_key;
+      std::ifstream kf(
+          "/opt/usr/share/tizenclaw/config/"
+          "gemini_api_key.txt");
+      if (kf.is_open()) {
+        std::getline(kf, api_key);
+        kf.close();
+      }
+      llm_config = {
+          {"active_backend", "gemini"},
+          {"backends",
+           {{"gemini",
+             {{"api_key", api_key},
+              {"model",
+               "gemini-2.5-flash"}}}}}};
     }
-    llm_config = {
-        {"active_backend", "gemini"},
-        {"backends",
-         {{"gemini", {{"api_key", api_key}, {"model", "gemini-2.5-flash"}}}}}};
-  }
 
-  llm_config_ = llm_config;
-  curl_global_init(CURL_GLOBAL_DEFAULT);
+    llm_config_ = llm_config;
+    curl_global_init(CURL_GLOBAL_DEFAULT);
+  }
 
   // Load system prompt
-  system_prompt_ = LoadSystemPrompt(llm_config);
-  if (!system_prompt_.empty()) {
-    LOG(INFO) << "System prompt loaded (" << system_prompt_.size() << " chars)";
-  } else {
-    LOG(WARNING) << "No system prompt configured";
-  }
+  {
+    auto guard = boot.Track("SystemPrompt");
+    system_prompt_ =
+        LoadSystemPrompt(llm_config_);
+    if (!system_prompt_.empty()) {
+      LOG(INFO) << "System prompt loaded ("
+                << system_prompt_.size()
+                << " chars)";
+    } else {
+      LOG(WARNING)
+          << "No system prompt configured";
+    }
 
-  // Load condensed web API catalog for prompt
-  web_api_catalog_ = LoadWebApiCatalog();
-  if (!web_api_catalog_.empty()) {
-    LOG(INFO) << "Web API catalog loaded ("
-              << web_api_catalog_.size() << " chars)";
+    // Load condensed web API catalog
+    web_api_catalog_ = LoadWebApiCatalog();
+    if (!web_api_catalog_.empty()) {
+      LOG(INFO) << "Web API catalog loaded ("
+                << web_api_catalog_.size()
+                << " chars)";
+    }
   }
 
   // Load tool execution policy
-  std::string policy_path =
-      "/opt/usr/share/tizenclaw/config/"
-      "tool_policy.json";
-  if (!tool_policy_.LoadConfig(policy_path)) {
-    LOG(WARNING) << "Tool policy config not loaded (using defaults)";
-  }
-
-  // Initialize ToolRouter with policy aliases
   {
-    const auto& aliases = tool_policy_.GetAliases();
+    auto guard = boot.Track("ToolPolicy");
+    std::string policy_path =
+        "/opt/usr/share/tizenclaw/config/"
+        "tool_policy.json";
+    if (!tool_policy_.LoadConfig(policy_path)) {
+      LOG(WARNING)
+          << "Tool policy config not loaded"
+          << " (using defaults)";
+    }
+
+    // Initialize ToolRouter with policy aliases
+    const auto& aliases =
+        tool_policy_.GetAliases();
     if (!aliases.empty()) {
       nlohmann::json alias_json(aliases);
       tool_router_.LoadAliases(alias_json);
     }
   }
 
-  if (!SwitchToBestBackend(false)) {
-    LOG(ERROR) << "Failed to switch to best backend during Initialize.";
-    return false;
+  {
+    auto guard = boot.Track("LlmBackend");
+    if (!SwitchToBestBackend(false)) {
+      guard.SetFailed(
+          "no working backend found");
+      return false;
+    }
+
+    // Audit: config loaded
+    AuditLogger::Instance().Log(
+        AuditLogger::MakeEvent(
+            AuditEventType::kConfigChange, "",
+            {{"backend",
+              backend_->GetName()}}));
+
+    LOG(INFO) << "AgentCore initialized with "
+              << "backend: "
+              << backend_->GetName();
+    initialized_ = true;
   }
 
-  // Audit: config loaded
-  AuditLogger::Instance().Log(AuditLogger::MakeEvent(
-      AuditEventType::kConfigChange, "", {{"backend", backend_->GetName()}}));
-
-  LOG(INFO) << "AgentCore initialized with "
-            << "backend: " << backend_->GetName();
-  initialized_ = true;
-
   // React to plugin install/uninstall
-  PluginManager::GetInstance().SetChangeCallback([this]() { ReloadBackend(); });
+  PluginManager::GetInstance()
+      .SetChangeCallback(
+          [this]() { ReloadBackend(); });
 
   // React to skill RPK install/uninstall
-  SkillPluginManager::GetInstance().SetChangeCallback([this]() {
-    LOG(INFO) << "Skill RPK change detected, invalidating tool cache";
-    cached_tools_loaded_.store(false);
-  });
-  SkillPluginManager::GetInstance().Initialize();
+  {
+    auto guard =
+        boot.Track("SkillPluginManager");
+    SkillPluginManager::GetInstance()
+        .SetChangeCallback([this]() {
+          LOG(INFO)
+              << "Skill RPK change detected,"
+              << " invalidating tool cache";
+          cached_tools_loaded_.store(false);
+        });
+    SkillPluginManager::GetInstance()
+        .Initialize();
+  }
 
   // React to CLI TPK install/uninstall
-  CliPluginManager::GetInstance().SetChangeCallback([this]() {
-    LOG(INFO) << "CLI TPK change detected, invalidating tool cache";
-    cached_tools_loaded_.store(false);
-  });
-  CliPluginManager::GetInstance().Initialize();
+  {
+    auto guard =
+        boot.Track("CliPluginManager");
+    CliPluginManager::GetInstance()
+        .SetChangeCallback([this]() {
+          LOG(INFO)
+              << "CLI TPK change detected,"
+              << " invalidating tool cache";
+          cached_tools_loaded_.store(false);
+        });
+    CliPluginManager::GetInstance()
+        .Initialize();
+  }
 
-  // Initialize system CLI adapter (/usr/bin tools whitelist)
-  SystemCliAdapter::GetInstance().Initialize(
-      std::string(APP_DATA_DIR) + "/config/system_cli_config.json");
+  // Initialize system CLI adapter
+  {
+    auto guard =
+        boot.Track("SystemCliAdapter");
+    SystemCliAdapter::GetInstance().Initialize(
+        std::string(APP_DATA_DIR) +
+        "/config/system_cli_config.json");
+  }
 
   // Initialize embedding store for RAG
-  std::string rag_db = std::string(APP_DATA_DIR) + "/rag/embeddings.db";
-  // Ensure rag directory exists
-  std::string rag_dir = std::string(APP_DATA_DIR) + "/rag";
-  mkdir(rag_dir.c_str(), 0755);
-  if (embedding_store_.Initialize(rag_db)) {
-    LOG(INFO) << "RAG embedding store ready";
+  {
+    auto guard =
+        boot.Track("EmbeddingStore");
+    std::string rag_db =
+        std::string(APP_DATA_DIR) +
+        "/rag/embeddings.db";
+    std::string rag_dir =
+        std::string(APP_DATA_DIR) + "/rag";
+    mkdir(rag_dir.c_str(), 0755);
+    if (embedding_store_.Initialize(rag_db)) {
+      LOG(INFO)
+          << "RAG embedding store ready";
 
-    // Scan rag/ directory for all .db files
-    namespace fs = std::filesystem;
-    std::error_code ec;
-    if (fs::is_directory(rag_dir, ec)) {
-      for (const auto& entry :
-           fs::directory_iterator(rag_dir, ec)) {
-        if (!entry.is_regular_file()) continue;
-        auto fname = entry.path().filename().string();
-        if (entry.path().extension() != ".db") continue;
-        if (fname == "embeddings.db") continue;
-        if (embedding_store_.AttachKnowledgeDB(
-                entry.path().string())) {
-          LOG(INFO) << "Knowledge DB loaded: " << fname;
+      // Scan rag/ directory for .db files
+      namespace fs = std::filesystem;
+      std::error_code ec;
+      if (fs::is_directory(rag_dir, ec)) {
+        for (const auto& entry :
+             fs::directory_iterator(
+                 rag_dir, ec)) {
+          if (!entry.is_regular_file())
+            continue;
+          auto fname =
+              entry.path().filename().string();
+          if (entry.path().extension() !=
+              ".db")
+            continue;
+          if (fname == "embeddings.db")
+            continue;
+          if (embedding_store_
+                  .AttachKnowledgeDB(
+                      entry.path()
+                          .string())) {
+            LOG(INFO)
+                << "Knowledge DB loaded: "
+                << fname;
+          }
         }
       }
+      LOG(INFO)
+          << "Total knowledge chunks: "
+          << embedding_store_
+                 .GetKnowledgeChunkCount();
+    } else {
+      guard.SetFailed("init failed");
+      LOG(WARNING)
+          << "RAG embedding store "
+          << "init failed (non-fatal)";
     }
-    LOG(INFO) << "Total knowledge chunks: "
-              << embedding_store_.GetKnowledgeChunkCount();
-  } else {
-    LOG(WARNING) << "RAG embedding store "
-                 << "init failed (non-fatal)";
   }
 
   // Initialize on-device embedding model
-  std::string model_dir =
-      std::string(APP_DATA_DIR) + "/models/all-MiniLM-L6-v2";
-  std::string ort_lib =
-      std::string(APP_DATA_DIR) + "/lib/libonnxruntime.so";
-  if (on_device_embedding_.Initialize(model_dir, ort_lib)) {
-    LOG(INFO) << "On-device embedding ready "
-              << "(LLM-independent)";
-  } else {
-    LOG(WARNING) << "On-device embedding not available "
-                 << "(will use LLM backend)";
+  {
+    auto guard =
+        boot.Track("OnDeviceEmbedding");
+    std::string model_dir =
+        std::string(APP_DATA_DIR) +
+        "/models/all-MiniLM-L6-v2";
+    std::string ort_lib =
+        std::string(APP_DATA_DIR) +
+        "/lib/libonnxruntime.so";
+    if (on_device_embedding_.Initialize(
+            model_dir, ort_lib)) {
+      LOG(INFO)
+          << "On-device embedding ready "
+          << "(LLM-independent)";
+    } else {
+      guard.SetFailed("not available");
+      LOG(WARNING)
+          << "On-device embedding not "
+          << "available (will use LLM)";
+    }
   }
 
   // Initialize supervisor engine
-  supervisor_ = std::make_unique<SupervisorEngine>(this);
-  std::string roles_path =
-      std::string(APP_DATA_DIR) + "/config/agent_roles.json";
-  if (supervisor_->LoadRoles(roles_path)) {
-    LOG(INFO) << "Supervisor engine ready with "
-              << supervisor_->GetRoleNames().size() << " roles";
-  } else {
-    LOG(WARNING) << "Supervisor engine: no roles " << "configured (non-fatal)";
+  {
+    auto guard =
+        boot.Track("SupervisorEngine");
+    supervisor_ =
+        std::make_unique<SupervisorEngine>(
+            this);
+    std::string roles_path =
+        std::string(APP_DATA_DIR) +
+        "/config/agent_roles.json";
+    if (supervisor_->LoadRoles(roles_path)) {
+      LOG(INFO)
+          << "Supervisor engine ready with "
+          << supervisor_->GetRoleNames().size()
+          << " roles";
+    } else {
+      LOG(WARNING)
+          << "Supervisor engine: no roles "
+          << "configured (non-fatal)";
+    }
   }
 
   // Initialize system context provider
-  system_context_ = std::make_unique<SystemContextProvider>();
-  system_context_->Start();
-  LOG(INFO) << "SystemContextProvider ready";
+  {
+    auto guard =
+        boot.Track("SystemContextProvider");
+    system_context_ =
+        std::make_unique<
+            SystemContextProvider>();
+    system_context_->Start();
+    LOG(INFO)
+        << "SystemContextProvider ready";
+  }
 
   // Initialize agent factory
-  agent_factory_ = std::make_unique<AgentFactory>(
-      this, supervisor_.get());
-  LOG(INFO) << "AgentFactory ready";
+  {
+    auto guard = boot.Track("AgentFactory");
+    agent_factory_ =
+        std::make_unique<AgentFactory>(
+            this, supervisor_.get());
+    LOG(INFO) << "AgentFactory ready";
+  }
 
   // Initialize auto skill generation agent
-  auto_skill_agent_ = std::make_unique<AutoSkillAgent>(this);
-  LOG(INFO) << "AutoSkillAgent ready";
+  {
+    auto guard =
+        boot.Track("AutoSkillAgent");
+    auto_skill_agent_ =
+        std::make_unique<AutoSkillAgent>(this);
+    LOG(INFO) << "AutoSkillAgent ready";
+  }
 
   // Initialize pipeline executor
-  pipeline_executor_ = std::make_unique<PipelineExecutor>(this);
-  pipeline_executor_->LoadPipelines();
-  LOG(INFO) << "Pipeline executor ready";
+  {
+    auto guard =
+        boot.Track("PipelineExecutor");
+    pipeline_executor_ =
+        std::make_unique<PipelineExecutor>(
+            this);
+    pipeline_executor_->LoadPipelines();
+    LOG(INFO) << "Pipeline executor ready";
+  }
 
   // Initialize workflow engine
-  workflow_engine_ = std::make_unique<WorkflowEngine>(this);
-  workflow_engine_->LoadWorkflows();
-  LOG(INFO) << "Workflow engine ready";
+  {
+    auto guard =
+        boot.Track("WorkflowEngine");
+    workflow_engine_ =
+        std::make_unique<WorkflowEngine>(this);
+    workflow_engine_->LoadWorkflows();
+    LOG(INFO) << "Workflow engine ready";
+  }
 
   // Initialize Tizen Action Framework bridge
-  action_bridge_ = std::make_unique<ActionBridge>();
-  if (action_bridge_->Start()) {
-    // Sync action schemas to MD files
-    action_bridge_->SyncActionSchemas();
-    // React to action install/uninstall/update
-    action_bridge_->SetChangeCallback([this]() {
-      LOG(INFO) << "Action schemas changed, " << "reloading tools";
-      cached_tools_loaded_.store(false);
-    });
-    LOG(INFO) << "Tizen Action bridge ready";
-  } else {
-    LOG(WARNING) << "Tizen Action bridge init failed " << "(non-fatal)";
-    action_bridge_.reset();
+  {
+    auto guard = boot.Track("ActionBridge");
+    action_bridge_ =
+        std::make_unique<ActionBridge>();
+    if (action_bridge_->Start()) {
+      action_bridge_->SyncActionSchemas();
+      action_bridge_->SetChangeCallback(
+          [this]() {
+            LOG(INFO)
+                << "Action schemas changed,"
+                << " reloading tools";
+            cached_tools_loaded_.store(false);
+          });
+      LOG(INFO)
+          << "Tizen Action bridge ready";
+    } else {
+      guard.SetFailed(
+          "init failed (non-fatal)");
+      LOG(WARNING)
+          << "Tizen Action bridge "
+          << "init failed (non-fatal)";
+      action_bridge_.reset();
+    }
   }
 
   // Initialize memory store
-  std::string mem_config_path =
-      std::string(APP_DATA_DIR) +
-      "/config/memory_config.json";
-  memory_store_.LoadConfig(mem_config_path);
-  LOG(INFO) << "MemoryStore initialized";
+  {
+    auto guard = boot.Track("MemoryStore");
+    std::string mem_config_path =
+        std::string(APP_DATA_DIR) +
+        "/config/memory_config.json";
+    memory_store_.LoadConfig(mem_config_path);
+    LOG(INFO) << "MemoryStore initialized";
+  }
 
   // Initialize modular tool dispatcher
-  tool_dispatcher_ =
-      std::make_unique<ToolDispatcher>();
+  {
+    auto guard =
+        boot.Track("ToolDispatcher");
+    tool_dispatcher_ =
+        std::make_unique<ToolDispatcher>();
+    InitializeToolDispatcher();
+  }
 
-  // Initialize tool dispatcher map
-  InitializeToolDispatcher();
-
-  // Start background maintenance thread immediately
+  // Start background maintenance thread
   UpdateActivityTime();
-  maintenance_thread_ = std::thread(&AgentCore::MaintenanceLoop, this);
+  maintenance_thread_ =
+      std::thread(
+          &AgentCore::MaintenanceLoop, this);
 
   return true;
 }
