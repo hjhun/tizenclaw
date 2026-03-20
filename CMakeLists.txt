@@ -82,8 +82,70 @@ ADD_SUBDIRECTORY(src)
 ## Third-party: crun (extract, patch, configure, build)
 ADD_SUBDIRECTORY(third_party/crun)
 
-## CLI tools
+## CLI tools — Target names
+SET(TARGET_TIZEN_CONTROL_DISPLAY_CLI
+  "tizen-control-display-cli")
+SET(TARGET_TIZEN_DEVICE_INFO_CLI
+  "tizen-device-info-cli")
+SET(TARGET_TIZEN_HARDWARE_CONTROL_CLI
+  "tizen-hardware-control-cli")
+SET(TARGET_TIZEN_SOUND_CLI
+  "tizen-sound-cli")
+SET(TARGET_TIZEN_NETWORK_INFO_CLI
+  "tizen-network-info-cli")
+SET(TARGET_TIZEN_APP_MANAGER_CLI
+  "tizen-app-manager-cli")
+SET(TARGET_TIZEN_NOTIFICATION_CLI
+  "tizen-notification-cli")
+SET(TARGET_TIZEN_SENSOR_CLI
+  "tizen-sensor-cli")
+SET(TARGET_TIZEN_WEB_SEARCH_CLI
+  "tizen-web-search-cli")
+
+## CLI tools — Dependencies (declared once)
+PKG_CHECK_MODULES(CAPI_SYSTEM_DEVICE_DEPS REQUIRED
+  capi-system-device)
+PKG_CHECK_MODULES(CAPI_SYSTEM_INFO_DEPS REQUIRED
+  capi-system-info)
+PKG_CHECK_MODULES(CAPI_SYSTEM_RUNTIME_INFO_DEPS REQUIRED
+  capi-system-runtime-info)
+PKG_CHECK_MODULES(CAPI_SYSTEM_SETTINGS_DEPS REQUIRED
+  capi-system-system-settings)
+PKG_CHECK_MODULES(CAPI_SYSTEM_SENSOR_DEPS REQUIRED
+  capi-system-sensor)
+PKG_CHECK_MODULES(STORAGE_DEPS REQUIRED storage)
+PKG_CHECK_MODULES(FEEDBACK_DEPS REQUIRED feedback)
+PKG_CHECK_MODULES(CAPI_NETWORK_WIFI_DEPS REQUIRED
+  capi-network-wifi-manager)
+PKG_CHECK_MODULES(CAPI_NETWORK_CONNECTION_DEPS REQUIRED
+  capi-network-connection)
+PKG_CHECK_MODULES(CAPI_NETWORK_BT_DEPS REQUIRED
+  capi-network-bluetooth)
+PKG_CHECK_MODULES(CAPI_APPFW_APP_MANAGER_DEPS REQUIRED
+  capi-appfw-app-manager)
+PKG_CHECK_MODULES(CAPI_APPFW_APP_CONTROL_DEPS REQUIRED
+  capi-appfw-app-control)
+PKG_CHECK_MODULES(CAPI_APPFW_ALARM_DEPS REQUIRED
+  capi-appfw-alarm)
+PKG_CHECK_MODULES(CAPI_APPFW_PACKAGE_MANAGER_DEPS REQUIRED
+  capi-appfw-package-manager)
+PKG_CHECK_MODULES(CAPI_MEDIA_SOUND_MANAGER_DEPS REQUIRED
+  capi-media-sound-manager)
+PKG_CHECK_MODULES(CAPI_MEDIA_TONE_PLAYER_DEPS REQUIRED
+  capi-media-tone-player)
+PKG_CHECK_MODULES(NOTIFICATION_DEPS REQUIRED
+  notification)
+
 ADD_SUBDIRECTORY(tools/cli/aurum-cli)
+ADD_SUBDIRECTORY(tools/cli/tizen-control-display-cli)
+ADD_SUBDIRECTORY(tools/cli/tizen-device-info-cli)
+ADD_SUBDIRECTORY(tools/cli/tizen-hardware-control-cli)
+ADD_SUBDIRECTORY(tools/cli/tizen-sound-cli)
+ADD_SUBDIRECTORY(tools/cli/tizen-network-info-cli)
+ADD_SUBDIRECTORY(tools/cli/tizen-app-manager-cli)
+ADD_SUBDIRECTORY(tools/cli/tizen-notification-cli)
+ADD_SUBDIRECTORY(tools/cli/tizen-sensor-cli)
+ADD_SUBDIRECTORY(tools/cli/tizen-web-search-cli)
 
 
 ## Unit Tests
