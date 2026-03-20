@@ -26,6 +26,24 @@ BuildRequires:  pkgconfig(libaurum)
 BuildRequires:  pkgconfig(grpc++)
 BuildRequires:  pkgconfig(protobuf)
 BuildRequires:  pkgconfig(capi-appfw-event)
+BuildRequires:  pkgconfig(capi-system-device)
+BuildRequires:  pkgconfig(capi-system-info)
+BuildRequires:  pkgconfig(capi-system-runtime-info)
+BuildRequires:  pkgconfig(capi-system-system-settings)
+BuildRequires:  pkgconfig(capi-system-sensor)
+BuildRequires:  pkgconfig(storage)
+BuildRequires:  pkgconfig(feedback)
+BuildRequires:  pkgconfig(capi-network-wifi-manager)
+BuildRequires:  pkgconfig(capi-network-connection)
+BuildRequires:  pkgconfig(capi-network-bluetooth)
+BuildRequires:  pkgconfig(capi-appfw-app-manager)
+BuildRequires:  pkgconfig(capi-appfw-app-control)
+BuildRequires:  pkgconfig(capi-appfw-alarm)
+BuildRequires:  pkgconfig(capi-appfw-package-manager)
+BuildRequires:  pkgconfig(capi-media-sound-manager)
+BuildRequires:  pkgconfig(capi-media-tone-player)
+BuildRequires:  pkgconfig(notification)
+BuildRequires:  hal-api-sensor-devel
 BuildRequires:  pkgconfig(aul)
 BuildRequires:  pkgconfig(rua)
 BuildRequires:  pkgconfig(vconf)
@@ -79,7 +97,7 @@ mkdir -p %{buildroot}%{_unitdir}/multi-user.target.wants
 mkdir -p %{buildroot}%{_unitdir}/sockets.target.wants
 mkdir -p %{buildroot}%{_includedir}/tizenclaw
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/img
-mkdir -p %{buildroot}/opt/usr/share/tizenclaw/tools/skills
+# mkdir -p %{buildroot}/opt/usr/share/tizenclaw/tools/skills
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/config
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/tools/embedded
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/tools/cli
@@ -125,7 +143,7 @@ fi
 /usr/libexec/tizenclaw/crun
 /opt/usr/share/tizenclaw/img/rootfs.tar.gz
 /opt/usr/share/tizenclaw/config/*
-/opt/usr/share/tizenclaw/tools/skills/
+# /opt/usr/share/tizenclaw/tools/skills/
 /opt/usr/share/tizenclaw/tools/routing_guide.md
 /opt/usr/share/tizenclaw/web/
 /opt/usr/share/tizenclaw/tools/embedded/

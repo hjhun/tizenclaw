@@ -36,10 +36,18 @@ class SocketClient {
       const std::string& channel,
       const std::string& text);
 
+  // Send request directly to tool executor
+  [[nodiscard]] std::string SendToExecutor(
+      const std::string& tool,
+      const std::string& args);
+
  private:
   // Connect to the tizenclaw daemon abstract socket.
   // Returns fd >= 0 on success, -1 on failure.
   [[nodiscard]] int Connect() const;
+
+  // Connect to the tizenclaw-tool-executor abstract socket.
+  [[nodiscard]] int ConnectToExecutor() const;
 
   // Write length-prefixed payload to fd.
   [[nodiscard]] bool SendPayload(int fd,
@@ -50,6 +58,9 @@ class SocketClient {
 
   static constexpr const char kSocketName[] =
       "tizenclaw.sock";
+
+  static constexpr const char kExecutorSocketName[] =
+      "tizenclaw-tool-executor.sock";
 };
 
 }  // namespace cli

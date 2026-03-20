@@ -54,6 +54,32 @@ int SocketClient::Connect() const {
   return sock;
 }
 
+int SocketClient::ConnectToExecutor() const {
+  int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (sock < 0) {
+    std::cerr << "Failed to create socket\n";
+    return -1;
+  }
+
+  struct sockaddr_un addr = {};
+  addr.sun_family = AF_UNIX;
+  for (size_t i = 0; i < sizeof(kExecutorSocketName) - 1; ++i)
+    addr.sun_path[1 + i] = kExecutorSocketName[i];
+  socklen_t addr_len =
+      offsetof(struct sockaddr_un, sun_path)
+      + 1 + sizeof(kExecutorSocketName) - 1;
+
+  if (connect(sock,
+              reinterpret_cast<struct sockaddr*>(
+                  &addr),
+              addr_len) < 0) {
+    close(sock);
+    std::cerr << "Failed to connect to tool executor\n";
+    return -1;
+  }
+  return sock;
+}
+
 bool SocketClient::SendPayload(
     int fd, const std::string& payload) const {
   uint32_t net_len = htonl(payload.size());
@@ -140,6 +166,43 @@ int SocketClient::SendToChannel(
     std::cout << resp << "\n";
   }
   return 0;
+}
+
+std::string SocketClient::SendToExecutor(
+    const std::string& tool,
+    const std::string& args) {
+  int sock = ConnectToExecutor();
+  if (sock < 0) return "";
+
+  std::string escaped_tool;
+  for (char c : tool) {
+    if (c == '"') escaped_tool += "\\\"";
+    else if (c == '\\') escaped_tool += "\\\\";
+    else escaped_tool += c;
+  }
+
+  std::string escaped_args;
+  for (char c : args) {
+    if (c == '"') escaped_args += "\\\"";
+    else if (c == '\\') escaped_args += "\\\\";
+    else escaped_args += c;
+  }
+
+  // Use execute_cli command directly if tool is a CLI tool
+  std::string req =
+      "{\"command\": \"execute_cli\", "
+      "\"tool_name\": \"" + escaped_tool + "\", "
+      "\"arguments\": \"" + escaped_args + "\"}";
+
+  if (!SendPayload(sock, req)) {
+    close(sock);
+    std::cerr << "Failed to send request to executor\n";
+    return "";
+  }
+
+  std::string resp = RecvResponse(sock);
+  close(sock);
+  return resp;
 }
 
 }  // namespace cli

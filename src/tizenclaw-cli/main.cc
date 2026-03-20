@@ -51,6 +51,9 @@ void PrintUsage() {
             << "agents\n"
             << "  --perception  Show perception "
             << "engine status\n"
+            << "  --run-cli <tool> <args...>\n"
+            << "                Run a CLI tool "
+            << "directly via tool executor\n"
             << "  -h, --help    Show this help\n\n"
             << "If no prompt given, interactive "
             << "mode.\n";
@@ -78,6 +81,22 @@ int main(int argc, char* argv[]) {
       }
       tizenclaw::cli::SocketClient client;
       return client.SendToChannel(channel, text);
+    } else if (arg == "--run-cli" &&
+               i + 1 < argc) {
+      std::string tool = argv[++i];
+      std::string args_str;
+      for (int j = ++i; j < argc; ++j) {
+        if (!args_str.empty()) args_str += " ";
+        args_str += argv[j];
+        ++i;
+      }
+      tizenclaw::cli::SocketClient client;
+      std::string resp = client.SendToExecutor(tool, args_str);
+      if (!resp.empty()) {
+        std::cout << resp << "\n";
+        return 0;
+      }
+      return 1;
     } else if (arg == "--list-agents") {
       tizenclaw::cli::SocketClient client;
       std::string resp = client.SendJsonRpc(
