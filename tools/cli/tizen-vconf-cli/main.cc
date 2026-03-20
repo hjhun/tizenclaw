@@ -15,6 +15,7 @@
  */
 
 #include <vconf.h>
+#include <glib.h>
 #include <cstdlib>
 #include <iostream>
 #include <string>
@@ -123,9 +124,9 @@ void OnKeyChanged(keynode_t* node, void* user_data) {
     std::cout << j.dump() << std::endl;
 }
 
-volatile bool g_keep_running = true;
+GMainLoop* g_loop = nullptr;
 void SignalHandler(int) {
-    g_keep_running = false;
+    if (g_loop) g_main_loop_quit(g_loop);
 }
 
 } // namespace
@@ -191,9 +192,10 @@ int main(int argc, char* argv[]) {
             std::cout << init_j.dump() << std::endl;
         }
 
-        while (g_keep_running) {
-            pause(); // Wait for signals or callbacks
-        }
+        g_loop = g_main_loop_new(nullptr, FALSE);
+        g_main_loop_run(g_loop);
+        g_main_loop_unref(g_loop);
+        g_loop = nullptr;
         
         vconf_ignore_key_changed(key.c_str(), OnKeyChanged);
     } else {
