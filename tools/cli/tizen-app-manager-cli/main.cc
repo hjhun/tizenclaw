@@ -29,6 +29,7 @@ constexpr const char kUsage[] = R"(Usage:
 
 Subcommands:
   list          List installed UI apps
+  list-all      List all installed apps
   terminate     Terminate a running app
   launch        Launch an app via AppControl
   package-info  Get package information
@@ -60,6 +61,9 @@ int main(int argc, char* argv[]) {
   if (cmd == "list") {
     tizenclaw::cli::ListAppsController c;
     std::cout << c.ListApps() << std::endl;
+  } else if (cmd == "list-all") {
+    tizenclaw::cli::ListAppsController c;
+    std::cout << c.ListAllApps() << std::endl;
   } else if (cmd == "terminate") {
     std::string id = GetArg(argc, argv, "--app-id");
     if (id.empty()) {

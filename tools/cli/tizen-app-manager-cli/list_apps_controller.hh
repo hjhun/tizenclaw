@@ -28,6 +28,7 @@ class ListAppsController {
   ~ListAppsController() = default;
 
   std::string ListApps() const;
+  std::string ListAllApps() const;
 };
 
 }  // namespace cli
