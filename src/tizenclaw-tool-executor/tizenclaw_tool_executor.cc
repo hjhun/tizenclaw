@@ -198,15 +198,20 @@ void HandleClient(
       if (cli_tool.empty()) {
         resp = {{"status", "error"}, {"output", "No tool_name"}};
       } else {
-        // Resolve to /usr/bin/<tool_name> and execute
-        std::string bin_path = "/usr/bin/" + cli_tool;
+        // If absolute path, use directly; otherwise resolve to /usr/bin/
+        std::string bin_path;
+        if (cli_tool[0] == '/') {
+          bin_path = cli_tool;
+        } else {
+          bin_path = "/usr/bin/" + cli_tool;
+        }
         namespace fs = std::filesystem;
         std::error_code fec;
         if (!fs::exists(bin_path, fec)) {
           resp = {{"status", "error"},
                   {"output", "CLI binary not found: " + bin_path}};
         } else {
-          std::string cmd = bin_path + " " + EscapeShellArg(cli_args) + " 2>&1";
+          std::string cmd = bin_path + " " + cli_args + " 2>&1";
           LOG(INFO) << "execute_cli: " << cmd
                     << " (timeout=" << cli_timeout << "s)";
 
@@ -232,9 +237,15 @@ void HandleClient(
             }
 
             nlohmann::json result;
-            result["tool"] = cli_tool;
             result["exit_code"] = exit_code;
-            result["output"] = output;
+            // Try to return output as parsed JSON
+            try {
+              result = nlohmann::json::parse(output);
+              result["exit_code"] = exit_code;
+            } catch (...) {
+              result["tool"] = cli_tool;
+              result["output"] = output;
+            }
             resp = {{"status", "ok"},
                     {"output", result.dump()}};
           }

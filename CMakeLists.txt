@@ -156,21 +156,8 @@ ELSE()
   MESSAGE(STATUS "tizen-media-cli: DISABLED "
     "(missing media deps)")
 ENDIF()
-ADD_SUBDIRECTORY(tools/cli/tizen-aurum-cli)
-ADD_SUBDIRECTORY(tools/cli/tizen-control-display-cli)
-ADD_SUBDIRECTORY(tools/cli/tizen-device-info-cli)
-ADD_SUBDIRECTORY(tools/cli/tizen-hardware-control-cli)
-ADD_SUBDIRECTORY(tools/cli/tizen-sound-cli)
-ADD_SUBDIRECTORY(tools/cli/tizen-network-info-cli)
-ADD_SUBDIRECTORY(tools/cli/tizen-app-manager-cli)
-ADD_SUBDIRECTORY(tools/cli/tizen-notification-cli)
-ADD_SUBDIRECTORY(tools/cli/tizen-sensor-cli)
-ADD_SUBDIRECTORY(tools/cli/tizen-web-search-cli)
-ADD_SUBDIRECTORY(tools/cli/tizen-file-manager-cli)
-IF(BUILD_TIZEN_MEDIA_CLI)
-  ADD_SUBDIRECTORY(tools/cli/tizen-media-cli)
-ENDIF()
 
+ADD_SUBDIRECTORY(tools)
 
 ## Unit Tests
 ENABLE_TESTING()

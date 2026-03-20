@@ -2905,17 +2905,30 @@ std::string AgentCore::ExecuteCli(const std::string& tool_name,
     return "{\"error\": \"CLI tool not found: " + tool_name + "\"}";
   }
 
-  // Build command with shell escaping
+  // 1st priority: Execute via tool-executor socket (avoids popen/fork issues)
+  std::string full_cmd = exec_path + " " + arguments;
+  std::string te_result = container_->ExecuteCliTool(
+      exec_path, arguments, 10);
+  if (!te_result.empty() && te_result != "{}") {
+    LOG(INFO) << "CLI tool via tool-executor OK: " << tool_name;
+    return te_result;
+  }
+
+  LOG(WARNING) << "Tool executor unavailable for CLI tool "
+               << tool_name << ", falling back to popen";
+
+  // 2nd priority: Direct popen fallback
   std::string cmd = exec_path + " " + arguments + " 2>&1";
+  LOG(INFO) << "Executing CLI (popen): " << cmd;
 
-  LOG(INFO) << "Executing CLI: " << cmd;
-
-  // Execute via popen with output capture
   std::string output;
   FILE* pipe = popen(cmd.c_str(), "r");
   if (!pipe) {
-    LOG(ERROR) << "Failed to execute CLI tool: " << tool_name;
-    return "{\"error\": \"Failed to execute CLI tool\"}";
+    int err = errno;
+    LOG(ERROR) << "popen failed for CLI tool: " << tool_name
+               << " errno=" << err << " (" << strerror(err) << ")";
+    return "{\"error\": \"Failed to execute CLI tool: "
+           + std::string(strerror(err)) + "\"}";
   }
 
   char buffer[4096];
