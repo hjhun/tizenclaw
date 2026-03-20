@@ -935,6 +935,85 @@ void ToolDeclarationBuilder::AppendBuiltinTools(
     tools.push_back(t);
   }
 
+  // start_cli_session
+  {
+    LlmToolDecl t;
+    t.name = "start_cli_session";
+    t.description =
+        "Start an interactive or streaming CLI tool session. "
+        "Use this for tools that require continuous input/output "
+        "or event monitoring (e.g., vconf watch). Returns a session_id.";
+    t.parameters = {
+        {"type", "object"},
+        {"properties",
+         {{"tool_name",
+           {{"type", "string"},
+            {"description", "Name of the CLI tool"}}},
+          {"arguments",
+           {{"type", "string"},
+            {"description", "Command-line arguments"}}},
+          {"mode",
+           {{"type", "string"},
+            {"enum", {"interactive", "streaming", "pipe"}},
+            {"description", "Execution mode"}}},
+          {"timeout",
+           {{"type", "integer"},
+            {"description", "Session timeout in seconds (default: 60)"}}}}},
+        {"required", nlohmann::json::array({"tool_name", "arguments"})}};
+    tools.push_back(t);
+  }
+
+  // send_to_cli
+  {
+    LlmToolDecl t;
+    t.name = "send_to_cli";
+    t.description = "Send interactive input to a running CLI session.";
+    t.parameters = {
+        {"type", "object"},
+        {"properties",
+         {{"session_id",
+           {{"type", "string"}, {"description", "ID of the active session"}}},
+          {"input",
+           {{"type", "string"}, {"description", "Input string to send"}}},
+          {"read_timeout_ms",
+           {{"type", "integer"},
+            {"description", "Milliseconds to wait for output (default: 2000)"}}}}},
+        {"required", nlohmann::json::array({"session_id", "input"})}};
+    tools.push_back(t);
+  }
+
+  // read_cli_output
+  {
+    LlmToolDecl t;
+    t.name = "read_cli_output";
+    t.description = "Read continuous or pending output from a CLI session.";
+    t.parameters = {
+        {"type", "object"},
+        {"properties",
+         {{"session_id",
+           {{"type", "string"}, {"description", "ID of the active session"}}},
+          {"read_timeout_ms",
+           {{"type", "integer"},
+            {"description", "Milliseconds to wait for output (default: 1000)"}}}}},
+        {"required", nlohmann::json::array({"session_id"})}};
+    tools.push_back(t);
+  }
+
+  // close_cli_session
+  {
+    LlmToolDecl t;
+    t.name = "close_cli_session";
+    t.description = "Terminate a running CLI session.";
+    t.parameters = {
+        {"type", "object"},
+        {"properties",
+         {{"session_id",
+           {{"type", "string"},
+            {"description", "ID of the session to terminate"}}}}},
+        {"required", nlohmann::json::array({"session_id"})}};
+    tools.push_back(t);
+  }
+
   // generate_web_app
   {
     LlmToolDecl t;

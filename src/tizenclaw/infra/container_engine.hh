@@ -51,6 +51,17 @@ class ContainerEngine {
                                            const std::string& arguments,
                                            int timeout_seconds);
 
+  [[nodiscard]] std::string StartCliSession(const std::string& tool_name,
+                                           const std::string& arguments,
+                                           const std::string& mode,
+                                           int timeout_seconds);
+  [[nodiscard]] std::string SendToCliSession(const std::string& session_id,
+                                            const std::string& input,
+                                            int read_timeout_ms = 2000);
+  [[nodiscard]] std::string ReadCliSession(const std::string& session_id,
+                                          int read_timeout_ms = 1000);
+  [[nodiscard]] std::string CloseCliSession(const std::string& session_id);
+
  private:
   // Execute skill via Unix Domain Socket to the
   // skill_executor running in the secure container.
@@ -77,6 +88,9 @@ class ContainerEngine {
   // Connect to tool-executor via abstract namespace socket.
   // Returns fd >= 0 on success, -1 on failure.
   int ConnectToToolExecutor() const;
+
+  std::string ExecuteToolExecutorCommand(const nlohmann::json& req,
+                                         int timeout_seconds = 30);
 
   // Extract last JSON-like line from raw output
   static std::string ExtractJsonResult(const std::string& raw);

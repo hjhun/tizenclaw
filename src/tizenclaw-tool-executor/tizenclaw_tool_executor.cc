@@ -34,6 +34,7 @@
 
 #include <cerrno>
 #include <cstring>
+#include "cli_session_manager.hh"
 #include <filesystem>
 #include <string>
 #include <thread>
@@ -123,7 +124,8 @@ void HandleClient(
     tizenclaw::tool_executor::PeerValidator& validator,
     tizenclaw::tool_executor::PythonEngine& python_engine,
     tizenclaw::tool_executor::ToolHandler& tool_handler,
-    tizenclaw::tool_executor::SandboxProxy& sandbox_proxy) {
+    tizenclaw::tool_executor::SandboxProxy& sandbox_proxy,
+    tizenclaw::tool_executor::CliSessionManager& session_mgr) {
   UniqueFd client_fd(raw_fd);
   LOG(DEBUG) << "New client fd=" << client_fd.Get();
   if (!validator.Validate(client_fd.Get())) {
@@ -251,6 +253,50 @@ void HandleClient(
           }
         }
       }
+    } else if (command == "execute_cli_session") {
+      std::string cli_tool = req.value("tool_name", "");
+      std::string cli_args = req.value("arguments", "");
+      std::string mode_str = req.value("mode", "interactive");
+      int cli_timeout = req.value("timeout", 60);
+
+      tizenclaw::tool_executor::CliExecutionMode mode =
+          tizenclaw::tool_executor::CliExecutionMode::kInteractive;
+      if (mode_str == "streaming")
+        mode = tizenclaw::tool_executor::CliExecutionMode::kStreaming;
+      else if (mode_str == "pipe")
+        mode = tizenclaw::tool_executor::CliExecutionMode::kPipe;
+
+      std::string bin_path =
+          (cli_tool[0] == '/') ? cli_tool : "/usr/bin/" + cli_tool;
+
+      std::string sid =
+          session_mgr.CreateSession(bin_path, cli_args, mode, cli_timeout);
+      if (sid.empty()) {
+        resp = {{"status", "error"}, {"output", "Failed to start session"}};
+      } else {
+        resp = {{"status", "ok"}, {"session_id", sid}, {"mode", mode_str}};
+      }
+    } else if (command == "cli_session_send") {
+      std::string sid = req.value("session_id", "");
+      std::string input = req.value("input", "");
+      int timeout = req.value("read_timeout_ms", 2000);
+      std::string output = session_mgr.SendInput(sid, input, timeout);
+      resp = {{"status", "ok"}, {"session_id", sid}, {"output", output}};
+    } else if (command == "cli_session_read") {
+      std::string sid = req.value("session_id", "");
+      int timeout = req.value("read_timeout_ms", 1000);
+      std::string output = session_mgr.ReadOutput(sid, timeout);
+      auto status = session_mgr.GetStatus(sid);
+      resp = {{"status", "ok"},
+              {"session_id", sid},
+              {"output", output},
+              {"active", status.value("active", false)}};
+    } else if (command == "cli_session_close") {
+      std::string sid = req.value("session_id", "");
+      session_mgr.CloseSession(sid);
+      resp = {{"status", "ok"}};
+    } else if (command == "cli_session_list") {
+      resp = {{"status", "ok"}, {"sessions", session_mgr.ListSessions()}};
     } else {
       // Default: tool execution (renamed from "skill")
       std::string tool = req.value("tool", "");
@@ -372,7 +418,8 @@ int main() {
                   std::ref(validator),
                   std::ref(python_engine),
                   std::ref(tool_handler),
-                  std::ref(sandbox_proxy));
+                  std::ref(sandbox_proxy),
+                  std::ref(session_mgr));
     t.detach();
   }
 

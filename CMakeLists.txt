@@ -105,6 +105,8 @@ SET(TARGET_TIZEN_FILE_MANAGER_CLI
   "tizen-file-manager-cli")
 SET(TARGET_TIZEN_MEDIA_CLI
   "tizen-media-cli")
+SET(TARGET_TIZEN_VCONF_CLI
+  "tizen-vconf-cli")
 
 ## CLI tools — Dependencies (declared once)
 PKG_CHECK_MODULES(CAPI_SYSTEM_DEVICE_DEPS REQUIRED

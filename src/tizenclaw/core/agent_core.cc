@@ -1699,6 +1699,30 @@ LlmResponse AgentCore::TryFallbackBackends(
   return last_resp;
 }
 
+std::string AgentCore::ExecuteCliSessionOp(
+    const std::string& operation, const nlohmann::json& args) {
+  if (operation == "start") {
+    std::string tool = args.value("tool_name", "");
+    std::string arguments = args.value("arguments", "");
+    std::string mode = args.value("mode", "interactive");
+    int timeout = args.value("timeout", 60);
+    return container_->StartCliSession(tool, arguments, mode, timeout);
+  } else if (operation == "send") {
+    std::string sid = args.value("session_id", "");
+    std::string input = args.value("input", "");
+    int read_timeout = args.value("read_timeout_ms", 2000);
+    return container_->SendToCliSession(sid, input, read_timeout);
+  } else if (operation == "read") {
+    std::string sid = args.value("session_id", "");
+    int read_timeout = args.value("read_timeout_ms", 1000);
+    return container_->ReadCliSession(sid, read_timeout);
+  } else if (operation == "close") {
+    std::string sid = args.value("session_id", "");
+    return container_->CloseCliSession(sid);
+  }
+  return "{\"status\":\"error\",\"output\":\"Unknown session operation\"}";
+}
+
 std::string AgentCore::ExecuteSessionOp(const std::string& operation,
                                         const nlohmann::json& args,
                                         const std::string& caller_session) {
@@ -3144,6 +3168,22 @@ void AgentCore::InitializeToolDispatcher() {
             args.value("tool_name", ""),
             args.value("arguments", ""));
       };
+
+  for (const auto& n :
+       {"start_cli_session", "send_to_cli",
+        "read_cli_output", "close_cli_session"}) {
+    tool_dispatch_[n] =
+        [this](const nlohmann::json& args,
+               const std::string& name,
+               const std::string&) {
+          std::string op;
+          if (name == "start_cli_session") op = "start";
+          else if (name == "send_to_cli") op = "send";
+          else if (name == "read_cli_output") op = "read";
+          else if (name == "close_cli_session") op = "close";
+          return ExecuteCliSessionOp(op, args);
+        };
+  }
 
   // Dynamic web app generation
   tool_dispatch_["generate_web_app"] =

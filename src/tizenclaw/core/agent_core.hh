@@ -173,6 +173,10 @@ class AgentCore {
   std::string ExecuteCli(const std::string& tool_name,
                          const std::string& arguments);
 
+  // Execute interactive/streaming CLI operations
+  std::string ExecuteCliSessionOp(const std::string& operation,
+                                  const nlohmann::json& args);
+
   // Generate a dynamic web app (built-in tool)
   std::string GenerateWebApp(const nlohmann::json& args);
 

@@ -326,314 +326,20 @@ int ContainerEngine::ConnectToToolExecutor() const {
   return s;
 }
 
-std::string ContainerEngine::ExecuteSkillViaSocket(
-    const std::string& skill_name, const std::string& arg_str) {
-  int sock = ConnectToToolExecutor();
-  if (sock < 0) {
-    LOG(WARNING) << "Tool executor connect failed: "
-                 << strerror(errno);
-    return "{}";
-  }
-
-  LOG(INFO) << "Connected to tool-executor @"
-            << kToolExecutorSocketName;
-
-  // Set a 30-second receive timeout so we don't give up
-  // while the tool executor is running the tool
-  struct timeval tv;
-  tv.tv_sec = 30;
-  tv.tv_usec = 0;
-  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-  // Build request JSON
-  nlohmann::json req;
-  req["tool"] = skill_name;
-  req["args"] = arg_str;
-  std::string payload = req.dump();
-
-  // Send length-prefixed request
-  uint32_t net_len = htonl(payload.size());
-  if (::write(sock, &net_len, 4) != 4) {
-    LOG(ERROR) << "UDS write header failed";
-    close(sock);
-    return "{}";
-  }
-
-  ssize_t total = 0;
-  ssize_t len = static_cast<ssize_t>(payload.size());
-  while (total < len) {
-    ssize_t w = ::write(sock, payload.data() + total, len - total);
-    if (w <= 0) {
-      LOG(ERROR) << "UDS write body failed";
-      close(sock);
-      return "{}";
-    }
-    total += w;
-  }
-
-  // Read 4-byte response header
-  uint32_t resp_net_len = 0;
-  ssize_t hr = ::recv(sock, &resp_net_len, 4, MSG_WAITALL);
-  if (hr != 4) {
-    LOG(ERROR) << "UDS recv header failed";
-    close(sock);
-    return "{}";
-  }
-
-  uint32_t resp_len = ntohl(resp_net_len);
-  if (resp_len > 10 * 1024 * 1024) {
-    LOG(ERROR) << "UDS response too large: " << resp_len;
-    close(sock);
-    return "{}";
-  }
-
-  // Read response body
-  std::vector<char> resp_buf(resp_len);
-  ssize_t br = ::recv(sock, resp_buf.data(), resp_len, MSG_WAITALL);
-  close(sock);
-
-  if (br != static_cast<ssize_t>(resp_len)) {
-    LOG(ERROR) << "UDS recv body incomplete";
-    return "{}";
-  }
-
-  std::string resp_str(resp_buf.data(), resp_len);
-  LOG(INFO) << "UDS response (" << resp_len << " bytes)";
-
-  // Parse response
-  LOG(ERROR) << "[DEBUG] UDS raw response: "
-             << resp_str.substr(0, std::min((size_t)300, resp_str.size()));
-  try {
-    auto resp = nlohmann::json::parse(resp_str);
-    std::string status = resp.value("status", "error");
-    std::string output = resp.value("output", "");
-    LOG(ERROR) << "[DEBUG] UDS parsed: status=" << status
-               << " output_len=" << output.length() << " output_preview="
-               << output.substr(0, std::min((size_t)200, output.size()));
-    if (status == "ok") {
-      return output;
-    }
-    LOG(ERROR) << "Skill executor error: " << output;
-    nlohmann::json err;
-    err["error"] = output;
-    return err.dump();
-  } catch (const std::exception& e) {
-    LOG(ERROR) << "UDS JSON parse error: " << e.what();
-    return "{}";
-  }
-}
-
-std::string ContainerEngine::ExecuteCode(const std::string& code) {
-  if (!initialized_) {
-    LOG(ERROR) << "Cannot execute code. " << "Engine not initialized.";
-    return "{}";
-  }
-
-  LOG(INFO) << "ExecuteCode: " << code.size() << " chars";
-
-  // Connect to tool-executor via abstract namespace socket
+std::string ContainerEngine::ExecuteToolExecutorCommand(
+    const nlohmann::json& req, int timeout_seconds) {
   int sock = ConnectToToolExecutor();
   if (sock < 0) {
     LOG(WARNING) << "Tool executor connect failed";
     return "{}";
   }
 
-  // Build execute_code request JSON
-  nlohmann::json req;
-  req["command"] = "execute_code";
-  req["code"] = code;
-  req["timeout"] = 15;
-  std::string payload = req.dump();
-
-  // Send length-prefixed request
-  uint32_t net_len = htonl(payload.size());
-  if (::write(sock, &net_len, 4) != 4) {
-    LOG(ERROR) << "UDS write header failed";
-    close(sock);
-    return "{}";
-  }
-
-  ssize_t total = 0;
-  ssize_t len = static_cast<ssize_t>(payload.size());
-  while (total < len) {
-    ssize_t w = ::write(sock, payload.data() + total, len - total);
-    if (w <= 0) {
-      LOG(ERROR) << "UDS write body failed";
-      close(sock);
-      return "{}";
-    }
-    total += w;
-  }
-
-  // Read 4-byte response header
-  uint32_t resp_net_len = 0;
-  ssize_t hr = ::recv(sock, &resp_net_len, 4, MSG_WAITALL);
-  if (hr != 4) {
-    LOG(ERROR) << "UDS recv header failed";
-    close(sock);
-    return "{}";
-  }
-
-  uint32_t resp_len = ntohl(resp_net_len);
-  if (resp_len > 10 * 1024 * 1024) {
-    LOG(ERROR) << "UDS response too large: " << resp_len;
-    close(sock);
-    return "{}";
-  }
-
-  // Read response body
-  std::vector<char> resp_buf(resp_len);
-  ssize_t br = ::recv(sock, resp_buf.data(), resp_len, MSG_WAITALL);
-  close(sock);
-
-  if (br != static_cast<ssize_t>(resp_len)) {
-    LOG(ERROR) << "UDS recv body incomplete";
-    return "{}";
-  }
-
-  std::string resp_str(resp_buf.data(), resp_len);
-  LOG(INFO) << "ExecuteCode response (" << resp_len << " bytes)";
-
-  try {
-    auto resp = nlohmann::json::parse(resp_str);
-    std::string status = resp.value("status", "error");
-    std::string output = resp.value("output", "");
-    if (status == "ok") {
-      return output;
-    }
-    LOG(ERROR) << "ExecuteCode error: " << output;
-    nlohmann::json err;
-    err["error"] = output;
-    return err.dump();
-  } catch (const std::exception& e) {
-    LOG(ERROR) << "UDS JSON parse error: " << e.what();
-    return "{}";
-  }
-}
-
-std::string ContainerEngine::ExecuteFileOp(const std::string& operation,
-                                           const std::string& path,
-                                           const std::string& content) {
-  if (!initialized_) {
-    LOG(ERROR) << "Cannot execute file op. " << "Engine not initialized.";
-    return "{}";
-  }
-
-  LOG(INFO) << "ExecuteFileOp: op=" << operation << " path=" << path;
-
-  int sock = ConnectToToolExecutor();
-  if (sock < 0) {
-    LOG(WARNING) << "Tool executor connect failed";
-    return "{}";
-  }
-
-  nlohmann::json req;
-  req["command"] = "file_manager";
-  req["operation"] = operation;
-  req["path"] = path;
-  if (!content.empty()) {
-    req["content"] = content;
-  }
-  std::string payload = req.dump();
-
-  uint32_t net_len = htonl(payload.size());
-  if (::write(sock, &net_len, 4) != 4) {
-    LOG(ERROR) << "UDS write header failed";
-    close(sock);
-    return "{}";
-  }
-
-  ssize_t total = 0;
-  ssize_t len = static_cast<ssize_t>(payload.size());
-  while (total < len) {
-    ssize_t w = ::write(sock, payload.data() + total, len - total);
-    if (w <= 0) {
-      LOG(ERROR) << "UDS write body failed";
-      close(sock);
-      return "{}";
-    }
-    total += w;
-  }
-
-  uint32_t resp_net_len = 0;
-  ssize_t hr = ::recv(sock, &resp_net_len, 4, MSG_WAITALL);
-  if (hr != 4) {
-    LOG(ERROR) << "UDS recv header failed";
-    close(sock);
-    return "{}";
-  }
-
-  uint32_t resp_len = ntohl(resp_net_len);
-  if (resp_len > 10 * 1024 * 1024) {
-    LOG(ERROR) << "UDS response too large: " << resp_len;
-    close(sock);
-    return "{}";
-  }
-
-  std::vector<char> resp_buf(resp_len);
-  ssize_t br = ::recv(sock, resp_buf.data(), resp_len, MSG_WAITALL);
-  close(sock);
-
-  if (br != static_cast<ssize_t>(resp_len)) {
-    LOG(ERROR) << "UDS recv body incomplete";
-    return "{}";
-  }
-
-  std::string resp_str(resp_buf.data(), resp_len);
-  LOG(INFO) << "ExecuteFileOp response (" << resp_len << " bytes)";
-
-  try {
-    auto resp = nlohmann::json::parse(resp_str);
-    std::string status = resp.value("status", "error");
-    std::string output = resp.value("output", "");
-    if (status == "ok") {
-      return output;
-    }
-    LOG(ERROR) << "FileOp error: " << output;
-    nlohmann::json err;
-    err["error"] = output;
-    return err.dump();
-  } catch (const std::exception& e) {
-    LOG(ERROR) << "UDS JSON parse error: " << e.what();
-    return "{}";
-  }
-}
-
-std::string ContainerEngine::ExecuteCliTool(
-    const std::string& tool_name,
-    const std::string& arguments,
-    int timeout_seconds) {
-  if (!initialized_) {
-    LOG(ERROR) << "Cannot execute CLI tool. "
-               << "Engine not initialized.";
-    return "{}";
-  }
-
-  LOG(INFO) << "ExecuteCliTool: tool=" << tool_name
-            << " args=" << arguments;
-
-  int sock = ConnectToToolExecutor();
-  if (sock < 0) {
-    LOG(WARNING) << "Tool executor connect failed "
-                 << "for execute_cli";
-    return "{}";
-  }
-
-  // Set receive timeout
   struct timeval tv;
   tv.tv_sec = timeout_seconds > 0 ? timeout_seconds : 10;
   tv.tv_usec = 0;
   setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-  // Build execute_cli request JSON
-  nlohmann::json req;
-  req["command"] = "execute_cli";
-  req["tool_name"] = tool_name;
-  req["arguments"] = arguments;
-  req["timeout"] = timeout_seconds;
   std::string payload = req.dump();
-
-  // Send length-prefixed request
   uint32_t net_len = htonl(payload.size());
   if (::write(sock, &net_len, 4) != 4) {
     LOG(ERROR) << "UDS write header failed";
@@ -644,8 +350,7 @@ std::string ContainerEngine::ExecuteCliTool(
   ssize_t total = 0;
   ssize_t len = static_cast<ssize_t>(payload.size());
   while (total < len) {
-    ssize_t w = ::write(sock, payload.data() + total,
-                        len - total);
+    ssize_t w = ::write(sock, payload.data() + total, len - total);
     if (w <= 0) {
       LOG(ERROR) << "UDS write body failed";
       close(sock);
@@ -654,7 +359,6 @@ std::string ContainerEngine::ExecuteCliTool(
     total += w;
   }
 
-  // Read 4-byte response header
   uint32_t resp_net_len = 0;
   ssize_t hr = ::recv(sock, &resp_net_len, 4, MSG_WAITALL);
   if (hr != 4) {
@@ -670,7 +374,6 @@ std::string ContainerEngine::ExecuteCliTool(
     return "{}";
   }
 
-  // Read response body
   std::vector<char> resp_buf(resp_len);
   ssize_t br = ::recv(sock, resp_buf.data(), resp_len, MSG_WAITALL);
   close(sock);
@@ -681,24 +384,112 @@ std::string ContainerEngine::ExecuteCliTool(
   }
 
   std::string resp_str(resp_buf.data(), resp_len);
-  LOG(INFO) << "ExecuteCliTool response ("
-            << resp_len << " bytes)";
-
   try {
     auto resp = nlohmann::json::parse(resp_str);
     std::string status = resp.value("status", "error");
-    std::string output = resp.value("output", "");
     if (status == "ok") {
-      return output;
+      // For session commands, return the full JSON so the agent gets session_id
+      if (req.contains("command") &&
+          req["command"].get<std::string>().find("session") !=
+              std::string::npos) {
+        return resp.dump();
+      }
+      return resp.value("output", "");
     }
-    LOG(ERROR) << "ExecuteCliTool error: " << output;
-    nlohmann::json err;
-    err["error"] = output;
-    return err.dump();
-  } catch (const std::exception& e) {
-    LOG(ERROR) << "UDS JSON parse error: " << e.what();
+    return resp.dump();
+  } catch (...) {
+    LOG(ERROR) << "UDS JSON parse error";
     return "{}";
   }
+}
+
+std::string ContainerEngine::ExecuteSkillViaSocket(
+    const std::string& skill_name, const std::string& arg_str) {
+  LOG(INFO) << "ExecuteSkillViaSocket: skill=" << skill_name;
+  nlohmann::json req;
+  req["tool"] = skill_name;
+  req["args"] = arg_str;
+  return ExecuteToolExecutorCommand(req, 30);
+}
+
+std::string ContainerEngine::ExecuteCode(const std::string& code) {
+  if (!initialized_) return "{}";
+  LOG(INFO) << "ExecuteCode: " << code.size() << " chars";
+  nlohmann::json req;
+  req["command"] = "execute_code";
+  req["code"] = code;
+  req["timeout"] = 15;
+  return ExecuteToolExecutorCommand(req, 15);
+}
+
+std::string ContainerEngine::ExecuteFileOp(const std::string& operation,
+                                           const std::string& path,
+                                           const std::string& content) {
+  if (!initialized_) return "{}";
+  LOG(INFO) << "ExecuteFileOp: op=" << operation << " path=" << path;
+  nlohmann::json req;
+  req["command"] = "file_manager";
+  req["operation"] = operation;
+  req["path"] = path;
+  if (!content.empty()) req["content"] = content;
+  return ExecuteToolExecutorCommand(req, 10);
+}
+
+std::string ContainerEngine::ExecuteCliTool(
+    const std::string& tool_name, const std::string& arguments,
+    int timeout_seconds) {
+  if (!initialized_) return "{}";
+  LOG(INFO) << "ExecuteCliTool: tool=" << tool_name << " args=" << arguments;
+  nlohmann::json req;
+  req["command"] = "execute_cli";
+  req["tool_name"] = tool_name;
+  req["arguments"] = arguments;
+  req["timeout"] = timeout_seconds;
+  return ExecuteToolExecutorCommand(req, timeout_seconds);
+}
+
+std::string ContainerEngine::StartCliSession(const std::string& tool_name,
+                                             const std::string& arguments,
+                                             const std::string& mode,
+                                             int timeout_seconds) {
+  if (!initialized_) return "{}";
+  nlohmann::json req;
+  req["command"] = "execute_cli_session";
+  req["tool_name"] = tool_name;
+  req["arguments"] = arguments;
+  req["mode"] = mode;
+  req["timeout"] = timeout_seconds;
+  return ExecuteToolExecutorCommand(req, timeout_seconds);
+}
+
+std::string ContainerEngine::SendToCliSession(const std::string& session_id,
+                                              const std::string& input,
+                                              int read_timeout_ms) {
+  if (!initialized_) return "{}";
+  nlohmann::json req;
+  req["command"] = "cli_session_send";
+  req["session_id"] = session_id;
+  req["input"] = input;
+  req["read_timeout_ms"] = read_timeout_ms;
+  return ExecuteToolExecutorCommand(req, (read_timeout_ms / 1000) + 5);
+}
+
+std::string ContainerEngine::ReadCliSession(const std::string& session_id,
+                                            int read_timeout_ms) {
+  if (!initialized_) return "{}";
+  nlohmann::json req;
+  req["command"] = "cli_session_read";
+  req["session_id"] = session_id;
+  req["read_timeout_ms"] = read_timeout_ms;
+  return ExecuteToolExecutorCommand(req, (read_timeout_ms / 1000) + 5);
+}
+
+std::string ContainerEngine::CloseCliSession(const std::string& session_id) {
+  if (!initialized_) return "{}";
+  nlohmann::json req;
+  req["command"] = "cli_session_close";
+  req["session_id"] = session_id;
+  return ExecuteToolExecutorCommand(req, 5);
 }
 
 std::string ContainerEngine::ExecuteSkillViaCrun(const std::string& skill_name,
