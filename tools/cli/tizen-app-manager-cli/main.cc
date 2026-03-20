@@ -24,13 +24,18 @@
 
 namespace {
 
+constexpr const char kUsage[] = R"(Usage:
+  tizen-app-manager-cli <subcommand>
+
+Subcommands:
+  list          List installed UI apps
+  terminate     Terminate a running app
+  launch        Launch an app via AppControl
+  package-info  Get package information
+)";
+
 void PrintUsage() {
-  std::cerr
-      << "Usage: tizen-app-manager-cli <subcommand>\n"
-      << "  list          List installed UI apps\n"
-      << "  terminate     Terminate a running app\n"
-      << "  launch        Launch an app via AppControl\n"
-      << "  package-info  Get package information\n";
+  std::cerr << kUsage;
 }
 
 std::string GetArg(int argc, char* argv[],

@@ -25,17 +25,18 @@
 
 namespace {
 
+constexpr const char kUsage[] = R"(Usage:
+  tizen-hardware-control-cli <subcommand> [options]
+
+Subcommands:
+  haptic    Vibrate device [--duration <ms>]
+  led       LED control --action on|off [--brightness N]
+  power     Power lock --action lock|unlock --resource display|cpu
+  feedback  Play feedback --pattern <NAME>
+)";
+
 void PrintUsage() {
-  std::cerr
-      << "Usage:\n"
-      << "  tizen-hardware-control-cli haptic"
-      << " [--duration <ms>]\n"
-      << "  tizen-hardware-control-cli led"
-      << " --action on|off [--brightness N]\n"
-      << "  tizen-hardware-control-cli power"
-      << " --action lock|unlock --resource display|cpu\n"
-      << "  tizen-hardware-control-cli feedback"
-      << " --pattern <NAME>\n";
+  std::cerr << kUsage;
 }
 
 }  // namespace

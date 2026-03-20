@@ -20,10 +20,13 @@
 
 #include "display_controller.hh"
 
+constexpr const char kUsage[] = R"(Usage:
+  tizen-control-display-cli --brightness <value>
+  tizen-control-display-cli --info
+)";
+
 void PrintUsage() {
-  std::cerr << "Usage:\n"
-            << "  tizen-control-display-cli --brightness <value>\n"
-            << "  tizen-control-display-cli --info\n";
+  std::cerr << kUsage;
 }
 
 int main(int argc, char* argv[]) {

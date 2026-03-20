@@ -24,11 +24,17 @@
 
 namespace {
 
+constexpr const char kUsage[] = R"(Usage:
+  tizen-sound-cli <subcommand> [options]
+
+Subcommands:
+  volume  [set --type <TYPE> --level <N>]
+  devices List audio devices
+  tone    [--name <NAME>] [--duration <ms>]
+)";
+
 void PrintUsage() {
-  std::cerr << "Usage: tizen-sound-cli <subcommand>\n"
-            << "  volume [set --type <TYPE> --level <N>]\n"
-            << "  devices   List audio devices\n"
-            << "  tone [--name <NAME>] [--duration <ms>]\n";
+  std::cerr << kUsage;
 }
 
 }  // namespace

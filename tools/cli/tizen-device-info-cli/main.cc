@@ -27,15 +27,21 @@
 
 namespace {
 
+constexpr const char kUsage[] = R"(Usage:
+  tizen-device-info-cli <subcommand>
+
+Subcommands:
+  battery      Battery info
+  system-info  System hardware info
+  runtime      CPU/memory usage
+  storage      Storage devices/space
+  thermal      Temperature sensors
+  display      Display state/brightness
+  settings     System settings
+)";
+
 void PrintUsage() {
-  std::cerr << "Usage: tizen-device-info-cli <subcommand>\n"
-            << "  battery      Battery info\n"
-            << "  system-info  System hardware info\n"
-            << "  runtime      CPU/memory usage\n"
-            << "  storage      Storage devices/space\n"
-            << "  thermal      Temperature sensors\n"
-            << "  display      Display state/brightness\n"
-            << "  settings     System settings\n";
+  std::cerr << kUsage;
 }
 
 }  // namespace

@@ -21,12 +21,17 @@
 
 namespace {
 
+constexpr const char kUsage[] = R"(Usage:
+  tizen-sensor-cli --type <sensor_type>
+
+Sensor types:
+  accelerometer, gravity, gyroscope,
+  light, proximity, pressure,
+  magnetic, orientation
+)";
+
 void PrintUsage() {
-  std::cerr
-      << "Usage: tizen-sensor-cli --type <sensor_type>\n"
-      << "  sensor_type: accelerometer, gravity, gyroscope,\n"
-      << "    light, proximity, pressure, magnetic,"
-      << " orientation\n";
+  std::cerr << kUsage;
 }
 
 }  // namespace

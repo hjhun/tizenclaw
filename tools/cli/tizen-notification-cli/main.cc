@@ -22,10 +22,16 @@
 
 namespace {
 
+constexpr const char kUsage[] = R"(Usage:
+  tizen-notification-cli <subcommand> [options]
+
+Subcommands:
+  notify  Send a notification
+  alarm   Schedule an alarm
+)";
+
 void PrintUsage() {
-  std::cerr << "Usage: tizen-notification-cli <subcommand>\n"
-            << "  notify  Send a notification\n"
-            << "  alarm   Schedule an alarm\n";
+  std::cerr << kUsage;
 }
 
 std::string GetArg(int argc, char* argv[],

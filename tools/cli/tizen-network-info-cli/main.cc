@@ -24,12 +24,18 @@
 
 namespace {
 
+constexpr const char kUsage[] = R"(Usage:
+  tizen-network-info-cli <subcommand>
+
+Subcommands:
+  network     Network connection info
+  wifi        Wi-Fi status and AP info
+  bluetooth   Bluetooth adapter info
+  data-usage  Data usage statistics
+)";
+
 void PrintUsage() {
-  std::cerr << "Usage: tizen-network-info-cli <subcommand>\n"
-            << "  network     Network connection info\n"
-            << "  wifi        Wi-Fi status and AP info\n"
-            << "  bluetooth   Bluetooth adapter info\n"
-            << "  data-usage  Data usage statistics\n";
+  std::cerr << kUsage;
 }
 
 }  // namespace

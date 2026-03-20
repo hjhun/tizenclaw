@@ -21,15 +21,16 @@
 
 namespace {
 
+constexpr const char kUsage[] = R"(Usage:
+  tizen-web-search-cli --query <QUERY> [--engine <ENGINE>]
+
+Engines:
+  naver (default), google, brave,
+  gemini, grok, kimi, perplexity
+)";
+
 void PrintUsage() {
-  std::cerr
-      << "Usage: tizen-web-search-cli"
-      << " --query <QUERY>"
-      << " [--engine <ENGINE>]\n"
-      << "\n"
-      << "Engines:\n"
-      << "  naver (default), google, brave,\n"
-      << "  gemini, grok, kimi, perplexity\n";
+  std::cerr << kUsage;
 }
 
 }  // namespace
