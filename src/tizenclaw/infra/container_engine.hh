@@ -18,6 +18,7 @@
 
 #include <memory>
 #include <string>
+#include <json.hpp>
 
 namespace tizenclaw {
 
