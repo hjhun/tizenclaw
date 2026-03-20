@@ -17,6 +17,7 @@
 #include "app_control_controller.hh"
 #include "list_apps_controller.hh"
 #include "package_info_controller.hh"
+#include "running_apps_controller.hh"
 #include "terminate_controller.hh"
 
 #include <iostream>
@@ -30,6 +31,8 @@ constexpr const char kUsage[] = R"(Usage:
 Subcommands:
   list          List installed UI apps
   list-all      List all installed apps
+  running       List running UI apps
+  running-all   List all running apps
   terminate     Terminate a running app
   launch        Launch an app via AppControl
   package-info  Get package information
@@ -64,6 +67,12 @@ int main(int argc, char* argv[]) {
   } else if (cmd == "list-all") {
     tizenclaw::cli::ListAppsController c;
     std::cout << c.ListAllApps() << std::endl;
+  } else if (cmd == "running") {
+    tizenclaw::cli::RunningAppsController c;
+    std::cout << c.ListRunningApps() << std::endl;
+  } else if (cmd == "running-all") {
+    tizenclaw::cli::RunningAppsController c;
+    std::cout << c.ListAllRunningApps() << std::endl;
   } else if (cmd == "terminate") {
     std::string id = GetArg(argc, argv, "--app-id");
     if (id.empty()) {
