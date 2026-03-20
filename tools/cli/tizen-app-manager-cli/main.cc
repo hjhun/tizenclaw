@@ -17,6 +17,7 @@
 #include "app_control_controller.hh"
 #include "list_apps_controller.hh"
 #include "package_info_controller.hh"
+#include "recent_apps_controller.hh"
 #include "running_apps_controller.hh"
 #include "terminate_controller.hh"
 
@@ -29,13 +30,15 @@ constexpr const char kUsage[] = R"(Usage:
   tizen-app-manager-cli <subcommand>
 
 Subcommands:
-  list          List installed UI apps
-  list-all      List all installed apps
-  running       List running UI apps
-  running-all   List all running apps
-  terminate     Terminate a running app
-  launch        Launch an app via AppControl
-  package-info  Get package information
+  list            List installed UI apps
+  list-all        List all installed apps
+  running         List running UI apps
+  running-all     List all running apps
+  recent          List recently used apps
+  recent-detail   Get launch args for a recent app
+  terminate       Terminate a running app
+  launch          Launch an app via AppControl
+  package-info    Get package information
 )";
 
 void PrintUsage() {
@@ -73,6 +76,18 @@ int main(int argc, char* argv[]) {
   } else if (cmd == "running-all") {
     tizenclaw::cli::RunningAppsController c;
     std::cout << c.ListAllRunningApps() << std::endl;
+  } else if (cmd == "recent") {
+    tizenclaw::cli::RecentAppsController c;
+    std::cout << c.ListRecentApps() << std::endl;
+  } else if (cmd == "recent-detail") {
+    std::string id = GetArg(argc, argv, "--app-id");
+    if (id.empty()) {
+      std::cerr << "--app-id required\n";
+      return 1;
+    }
+    tizenclaw::cli::RecentAppsController c;
+    std::cout << c.GetRecentAppDetail(id)
+              << std::endl;
   } else if (cmd == "terminate") {
     std::string id = GetArg(argc, argv, "--app-id");
     if (id.empty()) {
