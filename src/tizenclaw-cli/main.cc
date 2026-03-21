@@ -73,6 +73,14 @@ void PrintUsage() {
              << "system CLI tool\n"
              << "  --list-tools  List registered "
              << "system CLI tools\n"
+             << "  --list-mcp    List active MCP "
+             << "tools\n"
+             << "  --list-known-mcp\n"
+             << "                List official MCP "
+             << "server examples\n"
+             << "  --connect-mcp <path>\n"
+             << "                Connect to MCP "
+             << "servers defined in JSON config\n"
              << "  -h, --help    Show this help\n\n"
              << "If no prompt given, interactive "
              << "mode.\n";
@@ -193,6 +201,51 @@ int main(int argc, char* argv[]) {
       }
       tizenclaw::cli::ResponsePrinter
           ::PrintToolList(resp);
+      return 0;
+    } else if (arg == "--list-known-mcp") {
+      std::cout << "=== Reference: Official MCP Servers ===\n"
+                << "Below are examples you can add to mcp_servers.json:\n\n"
+                << "  [npx based]\n"
+                << "  - npx -y @modelcontextprotocol/server-postgres\n"
+                << "  - npx -y @modelcontextprotocol/server-github\n"
+                << "  - npx -y @modelcontextprotocol/server-slack\n"
+                << "  - npx -y @modelcontextprotocol/server-google-maps\n"
+                << "  - npx -y @modelcontextprotocol/server-brave-search\n"
+                << "  - npx -y @modelcontextprotocol/server-puppeteer\n"
+                << "  - npx -y @modelcontextprotocol/server-filesystem\n"
+                << "\n  [python based]\n"
+                << "  - python3 -m mcp_server_sqlite\n"
+                << "  - python3 -m mcp_server_weather\n"
+                << "  - python3 -m mcp_server_fetch\n"
+                << "  - python3 -m mcp_server_memory\n"
+                << "\nFor details see: https://github.com/modelcontextprotocol/servers\n";
+      return 0;
+    } else if (arg == "--list-mcp") {
+      tizenclaw::cli::SocketClient client;
+      std::string resp = client.SendJsonRpc(
+          "list_mcp_tools");
+      if (resp.empty()) {
+        std::cerr << "Failed to read response\n";
+        return 1;
+      }
+      tizenclaw::cli::ResponsePrinter
+          ::PrintMcpToolList(resp);
+      return 0;
+    } else if (arg == "--connect-mcp" &&
+               i + 1 < argc) {
+      std::string config_path = argv[++i];
+      nlohmann::json params;
+      params["config_path"] = config_path;
+
+      tizenclaw::cli::SocketClient client;
+      std::string resp = client.SendJsonRpc(
+          "connect_mcp_servers",
+          params.dump());
+      if (resp.empty()) {
+        std::cerr << "Failed to read response\n";
+        return 1;
+      }
+      std::cout << resp << "\n";
       return 0;
     } else if (arg == "--register-tool" &&
                i + 1 < argc) {

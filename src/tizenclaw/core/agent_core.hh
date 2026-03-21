@@ -46,6 +46,7 @@
 #include "pipeline_executor.hh"
 #include "tool_dispatcher.hh"
 #include "workflow_engine.hh"
+#include "../channel/mcp_client_manager.hh"
 
 namespace tizenclaw {
 
@@ -132,6 +133,12 @@ class AgentCore {
       const std::string& tool_name,
       const std::string& binary_path,
       const std::string& help_output);
+
+  // Connect to external MCP servers mapped in JSON config
+  bool ConnectMcpServers(const std::string& config_path);
+
+  // Return a JSON representation of connected MCP tools
+  nlohmann::json GetMcpToolsJson();
 
  private:
   // Execute a skill and return its JSON output
@@ -326,6 +333,9 @@ class AgentCore {
 
   // Auto skill generation agent
   std::unique_ptr<AutoSkillAgent> auto_skill_agent_;
+
+  // Manager for connecting to external MCP Servers
+  std::unique_ptr<McpClientManager> mcp_client_manager_;
 
   // Get session-specific system prompt
   // (falls back to global system_prompt_)

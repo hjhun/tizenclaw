@@ -37,6 +37,10 @@ class ResponsePrinter {
   static void PrintToolList(
       const std::string& body);
 
+  // Pretty-print the list_mcp_tools JSON response.
+  static void PrintMcpToolList(
+      const std::string& body);
+
   // Pretty-print register/unregister result.
   static void PrintToolResult(
       const std::string& body);

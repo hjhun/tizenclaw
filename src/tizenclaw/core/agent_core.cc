@@ -199,6 +199,17 @@ bool AgentCore::Initialize() {
     }
   }
 
+  // Load external MCP servers configuration
+  {
+    auto guard = boot.Track("McpServers");
+    mcp_client_manager_ = std::make_unique<McpClientManager>();
+    if (!mcp_client_manager_->LoadConfigAndConnect(
+            "/opt/usr/share/tizenclaw/config/"
+            "mcp_servers.json")) {
+      LOG(INFO) << "No MCP clients configured or config missing.";
+    }
+  }
+
   // Load tool execution policy
   {
     auto guard = boot.Track("ToolPolicy");
@@ -726,6 +737,8 @@ std::string AgentCore::ProcessPrompt(
         } else if (resolved_name == "execute_action" ||
                    resolved_name.starts_with("action_")) {
           r.output = ExecuteActionOp(resolved_name, tc.args);
+        } else if (McpClientManager::IsMcpTool(resolved_name)) {
+          r.output = mcp_client_manager_->ExecuteTool(resolved_name, tc.args);
         } else {
           r.output = ExecuteSkill(resolved_name, tc.args);
         }
@@ -1123,6 +1136,16 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
   // Append CLI tools and scan tool.md docs
   ToolDeclarationBuilder::AppendCliTools(
       tools, cli_dirs_, cli_tool_docs_);
+
+  if (mcp_client_manager_) {
+    auto mcp_tools = mcp_client_manager_->GetToolDeclarations();
+    if (!mcp_tools.empty()) {
+      tools.insert(tools.end(), mcp_tools.begin(), mcp_tools.end());
+      LOG(INFO) << "Loaded " << mcp_tools.size()
+                << " remote MCP tool(s)";
+    }
+  }
+
   // Regenerate tool index files
   ToolIndexer::RegenerateAll(
       "/opt/usr/share/tizenclaw/tools");
@@ -2484,6 +2507,35 @@ std::string AgentCore::ExecuteActionOp(const std::string& operation,
          "\"Tizen Action not supported "
          "in this build\"}";
 #endif
+}
+
+bool AgentCore::ConnectMcpServers(const std::string& config_path) {
+  if (mcp_client_manager_) {
+    bool ok = mcp_client_manager_->LoadConfigAndConnect(config_path);
+    if (ok) ReloadSkills();
+    return ok;
+  }
+  return false;
+}
+
+nlohmann::json AgentCore::GetMcpToolsJson() {
+  nlohmann::json result = nlohmann::json::object();
+  result["enabled"] = (mcp_client_manager_ != nullptr);
+  auto arr = nlohmann::json::array();
+  
+  if (mcp_client_manager_) {
+    auto tools = mcp_client_manager_->GetToolDeclarations();
+    for (const auto& t : tools) {
+      nlohmann::json tj;
+      tj["name"] = t.name;
+      tj["description"] = t.description;
+      tj["parameters"] = t.parameters;
+      arr.push_back(tj);
+    }
+  }
+  result["tools"] = arr;
+  result["tool_count"] = arr.size();
+  return result;
 }
 
 std::string AgentCore::GenerateToolDoc(
