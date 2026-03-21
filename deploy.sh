@@ -47,6 +47,7 @@ DEBUG_MODE=false
 DEVICE_SERIAL=""
 WITH_NGROK=false
 RUN_TESTS=false
+RUN_FULL_TESTS=false
 WITH_ASSETS=false
 WITH_BRIDGE=false
 RAG_PROJECT_DIR=""
@@ -274,6 +275,7 @@ ${CYAN}Options:${NC}
   -i, --incremental     Use --incremental and --skip-srcrpm for fast iterative build
   -s, --skip-build      Skip GBS build, deploy existing RPM
   -t, --test            Run E2E smoke tests after deployment
+  -T, --full-test       Run all automated test suites after deployment
       --with-assets     Also build and deploy tizenclaw-assets
       --with-bridge     Install TizenClawBridge WGT on the device
   -w, --with-ngrok      Auto-download and push ngrok binary to the device
@@ -288,6 +290,7 @@ ${CYAN}Examples:${NC}
   $(basename "$0") -i -n               # Fastest iterative rebuild + deploy + run
   $(basename "$0") -s                  # Deploy existing RPM + run
   $(basename "$0") -t                  # Build + deploy + run E2E tests
+  $(basename "$0") -T                  # Build + deploy + run full verifications
   $(basename "$0") --with-assets       # Build + deploy including tizenclaw-assets
   $(basename "$0") --with-bridge       # Deploy and install TizenClawBridge WGT
   $(basename "$0") -w                  # Deploy and install ngrok binary
@@ -309,6 +312,7 @@ parse_args() {
       -i|--incremental) INCREMENTAL=true; shift ;;
       -s|--skip-build) SKIP_BUILD=true; shift ;;
       -t|--test)      RUN_TESTS=true; shift ;;
+      -T|--full-test) RUN_FULL_TESTS=true; shift ;;
       --with-assets)   WITH_ASSETS=true; shift ;;
       --with-bridge)   WITH_BRIDGE=true; shift ;;
       -w|--with-ngrok) WITH_NGROK=true; shift ;;
@@ -798,6 +802,42 @@ do_e2e_tests() {
 }
 
 # ─────────────────────────────────────────────
+# Step 6 (optional): Full Verification Test
+# ─────────────────────────────────────────────
+do_full_tests() {
+  if [ "${RUN_FULL_TESTS}" = false ]; then
+    return 0
+  fi
+
+  header "Step 6: Full Verification Test Suite"
+
+  local test_script="${PROJECT_DIR}/tests/run_all.sh"
+  if [ ! -f "${test_script}" ]; then
+    warn "Full test script not found: ${test_script}"
+    return 1
+  fi
+
+  local test_args=()
+  if [ -n "${DEVICE_SERIAL}" ]; then
+    test_args+=("-d" "${DEVICE_SERIAL}")
+  fi
+
+  log "Running: ${test_script} ${test_args[*]:-}"
+
+  if [ "${DRY_RUN}" = true ]; then
+    echo -e "  ${YELLOW}[DRY-RUN]${NC} bash ${test_script} ${test_args[*]:-}"
+    return 0
+  fi
+
+  # Increase default timeout or provide args if needed
+  if bash "${test_script}" "${test_args[@]+"${test_args[@]}"}"; then
+    ok "Full verification tests passed!"
+  else
+    fail "Full verification tests failed. See output above."
+  fi
+}
+
+# ─────────────────────────────────────────────
 # Summary
 # ─────────────────────────────────────────────
 show_summary() {
@@ -828,6 +868,7 @@ main() {
   ensure_python3_on_device
   do_restart_and_run
   do_e2e_tests
+  do_full_tests
   show_summary
 }
 
