@@ -2509,6 +2509,35 @@ std::string AgentCore::ExecuteActionOp(const std::string& operation,
 #endif
 }
 
+bool AgentCore::ConnectMcpServers(const std::string& config_path) {
+  if (mcp_client_manager_) {
+    bool ok = mcp_client_manager_->LoadConfigAndConnect(config_path);
+    if (ok) ReloadSkills();
+    return ok;
+  }
+  return false;
+}
+
+nlohmann::json AgentCore::GetMcpToolsJson() {
+  nlohmann::json result = nlohmann::json::object();
+  result["enabled"] = (mcp_client_manager_ != nullptr);
+  auto arr = nlohmann::json::array();
+  
+  if (mcp_client_manager_) {
+    auto tools = mcp_client_manager_->GetToolDeclarations();
+    for (const auto& t : tools) {
+      nlohmann::json tj;
+      tj["name"] = t.name;
+      tj["description"] = t.description;
+      tj["parameters"] = t.parameters;
+      arr.push_back(tj);
+    }
+  }
+  result["tools"] = arr;
+  result["tool_count"] = arr.size();
+  return result;
+}
+
 std::string AgentCore::GenerateToolDoc(
     const std::string& tool_name,
     const std::string& binary_path,

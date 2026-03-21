@@ -255,6 +255,44 @@ void ResponsePrinter::PrintPerceptionStatus(
 namespace tizenclaw {
 namespace cli {
 
+void ResponsePrinter::PrintMcpToolList(
+    const std::string& body) {
+  try {
+    auto j = nlohmann::json::parse(body);
+    auto res = j.value("result",
+                       nlohmann::json::object());
+    bool enabled = res.value("enabled", false);
+    int count = res.value("tool_count", 0);
+
+    std::cout << "=== MCP Tools ===\n"
+              << "  Enabled: "
+              << (enabled ? "yes" : "no")
+              << "\n  Connected Tools: " << count
+              << "\n\n";
+
+    if (res.contains("tools") &&
+        res["tools"].is_array()) {
+      for (const auto& t : res["tools"]) {
+        std::string name =
+            t.value("name", "?");
+        std::string desc =
+            t.value("description", "");
+
+        std::cout << "  " << name << "\n"
+                  << "    Desc: " << desc << "\n\n";
+      }
+    }
+    if (count == 0) {
+      std::cout
+          << "  (no MCP tools currently connected)\n"
+          << "  Use --connect-mcp <config_path> "
+          << "to connect\n";
+    }
+  } catch (...) {
+    std::cout << body << "\n";
+  }
+}
+
 void ResponsePrinter::PrintToolList(
     const std::string& body) {
   try {

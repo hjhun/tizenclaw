@@ -747,6 +747,26 @@ void TizenClawDaemon::HandleIpcClient(int client_sock) {
                  {{"code", -32602},
                   {"message", err}}}};
           }
+        } else if (method == "list_mcp_tools") {
+          auto result = agent_->GetMcpToolsJson();
+          response_json = {
+              {"jsonrpc", "2.0"},
+              {"id", req_id},
+              {"result", result}};
+        } else if (method == "connect_mcp_servers") {
+          std::string config_path = params.value("config_path", "");
+          bool ok = agent_->ConnectMcpServers(config_path);
+          if (ok) {
+            response_json = {
+                {"jsonrpc", "2.0"},
+                {"id", req_id},
+                {"result", {{"status", "ok"}, {"message", "MCP servers connected"}}}};
+          } else {
+            response_json = {
+                {"jsonrpc", "2.0"},
+                {"id", req_id},
+                {"error", {{"code", -32602}, {"message", "Failed to load MCP config"}}}};
+          }
         } else if (method == "list_system_cli") {
           auto result =
               SystemCliAdapter::GetInstance()

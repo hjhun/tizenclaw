@@ -134,6 +134,12 @@ class AgentCore {
       const std::string& binary_path,
       const std::string& help_output);
 
+  // Connect to external MCP servers mapped in JSON config
+  bool ConnectMcpServers(const std::string& config_path);
+
+  // Return a JSON representation of connected MCP tools
+  nlohmann::json GetMcpToolsJson();
+
  private:
   // Execute a skill and return its JSON output
   std::string ExecuteSkill(const std::string& skill_name,
