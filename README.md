@@ -226,7 +226,7 @@ graph TB
 
     subgraph Secure["Secure Container (crun)"]
         Skills["Python Skills<br/>(sandboxed)"]
-        SkillList["35+ Skills via Tizen C-API<br/>App · Device · Network · Media<br/>Display · Sensor · System Control<br/>+ Runtime Custom Skills (LLM-generated)<br/>Async support via tizen-core"]
+        SkillList["13 Native CLI Tool Suites<br/>App · Device · Network · Media<br/>Display · Sensor · System Control<br/>+ built-in Async streaming"]
         Skills --- SkillList
     end
 
@@ -248,7 +248,7 @@ graph TB
 
 ## Skills
 
-TizenClaw ships with **35 container skills** (Python, OCI sandbox) and **20+ built-in tools** (native C++). Async skills use the **tizen-core** event loop for callback-based APIs.
+TizenClaw ships with **13 native CLI tool suites** containing diverse sub-commands (replacing the legacy Python OCI sandbox skills) and **20+ built-in tools** (native C++). Async functions and streaming events handle callback-based APIs effectively.
 
 | Category | Skills | Examples |
 |----------|:------:|---------|
@@ -557,7 +557,7 @@ tizenclaw/
 │   ├── libtizenclaw/              # C-API client library (SDK)
 │   ├── libtizenclaw-core/         # Core library (curl, LLM backend)
 │   └── pkgmgr-metadata-plugin/    # Metadata parser plugins (skills, CLI, LLM backends)
-├── tools/skills/                  # Python skill scripts (35 skills)
+├── tools/cli/                     # Native CLI tool plugins (13 suites)
 ├── tools/embedded/                # Embedded tool MD schemas (17 files)
 ├── tools/cli/                     # CLI tools (aurum-cli + plugin symlinks from TPKs)
 ├── scripts/                       # Container setup, CI, hooks

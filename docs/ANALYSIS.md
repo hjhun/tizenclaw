@@ -72,7 +72,7 @@ graph LR
 
     subgraph Skills["OCI Container (Alpine RootFS)"]
         SkillExec["SkillExecutor (IPC)"]
-        SkillList["35+ Skills via Tizen C-API<br/>App · Device · Network · Media<br/>Display · Sensor · System Control<br/>+ Runtime Custom Skills (LLM-generated)<br/>Async support via tizen-core"]
+        SkillList["13 Native CLI Tool Suites<br/>App · Device · Network · Media<br/>Display · Sensor · System Control<br/>+ built-in Async streaming"]
     end
 
     Telegram & Slack & Discord & Voice --> IPC
@@ -201,7 +201,7 @@ tizenclaw/
 │   │   ├── file_manager.cc/hh       # File operations handler
 │   │   └── peer_validator.cc/hh     # SO_PEERCRED peer validation
 │   └── common/                      # Common utilities (logging, nlohmann JSON)
-├── tools/skills/                    # Python skills (35 directories)
+├── tools/cli/                       # Native CLI tool suites (13 directories)
 │   ├── common/tizen_capi_utils.py   # ctypes-based Tizen C-API wrapper
 │   ├── skill_executor.py            # Container-side IPC skill executor
 │   ├── list_apps/                   # List installed apps
@@ -448,7 +448,7 @@ Built-in tools (implemented in AgentCore directly):
 |------|:---:|:---:|:---:|:---:|
 | Language | C++ / Python | TypeScript | TypeScript | Rust |
 | Source files | ~89 | ~700+ | ~50 | ~100+ |
-| Skills | 35 + 10 built-in | 52 | 5+ (skills-engine) | TOML-based |
+| Skills | 13 CLI suites + 20 built-in | 52 | 5+ (skills-engine) | TOML-based |
 | LLM Backends | 5 | 15+ | Claude SDK | 5+ (trait-driven) |
 | Channels | 7 | 22+ | 5 | 17 |
 | Test coverage | 205+ cases | Hundreds | Dozens | Comprehensive |

@@ -72,7 +72,7 @@ graph LR
 
     subgraph Skills["OCI 컨테이너 (Alpine RootFS)"]
         SkillExec["SkillExecutor (IPC)"]
-        SkillList["35+ 스킬 (Tizen C-API)<br/>앱 · 디바이스 · 네트워크 · 미디어<br/>디스플레이 · 센서 · 시스템 제어<br/>+ 런타임 커스텀 스킬 (LLM 생성)<br/>tizen-core 비동기 지원"]
+        SkillList["13종의 네이티브 CLI 툴<br/>앱 · 디바이스 · 네트워크 · 미디어<br/>디스플레이 · 센서 · 시스템 제어<br/>+ 내장 비동기 스트리밍 연결"]
     end
 
     Telegram & Slack & Discord & Voice --> IPC
@@ -141,7 +141,7 @@ tizenclaw/
 │   │   ├── file_manager.cc/hh       # 파일 작업 핸들러
 │   │   └── peer_validator.cc/hh     # SO_PEERCRED 피어 검증
 │   └── common/                      # 공통 유틸리티 (로깅, nlohmann JSON)
-├── tools/skills/                    # Python 스킬 (35개 디렉터리)
+├── tools/cli/                       # 네이티브 CLI 도구 수트 (13개 디렉터리)
 │   ├── common/tizen_capi_utils.py   # ctypes 기반 Tizen C-API 래퍼
 │   ├── skill_executor.py            # 컨테이너 측 IPC 스킬 실행기
 │   ├── list_apps/                   # 설치된 앱 목록 조회
@@ -366,7 +366,7 @@ AgentCore에 직접 구현된 내장 도구:
 |------|:---:|:---:|:---:|:---:|
 | 언어 | C++ / Python | TypeScript | TypeScript | Rust |
 | 소스 파일 수 | ~89 | ~700+ | ~50 | ~100+ |
-| 스킬 수 | 35 + 10 내장 | 52 | 5+ (skills-engine) | TOML 기반 |
+| 스킬 수 | 13종 CLI 수트 + 20+ 내장 | 52 | 5+ (skills-engine) | TOML 기반 |
 | LLM 백엔드 | 5 | 15+ | Claude SDK | 5+ (trait 기반) |
 | 채널 수 | 7 | 22+ | 5 | 17 |
 | 테스트 커버리지 | 205+ 케이스 | 수백 개 | 수십 개 | 포괄적 |

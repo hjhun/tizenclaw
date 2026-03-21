@@ -1,6 +1,6 @@
 # TizenClaw Tools Reference
 
-TizenClaw provides **35 container skills** (Python, sandboxed via OCI), **20+ built-in tools** (native C++), and **CLI tool plugins** (TPK-based native executables). All tools are registered in the **Capability Registry** with function contracts.
+TizenClaw provides **13 native CLI tool suites** (C++ command-line executables replacing the legacy Python skills), and **20+ built-in tools** (native C++). All tools are registered in the **Capability Registry** with function contracts.
 
 > **Anthropic Standard Compatibility**: TizenClaw's skill system fully implements the **Anthropic Standard Skill Format** (utilizing `SKILL.md`, YAML frontmatter, and JSON schema parameters). Furthermore, the core agent daemon features a built-in **Anthropic-compliant MCP Client** (Model Context Protocol) to seamlessly connect to external MCP tool servers, vastly expanding its capability profile.
 
@@ -8,7 +8,11 @@ TizenClaw provides **35 container skills** (Python, sandboxed via OCI), **20+ bu
 
 ---
 
-## Container Skills (Python)
+> **Note**: Legacy Python container skills have been rewritten and ported directly as native CLI tools for superior performance and native Tizen API access.
+
+---
+
+## Native CLI Tool Suites (C++)
 
 ### App Management
 
