@@ -286,7 +286,16 @@ void ResponsePrinter::PrintMcpToolList(
       std::cout
           << "  (no MCP tools currently connected)\n"
           << "  Use --connect-mcp <config_path> "
-          << "to connect\n";
+          << "to connect\n\n"
+          << "  💡 [Reference] Popular Official MCP Servers:\n"
+             "    - npx -y @modelcontextprotocol/server-github\n"
+             "    - npx -y @modelcontextprotocol/server-postgres\n"
+             "    - npx -y @modelcontextprotocol/server-slack\n"
+             "    - npx -y @modelcontextprotocol/server-google-drive\n"
+             "    - python3 -m mcp_server_sqlite\n"
+             "    - python3 -m mcp_server_weather\n"
+             "    - python3 -m mcp_server_fetch\n"
+          << "  Register them in mcp_servers.json!\n";
     }
   } catch (...) {
     std::cout << body << "\n";
