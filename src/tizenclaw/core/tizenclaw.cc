@@ -38,7 +38,6 @@
 #include "../infra/package_event_adapter.hh"
 #include "../infra/app_lifecycle_adapter.hh"
 #include "../infra/recent_app_adapter.hh"
-#include "../infra/vconf_event_adapter.hh"
 #include "../../common/boot_status_logger.hh"
 #include "../../common/file_log_backend.hh"
 #include "../channel/mcp_server.hh"
@@ -154,8 +153,6 @@ void TizenClawDaemon::OnCreate() {
             <AppLifecycleAdapter>());
     adapter_manager_.RegisterAdapter(
         std::make_unique<RecentAppAdapter>());
-    adapter_manager_.RegisterAdapter(
-        std::make_unique<VconfEventAdapter>());
     adapter_manager_.StartAll();
   }
 

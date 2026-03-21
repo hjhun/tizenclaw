@@ -49,6 +49,7 @@ TizenClaw is part of the **Claw** family of AI agent runtimes, each targeting di
 - 🧩 **RPK Tool Distribution** — Extend the skill ecosystem dynamically using Tizen Resource Packages (RPKs) bundling Python skills without daemon recompilation. Platform-signed RPK packages are automatically discovered and symlinked into the skills directory.
 - 🔧 **CLI Tool Plugins** — Extend agent capabilities with native CLI tools packaged as TPKs. CLI tools run directly on the host for Tizen C-API access, with rich Markdown descriptors (`.tool.md`) for LLM tool discovery.
 - 📦 **Lightweight Deployment** — systemd + RPM with socket activation, standalone device execution without Node.js/Docker
+- 🤖 **Anthropic Standard Compatibility** — Full compliance with the Anthropic standard. Skills use the `SKILL.md` format (YAML frontmatter + JSON schemas), and the built-in **MCP Client** (Model Context Protocol) seamlessly integrates with external MCP tool servers.
 - 🔧 **Native MCP Server** — C++ MCP server integrated into daemon, Claude Desktop controls Tizen via sdb
 - 📊 **Health Monitoring** — Built-in Prometheus-style metrics endpoint + live dashboard panel
 - 🔄 **OTA Updates** — Over-the-air skill updates with version checking and rollback
@@ -317,7 +318,7 @@ res/
 </service-application>
 ```
 
-`CliPluginManager` discovers installed CLI TPKs via `pkgmgrinfo_appinfo_metadata_filter`, creates symlinks for the executable and `.tool.md` descriptor into `/opt/usr/share/tizenclaw/tools/cli/`, and injects the tool documentation into the LLM system prompt. The LLM invokes CLI tools through the `execute_cli` built-in tool.
+`CliPluginManager` discovers installed CLI TPKs via `pkgmgrinfo_appinfo_metadata_filter`, creates symlinks for the executable and `.tool.md` descriptor into `/opt/usr/share/tizenclaw/tools/cli/`, and injects the tool documentation into the LLM system prompt. The LLM invokes CLI tools through the `execute_cli` built-in tool. CLI tools naturally support **one-shot execution** for instant queries (like `get`) and **streaming mode** for continuous event monitoring (like `watch`), allowing for highly flexible real-time interactions with the device.
 
 > **Note**: Only packages signed with a **platform-level certificate** are allowed to register CLI tools. The `tizenclaw-metadata-cli-plugin.so` parser plugin enforces this at install time.
 

@@ -98,22 +98,6 @@ void SystemContextProvider::OnEvent(
 
   // All events go to recent list
   AddRecentEvent(event);
-
-  // Aggregate all vconf-sourced events into the
-  // device state for LLM context, regardless of
-  // their EventType routing above.
-  if (event.source == "vconf" &&
-      event.data.contains("value")) {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    if (!device_state_.contains("vconf_settings"))
-      device_state_["vconf_settings"] =
-          nlohmann::json::object();
-    std::string short_key = event.name;
-    if (short_key.starts_with("vconf."))
-      short_key = short_key.substr(6);
-    device_state_["vconf_settings"][short_key] =
-        event.data["value"];
-  }
 }
 
 void SystemContextProvider::UpdateDeviceState(

@@ -169,7 +169,6 @@ tizenclaw/
 │   │   │   ├── recent_app_adapter.cc/hh     # Recent app event adapter
 │   │   │   ├── package_event_adapter.cc/hh  # Package event adapter
 │   │   │   ├── tizen_system_event_adapter.cc/hh # System event adapter
-│   │   │   ├── vconf_event_adapter.cc/hh    # Vconf settings event adapter
 │   │   │   ├── pkgmgr_client.cc/hh  # Package manager client
 │   │   │   └── pkgmgr_event_args.cc/hh # Package event argument types
 │   │   ├── embedding/               # On-device ML embedding (5 files)
@@ -387,7 +386,7 @@ tizenclaw/
 | `web_search` | `query` (string, required) | None (Wikipedia API) | ✅ |
 
 Built-in tools (implemented in AgentCore directly):
-`execute_code`, `file_manager`, `manage_custom_skill`, `create_task`, `list_tasks`, `cancel_task`, `create_session`, `list_sessions`, `send_to_session`, `ingest_document`, `search_knowledge`, `execute_action`, `action_<name>` (per-action tools from Tizen Action Framework), `execute_cli` (CLI tool plugins), `create_workflow`, `list_workflows`, `run_workflow`, `delete_workflow`, `create_pipeline`, `list_pipelines`, `run_pipeline`, `delete_pipeline`, `run_supervisor`, `remember`, `recall`, `forget` (persistent memory)
+`execute_code`, `file_manager`, `manage_custom_skill`, `create_task`, `list_tasks`, `cancel_task`, `create_session`, `list_sessions`, `send_to_session`, `ingest_document`, `search_knowledge`, `execute_action`, `action_<name>` (per-action tools from Tizen Action Framework), `execute_cli` (CLI tool plugins with both **one-shot and continuous streaming** support), `create_workflow`, `list_workflows`, `run_workflow`, `delete_workflow`, `create_pipeline`, `list_pipelines`, `run_pipeline`, `delete_pipeline`, `run_supervisor`, `remember`, `recall`, `forget` (persistent memory)
 
 ### 3.5 Security
 
@@ -479,6 +478,7 @@ Most gaps identified in the original analysis have been resolved through Phases 
 | **Modular CAPI Export** | External library generation (`src/libtizenclaw`) enabling TizenClaw to act as a system-level AI SDK for other apps |
 | **Multi-LLM Support** | 5 backends switchable at runtime with automatic fallback |
 | **Lightweight Deployment** | systemd + RPM — standalone device execution without Node.js/Docker |
+| **Anthropic Standard Capabilities** | Skill system follows the Anthropic standard (`SKILL.md`), and the built-in MCP Client seamlessly consumes external MCP tools via standard Model Context Protocol. |
 | **Native MCP Server** | C++ MCP server integrated into daemon — Claude Desktop controls Tizen devices |
 | **RAG Integration** | SQLite-backed semantic search with multi-provider embeddings |
 | **Web Admin Dashboard** | In-daemon glassmorphism SPA with config editing and admin auth |

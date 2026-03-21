@@ -304,7 +304,7 @@ tizenclaw/
 | `web_search` | `query` (string, required) | 없음 (Wikipedia API) | ✅ |
 
 AgentCore에 직접 구현된 내장 도구:
-`execute_code`, `file_manager`, `manage_custom_skill`, `create_task`, `list_tasks`, `cancel_task`, `create_session`, `list_sessions`, `send_to_session`, `ingest_document`, `search_knowledge`, `execute_action`, `action_<name>` (Tizen Action Framework Per-action 도구), `execute_cli` (CLI 도구 플러그인), `create_workflow`, `list_workflows`, `run_workflow`, `delete_workflow`, `create_pipeline`, `list_pipelines`, `run_pipeline`, `delete_pipeline`, `run_supervisor`, `remember`, `recall`, `forget` (영속 메모리)
+`execute_code`, `file_manager`, `manage_custom_skill`, `create_task`, `list_tasks`, `cancel_task`, `create_session`, `list_sessions`, `send_to_session`, `ingest_document`, `search_knowledge`, `execute_action`, `action_<name>` (Tizen Action Framework Per-action 도구), `execute_cli` (CLI 도구 플러그인 - **원샷(One-shot) 및 스트리밍(Streaming)** 모드 통합 지원), `create_workflow`, `list_workflows`, `run_workflow`, `delete_workflow`, `create_pipeline`, `list_pipelines`, `run_pipeline`, `delete_pipeline`, `run_supervisor`, `remember`, `recall`, `forget` (영속 메모리)
 
 ### 3.5 보안
 
@@ -396,6 +396,7 @@ Phase 6-19를 통해 원래 분석에서 식별된 대부분의 Gap이 해소되
 | **모듈형 CAPI 익스포트** | 타 앱의 시스템 레벨 AI SDK로 동작 가능하도록 외부 라이브러리(`src/libtizenclaw`) 캡슐화 |
 | **강력한 다중 LLM 지원** | 5개 백엔드 런타임 전환 가능 + 자동 폴백 |
 | **경량 배포** | systemd + RPM — Node.js/Docker 없이 단독 디바이스 실행 |
+| **앤트로픽 표준 규격 지원** | 스킬 시스템은 앤트로픽 표준 포맷(`SKILL.md`)을 준수하며, 내장된 MCP 클라이언트를 통해 외부 서버와 Model Context Protocol로 완벽하게 연동됩니다. |
 | **네이티브 MCP 서버** | C++ 데몬 내장 MCP — Claude Desktop에서 Tizen 디바이스 제어 |
 | **RAG 통합** | 다중 프로바이더 임베딩을 갖춘 SQLite 기반 시맨틱 검색 |
 | **웹 관리 대시보드** | 설정 편집 및 관리자 인증을 갖춘 인데몬 글래스모피즘 SPA |
