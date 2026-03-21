@@ -46,6 +46,7 @@
 #include "pipeline_executor.hh"
 #include "tool_dispatcher.hh"
 #include "workflow_engine.hh"
+#include "../channel/mcp_client_manager.hh"
 
 namespace tizenclaw {
 
@@ -326,6 +327,9 @@ class AgentCore {
 
   // Auto skill generation agent
   std::unique_ptr<AutoSkillAgent> auto_skill_agent_;
+
+  // Manager for connecting to external MCP Servers
+  std::unique_ptr<McpClientManager> mcp_client_manager_;
 
   // Get session-specific system prompt
   // (falls back to global system_prompt_)
