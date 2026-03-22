@@ -4,6 +4,11 @@ import json
 import logging
 import struct
 import sys
+import os
+
+# Ensure the tizenclaw package tree is always in path
+sys.path.insert(0, '/opt/usr/share/tizenclaw-python')
+
 from typing import Dict, Any
 
 from tizenclaw.core.agent_core import AgentCore

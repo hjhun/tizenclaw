@@ -1,7 +1,7 @@
 Name:       tizenclaw
 Summary:    TizenClaw Agent System Service App (Python Port)
 Version:    1.0.0
-Release:    3
+Release:    4
 Group:      System/Service
 License:    Apache-2.0
 Source0:    %{name}-%{version}.tar.gz
