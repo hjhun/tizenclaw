@@ -35,6 +35,7 @@ cp %{SOURCE1001} .
 rm -rf %{buildroot}
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw-python
 mkdir -p %{buildroot}%{_bindir}
+mkdir -p %{buildroot}%{_unitdir}/multi-user.target.wants
 
 # Copy Python port source to the share directory
 cp -r src_py/* %{buildroot}/opt/usr/share/tizenclaw-python/
@@ -45,6 +46,10 @@ chmod +x %{buildroot}/opt/usr/share/tizenclaw-python/tizenclaw_cli.py
 ln -sf /opt/usr/share/tizenclaw-python/tizenclaw_daemon.py %{buildroot}%{_bindir}/tizenclaw-daemon
 ln -sf /opt/usr/share/tizenclaw-python/tizenclaw_cli.py %{buildroot}%{_bindir}/tizenclaw-cli
 
+# Systemd deployment
+cp packaging/tizenclaw-python.service %{buildroot}%{_unitdir}/
+ln -sf ../tizenclaw-python.service %{buildroot}%{_unitdir}/multi-user.target.wants/tizenclaw-python.service
+
 %clean
 rm -rf %{buildroot}
 
@@ -52,4 +57,6 @@ rm -rf %{buildroot}
 %defattr(-,root,root,-)
 %{_bindir}/tizenclaw-daemon
 %{_bindir}/tizenclaw-cli
+%{_unitdir}/tizenclaw-python.service
+%{_unitdir}/multi-user.target.wants/tizenclaw-python.service
 /opt/usr/share/tizenclaw-python/*
