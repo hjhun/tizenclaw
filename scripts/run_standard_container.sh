@@ -29,11 +29,6 @@ detect_runtime() {
 }
 
 RUNTIME_BIN="$(detect_runtime)"
-if [ -z "${RUNTIME_BIN}" ]; then
-  echo "No OCI runtime found (crun/runc). Falling back to unshare container." >&2
-  run_without_container
-  exit 0
-fi
 
 mkdir -p "$(dirname "${LOG_FILE}")"
 log() {
@@ -310,6 +305,12 @@ prepare_bundle() {
   fi
   write_config
 }
+
+if [ -z "${RUNTIME_BIN}" ]; then
+  echo "No OCI runtime found (crun/runc). Falling back to unshare container." >&2
+  run_without_container
+  exit 0
+fi
 
 prepare_bundle
 log "Starting standard container with runtime=${RUNTIME_BIN}, bundle=${BUNDLE_DIR}, id=${CONTAINER_ID}"
