@@ -30,8 +30,9 @@ detect_runtime() {
 
 RUNTIME_BIN="$(detect_runtime)"
 if [ -z "${RUNTIME_BIN}" ]; then
-  echo "No OCI runtime found (crun/runc)." >&2
-  exit 1
+  echo "No OCI runtime found (crun/runc). Falling back to unshare container." >&2
+  run_without_container
+  exit 0
 fi
 
 mkdir -p "$(dirname "${LOG_FILE}")"
