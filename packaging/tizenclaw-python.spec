@@ -55,6 +55,7 @@ rm -rf %{buildroot}
 
 %files
 %defattr(-,root,root,-)
+%manifest %{name}.manifest
 %{_bindir}/tizenclaw-daemon
 %{_bindir}/tizenclaw-cli
 %{_unitdir}/tizenclaw-python.service
