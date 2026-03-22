@@ -11,8 +11,8 @@
 #   - jq installed on the host machine
 #
 # Usage:
-#   ./test/e2e/test_mcp.sh                  # Run all tests
-#   ./test/e2e/test_mcp.sh -d <serial>      # Target specific device
+#   ./tests/e2e/test_mcp.sh                  # Run all tests
+#   ./tests/e2e/test_mcp.sh -d <serial>      # Target specific device
 #
 # Exit codes:
 #   0 = all tests passed

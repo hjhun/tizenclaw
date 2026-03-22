@@ -202,9 +202,11 @@ tizenclaw/
 │   ├── web/                         # 대시보드 SPA 파일
 │   └── img/                         # 컨테이너 rootfs (아키텍처별)
 │       └── <arch>/rootfs.tar.gz     # Alpine RootFS (49 MB)
-├── test/
-│   ├── unit_tests/                  # gtest/gmock 단위 테스트 (42개 파일)
-│   └── e2e/                         # 종합 테스트 스크립트
+├── tests/
+│   ├── unit/                        # gtest/gmock 단위 테스트 (42개 파일)
+│   ├── e2e/                         # E2E 스모크 테스트 스크립트
+│   ├── cli_tools/                   # CLI 도구 검증 테스트
+│   └── mcp/                         # MCP 프로토콜 준수 테스트
 ├── packaging/                       # RPM 패키징 & systemd
 │   ├── tizenclaw.spec               # GBS RPM 빌드 스펙
 │   ├── tizenclaw.service            # 데몬 systemd 서비스

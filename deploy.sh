@@ -776,7 +776,7 @@ do_e2e_tests() {
 
   header "Step 5/5: E2E Smoke Test"
 
-  local test_script="${PROJECT_DIR}/test/e2e/test_smoke.sh"
+  local test_script="${PROJECT_DIR}/tests/e2e/test_smoke.sh"
   if [ ! -f "${test_script}" ]; then
     warn "E2E test script not found: ${test_script}"
     return 1

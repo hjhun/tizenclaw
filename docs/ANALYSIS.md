@@ -266,9 +266,11 @@ tizenclaw/
 │   ├── web/                         # Dashboard SPA files
 │   └── img/                         # Container rootfs images (per-arch)
 │       └── <arch>/rootfs.tar.gz     # Alpine RootFS (49 MB)
-├── test/
-│   ├── unit_tests/                  # gtest/gmock unit tests (42 test files)
-│   └── e2e/                         # End-to-end test scripts
+├── tests/
+│   ├── unit/                        # gtest/gmock unit tests (42 test files)
+│   ├── e2e/                         # End-to-end smoke test scripts
+│   ├── cli_tools/                   # CLI tool validation tests
+│   └── mcp/                         # MCP protocol compliance tests
 ├── packaging/                       # RPM packaging & systemd
 │   ├── tizenclaw.spec               # GBS RPM build spec
 │   ├── tizenclaw.service            # Daemon systemd service

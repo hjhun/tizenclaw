@@ -162,7 +162,7 @@ ADD_SUBDIRECTORY(tools)
 
 ## Unit Tests
 ENABLE_TESTING()
-ADD_SUBDIRECTORY(test/unit_tests)
+ADD_SUBDIRECTORY(tests/unit)
 
 ## ONNX Runtime, RAG databases, OCR models, and embedding model
 ## are provided by the tizenclaw-assets package.

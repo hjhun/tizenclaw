@@ -8,8 +8,8 @@
 #   - sdb connection is established
 #
 # Usage:
-#   ./test/e2e/test_smoke.sh                  # Run all tests
-#   ./test/e2e/test_smoke.sh -d <serial>      # Target specific device
+#   ./tests/e2e/test_smoke.sh                  # Run all tests
+#   ./tests/e2e/test_smoke.sh -d <serial>      # Target specific device
 #
 # Exit codes:
 #   0 = all tests passed

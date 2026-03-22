@@ -561,9 +561,13 @@ tizenclaw/
 ├── tools/embedded/                # Embedded tool MD schemas (17 files)
 ├── tools/cli/                     # CLI tools (aurum-cli + plugin symlinks from TPKs)
 ├── scripts/                       # Container setup, CI, hooks
-├── test/
-│   ├── unit_tests/                # Google Test unit tests (42 test files)
-│   └── e2e/                       # End-to-end test scripts
+├── tests/
+│   ├── unit/                      # Google Test unit tests (42 test files)
+│   ├── e2e/                       # End-to-end smoke test scripts
+│   ├── cli_tools/                 # CLI tool validation tests
+│   ├── llm_integration/           # LLM agent integration tests
+│   ├── mcp/                       # MCP protocol compliance tests
+│   └── regression/                # Crash resilience & edge cases
 ├── data/
 │   ├── config/                    # Active configuration files
 │   ├── devel/                     # Development configuration

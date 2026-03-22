@@ -163,10 +163,13 @@ making it suitable for CI pipelines:
     ./tests/run_all.sh -d $DEVICE_SERIAL
 ```
 
-## Relationship to Existing Tests
+## Test Directory Layout
 
 | Location | Type | Purpose |
 |----------|------|---------|
-| `test/unit_tests/` | gtest (C++) | Unit tests — run during `gbs build` |
-| `test/e2e/` | Shell | Legacy E2E smoke/MCP tests |
-| **`tests/`** | **Shell** | **Comprehensive E2E automation (this framework)** |
+| `tests/unit/` | gtest (C++) | Unit tests — run during `gbs build` via `ctest` |
+| `tests/e2e/` | Shell | E2E smoke/MCP tests (used by `deploy.sh -t`) |
+| `tests/cli_tools/` | Shell | CLI tool validation |
+| `tests/llm_integration/` | Shell | LLM agent integration tests |
+| `tests/mcp/` | Shell | MCP protocol compliance |
+| `tests/regression/` | Shell | Crash resilience & edge cases |
