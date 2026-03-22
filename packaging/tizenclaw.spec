@@ -9,11 +9,9 @@ Source1001: %{name}.manifest
 
 BuildRequires:  python3
 BuildRequires:  python3-devel
-BuildRequires:  python3-numpy
 BuildRequires:  cmake
 
 Requires:   python3
-Requires:   python3-numpy
 
 %description
 TizenClaw Native Agent ported from C++ to Python to evaluate memory, speed, and storage footprints on Tizen.
