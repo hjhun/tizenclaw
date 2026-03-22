@@ -45,7 +45,7 @@ run_without_container() {
   if [ "${SAFE_MODE}" = "1" ]; then
     CMD="/usr/bin/sleep 2147483647"
   else
-    CMD="/usr/bin/bash -c '/usr/bin/tizenclaw-tool-executor & exec /usr/bin/tizenclaw'"
+    CMD="/usr/bin/bash -c '/usr/bin/tizenclaw-tool-executor & exec /usr/bin/tizenclaw-daemon'"
   fi
 
   exec unshare -m --propagation unchanged /usr/bin/sh -c "
@@ -107,7 +107,7 @@ write_config() {
     process_args_json='["/usr/bin/sleep", "2147483647"]'
   else
     # Launch tool-executor in background, then exec tizenclaw as PID 1.
-    process_args_json='["/usr/bin/bash", "-c", "/usr/bin/tizenclaw-tool-executor & exec /usr/bin/tizenclaw"]'
+    process_args_json='["/usr/bin/bash", "-c", "/usr/bin/tizenclaw-tool-executor & exec /usr/bin/tizenclaw-daemon"]'
   fi
 
   # Build optional mount entries based on host filesystem
