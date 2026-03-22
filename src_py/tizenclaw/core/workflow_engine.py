@@ -88,13 +88,68 @@ class WorkflowEngine:
         return result
 
     async def _execute_step(self, step: WorkflowStep, variables: Dict[str, Any]) -> str:
-        # Placeholder actual integration with self.agent
+        # Interpolate variables in instructions and args
+        inst = step.instruction
+        for k, v in variables.items():
+            inst = inst.replace(f"{{{{{k}}}}}", str(v))
+            
+        if step.type == WorkflowStepType.PROMPT and self.agent:
+            res = await self.agent.process_prompt("workflow_session", inst)
+            if step.output_var:
+                variables[step.output_var] = res
+            return res
+        elif step.type == WorkflowStepType.TOOL and self.agent and self.agent.dispatcher:
+            # Interpolate dict args
+            exec_args = {}
+            for k, v in step.args.items():
+                val_str = str(v)
+                for vk, vv in variables.items():
+                    val_str = val_str.replace(f"{{{{{vk}}}}}", str(vv))
+                exec_args[k] = val_str
+            res = await self.agent.dispatcher.execute_tool(step.tool_name, exec_args)
+            if step.output_var:
+                variables[step.output_var] = res
+            return res
         return "Simulated success execution"
 
     def _parse_markdown(self, markdown: str) -> Workflow:
-        # Placeholder for Markdown Frontmatter regex extraction
-        wf = Workflow("wf_placeholder")
+        import re, uuid
+        wf = Workflow(str(uuid.uuid4())[:8])
         wf.raw_markdown = markdown
+        
+        # Super simple frontmatter/YAML parsing
+        match = re.search(r"^---\n(.*?)\n---", markdown, re.MULTILINE | re.DOTALL)
+        if match:
+            for line in match.group(1).split("\n"):
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    k, v = k.strip(), v.strip().strip("'\"")
+                    if k == "id": wf.id = v
+                    elif k == "name": wf.name = v
+                    elif k == "description": wf.description = v
+
+        # Extract steps from markdown ordered lists or headings
+        lines = markdown.split("\n")
+        in_step = False
+        current_step = None
+        for line in lines:
+            if line.startswith("## Step"):
+                if current_step: wf.steps.append(current_step)
+                current_step = WorkflowStep(f"step_{len(wf.steps)}")
+                in_step = True
+            elif in_step and current_step:
+                if line.startswith("Tool:"):
+                    current_step.type = WorkflowStepType.TOOL
+                    current_step.tool_name = line.split("Tool:")[1].strip()
+                elif line.startswith("Output:"):
+                    current_step.output_var = line.split("Output:")[1].strip()
+                elif line.startswith("Prompt:"):
+                    current_step.type = WorkflowStepType.PROMPT
+                    current_step.instruction = line.split("Prompt:")[1].strip()
+                elif line.strip() and not line.startswith("-"):
+                    current_step.instruction += " " + line.strip()
+                    
+        if current_step: wf.steps.append(current_step)
         return wf
 
     def _save_workflow(self, wf: Workflow):

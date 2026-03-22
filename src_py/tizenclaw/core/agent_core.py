@@ -32,7 +32,23 @@ class AgentCore:
 
     async def initialize(self) -> bool:
         """Initialize backend, routing, and system contexts."""
+        from tizenclaw.core.tool_indexer import ToolIndexer
+        from tizenclaw.core.tool_dispatcher import ToolDispatcher
+        from tizenclaw.infra.container_engine import ContainerEngine
+        from tizenclaw.llm.openai_backend import OpenAiBackend
+        from tizenclaw.llm.llm_backend import LlmMessage
+
         logger.info("Initializing AgentCore Python port...")
+        
+        self.indexer = ToolIndexer()
+        self.indexer.load_all_tools()
+        
+        self.container_engine = ContainerEngine()
+        self.dispatcher = ToolDispatcher(self.indexer, self.container_engine)
+        self.backend = OpenAiBackend()
+        
+        await self.backend.initialize()
+
         self._initialized = True
         return True
 
@@ -43,25 +59,54 @@ class AgentCore:
 
     async def process_prompt(self, session_id: str, prompt: str, on_chunk: Optional[Callable[[str], None]] = None) -> str:
         """
-        Process a prompt through the LLM pipeline.
-        Maintains conversational history via self.sessions.
+        Process a prompt through the LLM pipeline, looping over tool calls automatically.
         """
+        from tizenclaw.llm.llm_backend import LlmMessage, LlmToolDecl, Role
+
         async with self.session_lock:
             if session_id not in self.sessions:
                 self.sessions[session_id] = []
             
-            self.sessions[session_id].append({"role": "user", "content": prompt})
+            self.sessions[session_id].append(LlmMessage(role=Role.USER, text=prompt))
 
-        # TODO: Implement tool extraction, backend generation, and history trimming
-        dummy_response = "This is a placeholder response from the Python AgentCore port."
-        
-        if on_chunk:
-            on_chunk(dummy_response)
+        schemas_raw = self.indexer.get_tool_schemas()
+        tools = [
+            LlmToolDecl(name=s["name"], description=s["description"], parameters_schema=s.get("parameters", {}))
+            for s in schemas_raw
+        ]
+
+        # LLM execution loop (resolving tool calls)
+        final_text = ""
+        for i in range(10): # Max 10 tool iterations
+            async with self.session_lock:
+                current_history = list(self.sessions[session_id])
             
-        async with self.session_lock:
-            self.sessions[session_id].append({"role": "assistant", "content": dummy_response})
+            # Send latest context to LLM
+            response = await self.backend.generate_response(prompt if i==0 else "", current_history, tools)
             
-        return dummy_response
+            # Process returned text
+            if response.text:
+                final_text += response.text + "\n"
+                if on_chunk:
+                    on_chunk(response.text)
+                
+            # If no tools called, we're done
+            if not response.tool_calls:
+                async with self.session_lock:
+                    self.sessions[session_id].append(LlmMessage(role=Role.ASSISTANT, text=response.text))
+                break
+
+            # Handle tools sequentially
+            async with self.session_lock:
+                self.sessions[session_id].append(LlmMessage(role=Role.ASSISTANT, text=response.text, tool_calls=response.tool_calls))
+                
+            for tc in response.tool_calls:
+                logger.info(f"LLM produced tool call: {tc.name}")
+                tool_output = await self.dispatcher.execute_tool(tc.name, tc.arguments)
+                async with self.session_lock:
+                    self.sessions[session_id].append(LlmMessage(role=Role.TOOL, text=tool_output, tool_call_id=tc.id))
+
+        return final_text.strip()
 
     def clear_session(self, session_id: str):
         """Clear session from memory (and eventually storage)."""
