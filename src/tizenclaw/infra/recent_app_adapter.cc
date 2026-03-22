@@ -40,6 +40,9 @@ RecentAppAdapter::~RecentAppAdapter() {
 void RecentAppAdapter::Start() {
   if (started_) return;
 
+  LOG(DEBUG) << "RecentAppAdapter: "
+             << "initializing rua";
+
   int ret = rua_init();
   if (ret != 0) {
     LOG(WARNING) << "RecentAppAdapter: "
@@ -86,6 +89,10 @@ void RecentAppAdapter::OnHistoryUpdated(
   auto* self =
       static_cast<RecentAppAdapter*>(user_data);
   if (!self) return;
+
+  LOG(DEBUG) << "RecentAppAdapter: "
+             << "history updated, nrows=" << nrows
+             << ", ncols=" << ncols;
 
   self->PublishRecentApps();
 }
@@ -149,6 +156,10 @@ void RecentAppAdapter::PublishRecentApps() {
                  << ret;
     return;
   }
+
+  LOG(DEBUG) << "RecentAppAdapter: "
+             << "publishing recent_apps, count="
+             << count;
 
   SystemEvent ev;
   ev.type = EventType::kRecentApp;

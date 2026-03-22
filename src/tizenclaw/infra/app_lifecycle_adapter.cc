@@ -53,6 +53,9 @@ AppLifecycleAdapter::~AppLifecycleAdapter() {
 void AppLifecycleAdapter::Start() {
   if (started_) return;
 
+  LOG(DEBUG) << "AppLifecycleAdapter: "
+             << "registering state_changed_cb";
+
   int ret =
       aul_app_lifecycle_register_state_changed_cb(
           [](const char* app_id,
@@ -100,6 +103,13 @@ void AppLifecycleAdapter::OnStateChanged(
 
   auto aul_state =
       static_cast<aul_app_lifecycle_state_e>(state);
+
+  LOG(DEBUG) << "AppLifecycleAdapter: "
+             << "state_changed app_id=" << app_id
+             << ", pid=" << pid
+             << ", state=" << StateToString(aul_state)
+             << ", has_focus="
+             << (has_focus ? "true" : "false");
 
   SystemEvent ev;
   ev.type = EventType::kAppLifecycle;

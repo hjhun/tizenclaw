@@ -91,16 +91,6 @@ bool SendResponse(int fd, const nlohmann::json& resp) {
   return true;
 }
 
-// ─── Shell Argument Escaping ────────────────────────────────
-std::string EscapeShellArg(const std::string& s) {
-  std::string out = "'";
-  for (char c : s) {
-    if (c == '\'') out += "'\\''";
-    else out += c;
-  }
-  out += "'";
-  return out;
-}
 
 // ─── RAII fd wrapper ────────────────────────────────────────
 class UniqueFd {
