@@ -122,6 +122,16 @@ class WebDashboard : public Channel {
   void ServeAppFile(SoupMessage* msg,
                     const std::string& path) const;
 
+  // Bridge API for web app ↔ tool integration
+  void ApiBridgeTool(SoupMessage* msg);
+  void ApiBridgeTools(
+      SoupMessage* msg,
+      GHashTable* query) const;
+
+  // Load allowed_tools from app manifest
+  std::vector<std::string> LoadAppAllowedTools(
+      const std::string& app_id) const;
+
   AgentCore* agent_;
   TaskScheduler* scheduler_;
   SoupServer* server_ = nullptr;

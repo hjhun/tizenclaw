@@ -3649,6 +3649,13 @@ std::string AgentCore::GenerateWebApp(
         {"has_js", !js.empty()},
         {"assets", downloaded_assets}};
 
+    // Store allowed_tools for Bridge API
+    if (args.contains("allowed_tools") &&
+        args["allowed_tools"].is_array()) {
+      manifest["allowed_tools"] =
+          args["allowed_tools"];
+    }
+
     std::ofstream mf(
         app_dir + "/manifest.json");
     if (mf.is_open()) mf << manifest.dump(2);
@@ -3741,6 +3748,66 @@ bool AgentCore::LaunchBridgeApp(
   LOG(WARNING) << "LaunchBridgeApp: "
                << "no webview app available";
   return false;
+}
+
+std::string AgentCore::ExecuteBridgeTool(
+    const std::string& tool_name,
+    const nlohmann::json& args,
+    const std::vector<std::string>&
+        allowed_tools) {
+  // Validate against allowlist
+  if (!allowed_tools.empty()) {
+    bool found = false;
+    for (const auto& t : allowed_tools) {
+      if (t == tool_name) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      LOG(WARNING) << "Bridge: tool '"
+                   << tool_name
+                   << "' not in allowed_tools";
+      return "{\"error\": \"Tool not allowed "
+             "for this app: " +
+             tool_name + "\"}";
+    }
+  }
+
+  // Check risk level — block high-risk tools
+  // from direct bridge access
+  RiskLevel risk =
+      tool_policy_.GetRiskLevel(tool_name);
+  if (risk == RiskLevel::kHigh) {
+    LOG(WARNING) << "Bridge: blocked high-risk "
+                 << "tool: " << tool_name;
+    return "{\"error\": \"High-risk tool "
+           "not available via bridge: " +
+           tool_name + "\"}";
+  }
+
+  // Dispatch via the same tool_dispatch_ map
+  auto it = tool_dispatch_.find(tool_name);
+  if (it != tool_dispatch_.end()) {
+    return it->second(
+        args, tool_name, "bridge");
+  }
+
+  // Try action tools
+  if (tool_name == "execute_action" ||
+      tool_name.starts_with("action_")) {
+    return ExecuteActionOp(tool_name, args);
+  }
+
+  // Try skill execution (container)
+  return ExecuteSkill(tool_name, args);
+}
+
+std::vector<LlmToolDecl>
+AgentCore::GetToolDeclarations() const {
+  std::lock_guard<std::mutex> lock(
+      const_cast<std::mutex&>(tools_mutex_));
+  return cached_tools_;
 }
 
 }  // namespace tizenclaw

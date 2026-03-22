@@ -139,6 +139,12 @@ void WebDashboard::HandleRequest(SoupServer* /*server*/,
     return;
   }
 
+  // Serve SDK files from /sdk/ path
+  if (req_path.substr(0, 5) == "/sdk/") {
+    self->ServeStaticFile(msg, req_path);
+    return;
+  }
+
   // Serve static files
   self->ServeStaticFile(msg, req_path);
 }
@@ -221,6 +227,11 @@ void WebDashboard::HandleApi(
     } else {
       ApiAppDetail(msg, app_id);
     }
+  } else if (path == "/api/bridge/tool") {
+    const_cast<WebDashboard*>(this)->
+        ApiBridgeTool(msg);
+  } else if (path == "/api/bridge/tools") {
+    ApiBridgeTools(msg, query);
   } else {
     soup_message_set_status(
         msg, SOUP_STATUS_NOT_FOUND);
@@ -1631,6 +1642,215 @@ void WebDashboard::ServeAppFile(
       SOUP_MEMORY_COPY,
       content.c_str(),
       static_cast<gsize>(content.size()));
+}
+
+void WebDashboard::ApiBridgeTool(
+    SoupMessage* msg) {
+  if (msg->method != SOUP_METHOD_POST) {
+    soup_message_set_status(
+        msg, SOUP_STATUS_METHOD_NOT_ALLOWED);
+    return;
+  }
+
+  SoupMessageBody* req_body = msg->request_body;
+  if (!req_body || !req_body->data ||
+      req_body->length == 0) {
+    std::string err =
+        "{\"error\":\"Empty request body\"}";
+    soup_message_set_status(
+        msg, SOUP_STATUS_BAD_REQUEST);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        err.c_str(),
+        static_cast<gsize>(err.size()));
+    return;
+  }
+
+  std::string payload(
+      req_body->data, req_body->length);
+
+  std::string app_id;
+  std::string tool_name;
+  nlohmann::json tool_args =
+      nlohmann::json::object();
+
+  try {
+    auto j = nlohmann::json::parse(payload);
+    app_id = j.value("app_id", "");
+    tool_name = j.value("tool_name", "");
+    if (j.contains("arguments") &&
+        j["arguments"].is_object()) {
+      tool_args = j["arguments"];
+    }
+  } catch (const std::exception& ex) {
+    std::string err =
+        "{\"error\":\"Invalid JSON: " +
+        std::string(ex.what()) + "\"}";
+    soup_message_set_status(
+        msg, SOUP_STATUS_BAD_REQUEST);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        err.c_str(),
+        static_cast<gsize>(err.size()));
+    return;
+  }
+
+  if (app_id.empty() || tool_name.empty()) {
+    std::string err =
+        "{\"error\":\"app_id and tool_name "
+        "are required\"}";
+    soup_message_set_status(
+        msg, SOUP_STATUS_BAD_REQUEST);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        err.c_str(),
+        static_cast<gsize>(err.size()));
+    return;
+  }
+
+  if (!agent_) {
+    std::string err =
+        "{\"error\":\"Agent not available\"}";
+    soup_message_set_status(
+        msg,
+        SOUP_STATUS_INTERNAL_SERVER_ERROR);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        err.c_str(),
+        static_cast<gsize>(err.size()));
+    return;
+  }
+
+  // Load allowed tools from app manifest
+  auto allowed = LoadAppAllowedTools(app_id);
+
+  // Dispatch tool via AgentCore
+  std::string result =
+      agent_->ExecuteBridgeTool(
+          tool_name, tool_args, allowed);
+
+  nlohmann::json resp;
+  try {
+    resp = nlohmann::json::parse(result);
+  } catch (...) {
+    resp = {{"result", result}};
+  }
+
+  // Wrap in status envelope
+  nlohmann::json envelope;
+  if (resp.contains("error")) {
+    envelope = {{"status", "error"},
+                {"error", resp["error"]}};
+  } else {
+    envelope = {{"status", "ok"},
+                {"result", resp}};
+  }
+
+  std::string body = envelope.dump();
+  soup_message_set_status(msg, SOUP_STATUS_OK);
+  soup_message_set_response(
+      msg, "application/json",
+      SOUP_MEMORY_COPY,
+      body.c_str(),
+      static_cast<gsize>(body.size()));
+}
+
+void WebDashboard::ApiBridgeTools(
+    SoupMessage* msg,
+    GHashTable* query) const {
+  std::string app_id;
+  if (query) {
+    const char* aid =
+        static_cast<const char*>(
+            g_hash_table_lookup(
+                query, "app_id"));
+    if (aid) app_id = aid;
+  }
+
+  // Load allowed_tools from manifest
+  auto allowed = LoadAppAllowedTools(app_id);
+
+  // Get all tool declarations
+  nlohmann::json tools_arr =
+      nlohmann::json::array();
+
+  if (agent_) {
+    auto all_tools =
+        agent_->GetToolDeclarations();
+    for (const auto& td : all_tools) {
+      // Filter by allowlist if set
+      if (!allowed.empty()) {
+        bool in_list = false;
+        for (const auto& a : allowed) {
+          if (a == td.name) {
+            in_list = true;
+            break;
+          }
+        }
+        if (!in_list) continue;
+      }
+
+      nlohmann::json tool_j;
+      tool_j["name"] = td.name;
+      tool_j["description"] =
+          td.description;
+      tool_j["parameters"] =
+          td.parameters;
+      tools_arr.push_back(
+          std::move(tool_j));
+    }
+  }
+
+  nlohmann::json resp = {
+      {"tools", tools_arr},
+      {"count", tools_arr.size()}};
+  std::string body = resp.dump();
+  soup_message_set_status(msg, SOUP_STATUS_OK);
+  soup_message_set_response(
+      msg, "application/json",
+      SOUP_MEMORY_COPY,
+      body.c_str(),
+      static_cast<gsize>(body.size()));
+}
+
+std::vector<std::string>
+WebDashboard::LoadAppAllowedTools(
+    const std::string& app_id) const {
+  std::vector<std::string> allowed;
+  if (app_id.empty()) return allowed;
+
+  // Prevent path traversal
+  if (app_id.find("..") != std::string::npos ||
+      app_id.find('/') != std::string::npos)
+    return allowed;
+
+  std::string manifest_path =
+      std::string(APP_DATA_DIR) +
+      "/web/apps/" + app_id +
+      "/manifest.json";
+
+  std::ifstream mf(manifest_path);
+  if (!mf.is_open()) return allowed;
+
+  try {
+    nlohmann::json manifest;
+    mf >> manifest;
+    if (manifest.contains("allowed_tools") &&
+        manifest["allowed_tools"].is_array()) {
+      for (const auto& t :
+           manifest["allowed_tools"]) {
+        if (t.is_string())
+          allowed.push_back(
+              t.get<std::string>());
+      }
+    }
+  } catch (...) {}
+
+  return allowed;
 }
 
 }  // namespace tizenclaw

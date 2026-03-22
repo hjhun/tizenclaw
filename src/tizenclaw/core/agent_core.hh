@@ -140,6 +140,19 @@ class AgentCore {
   // Return a JSON representation of connected MCP tools
   nlohmann::json GetMcpToolsJson();
 
+  // Execute a tool via Bridge API (for WebApp).
+  // Validates against the provided allowed_tools
+  // list. Returns JSON result string.
+  [[nodiscard]] std::string ExecuteBridgeTool(
+      const std::string& tool_name,
+      const nlohmann::json& args,
+      const std::vector<std::string>&
+          allowed_tools);
+
+  // Get cached tool declarations (thread-safe)
+  [[nodiscard]] std::vector<LlmToolDecl>
+  GetToolDeclarations() const;
+
  private:
   // Execute a skill and return its JSON output
   std::string ExecuteSkill(const std::string& skill_name,

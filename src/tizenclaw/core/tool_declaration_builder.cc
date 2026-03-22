@@ -1070,7 +1070,8 @@ void ToolDeclarationBuilder::AppendBuiltinTools(
              "Optional array of external assets "
              "to download (images, fonts, etc). "
              "Each item: {\"url\": \"...\", "
-             "\"filename\": \"...\"}."},
+             "\"filename\": \"...\"}. Max 10MB "
+             "per file."},
             {"items",
              {{"type", "object"},
               {"properties",
@@ -1082,7 +1083,18 @@ void ToolDeclarationBuilder::AppendBuiltinTools(
                  {{"type", "string"},
                   {"description",
                    "Local filename to save "
-                   "as (e.g. logo.png)"}}}}}}}}}}},
+                   "as (e.g. logo.png)"}}}}}}}}},
+          {"allowed_tools",
+           {{"type", "array"},
+            {"items", {{"type", "string"}}},
+            {"description",
+             "Optional list of tool names "
+             "this app can call via the "
+             "Bridge API (e.g. "
+             "[\"get_battery_info\", "
+             "\"control_display\"]). If "
+             "omitted, no tools are "
+             "accessible."}}}}},
         {"required",
          nlohmann::json::array(
              {"app_id", "title", "html"})}};
