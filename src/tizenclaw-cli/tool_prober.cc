@@ -237,6 +237,7 @@ ProbeResult ToolProber::Probe(
                       attempt.suffix;
     std::string out;
     int exit_code = RunCapture(cmd, out);
+    (void)exit_code;
 
     if (!out.empty() && out.size() > 10) {
       help_output = out;

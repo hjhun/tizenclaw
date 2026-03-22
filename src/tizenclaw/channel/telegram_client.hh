@@ -67,6 +67,9 @@ class TelegramClient : public Channel {
   // Concurrency control for message handlers
   std::atomic<int> active_handlers_{0};
   static constexpr int kMaxConcurrentHandlers = 3;
+
+  // Exponential backoff for HTTP 409 conflicts
+  int conflict_backoff_sec_ = 5;
 };
 
 }  // namespace tizenclaw

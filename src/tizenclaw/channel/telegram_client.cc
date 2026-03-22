@@ -73,8 +73,24 @@ bool TelegramClient::Start() {
     return false;
   }
 
+  // Clear any prior webhook or polling session
+  // to prevent HTTP 409 Conflict errors.
+  std::string reset_url =
+      "https://api.telegram.org/bot" +
+      bot_token_ + "/deleteWebhook";
+  auto reset_resp = HttpClient::Get(reset_url);
+  if (reset_resp.success) {
+    LOG(INFO) << "TelegramClient: cleared prior "
+              << "webhook/polling session";
+  } else {
+    LOG(WARNING) << "TelegramClient: "
+                 << "deleteWebhook failed: "
+                 << reset_resp.error;
+  }
+
   running_ = true;
-  polling_thread_ = std::thread(&TelegramClient::PollingLoop, this);
+  polling_thread_ = std::thread(
+      &TelegramClient::PollingLoop, this);
   LOG(INFO) << "TelegramClient started polling.";
   return true;
 }
@@ -173,10 +189,34 @@ void TelegramClient::PollingLoop() {
     if (!running_) break;
 
     if (!resp.success) {
-      LOG(ERROR) << "Polling network error: " << resp.error;
-      std::this_thread::sleep_for(std::chrono::seconds(5));
+      // Check for HTTP 409 Conflict — another
+      // instance is polling. Apply exponential
+      // backoff to avoid log flooding.
+      if (resp.error.find("409") !=
+          std::string::npos) {
+        LOG(WARNING)
+            << "Telegram polling conflict "
+            << "(HTTP 409): another instance "
+            << "may be active. Backing off "
+            << conflict_backoff_sec_ << "s";
+        std::this_thread::sleep_for(
+            std::chrono::seconds(
+                conflict_backoff_sec_));
+        conflict_backoff_sec_ =
+            std::min(conflict_backoff_sec_ * 2,
+                     60);
+      } else {
+        LOG(ERROR) << "Polling network error: "
+                   << resp.error;
+        conflict_backoff_sec_ = 5;  // reset
+        std::this_thread::sleep_for(
+            std::chrono::seconds(5));
+      }
       continue;
     }
+
+    // Reset backoff on successful poll
+    conflict_backoff_sec_ = 5;
 
     try {
       auto j = nlohmann::json::parse(resp.body);

@@ -119,6 +119,12 @@ TizenSystemEventAdapter::~TizenSystemEventAdapter() {
 void TizenSystemEventAdapter::Start() {
   if (started_) return;
 
+  LOG(DEBUG) << "TizenSystemEventAdapter: "
+             << "registering "
+             << (sizeof(kEventMappings) /
+                 sizeof(kEventMappings[0]))
+             << " system event mappings";
+
   for (const auto& m : kEventMappings) {
     RegisterSystemEvent(m.system_event);
   }
@@ -160,6 +166,9 @@ void TizenSystemEventAdapter::RegisterSystemEvent(
     return;
   }
   handlers_.push_back(handler);
+  LOG(DEBUG) << "TizenSystemEventAdapter: "
+             << "registered event '" << event_name
+             << "'";
 }
 
 void TizenSystemEventAdapter::OnSystemEvent(
@@ -167,6 +176,10 @@ void TizenSystemEventAdapter::OnSystemEvent(
     bundle* event_data,
     void* user_data) {
   if (!event_name || !user_data) return;
+
+  LOG(DEBUG) << "TizenSystemEventAdapter: "
+             << "received system event '"
+             << event_name << "'";
 
   SystemEvent ev;
   ev.source = "tizen_system";
@@ -177,12 +190,19 @@ void TizenSystemEventAdapter::OnSystemEvent(
   if (ev_name_str == SYSTEM_EVENT_BOOT_COMPLETED) {
     ev.type = EventType::kCustom;
     ev.name = "system.boot_completed";
+    LOG(DEBUG) << "TizenSystemEventAdapter: "
+               << "publishing boot_completed";
     EventBus::GetInstance().Publish(std::move(ev));
     return;
   }
 
   const auto* mapping = FindMapping(event_name);
-  if (!mapping) return;
+  if (!mapping) {
+    LOG(DEBUG) << "TizenSystemEventAdapter: "
+               << "no mapping found for '"
+               << event_name << "', ignoring";
+    return;
+  }
 
   ev.type = mapping->type;
   ev.name = mapping->event_name;
@@ -196,6 +216,14 @@ void TizenSystemEventAdapter::OnSystemEvent(
       ev.data["key"] = mapping->event_key;
     }
   }
+
+  LOG(DEBUG) << "TizenSystemEventAdapter: "
+             << "publishing event '"
+             << ev.name << "'"
+             << (ev.data.contains("value")
+                 ? ", value=" +
+                   ev.data["value"].get<std::string>()
+                 : "");
 
   EventBus::GetInstance().Publish(std::move(ev));
 }

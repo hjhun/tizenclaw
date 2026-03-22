@@ -866,6 +866,36 @@ int main(int argc, char* argv[]) {
     LOG(INFO) << "Starting TizenClaw in Host Linux debug mode";
   }
 
+  // --help / --version: print usage and exit
+  // immediately. Without this, passing --help
+  // would enter the GLib main loop and never
+  // terminate, leaving zombie processes.
+  for (int i = 1; i < argc; ++i) {
+    std::string arg(argv[i]);
+    if (arg == "--help" || arg == "-h") {
+      std::cout
+          << "TizenClaw Agent System Service\n\n"
+          << "Usage: tizenclaw [OPTIONS]\n\n"
+          << "Options:\n"
+          << "  --help, -h       "
+          << "Show this help and exit\n"
+          << "  --version        "
+          << "Show version and exit\n"
+          << "  --debug          "
+          << "Run in host Linux debug mode\n"
+          << "  --mcp-stdio      "
+          << "Run MCP server on stdio\n"
+          << "  --encrypt-keys   "
+          << "Encrypt API keys in config\n"
+          << std::endl;
+      return 0;
+    }
+    if (arg == "--version") {
+      std::cout << "tizenclaw 1.0.0" << std::endl;
+      return 0;
+    }
+  }
+
   // --mcp-stdio mode: run MCP Server on stdio
   // without daemon event loop
   if (argc > 1 && std::string(argv[1]) == "--mcp-stdio") {

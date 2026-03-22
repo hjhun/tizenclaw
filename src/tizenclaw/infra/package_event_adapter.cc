@@ -32,6 +32,9 @@ PackageEventAdapter::~PackageEventAdapter() {
 void PackageEventAdapter::Start() {
   if (started_) return;
 
+  LOG(DEBUG) << "PackageEventAdapter: "
+             << "initializing pkgmgr client";
+
   client_ = pkgmgr_client_new(PC_LISTENING);
   if (!client_) {
     LOG(ERROR) << "PackageEventAdapter: "
@@ -86,6 +89,14 @@ int PackageEventAdapter::OnPackageEvent(
     const void* /*pmsg*/, void* /*user_data*/) {
   if (!pkg_name || !key) return 0;
 
+  LOG(DEBUG) << "PackageEventAdapter: "
+             << "raw event pkg=" << pkg_name
+             << ", type="
+             << (pkg_type ? pkg_type : "null")
+             << ", key=" << key
+             << ", val="
+             << (val ? val : "null");
+
   // Only publish on "end" (completed) or "error"
   // (failed) to avoid flooding with progress events
   bool is_end = (strcasecmp(key, "end") == 0);
@@ -113,11 +124,19 @@ int PackageEventAdapter::OnPackageEvent(
     if (val && strcasecmp(val, "ok") == 0) {
       ev.data["state"] = "completed";
       ev.data["apps"] = QueryAppInfo(pkg_name);
+      LOG(DEBUG) << "PackageEventAdapter: "
+                 << "completed, pkg=" << pkg_name;
     } else {
       ev.data["state"] = "failed";
+      LOG(DEBUG) << "PackageEventAdapter: "
+                 << "failed, pkg=" << pkg_name
+                 << ", val="
+                 << (val ? val : "null");
     }
   } else {
     ev.data["state"] = "failed";
+    LOG(DEBUG) << "PackageEventAdapter: "
+               << "error, pkg=" << pkg_name;
   }
 
   EventBus::GetInstance().Publish(std::move(ev));
