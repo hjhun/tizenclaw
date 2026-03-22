@@ -49,7 +49,7 @@ run_without_container() {
              \"${BUNDLE_DIR}/rootfs/usr\" \"${BUNDLE_DIR}/rootfs/lib\" \\
              \"${BUNDLE_DIR}/rootfs/etc/dbus-1\" \\
              \"${BUNDLE_DIR}/rootfs/opt/etc\" \\
-             \"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw\" \"${BUNDLE_DIR}/rootfs/run\" \"${BUNDLE_DIR}/rootfs/tmp\"
+             \"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw\" \"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw-python\" \"${BUNDLE_DIR}/rootfs/run\" \"${BUNDLE_DIR}/rootfs/tmp\"
 
     touch \"${BUNDLE_DIR}/rootfs/etc/resolv.conf\" 2>/dev/null || true
     mount --bind /etc/resolv.conf \"${BUNDLE_DIR}/rootfs/etc/resolv.conf\" || true
@@ -85,6 +85,7 @@ run_without_container() {
     mount --rbind /opt/etc \"${BUNDLE_DIR}/rootfs/opt/etc\" || true
     mount -o remount,bind,ro \"${BUNDLE_DIR}/rootfs/opt/etc\" || true
     mount --rbind /opt/usr/share/tizenclaw \"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw\" || true
+    mount --rbind /opt/usr/share/tizenclaw-python \"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw-python\" || true
     mkdir -p \"${BUNDLE_DIR}/rootfs/opt/usr/share/crash/dump\"
     if [ -d /opt/usr/share/crash ]; then
       mount --rbind /opt/usr/share/crash \"${BUNDLE_DIR}/rootfs/opt/usr/share/crash\" || true
@@ -214,6 +215,12 @@ write_config() {
       "type": "bind",
       "source": "/opt/usr/share/tizenclaw",
       "options": ["rbind", "rw"]
+    },
+    {
+      "destination": "/opt/usr/share/tizenclaw-python",
+      "type": "bind",
+      "source": "/opt/usr/share/tizenclaw-python",
+      "options": ["rbind", "ro"]
     },
     {
       "destination": "/run",
