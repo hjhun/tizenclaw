@@ -1,7 +1,7 @@
 Name:       tizenclaw
 Summary:    TizenClaw Agent System Service App (Python Port)
 Version:    1.0.0
-Release:    2
+Release:    3
 Group:      System/Service
 License:    Apache-2.0
 Source0:    %{name}-%{version}.tar.gz
@@ -10,8 +10,6 @@ Source1001: %{name}.manifest
 BuildRequires:  python3
 BuildRequires:  python3-devel
 BuildRequires:  cmake
-
-Requires:   python3
 
 %description
 TizenClaw Native Agent ported from C++ to Python to evaluate memory, speed, and storage footprints on Tizen.
