@@ -133,18 +133,22 @@
    * @returns {Promise<string>} LLM response
    */
   function askLLM(prompt) {
-    return fetch('/api/chat', {
+    return fetch('/api/bridge/chat', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        prompt: prompt,
-        session_id: 'webapp_' + appId
+        app_id: appId,
+        prompt: prompt
       })
     })
     .then(function(r) { return r.json(); })
-    .then(function(d) { return d.response; });
+    .then(function(d) {
+      if (d.status === 'error')
+        throw new Error(d.error);
+      return d.response;
+    });
   }
 
   // Expose global TizenClaw namespace
@@ -156,6 +160,6 @@
     setData: setData,
     getData: getData,
     askLLM: askLLM,
-    version: '1.0.0'
+    version: '1.1.0'
   };
 })();

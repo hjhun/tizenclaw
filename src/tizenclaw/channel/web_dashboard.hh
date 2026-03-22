@@ -20,6 +20,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <map>
 #include <mutex>
 #include <set>
 #include <string>
@@ -130,6 +131,11 @@ class WebDashboard : public Channel {
   void ApiBridgeData(
       SoupMessage* msg,
       GHashTable* query);
+  void ApiBridgeChat(SoupMessage* msg);
+
+  // Bridge rate limiting check
+  bool CheckBridgeRateLimit(
+      const std::string& app_id);
 
   // Load allowed_tools from app manifest
   std::vector<std::string> LoadAppAllowedTools(
@@ -174,6 +180,13 @@ class WebDashboard : public Channel {
 
   // Tunnel manager
   std::unique_ptr<TunnelManager> tunnel_manager_;
+
+  // Bridge API rate limiting
+  // app_id -> list of call timestamps
+  std::map<std::string,
+      std::vector<int64_t>> bridge_rate_;
+  std::mutex bridge_rate_mutex_;
+  static constexpr int kBridgeRateLimit = 10;
 };
 
 }  // namespace tizenclaw

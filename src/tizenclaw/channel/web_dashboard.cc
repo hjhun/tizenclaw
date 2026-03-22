@@ -235,6 +235,9 @@ void WebDashboard::HandleApi(
   } else if (path == "/api/bridge/data") {
     const_cast<WebDashboard*>(this)->
         ApiBridgeData(msg, query);
+  } else if (path == "/api/bridge/chat") {
+    const_cast<WebDashboard*>(this)->
+        ApiBridgeChat(msg);
   } else {
     soup_message_set_status(
         msg, SOUP_STATUS_NOT_FOUND);
@@ -1731,10 +1734,32 @@ void WebDashboard::ApiBridgeTool(
   // Load allowed tools from app manifest
   auto allowed = LoadAppAllowedTools(app_id);
 
+  // Rate limiting check
+  if (!CheckBridgeRateLimit(app_id)) {
+    std::string err =
+        "{\"error\":\"Rate limit exceeded\"}";
+    soup_message_set_status(
+        msg, SOUP_STATUS_FORBIDDEN);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        err.c_str(),
+        static_cast<gsize>(err.size()));
+    return;
+  }
+
   // Dispatch tool via AgentCore
   std::string result =
       agent_->ExecuteBridgeTool(
           tool_name, tool_args, allowed);
+
+  // Audit log the bridge call
+  AuditLogger::Instance().Log(
+      AuditLogger::MakeEvent(
+          AuditEventType::kToolExecution,
+          "bridge:" + app_id,
+          {{"tool", tool_name},
+           {"source", "bridge_api"}}));
 
   nlohmann::json resp;
   try {
@@ -2054,7 +2079,7 @@ void WebDashboard::ApiBridgeData(
 
     nlohmann::json resp = {
         {"status", "ok"},
-        {"key", key}};
+    {"key", key}};
     std::string body = resp.dump();
     soup_message_set_status(
         msg, SOUP_STATUS_OK);
@@ -2070,5 +2095,172 @@ void WebDashboard::ApiBridgeData(
   }
 }
 
-}  // namespace tizenclaw
+bool WebDashboard::CheckBridgeRateLimit(
+    const std::string& app_id) {
+  auto now = std::chrono::steady_clock::now();
+  auto now_ms =
+      std::chrono::duration_cast<
+          std::chrono::milliseconds>(
+          now.time_since_epoch())
+          .count();
 
+  std::lock_guard<std::mutex> lock(
+      bridge_rate_mutex_);
+  auto& timestamps = bridge_rate_[app_id];
+
+  // Remove timestamps older than 1 second
+  int64_t cutoff = now_ms - 1000;
+  auto it = timestamps.begin();
+  while (it != timestamps.end() &&
+         *it < cutoff) {
+    it = timestamps.erase(it);
+  }
+
+  // Check if over limit
+  if (static_cast<int>(timestamps.size()) >=
+      kBridgeRateLimit) {
+    return false;
+  }
+
+  timestamps.push_back(now_ms);
+  return true;
+}
+
+namespace {
+
+struct BridgeChatCtx {
+  WebDashboard* self;
+  SoupMessage* msg;
+  std::string app_id;
+  std::string prompt;
+  std::string result;
+};
+
+}  // namespace
+
+void WebDashboard::ApiBridgeChat(
+    SoupMessage* msg) {
+  if (msg->method != SOUP_METHOD_POST) {
+    soup_message_set_status(
+        msg, SOUP_STATUS_METHOD_NOT_ALLOWED);
+    return;
+  }
+
+  SoupMessageBody* req_body = msg->request_body;
+  if (!req_body || !req_body->data ||
+      req_body->length == 0) {
+    std::string err =
+        "{\"error\":\"Empty body\"}";
+    soup_message_set_status(
+        msg, SOUP_STATUS_BAD_REQUEST);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        err.c_str(),
+        static_cast<gsize>(err.size()));
+    return;
+  }
+
+  std::string payload(
+      req_body->data, req_body->length);
+  std::string app_id;
+  std::string prompt;
+
+  try {
+    auto j = nlohmann::json::parse(payload);
+    app_id = j.value("app_id", "");
+    prompt = j.value("prompt", "");
+  } catch (...) {
+    std::string err =
+        "{\"error\":\"Invalid JSON\"}";
+    soup_message_set_status(
+        msg, SOUP_STATUS_BAD_REQUEST);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        err.c_str(),
+        static_cast<gsize>(err.size()));
+    return;
+  }
+
+  if (prompt.empty() || !agent_) {
+    std::string err =
+        "{\"error\":\"prompt required\"}";
+    soup_message_set_status(
+        msg, SOUP_STATUS_BAD_REQUEST);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        err.c_str(),
+        static_cast<gsize>(err.size()));
+    return;
+  }
+
+  if (!running_.load()) {
+    std::string err =
+        "{\"error\":\"Shutting down\"}";
+    soup_message_set_status(
+        msg,
+        SOUP_STATUS_SERVICE_UNAVAILABLE);
+    soup_message_set_response(
+        msg, "application/json",
+        SOUP_MEMORY_COPY,
+        err.c_str(),
+        static_cast<gsize>(err.size()));
+    return;
+  }
+
+  std::string session_id =
+      "webapp_" + (app_id.empty()
+                       ? "anonymous"
+                       : app_id);
+
+  // Pause msg and process asynchronously
+  g_object_ref(msg);
+  soup_server_pause_message(server_, msg);
+
+  auto* ctx = new BridgeChatCtx{
+      this, msg, app_id,
+      prompt, ""};
+
+  pending_workers_.fetch_add(1);
+  std::thread([ctx, session_id]() {
+    ctx->result =
+        ctx->self->agent_->ProcessPrompt(
+            session_id, ctx->prompt);
+    g_main_context_invoke(
+        ctx->self->context_,
+        [](gpointer data) -> gboolean {
+          auto* c =
+              static_cast<BridgeChatCtx*>(
+                  data);
+          nlohmann::json resp = {
+              {"status", "ok"},
+              {"response", c->result}};
+          std::string resp_str = resp.dump();
+          soup_message_set_status(
+              c->msg, SOUP_STATUS_OK);
+          soup_message_set_response(
+              c->msg, "application/json",
+              SOUP_MEMORY_COPY,
+              resp_str.c_str(),
+              static_cast<gsize>(
+                  resp_str.size()));
+          soup_server_unpause_message(
+              c->self->server_, c->msg);
+          g_object_unref(c->msg);
+          auto* owner = c->self;
+          delete c;
+          if (owner->pending_workers_
+                  .fetch_sub(1) == 1) {
+            std::lock_guard<std::mutex> lk(
+                owner->workers_mutex_);
+            owner->workers_cv_.notify_all();
+          }
+          return G_SOURCE_REMOVE;
+        },
+        ctx);
+  }).detach();
+}
+
+}  // namespace tizenclaw
