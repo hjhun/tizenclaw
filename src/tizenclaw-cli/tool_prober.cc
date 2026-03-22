@@ -266,6 +266,34 @@ ProbeResult ToolProber::Probe(
     std::cerr
         << "  Warning: could not get help output. "
         << "Registering with minimal doc.\n";
+  } else {
+    std::cerr << "  Gathering additional execution outputs...\n";
+    std::vector<std::string> additional_cmds = {
+        "list", "status", "info", "show", "--version", "get", "--list", "-l"
+    };
+    std::string additional_context;
+    for (const auto& suffix : additional_cmds) {
+      std::string cmd = binary_path + " " + suffix;
+      std::string out;
+      // timeout 2 secs for quick info
+      int exit_code = RunCapture(cmd, out, 2);
+      if (!out.empty() && exit_code == 0 && out.size() > 5) {
+        // limit output to avoid huge payload
+        if (out.size() > 2048) {
+          out = out.substr(0, 2048) + "\n... (truncated)";
+        }
+        additional_context += "\n[OUTPUT FOR: " + cmd + "]\n" + out + "\n";
+        std::cerr << "  Got additional info from: " << suffix
+                  << " (" << out.size() << " bytes)\n";
+        if (additional_context.size() > 8192) {
+            break; // prevent sending too much data
+        }
+      }
+    }
+    if (!additional_context.empty()) {
+      help_output += "\n\n--- ACTUAL COMMAND EXECUTION EXAMPLES ---\n" +
+                     additional_context;
+    }
   }
 
   result.help_output = help_output;

@@ -2608,7 +2608,7 @@ std::string AgentCore::GenerateToolDoc(
       "```\n\n"
       "RULES:\n"
       "- Output ONLY the Markdown, nothing else\n"
-      "- Keep it CONCISE - under 40 lines total\n"
+      "- Keep it CONCISE - under 80 lines total\n"
       "- Each subcommand row must show the exact "
       "CLI syntax with options/arguments\n"
       "- Group related commands if there are "
@@ -2617,18 +2617,20 @@ std::string AgentCore::GenerateToolDoc(
       "`<appid>`, `<pkgid>`\n"
       "- Include 3-5 Usage examples showing "
       "exact command lines the LLM should use\n"
-      "- Describe output format (text/JSON/table)\n"
+      "- Describe output format (text/JSON/table). "
+      "If actual execution outputs are provided, "
+      "include brief snippets of them to illustrate the format.\n"
       "- Do NOT include raw help output\n"
       "- Do NOT wrap the entire output in "
       "code fences";
 
   std::string user_prompt =
-      "Analyze this CLI tool's help output and "
-      "generate a tool.md optimized for LLM "
-      "CLI invocation.\n\n"
+      "Analyze this CLI tool's help and execution "
+      "outputs, then generate a tool.md "
+      "optimized for LLM CLI invocation.\n\n"
       "Tool: " + tool_name + "\n"
       "Binary: " + binary_path + "\n\n"
-      "Help output:\n```\n" +
+      "Outputs:\n```\n" +
       help_output + "\n```";
 
   std::vector<LlmMessage> messages;
