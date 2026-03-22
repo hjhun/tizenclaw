@@ -1784,6 +1784,10 @@ void WebDashboard::ApiBridgeTool(
 
   std::string body = envelope.dump();
   soup_message_set_status(msg, SOUP_STATUS_OK);
+  soup_message_headers_replace(
+      msg->response_headers,
+      "Cache-Control",
+      "no-cache, no-store, must-revalidate");
   soup_message_set_response(
       msg, "application/json",
       SOUP_MEMORY_COPY,

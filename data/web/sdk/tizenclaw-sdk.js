@@ -33,6 +33,7 @@
   function callTool(toolName, args) {
     return fetch('/api/bridge/tool', {
       method: 'POST',
+      cache: 'no-store',
       headers: {
         'Content-Type': 'application/json'
       },
