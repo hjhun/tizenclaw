@@ -33,21 +33,23 @@ cp %{SOURCE1001} .
 
 %install
 rm -rf %{buildroot}
-mkdir -p %{buildroot}/usr/share/%{name}
+mkdir -p %{buildroot}/opt/usr/share/tizenclaw-python
 mkdir -p %{buildroot}%{_bindir}
-mkdir -p %{buildroot}%{_unitdir}
-mkdir -p %{buildroot}%{_unitdir}/multi-user.target.wants
 
-# Copy scripts and python source files to buildroot
-# cp -r src/* %{buildroot}/usr/share/%{name}/
-# ln -sf /usr/share/%{name}/main.py %{buildroot}%{_bindir}/tizenclaw
-# ln -sf ../tizenclaw-python.service %{buildroot}%{_unitdir}/multi-user.target.wants/tizenclaw-python.service
+# Copy Python port source to the share directory
+cp -r src_py/* %{buildroot}/opt/usr/share/tizenclaw-python/
+chmod +x %{buildroot}/opt/usr/share/tizenclaw-python/tizenclaw_daemon.py
+chmod +x %{buildroot}/opt/usr/share/tizenclaw-python/tizenclaw_cli.py
+
+# Link to bin directory
+ln -sf /opt/usr/share/tizenclaw-python/tizenclaw_daemon.py %{buildroot}%{_bindir}/tizenclaw-daemon
+ln -sf /opt/usr/share/tizenclaw-python/tizenclaw_cli.py %{buildroot}%{_bindir}/tizenclaw-cli
 
 %clean
 rm -rf %{buildroot}
 
 %files
 %defattr(-,root,root,-)
-%manifest %{name}.manifest
-%{_bindir}/*
-/usr/share/%{name}/*
+%{_bindir}/tizenclaw-daemon
+%{_bindir}/tizenclaw-cli
+/opt/usr/share/tizenclaw-python/*
