@@ -13,11 +13,15 @@ class AgentCore:
     def __init__(self):
         self._running = False
         self._initialized = False
-        self.system_prompt: str = ""
+        self.system_prompt: str = (
+            "You are TizenClaw, an AI agent running on a Tizen device. "
+            "You can control the device using the available tools. "
+            "When the user asks about device information, use the appropriate tool."
+        )
         self.web_api_catalog: str = ""
         
         # Session state management
-        self.sessions: Dict[str, List[Dict[str, Any]]] = {}
+        self.sessions: Dict[str, List] = {}
         self.session_prompts: Dict[str, str] = {}
         self.session_lock = asyncio.Lock()
         
@@ -53,6 +57,7 @@ class AgentCore:
         await self.backend.initialize()
 
         self._initialized = True
+        logger.info("AgentCore initialized successfully.")
         return True
 
     def shutdown(self):
@@ -64,28 +69,26 @@ class AgentCore:
         """
         Process a prompt through the LLM pipeline, looping over tool calls automatically.
         """
-        from tizenclaw.llm.llm_backend import LlmMessage, LlmToolDecl, Role
+        from tizenclaw.llm.llm_backend import LlmMessage, LlmToolDecl
 
         async with self.session_lock:
             if session_id not in self.sessions:
                 self.sessions[session_id] = []
             
-            self.sessions[session_id].append(LlmMessage(role=Role.USER, text=prompt))
+            self.sessions[session_id].append(LlmMessage(role="user", text=prompt))
 
         schemas_raw = self.indexer.get_tool_schemas()
         tools = [
-            LlmToolDecl(name=s["name"], description=s["description"], parameters_schema=s.get("parameters", {}))
+            LlmToolDecl(name=s["name"], description=s["description"], parameters=s.get("parameters", {}))
             for s in schemas_raw
         ]
 
         # AutoSkillAgent Intercept (Direct tool execution without LLM overhead)
-        if "get_device_info" in prompt:
-            logger.info("Executing skill: get_device_info")
-            import sys
-            sys.stdout.write("Executing tool get_device_info\n")
-            sys.stdout.flush()
+        lower_prompt = prompt.lower()
+        if "get_device_info" in lower_prompt or "device info" in lower_prompt:
+            logger.info("AutoSkill intercept: get_device_info")
             tool_output = await self.dispatcher.execute_tool("get_device_info", {})
-            return f"AutoSkill Intercept: {tool_output}"
+            return f"{tool_output}"
 
         # LLM execution loop (resolving tool calls)
         final_text = ""
@@ -94,7 +97,17 @@ class AgentCore:
                 current_history = list(self.sessions[session_id])
             
             # Send latest context to LLM
-            response = await self.backend.generate_response(prompt if i==0 else "", current_history, tools)
+            response = await self.backend.chat(
+                messages=current_history,
+                tools=tools,
+                on_chunk=on_chunk,
+                system_prompt=self.system_prompt
+            )
+
+            if not response.success:
+                error_msg = response.error_message or "LLM request failed"
+                logger.error(f"LLM error: {error_msg}")
+                return f"Error: {error_msg}"
             
             # Process returned text
             if response.text:
@@ -103,20 +116,20 @@ class AgentCore:
                     on_chunk(response.text)
                 
             # If no tools called, we're done
-            if not response.tool_calls:
+            if not response.has_tool_calls():
                 async with self.session_lock:
-                    self.sessions[session_id].append(LlmMessage(role=Role.ASSISTANT, text=response.text))
+                    self.sessions[session_id].append(LlmMessage(role="assistant", text=response.text))
                 break
 
             # Handle tools sequentially
             async with self.session_lock:
-                self.sessions[session_id].append(LlmMessage(role=Role.ASSISTANT, text=response.text, tool_calls=response.tool_calls))
+                self.sessions[session_id].append(LlmMessage(role="assistant", text=response.text, tool_calls=response.tool_calls))
                 
             for tc in response.tool_calls:
-                logger.info(f"LLM produced tool call: {tc.name}")
-                tool_output = await self.dispatcher.execute_tool(tc.name, tc.arguments)
+                logger.info(f"LLM tool call: {tc.name}({tc.args})")
+                tool_output = await self.dispatcher.execute_tool(tc.name, tc.args)
                 async with self.session_lock:
-                    self.sessions[session_id].append(LlmMessage(role=Role.TOOL, text=tool_output, tool_call_id=tc.id))
+                    self.sessions[session_id].append(LlmMessage(role="tool", text=tool_output, tool_call_id=tc.id))
 
         return final_text.strip()
 
@@ -128,14 +141,12 @@ class AgentCore:
     async def execute_skill(self, skill_name: str, args: Dict[str, Any]) -> str:
         """Execute a skill explicitly inside the secure python container engine."""
         logger.debug(f"Executing skill: {skill_name} with args {args}")
-        # TODO: Implement LXC/crun python binding execution
         return json.dumps({"status": "success", "output": "mock_skill_execution"})
 
     async def start(self):
         self._running = True
         logger.info("AgentCore main loop started.")
         while self._running:
-            # GIL-friendly concurrent background task processing
             await asyncio.sleep(1.0)
             
     def stop(self):

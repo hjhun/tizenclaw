@@ -4,7 +4,7 @@ import logging
 import asyncio
 import urllib.request
 import urllib.error
-from typing import List, AsyncGenerator
+from typing import List, Dict, Any, Optional, Callable, AsyncGenerator
 from tizenclaw.llm.llm_backend import LlmBackend, LlmMessage, LlmToolDecl, LlmResponse, LlmToolCall
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,14 @@ class OpenAiBackend(LlmBackend):
         self.model = model
         self.endpoint = "https://api.openai.com/v1/chat/completions"
 
-    async def initialize(self) -> bool:
+    def get_name(self) -> str:
+        return f"openai/{self.model}"
+
+    async def initialize(self, config: Dict[str, Any] = None) -> bool:
+        if config:
+            self.api_key = config.get("api_key", self.api_key)
+            self.model = config.get("model", self.model)
+            self.endpoint = config.get("endpoint", self.endpoint)
         if not self.api_key:
             logger.warning("OpenAI API key missing. LlmBackend may fail.")
             return False
@@ -38,7 +45,24 @@ class OpenAiBackend(LlmBackend):
             return {"error": str(e)}
 
     def _convert_messages(self, messages: List[LlmMessage]) -> list:
-        return [{"role": m.role.value, "content": m.text} for m in messages]
+        result = []
+        for m in messages:
+            msg: Dict[str, Any] = {"role": m.role, "content": m.text or ""}
+            if m.tool_calls:
+                msg["tool_calls"] = []
+                for tc in m.tool_calls:
+                    msg["tool_calls"].append({
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.name,
+                            "arguments": json.dumps(tc.args)
+                        }
+                    })
+            if m.role == "tool" and m.tool_call_id:
+                msg["tool_call_id"] = m.tool_call_id
+            result.append(msg)
+        return result
 
     def _convert_tools(self, tools: List[LlmToolDecl]) -> list:
         if not tools:
@@ -50,18 +74,27 @@ class OpenAiBackend(LlmBackend):
                 "function": {
                     "name": t.name,
                     "description": t.description,
-                    "parameters": t.parameters_schema
+                    "parameters": t.parameters
                 }
             })
         return openai_tools
 
-    async def generate_response(self, prompt: str, history: List[LlmMessage], tools: List[LlmToolDecl]) -> LlmResponse:
-        messages = self._convert_messages(history)
-        messages.append({"role": "user", "content": prompt})
-        
-        payload = {
+    async def chat(
+        self,
+        messages: List[LlmMessage],
+        tools: List[LlmToolDecl],
+        on_chunk: Optional[Callable[[str], None]] = None,
+        system_prompt: str = ""
+    ) -> LlmResponse:
+        """Implements the abstract chat() method from LlmBackend."""
+        api_messages = []
+        if system_prompt:
+            api_messages.append({"role": "system", "content": system_prompt})
+        api_messages.extend(self._convert_messages(messages))
+
+        payload: Dict[str, Any] = {
             "model": self.model,
-            "messages": messages,
+            "messages": api_messages,
         }
         converted_tools = self._convert_tools(tools)
         if converted_tools:
@@ -70,29 +103,43 @@ class OpenAiBackend(LlmBackend):
 
         # Offload sync urllib networking to thread pool
         result = await asyncio.to_thread(self._make_http_request, payload)
-        
+
         if "error" in result:
-            logger.error(f"Generate response failed: {result['error']}")
-            return LlmResponse(text=f"Error: {result['error']}", tool_calls=[])
+            logger.error(f"Chat failed: {result['error']}")
+            return LlmResponse(success=False, text="", error_message=str(result['error']))
 
         choice = result.get("choices", [{}])[0].get("message", {})
         text = choice.get("content", "") or ""
-        
+        usage = result.get("usage", {})
+
         tcalls = []
         if "tool_calls" in choice:
             for tc in choice["tool_calls"]:
-                name = tc.get("function", {}).get("name")
+                name = tc.get("function", {}).get("name", "")
                 args_str = tc.get("function", {}).get("arguments", "{}")
                 try:
                     args = json.loads(args_str)
                 except json.JSONDecodeError:
                     args = {}
-                tcalls.append(LlmToolCall(id=tc.get("id"), name=name, arguments=args))
+                tcalls.append(LlmToolCall(id=tc.get("id", ""), name=name, args=args))
 
-        return LlmResponse(text=text, tool_calls=tcalls)
+        return LlmResponse(
+            success=True,
+            text=text,
+            tool_calls=tcalls,
+            prompt_tokens=usage.get("prompt_tokens", 0),
+            completion_tokens=usage.get("completion_tokens", 0),
+            total_tokens=usage.get("total_tokens", 0)
+        )
+
+    async def generate_response(self, prompt: str, history: List[LlmMessage], tools: List[LlmToolDecl]) -> LlmResponse:
+        """Convenience wrapper: appends user prompt to history and calls chat()."""
+        messages = list(history)
+        if prompt:
+            messages.append(LlmMessage(role="user", text=prompt))
+        return await self.chat(messages, tools)
 
     async def generate_stream(self, prompt: str, history: List[LlmMessage], tools: List[LlmToolDecl]) -> AsyncGenerator[str, None]:
-        # Implementation of streaming with urllib is complex without dependencies
-        # So we wrap the single response for simplicity in zero-dependency python
+        # Wrap single response for zero-dependency streaming stub
         response = await self.generate_response(prompt, history, tools)
         yield response.text
