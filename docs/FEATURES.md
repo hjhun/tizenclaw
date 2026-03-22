@@ -1,246 +1,232 @@
-# TizenClaw Feature Matrix
+# TizenClaw Feature Matrix — Python Port
 
-> **Last Updated**: 2026-03-22
+> **Last Updated**: 2026-03-23
+> **Branch**: `develPython`
 
-This document provides a comprehensive matrix of all TizenClaw features, organized by category, with their current implementation status.
+This document provides a comprehensive matrix of all TizenClaw Python port features, organized by category, with their current implementation status compared to the C++ version.
 
 ---
 
 ## Legend
 
 | Symbol | Meaning |
-|:------:|---------|
+|:------:|---------| 
 | ✅ | Fully implemented and verified |
 | 🟡 | Partially implemented / stub |
 | 🔴 | Not yet implemented / planned |
+| ➖ | Not applicable to Python port |
 
 ---
 
 ## 1. Core Agent System
 
-| Feature | Status | Details |
-|---------|:------:|---------|
-| Agentic Loop (iterative tool calling) | ✅ | Configurable `max_iterations` via `tool_policy.json` |
-| LLM streaming responses | ✅ | Chunked IPC delivery (`stream_chunk` / `stream_end`) |
-| Context compaction | ✅ | LLM-based summarization (oldest 10 turns → 1 compressed) |
-| Multi-session support | ✅ | Per-session system prompt and history isolation |
-| Edge memory management | ✅ | `malloc_trim(0)` + `sqlite3_release_memory` after 5min idle |
-| JSON-RPC 2.0 IPC | ✅ | Length-prefix framing over Abstract Unix Domain Sockets |
-| Concurrent client handling | ✅ | Thread pool, `kMaxConcurrentClients = 4` |
-| UID authentication | ✅ | `SO_PEERCRED` (root, app_fw, system, developer) |
-| System prompt externalization | ✅ | 4-level fallback (config → file → default → hardcoded) |
-| Dynamic tool injection | ✅ | `{{AVAILABLE_TOOLS}}`, `{{CAPABILITY_SUMMARY}}` placeholders |
-| Parallel tool execution | ✅ | `std::async` for concurrent tool calls |
+| Feature | C++ | Python | Details |
+|---------|:---:|:------:|---------| 
+| Agentic Loop (iterative tool calling) | ✅ | ✅ | Max 10 iterations in `AgentCore.process_prompt()` |
+| LLM streaming responses | ✅ | 🟡 | Stub wrapping single response (`generate_stream`) |
+| Context compaction | ✅ | 🔴 | Not yet implemented |
+| Multi-session support | ✅ | ✅ | Per-session history with `asyncio.Lock` isolation |
+| Edge memory management | ✅ | 🔴 | No `malloc_trim` equivalent (GC-managed) |
+| JSON-RPC 2.0 IPC | ✅ | ✅ | Same protocol, same framing (`[4B len][JSON]`) |
+| Concurrent client handling | ✅ | ✅ | asyncio cooperative concurrency (vs C++ thread pool) |
+| UID authentication | ✅ | 🔴 | No `SO_PEERCRED` validation |
+| System prompt externalization | ✅ | 🔴 | Hardcoded (no config fallback chain) |
+| Dynamic tool injection | ✅ | ✅ | `ToolIndexer.get_tool_schemas()` feeds LLM |
+| Auto-skill intercept | ✅ | ✅ | Direct tool execution for `get_device_info` queries |
+| Parallel tool execution | ✅ | 🔴 | Sequential tool execution only |
 
 ## 2. LLM Backends
 
-| Backend | Status | Default Model | Streaming | Token Counting |
-|---------|:------:|:---:|:---------:|:--------------:|
-| Google Gemini | ✅ | `gemini-2.5-flash` | ✅ | ✅ |
-| OpenAI | ✅ | `gpt-4o` | ✅ | ✅ |
-| Anthropic (Claude) | ✅ | `claude-sonnet-4-20250514` | ✅ | ✅ |
-| xAI (Grok) | ✅ | `grok-3` | ✅ | ✅ |
-| Ollama (local) | ✅ | `llama3` | ✅ | ✅ |
-| RPK Plugin backends | ✅ | Custom | ✅ | ✅ |
+| Backend | C++ | Python | Default Model | Streaming | Token Counting |
+|---------|:---:|:------:|:---:|:---------:|:--------------:|
+| Google Gemini | ✅ | 🔴 | — | — | — |
+| OpenAI | ✅ | ✅ | `gpt-4o` | 🟡 | 🔴 |
+| Anthropic (Claude) | ✅ | 🔴 | — | — | — |
+| xAI (Grok) | ✅ | 🔴 | — | — | — |
+| Ollama (local) | ✅ | 🔴 | — | — | — |
+| RPK Plugin backends | ✅ | 🔴 | — | — | — |
 
-| Feature | Status | Details |
-|---------|:------:|---------|
-| Unified priority switching | ✅ | Plugin > active > fallback with configurable priority |
-| Automatic fallback | ✅ | Sequential retry with rate-limit backoff (HTTP 429) |
-| API key encryption | ✅ | Device-bound `ENC:` prefix + base64 (backward compatible) |
-| Per-session usage tracking | ✅ | Per-session, daily, monthly Markdown reports |
-| System prompt customization | ✅ | Per-agent role prompts via `agent_roles.json` |
+| Feature | C++ | Python | Details |
+|---------|:---:|:------:|---------| 
+| Unified priority switching | ✅ | 🔴 | Single backend only |
+| Automatic fallback | ✅ | 🔴 | No fallback chain |
+| API key encryption | ✅ | 🔴 | Environment variable only |
+| Per-session usage tracking | ✅ | 🔴 | Not implemented |
+| System prompt customization | ✅ | 🔴 | Hardcoded default |
+| Zero external dependencies | 🔴 | ✅ | stdlib `urllib.request` + `asyncio.to_thread` |
 
 ## 3. Communication Channels
 
-| Channel | Status | Protocol | Outbound | Library |
-|---------|:------:|----------|:--------:|---------|
-| Telegram | ✅ | Bot API Long-Polling | ✅ | libcurl |
-| Slack | ✅ | Socket Mode (WebSocket) | ✅ | libwebsockets |
-| Discord | ✅ | Gateway WebSocket | ✅ | libwebsockets |
-| MCP (Claude Desktop) | ✅ | stdio JSON-RPC 2.0 | ❌ | built-in |
-| Webhook | ✅ | HTTP inbound (libsoup) | ❌ | libsoup |
-| Voice (STT/TTS) | ✅ | Tizen STT/TTS C-API | ✅ | conditional |
-| Web Dashboard | ✅ | libsoup SPA (port 9090) | ❌ | libsoup |
-| SO Plugin | ✅ | C API (`tizenclaw_channel.h`) | Optional | dlopen |
+| Channel | C++ | Python | Details |
+|---------|:---:|:------:|---------| 
+| Telegram | ✅ | 🔴 | Not ported |
+| Slack | ✅ | 🔴 | Not ported |
+| Discord | ✅ | 🔴 | Not ported |
+| MCP (Claude Desktop) | ✅ | ✅ | `--mcp-stdio` mode in daemon |
+| Webhook | ✅ | 🔴 | Not ported |
+| Voice (STT/TTS) | ✅ | 🔴 | Not ported |
+| Web Dashboard | ✅ | ✅ | Static files preserved from C++ |
+| SO Plugin | ✅ | 🔴 | Not applicable (no dlopen) |
 
-| Feature | Status | Details |
-|---------|:------:|---------|
-| Channel abstraction interface | ✅ | C++ `Channel` base class |
-| Config-driven activation | ✅ | `channels.json` enable/disable |
-| Outbound messaging | ✅ | `SendTo(channel, text)` + `Broadcast(text)` |
-| Plugin channel API | ✅ | `tizenclaw_channel.h` C API for `.so` plugins |
-| Channel allowlists | ✅ | Per-channel chat_id/guild allowlists |
-| Wake word detection | 🔴 | Requires hardware mic support |
-| WhatsApp channel | 🔴 | Not implemented |
-| Email channel | 🔴 | Not implemented |
+| Feature | C++ | Python | Details |
+|---------|:---:|:------:|---------| 
+| Channel abstraction interface | ✅ | 🔴 | No ChannelRegistry |
+| tizenclaw-cli | ✅ | ✅ | Full parity (`-s`, `--stream`, `--list-agents`, etc.) |
+| IPC client library | ✅ | ✅ | `SocketClient` class in `tizenclaw_cli.py` |
 
 ## 4. Skills & Tool Ecosystem
 
 ### 4.1 Native CLI Tool Suites (13 directories)
 
-| Category | Tool | Status | C-API | Async |
-|----------|------|:------:|-------|:-----:|
-| **App Management** | `list_apps` | ✅ | `app_manager` | |
-| | `send_app_control` | ✅ | `app_control` | |
-| | `terminate_app` | ✅ | `app_manager` | |
-| | `get_package_info` | ✅ | `package_manager` | |
-| **Device Info** | `get_device_info` | ✅ | `system_info` | |
-| | `get_system_info` | ✅ | `system_info` | |
-| | `get_runtime_info` | ✅ | `runtime_info` | |
-| | `get_storage_info` | ✅ | `storage` | |
-| | `get_system_settings` | ✅ | `system_settings` | |
-| | `get_sensor_data` | ✅ | `sensor` | |
-| | `get_thermal_info` | ✅ | `device` (thermal) | |
-| **Network** | `get_wifi_info` | ✅ | `wifi-manager` | |
-| | `get_bluetooth_info` | ✅ | `bluetooth` | |
-| | `get_network_info` | ✅ | `connection` | |
-| | `get_data_usage` | ✅ | `connection` (statistics) | |
-| | `scan_wifi_networks` | ✅ | `wifi-manager` | ⚡ |
-| | `scan_bluetooth_devices` | ✅ | `bluetooth` | ⚡ |
-| **Display & HW** | `get_display_info` | ✅ | `device` (display) | |
-| | `control_display` | ✅ | `device` (display) | |
-| | `control_haptic` | ✅ | `device` (haptic) | |
-| | `control_led` | ✅ | `device` (flash) | |
-| | `control_volume` | ✅ | `sound_manager` | |
-| | `control_power` | ✅ | `device` (power) | |
-| **Media** | `get_battery_info` | ✅ | `device` (battery) | |
-| | `get_sound_devices` | ✅ | `sound_manager` | |
-| | `get_media_content` | ✅ | `media-content` | |
-| | `get_metadata` | ✅ | `metadata-extractor` | |
-| | `get_mime_type` | ✅ | `mime-type` | |
-| **System** | `play_tone` | ✅ | `tone_player` | |
-| | `play_feedback` | ✅ | `feedback` | |
-| | `send_notification` | ✅ | `notification` | |
-| | `schedule_alarm` | ✅ | `alarm` | |
-| | `download_file` | ✅ | `url-download` | ⚡ |
-| | `web_search` | ✅ | Wikipedia API | |
+| Category | Tools | C++ | Python | Notes |
+|----------|:-----:|:---:|:------:|-------|
+| App Management | 4 | ✅ | ✅ | Same CLI tools, executed via tool executor |
+| Device Info | 7 | ✅ | ✅ | Same CLI tools, ctypes FFI |
+| Network | 6 | ✅ | ✅ | Same CLI tools |
+| Display & HW | 6 | ✅ | ✅ | Same CLI tools |
+| Media | 5 | ✅ | ✅ | Same CLI tools |
+| System | 6 | ✅ | ✅ | Same CLI tools |
 
-> ⚡ = Async skill using tizen-core event loop
+> CLI tools are shared between C++ and Python versions — they are standalone executables.
 
-### 4.2 Built-in Tools (AgentCore, Native C++)
+### 4.2 Tool Discovery & Dispatch
 
-| Tool | Status | Category |
-|------|:------:|----------|
-| `execute_code` | ✅ | Code Execution |
-| `manage_custom_skill` | ✅ | Skill Management |
-| `create_task` / `list_tasks` / `cancel_task` | ✅ | Task Scheduler |
-| `create_session` / `list_sessions` / `send_to_session` | ✅ | Multi-Agent |
-| `run_supervisor` | ✅ | Multi-Agent |
-| `ingest_document` / `search_knowledge` | ✅ | RAG |
-| `execute_action` / `action_<name>` | ✅ | Tizen Action Framework |
-| `execute_cli` | ✅ | CLI Tool Plugins |
-| `create_workflow` / `list_workflows` / `run_workflow` / `delete_workflow` | ✅ | Workflow Engine |
-| `create_pipeline` / `list_pipelines` / `run_pipeline` / `delete_pipeline` | ✅ | Pipeline Engine |
-| `remember` / `recall` / `forget` | ✅ | Persistent Memory |
+| Feature | C++ | Python | Details |
+|---------|:---:|:------:|---------| 
+| ToolIndexer (schema scanning) | ✅ | ✅ | Regex YAML frontmatter parser |
+| ToolDispatcher (routing) | ✅ | ✅ | `cli` / `skill` / `mcp` type routing |
+| Capability Registry | ✅ | 🔴 | No FunctionContract system |
+| O(1) tool lookup | ✅ | ✅ | `Dict[str, Dict]` hash map |
+| `.tool.md` format | ✅ | ✅ | Same format, same parser |
+| `.skill.md` format | ✅ | ✅ | Same format |
+| `.mcp.json` format | ✅ | ✅ | JSON loading |
 
-### 4.3 Extensibility
+### 4.3 Embedded Tool Schemas (17 files)
 
-| Feature | Status | Details |
-|---------|:------:|---------|
-| RPK Skill Plugins | ✅ | Python skills via platform-signed RPK packages |
-| CLI Tool Plugins (TPK) | ✅ | Native binaries with `.tool.md` descriptors |
-| LLM Backend Plugins (RPK) | ✅ | Custom LLM backends via RPK with priority |
-| Channel Plugins (.so) | ✅ | Shared object plugins via C API |
-| Skill hot-reload (inotify) | ✅ | Auto-detect new/modified skills without restart |
-| Capability Registry | ✅ | Unified tool registration with function contracts |
-| SKILL.md format | ✅ | Anthropic standard skill format |
-| Manifest v2 | ✅ | Extended `version`, `author`, `compatibility` fields |
-| Remote skill marketplace | 🟡 | REST API stubs, no dashboard UI yet |
-| Per-skill seccomp profiles | 🔴 | All skills share container security profile |
-| Per-skill resource quotas | 🔴 | No CPU/memory limits per execution |
+| Tool | C++ | Python |
+|------|:---:|:------:|
+| `execute_code` | ✅ | ✅ |
+| `create_task` / `list_tasks` / `cancel_task` | ✅ | ✅ |
+| `create_session` | ✅ | ✅ |
+| `ingest_document` / `search_knowledge` | ✅ | ✅ |
+| `create/list/run/delete_workflow` | ✅ | ✅ |
+| `create/list/run/delete_pipeline` | ✅ | ✅ |
+| `run_supervisor` | ✅ | ✅ |
+| `generate_web_app` | ✅ | ✅ |
+
+### 4.4 Extensibility
+
+| Feature | C++ | Python | Details |
+|---------|:---:|:------:|---------| 
+| RPK Skill Plugins | ✅ | 🔴 | SkillPluginManager not ported |
+| CLI Tool Plugins (TPK) | ✅ | 🔴 | CliPluginManager not ported |
+| LLM Backend Plugins | ✅ | 🔴 | PluginManager not ported |
+| Channel Plugins (.so) | ✅ | ➖ | Not applicable |
+| Skill hot-reload (inotify) | ✅ | 🔴 | No file watcher |
+| SKILL.md format | ✅ | ✅ | Standard format, ToolIndexer parses it |
 
 ## 5. Security
 
-| Feature | Status | Details |
-|---------|:------:|---------|
-| OCI container isolation | ✅ | crun with PID/Mount/User namespaces |
-| Tool execution policy | ✅ | Risk levels (low/medium/high), blocked skills list |
-| Loop detection | ✅ | Same tool + args 3x → blocked; idle progress check |
-| API key encryption | ✅ | Device-bound GLib SHA-256 + XOR |
-| Audit logging | ✅ | Daily Markdown tables, 5MB rotation |
-| UID authentication | ✅ | `SO_PEERCRED` on IPC socket |
-| Admin authentication | ✅ | Session-token + SHA-256 password hashing |
-| Webhook HMAC | ✅ | HMAC-SHA256 signature validation |
-| Platform certificate signing | ✅ | Required for RPK/TPK plugin installation |
-| Network access control per skill | 🔴 | No per-skill network allow/deny |
+| Feature | C++ | Python | Details |
+|---------|:---:|:------:|---------| 
+| OCI container isolation | ✅ | 🟡 | `unshare` fallback instead of crun |
+| Tool execution policy | ✅ | 🔴 | No ToolPolicy class |
+| Loop detection | ✅ | 🔴 | No repeat-detection |
+| API key encryption | ✅ | 🔴 | Env var only |
+| Audit logging | ✅ | 🔴 | No AuditLogger |
+| UID authentication | ✅ | 🔴 | No SO_PEERCRED |
+| Admin authentication | ✅ | 🔴 | No web auth |
+| Payload size guard | 🟡 | ✅ | 10MB limit in daemon |
 
 ## 6. Knowledge & Intelligence
 
-| Feature | Status | Details |
-|---------|:------:|---------|
-| Hybrid RAG search | ✅ | BM25 keyword (FTS5) + vector cosine via RRF (k=60) |
-| On-device embedding | ✅ | ONNX Runtime `all-MiniLM-L6-v2` (384-dim, lazy-loaded) |
-| Multi-DB support | ✅ | Attach multiple knowledge databases (tizen_api, tizen_guide) |
-| FTS5 auto-sync | ✅ | Triggers keep FTS5 index consistent |
-| Token budget estimation | ✅ | `EstimateTokens()` approximation (words × 1.3) |
-| Persistent memory | ✅ | Long-term, episodic, short-term with LLM tools |
-| Memory summary | ✅ | Auto-regenerated `memory.md` during idle |
-| Context fusion | ✅ | Multi-source context fusion (`ContextFusionEngine`) |
-| On-device OCR | ✅ | PaddleOCR PP-OCRv3 (Korean+English lite / CJK full) |
-| ANN index (HNSW) | 🔴 | Currently brute-force cosine similarity |
-| Pre-request token budgeting | 🔴 | Token count checked post-response only |
+| Feature | C++ | Python | Details |
+|---------|:---:|:------:|---------| 
+| Hybrid RAG search | ✅ | 🟡 | Placeholder (vector-only fallback) |
+| On-device embedding | ✅ | 🟡 | ONNX session loads, but tokenizer missing → zero vector |
+| SQLite FTS5 | ✅ | ✅ | FTS5 virtual table created |
+| Multi-DB support | ✅ | ✅ | `ATTACH DATABASE` implemented |
+| Token budget estimation | ✅ | ✅ | `words × 1.3` |
+| Cosine similarity | ✅ | ✅ | Pure Python math implementation |
+| Text chunking | ✅ | ✅ | Sliding window with overlap |
+| Persistent memory | ✅ | ✅ | Long-term/episodic/short-term stores |
+| Memory summary | ✅ | 🟡 | Stub `regenerate_summary()` |
 
 ## 7. Automation & Orchestration
 
-| Feature | Status | Details |
-|---------|:------:|---------|
-| Task scheduler | ✅ | Cron/interval/once/weekly with retry backoff |
-| Supervisor agent | ✅ | Goal decomposition → delegate → validate |
-| Skill pipelines | ✅ | Sequential execution with `{{variable}}` interpolation |
-| Conditional branching | ✅ | `if/then/else` in pipelines |
-| Workflow engine | ✅ | CRUD + execution via built-in tools |
-| Autonomous triggers | ✅ | Event-driven rules with LLM evaluation |
-| A2A protocol | ✅ | Cross-device HTTP JSON-RPC 2.0 with task lifecycle |
-| Event Bus | ✅ | Pub/sub for system events |
-| Agent roles | ✅ | Configurable via `agent_roles.json` |
-| Parallel task execution | 🔴 | Currently sequential, planned dependency graph |
+| Feature | C++ | Python | Details |
+|---------|:---:|:------:|---------| 
+| Task scheduler | ✅ | ✅ | asyncio-based (cron/interval/once/weekly) |
+| Workflow engine | ✅ | ✅ | Markdown parsing + variable interpolation |
+| Variable interpolation | ✅ | ✅ | `{{variable}}` in instructions and args |
+| Conditional branching | ✅ | 🔴 | Not implemented in workflow parser |
+| Supervisor agent | ✅ | 🔴 | No SupervisorEngine |
+| Skill pipelines | ✅ | 🟡 | Via WorkflowEngine steps |
+| Autonomous triggers | ✅ | 🔴 | No AutonomousTrigger |
+| Event Bus | ✅ | 🔴 | No pub/sub system |
+| A2A protocol | ✅ | 🔴 | No cross-device protocol |
 
 ## 8. Operations & Deployment
 
-| Feature | Status | Details |
-|---------|:------:|---------|
-| systemd service | ✅ | `tizenclaw.service` (Type=simple) |
-| Socket activation | ✅ | Tool executor + code sandbox on-demand |
-| GBS RPM packaging | ✅ | x86_64, armv7l, aarch64 architectures |
-| Automated deploy | ✅ | `deploy.sh` script (build + install + restart) |
-| Web Dashboard | ✅ | Glassmorphism SPA on port 9090 |
-| Health metrics | ✅ | Prometheus-style `/api/metrics` endpoint |
-| OTA updates | ✅ | HTTP pull with version check and rollback |
-| Fleet management | 🟡 | Registration and heartbeat (stubs) |
-| Secure tunneling | ✅ | ngrok for remote dashboard access |
-| Config editor | ✅ | In-browser editing of 7+ config files |
-| Debug service | ✅ | `tizenclaw-debug.service` (no container) |
-| C-API SDK library | 🟡 | `libtizenclaw` implemented, not yet distributed |
-| SDK documentation | 🟡 | API guide exists, integration guide pending |
+| Feature | C++ | Python | Details |
+|---------|:---:|:------:|---------| 
+| systemd service | ✅ | ✅ | `tizenclaw.service` (Python script) |
+| Socket activation | ✅ | ✅ | Tool executor + code sandbox sockets |
+| GBS RPM packaging | ✅ | ✅ | Install-only CMake (`LANGUAGES NONE`) |
+| Automated deploy | ✅ | ✅ | `deploy.sh` script |
+| Web Dashboard | ✅ | ✅ | Static files (5 files, ~3,900 LOC) |
+| Health metrics | ✅ | 🔴 | No `/api/metrics` |
+| OTA updates | ✅ | 🔴 | No OtaUpdater |
+| Fleet management | 🟡 | 🔴 | Not ported |
+| Secure tunneling | ✅ | 🔴 | No TunnelManager |
+| Debug service | ✅ | ✅ | `tizenclaw-debug.service` |
 
 ## 9. MCP (Model Context Protocol)
 
-| Feature | Status | Details |
-|---------|:------:|---------|
-| MCP Server (built-in) | ✅ | C++ stdio JSON-RPC 2.0 for Claude Desktop |
-| MCP Client (built-in) | ✅ | Connect to external MCP tool servers |
-| MCP Sandbox | ✅ | MCP servers run inside secure container |
-| Tools exposed via MCP | ✅ | All registered tools available via MCP |
+| Feature | C++ | Python | Details |
+|---------|:---:|:------:|---------| 
+| MCP Server (built-in) | ✅ | ✅ | `--mcp-stdio` mode |
+| MCP Client (built-in) | ✅ | 🔴 | No McpClientManager |
+| MCP Sandbox | ✅ | 🔴 | No container-based MCP server |
+| Tools exposed via MCP | ✅ | ✅ | All ToolIndexer schemas available |
 
 ## 10. Testing
 
-| Feature | Status | Details |
-|---------|:------:|---------|
-| Unit tests (gtest/gmock) | ✅ | 42 test files (~7,800 LOC, 205+ cases) |
-| E2E smoke tests | ✅ | 2 test scripts |
-| CLI tool validation | ✅ | Per-tool test scripts in `tests/verification/cli_tools/` |
-| MCP compliance tests | ✅ | `tests/verification/mcp/` |
-| Build-time testing | ✅ | `ctest -V` in RPM `%check` |
-| LLM integration tests | ✅ | `tests/verification/llm_integration/` |
-| Regression tests | ✅ | `tests/verification/regression/` |
+| Feature | C++ | Python | Details |
+|---------|:---:|:------:|---------| 
+| Unit tests (gtest) | ✅ | ➖ | Legacy C++ test files remain but not compiled |
+| Shell verification tests | ✅ | ✅ | 28 test scripts in `tests/verification/` |
+| E2E smoke tests | ✅ | ✅ | `tests/e2e/` |
+| CLI tool validation | ✅ | ✅ | `tests/verification/cli_tools/` (13 tests) |
+| MCP compliance tests | ✅ | ✅ | `tests/verification/mcp/` (2 tests) |
+| LLM integration tests | ✅ | ✅ | `tests/verification/llm_integration/` (3 tests) |
+| Regression tests | ✅ | ✅ | `tests/verification/regression/` |
+| Python unit tests (pytest) | ➖ | 🔴 | Not yet created |
+
+## 11. Tizen Native Integration
+
+| Feature | C++ | Python | Details |
+|---------|:---:|:------:|---------| 
+| Tizen dlog routing | ✅ | ✅ | `ctypes` → `libdlog.so.0` |
+| System event handler | ✅ | ✅ | `ctypes` → `libcapi-appfw-app-common.so.0` |
+| vconf integration | ✅ | 🟡 | Placeholder in NativeWrapper |
+| Action Framework | ✅ | 🔴 | No ActionBridge |
 
 ---
 
-## Architecture Diagram Reference
+## Summary: Python Port Coverage
 
-For detailed architecture diagrams and component descriptions, see:
-- [System Design](DESIGN.md) — Full architecture with Mermaid diagrams
-- [Tools Reference](TOOLS.md) — Complete skill/tool catalog
-- [ML/AI Assets](ASSETS.md) — ONNX Runtime, RAG databases, OCR
-- [C-API Guide](API_GUIDE.md) — SDK usage with code examples
+| Category | C++ Features | Python Ported | Coverage |
+|----------|:---:|:---:|:---:|
+| Core Agent | 11 | 6 | 55% |
+| LLM Backends | 6 + 5 features | 1 + 1 feature | ~18% |
+| Channels | 8 | 2 (CLI + MCP) | 25% |
+| Tools & Skills | 13 CLI + 17 embedded | 13 CLI + 17 embedded | 100% |
+| Security | 8 | 1 | 13% |
+| Knowledge | 8 | 5 | 63% |
+| Automation | 9 | 2 | 22% |
+| Operations | 10 | 5 | 50% |
+| MCP | 4 | 2 | 50% |
+| Testing | 7 | 5 | 71% |
+
+> **Overall**: The Python port provides core agent functionality (agentic loop, tool dispatch, CLI parity) with the same tool ecosystem. Areas like multi-backend LLM, channels, security, and advanced automation remain to be ported.

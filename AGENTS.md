@@ -1,25 +1,53 @@
-# TizenClaw Main Development Workflow
+# TizenClaw Python Port — Development Workflow
 
-This document defines the core development process (Plan → Develop → Verify → Review → Commit) for the TizenClaw project. The AGENT must always follow this process when performing tasks.
+This document defines the core development process (Plan → Develop → Verify → Review → Commit) for the TizenClaw Python port (`develPython` branch). The AGENT must always follow this process when performing tasks.
 
 > [!IMPORTANT]
-> For detailed procedures on each topic, refer to the workflow documents under [`.agents/workflows/`](.agents/workflows/).
+> This branch is a **full Python 3 rewrite** of TizenClaw. The `main` and `devel` branches contain the original C++20 implementation. For detailed procedures on each topic, refer to the workflow documents under [`.agents/workflows/`](.agents/workflows/).
 
 ## 1. Plan
 - Accurately understand the objectives and requirements.
-- Analyze existing code and check applicable workflows. **CRITICAL**: The Agent MUST strictly adhere to the project's coding style as defined in [`.agents/workflows/coding_rules.md`](.agents/workflows/coding_rules.md) (e.g., Google C++ Style, 2-space indentation, trailing underscore `_` for members). Do not introduce or mimic inconsistent styles found in older legacy parts of the codebase.
+- Analyze existing Python code under `src_py/` and check applicable workflows.
+- **CRITICAL**: The Agent MUST follow Python coding conventions:
+  - **PEP 8** style (4-space indentation, snake_case functions/variables, PascalCase classes)
+  - **Type hints** for function signatures
+  - **Docstrings** for classes and public methods
+  - Module layout follows the existing `src_py/tizenclaw/` package structure
 - **CRITICAL BRANCH POLICY**: Do not create or switch to new branches for development or feature work. Always apply patches, make commits, and push changes directly to the **current branch** you are currently on. Maintain this single-branch development policy at all times.
 - **WORKFLOW DOC POLICY**: Workflow documents (.md) must only be created or modified after the corresponding feature has been fully verified (build, deploy, and runtime validation) on an actual device. Writing workflow documents for unverified features is prohibited. When adding a new workflow, you must also update the workflow README.
 - Write a work unit (`task.md`) and establish a detailed plan before implementation.
 
 ## 2. Develop & Deploy
-- Modify source code and add/modify unit tests.
+- Modify Python source code in `src_py/` and add/modify tests.
+- The Python source tree:
+  ```
+  src_py/
+  ├── tizenclaw_daemon.py          # Main daemon (asyncio IPC + MCP stdio)
+  ├── tizenclaw_cli.py             # CLI client tool
+  ├── tizenclaw_tool_executor.py   # Socket-activated tool executor
+  ├── tizenclaw_code_sandbox.py    # Socket-activated code sandbox
+  └── tizenclaw/                   # Core Python package
+      ├── core/                    # AgentCore, ToolIndexer, ToolDispatcher, WorkflowEngine
+      ├── llm/                     # LlmBackend ABC, OpenAiBackend
+      ├── infra/                   # ContainerEngine, TizenSystemEventAdapter
+      ├── storage/                 # SessionStore, MemoryStore, EmbeddingStore
+      ├── embedding/               # OnDeviceEmbedding (ONNX Runtime)
+      ├── scheduler/               # TaskScheduler (asyncio-based)
+      └── utils/                   # TizenDlogHandler, NativeWrapper (ctypes)
+  ```
 - After writing code, use the `deploy.sh` script to build, deploy, and restart the daemon via a single command.
   - Run: `./deploy.sh`
-  - The script will automatically trigger a `gbs build`, locate the built rpm packages, install them on the device, and restart the `tizenclaw` service.
+  - The script will automatically trigger a `gbs build`, locate the built RPM packages, install them on the device, and restart the `tizenclaw` service.
   - **IMPORTANT**: Do NOT run raw `gbs build` commands directly. Always use `deploy.sh` for build and deployment. Raw GBS commands should only be executed when explicitly requested by the user.
   - For advanced build options, refer to [`.agents/workflows/gbs_build.md`](.agents/workflows/gbs_build.md).
   - For deployment details, refer to [`.agents/workflows/deploy_to_emulator.md`](.agents/workflows/deploy_to_emulator.md).
+
+### Key Architecture Notes (Python Port)
+- **No C++ compilation**: `CMakeLists.txt` uses `LANGUAGES NONE` — it only installs Python scripts and systemd units.
+- **Installed paths**: Python packages go to `/opt/usr/share/tizenclaw-python/`, executables to `/usr/bin/`.
+- **Zero external dependencies**: The daemon uses only Python stdlib (`asyncio`, `json`, `urllib.request`, `sqlite3`, `ctypes`, `struct`).
+- **LLM Backend**: Currently only `OpenAiBackend` using `urllib.request` with `asyncio.to_thread`.
+- **IPC**: JSON-RPC 2.0 over abstract Unix Domain Sockets with 4-byte network-endian length prefix.
 
 ## 3. Verify
 Once `deploy.sh` successfully finishes:
@@ -31,27 +59,26 @@ Once `deploy.sh` successfully finishes:
   - With session ID: `sdb shell tizenclaw-cli -s <session_id> "your prompt here"`
   - Streaming: `sdb shell tizenclaw-cli --stream "your prompt here"`
   - Interactive mode: `sdb shell tizenclaw-cli` (type prompts, Ctrl+D to exit)
-  - Example (workflow tools): `sdb shell tizenclaw-cli "Use the list_workflows tool to show the workflow list"`
   - For detailed CLI testing procedures, refer to [`.agents/workflows/cli_testing.md`](.agents/workflows/cli_testing.md).
 - Verify the Web Dashboard is accessible:
   - Dashboard Port: `9090` (e.g., `http://<device-ip>:9090`)
-- If you need a more advanced component test, refer to [`.agents/workflows/gtest_integration.md`](.agents/workflows/gtest_integration.md).
+- For shell-based verification suites, see `tests/verification/run_all.sh` (28 test scripts).
 
 > [!TIP]
 > If a crash occurs after deployment, refer to [`.agents/workflows/crash_debug.md`](.agents/workflows/crash_debug.md) to analyze the crash dump.
 
 ## 4. Code Review
 After verification passes, perform a code review on all changed files using the [`.agents/workflows/code_review.md`](.agents/workflows/code_review.md) workflow checklist:
-1. **Coding Style** — [`.agents/workflows/coding_rules.md`](.agents/workflows/coding_rules.md) compliance
+1. **Coding Style** — PEP 8 compliance, type hints, docstrings
 2. **Correctness** — logic errors, boundary conditions, missing error handling
-3. **Memory Issues** — memory leaks, dangling pointer, use-after-free
-4. **Performance** — unnecessary copies, inefficient loops, lock contention
+3. **Resource Management** — unclosed sockets/files, asyncio task cleanup
+4. **Performance** — unnecessary blocking in async context, O(n) lookups
 5. **Logic Issues** — dead code, unreachable branches, variable shadowing
-6. **Security** — missing input validation, buffer overflow, injection vulnerabilities
-7. **Thread Safety** — race condition, deadlock, GLib callback safety
-8. **Resource Management** — fd/socket/D-Bus release, GLib resources, container cleanup
-9. **Test Coverage** — gtest additions/modifications, unit tests for new functions
-10. **Error Propagation & Logging** — dlog usage, error propagation paths, silent failure prevention
+6. **Security** — missing input validation, injection vulnerabilities
+7. **Concurrency** — asyncio lock usage, race conditions, event loop safety
+8. **Error Propagation & Logging** — dlog handler usage, silent failure prevention
+9. **Test Coverage** — verification test scripts for new features
+10. **Python-specific** — proper `await` usage, exception handling, `asyncio.Lock` patterns
 
 ### Review-Fix Loop (max 5 iterations)
 - **PASS**: All items pass → proceed to Commit stage
@@ -78,12 +105,12 @@ but clearly. (Wrap text at 72 characters)
 
 ### Writing Example (Good)
 ```text
-Switch from LXC to lightweight runc for ContainerEngine
+Add hybrid RAG search to EmbeddingStore
 
-Refactored the ContainerEngine implementation to use the lightweight
-`runc` CLI via `std::system` instead of relying on `liblxc` APIs.
-This change was necessary because the Tizen 10 GBS build environment
-does not provide the `pkgconfig(lxc)` dependency.
+Implemented Reciprocal Rank Fusion (RRF) combining FTS5 keyword
+search with vector cosine similarity in the Python EmbeddingStore.
+This brings parity with the C++ implementation's hybrid search
+capability while maintaining zero external dependencies.
 ```
 
 ### Prohibitions
@@ -92,7 +119,7 @@ does not provide the `pkgconfig(lxc)` dependency.
 
 ### Commit Timing
 1. One unit feature specified in the document is implemented.
-2. `gbs build` (including `%check` gtests internally) passes without errors.
+2. `gbs build` (via `deploy.sh`) passes without errors.
 3. Perform `git commit` formatted as above after `git add .`.
 
 ---
@@ -105,8 +132,7 @@ TizenClaw skills follow the Anthropic standard skill format. Each skill is organ
 ```
 tools/skills/<skill_name>/
 ├── SKILL.md               ← Required: YAML frontmatter + Markdown documentation
-├── <skill_name>.py        ← Entry point script (or .js / binary)
-├── manifest.json          ← Optional: Legacy format (backward compatible)
+├── <skill_name>.py        ← Entry point script
 ├── scripts/               ← Optional: Helper scripts
 ├── examples/              ← Optional: Reference implementations
 ├── resources/             ← Optional: Additional assets
@@ -117,10 +143,6 @@ tools/skills/<skill_name>/
 ---
 name: skill_name
 description: "What the skill does"
-category: Device Info
-risk_level: low
-runtime: python
-entry_point: skill_name.py
 ---
 
 # Skill Title
@@ -153,7 +175,6 @@ Detailed workflow files are located under [`.agents/workflows/`](.agents/workflo
 | Commit Guidelines | [`.agents/workflows/commit_guidelines.md`](.agents/workflows/commit_guidelines.md) | Commit |
 | GBS Build | [`.agents/workflows/gbs_build.md`](.agents/workflows/gbs_build.md) | Develop & Deploy |
 | Deploy to Emulator | [`.agents/workflows/deploy_to_emulator.md`](.agents/workflows/deploy_to_emulator.md) | Develop & Deploy |
-| GTest Unit Testing | [`.agents/workflows/gtest_integration.md`](.agents/workflows/gtest_integration.md) | Verify |
 | CLI Functional Testing | [`.agents/workflows/cli_testing.md`](.agents/workflows/cli_testing.md) | Verify |
 | Crash Dump Debugging | [`.agents/workflows/crash_debug.md`](.agents/workflows/crash_debug.md) | Verify |
 | WSL Environment | [`.agents/workflows/wsl_environment.md`](.agents/workflows/wsl_environment.md) | Setup |

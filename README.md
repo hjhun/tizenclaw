@@ -5,18 +5,17 @@
 <h1 align="center">TizenClaw</h1>
 
 <p align="center">
-  <strong>AI-Powered Agent Daemon for Tizen OS</strong><br>
+  <strong>AI-Powered Agent Daemon for Tizen OS — Python Port</strong><br>
   Control your Tizen device through natural language — powered by multi-provider LLMs,<br>
   containerized skill execution, and a web-based admin dashboard.
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/C%2B%2B20-Native-orange.svg" alt="Language">
+  <img src="https://img.shields.io/badge/Python_3.x-Native-blue.svg" alt="Language">
   <img src="https://img.shields.io/badge/Tizen_10.0%2B-Supported-brightgreen.svg" alt="Platform">
-  <img src="https://img.shields.io/badge/LLM_Backends-5%2B_Extensible-purple.svg" alt="LLM Backends">
-  <img src="https://img.shields.io/badge/Channels-7%2B_Extensible-blue.svg" alt="Channels">
-  <img src="https://img.shields.io/badge/Binary-~812KB-red.svg" alt="Binary Size">
+  <img src="https://img.shields.io/badge/LLM_Backends-OpenAI_Compatible-purple.svg" alt="LLM Backends">
+  <img src="https://img.shields.io/badge/Branch-develPython-orange.svg" alt="Branch">
 </p>
 
 <p align="center">
@@ -32,18 +31,18 @@
 
 ## 🔍 Overview
 
-**TizenClaw** is a native C++ system daemon that brings LLM-based AI agent capabilities to [Tizen](https://www.tizen.org/) devices. It receives natural language commands via multiple communication channels, interprets them through configurable LLM backends, and executes device-level actions using sandboxed Python skills inside OCI containers and the **Tizen Action Framework**.
+**TizenClaw (Python Port)** is the `develPython` branch of TizenClaw, which **ports the entire C++ daemon to pure Python 3** to evaluate memory, speed, and storage footprints on Tizen embedded devices. It runs as a **systemd service** in the background, receiving user prompts through IPC (JSON-RPC 2.0 over Unix Domain Sockets), interpreting them via an OpenAI-compatible LLM backend, and executing device-level actions using native CLI tool suites and containerized skill execution.
 
-> **Part of the Claw Family** — TizenClaw is the embedded-optimized member of the Claw AI agent runtime family.
+> **Branch Note**: The `main` and `devel` branches contain the original native C++20 implementation. This `develPython` branch is a **full Python rewrite** for comparison evaluation.
 
-| | **TizenClaw** | **OpenClaw** | **NanoClaw** | **ZeroClaw** |
-|---|:---:|:---:|:---:|:---:|
-| **Language** | C++20 | TypeScript | TypeScript | Rust |
-| **Target** | Tizen embedded | Cloud / Desktop | Container hosts | Edge hardware |
-| **Binary Size** | ~812KB | Node.js runtime | Node.js runtime | ~8.8MB |
-| **Channels** | 7+ (extensible) | 22+ | 5 | 17 |
-| **LLM Backends** | 5+ (extensible) | 4+ | 1 (Claude) | 5+ |
-| **Sandboxing** | OCI (crun) | Docker | Docker | Docker |
+| | **C++ (main/devel)** | **Python (develPython)** |
+|---|:---:|:---:|
+| **Language** | C++20 | Python 3.x |
+| **Dependencies** | libcurl, libsoup, nlohmann/json, etc. | Zero external dependencies (stdlib only) |
+| **HTTP Client** | libcurl | `urllib.request` (asyncio offload) |
+| **IPC** | C++ threads + UDS | `asyncio` Unix sockets |
+| **LLM Backend** | 5 backends (Gemini, OpenAI, Anthropic, xAI, Ollama) | OpenAI-compatible backend |
+| **Container** | crun OCI exec | `unshare` fallback-capable |
 
 ---
 
@@ -53,63 +52,48 @@
 <tr>
 <td width="50%">
 
-### 🚀 Native Performance
-- ~812KB stripped binary (armv7l)
-- ~8.5MB idle PSS memory footprint
-- Aggressive idle memory reclamation via `malloc_trim` and SQLite cache flushing
-- No Node.js/Docker runtime dependency
+### 🐍 Pure Python Implementation
+- Zero external pip dependencies — uses only Python stdlib
+- `asyncio`-based daemon with cooperative concurrency
+- `ctypes` FFI for Tizen native C-API integration (dlog, vconf, app_event)
+- `urllib.request` for HTTP with `asyncio.to_thread` offloading
 
-### 🤖 Multi-LLM Support
-- **5 built-in backends**: Gemini, OpenAI, Anthropic, xAI (Grok), Ollama
-- Unified priority-based automatic fallback
-- Runtime RPK plugin extension — no recompilation
-- Streaming responses with per-model token counting
+### 🤖 LLM Support
+- **OpenAI-compatible backend** with tool calling (function calling)
+- Agentic Loop with iterative tool execution (max 10 iterations)
+- Auto-skill intercept for direct device queries without LLM overhead
+- Configurable via environment variables (`OPENAI_API_KEY`)
 
-### 📱 Direct Tizen C-API Access
-- 35+ device APIs via ctypes FFI wrappers
+### 📱 Tizen C-API Access
+- 13 native CLI tool suites with ctypes FFI wrappers
 - Battery, Wi-Fi, Bluetooth, Display, Sensors, Notifications, etc.
-- Tizen Action Framework native integration
-- per-action typed LLM tools with MD schema caching
+- 17 embedded tool MD schemas for LLM discovery
 
 </td>
 <td width="50%">
 
-### 🔒 Security First
-- OCI container isolation (crun + seccomp + namespace)
-- Device-bound encrypted API key storage
-- Tool execution policy with risk levels & loop detection
-- HMAC-SHA256 webhook authentication
-- Structured Markdown audit logging
+### 🔧 Modular Architecture
+- `AgentCore` — Central orchestration with agentic loop
+- `ToolIndexer` — Scans `.tool.md` / `.skill.md` / `.mcp.json` schemas
+- `ToolDispatcher` — Routes tool calls to container engine
+- `ContainerEngine` — IPC with secure tool executor
+- `WorkflowEngine` — Markdown-based deterministic pipelines
 
-### 📡 7+ Communication Channels
-- Telegram, Slack, Discord, MCP (Claude Desktop)
-- Webhook, Voice (STT/TTS), Web Dashboard
-- Pluggable `.so` channel plugins
-- LLM-initiated outbound messaging & broadcast
+### 📡 IPC & Communication
+- JSON-RPC 2.0 over abstract Unix Domain Sockets
+- MCP server mode (`--mcp-stdio`) for Claude Desktop integration
+- `tizenclaw-cli` Python client for interactive/single-shot usage
+- Socket-activated tool executor and code sandbox services
 
-### 🧠 Intelligence & Automation
-- Agentic Loop with iterative tool calling
-- Hybrid RAG search (BM25 + vector RRF)
-- On-device ONNX embedding (all-MiniLM-L6-v2)
-- Persistent long-term/episodic/short-term memory
-- Cron/interval/weekly task scheduler
+### 🧠 Intelligence & Storage
+- SQLite-based RAG store (FTS5 + vector cosine similarity)
+- On-device ONNX embedding (all-MiniLM-L6-v2, lazy-loaded)
+- Persistent memory (long-term / episodic / short-term)
+- Markdown-based session persistence with YAML frontmatter
 
 </td>
 </tr>
 </table>
-
-### More Capabilities
-
-| Category | Details |
-|----------|---------|
-| **Multi-Agent System** | 11-agent MVP set with supervisor pattern, skill pipelines, A2A cross-device protocol |
-| **Skill Ecosystem** | 13 native CLI tool suites + 20+ built-in tools, RPK/TPK plugin distribution, inotify hot-reload |
-| **Web Dashboard** | Dark glassmorphism SPA (port 9090), chat interface, session monitor, config editor, admin auth |
-| **Workflow Engine** | Deterministic skill pipelines with variable interpolation and conditional branching |
-| **Health Monitoring** | Prometheus-style `/api/metrics` endpoint with live dashboard panel |
-| **OTA Updates** | Over-the-air skill updates with version checking and automatic rollback |
-| **MCP Integration** | Built-in C++ MCP server + MCP client for external tool servers (Anthropic standard) |
-| **Event-Driven Triggers** | Autonomous rule engine with LLM-based evaluation for context-aware actions |
 
 ---
 
@@ -120,6 +104,7 @@
 - **Tizen 10.0** or later target device/emulator
 - **GBS** (Git Build System) — [Tizen build tools](https://docs.tizen.org/platform/developing/installing/)
 - **sdb** (Smart Development Bridge) for device deployment
+- **Python 3.x** available on the target device
 
 ### 1. Install Build Tools
 
@@ -141,7 +126,7 @@ sudo apt update && sudo apt install gbs mic
 ./deploy.sh --with-ngrok
 ```
 
-The `deploy.sh` script handles building the RPM, installing it on the device, and restarting the daemon automatically.
+The `deploy.sh` script handles building the RPM via GBS, installing it on the device, and restarting the daemon automatically.
 
 ### 3. Verify Installation
 
@@ -165,80 +150,64 @@ sdb forward tcp:9090 tcp:9090
 
 ### 4. Configure LLM Backend
 
-Edit `llm_config.json` on the device or use the Web Dashboard config editor:
+Set the OpenAI API key on the device:
 
-```json
-{
-  "active_backend": "gemini",
-  "fallback_backends": ["openai", "ollama"],
-  "backends": {
-    "gemini": {
-      "api_key": "YOUR_API_KEY",
-      "model": "gemini-2.5-flash"
-    },
-    "openai": {
-      "api_key": "YOUR_API_KEY",
-      "model": "gpt-4o"
-    },
-    "ollama": {
-      "model": "llama3",
-      "endpoint": "http://localhost:11434"
-    }
-  }
-}
+```bash
+# Set API key as environment variable (in systemd service or shell)
+export OPENAI_API_KEY="YOUR_API_KEY"
 ```
 
-> 💡 **Tip**: All configuration files can be edited through the [Web Dashboard](docs/DESIGN.md#web-dashboard) at port 9090.
+The Python port currently uses the OpenAI-compatible backend (`gpt-4o` by default). The model can be configured by modifying `OpenAiBackend` initialization parameters.
+
+> 💡 **Tip**: Configuration files remain editable through the [Web Dashboard](docs/DESIGN.md#web-dashboard) at port 9090.
 
 ---
 
 ## 🏗 Architecture
 
-TizenClaw uses a **dual-container architecture** powered by OCI-compliant runtimes (`crun`) with **systemd socket activation** for on-demand service startup:
+TizenClaw Python port uses an **asyncio-based daemon architecture** with systemd socket activation for companion services:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         Communication Channels                              │
-│  Telegram · Slack · Discord · MCP · Webhook · Voice (STT/TTS) · Dashboard  │
-└──────┬──────────┬────────────┬─────────┬──────────────────────────┬─────────┘
-       │          │            │         │                          │
-       ▼          ▼            │         ▼                         ▼
-┌──────────────────────────────┼────────────────────────────────────────────────┐
-│  TizenClaw Daemon (systemd)  │                                               │
-│                              │                                               │
-│  ┌────────────────┐   ┌──────┴──────┐   ┌──────────────────────────────────┐ │
-│  │ ChannelRegistry│──▶│  IPC Server │   │        LLM Backend Layer         │ │
-│  └────────────────┘   │ (JSON-RPC   │   │  ┌────────┐ ┌────────┐          │ │
-│                       │  2.0 / UDS) │   │  │ Gemini │ │ OpenAI │          │ │
-│                       └──────┬──────┘   │  └────────┘ └────────┘          │ │
-│                              │          │  ┌────────┐ ┌────────┐ ┌──────┐ │ │
-│                              ▼          │  │Anthropic│ │ Ollama │ │Plugin│ │ │
-│                       ┌─────────────┐   │  └────────┘ └────────┘ └──────┘ │ │
-│                       │  AgentCore  │──▶│         (priority-based)         │ │
-│                       │(Agentic Loop│   └──────────────────────────────────┘ │
-│                       │ + Streaming)│                                        │
-│                       └──┬───┬───┬──┘                                       │
-│                ┌─────────┘   │   └──────────┐                               │
-│                ▼             ▼               ▼                              │
-│  ┌──────────────────┐ ┌───────────┐ ┌──────────────┐  ┌────────────────┐   │
-│  │ ContainerEngine  │ │ Session   │ │ ActionBridge │  │ EmbeddingStore │   │
-│  │  (crun OCI)      │ │ Store     │ │(Action FW)   │  │  (SQLite RAG)  │   │
-│  └────┬────────┬────┘ └───────────┘ └──────┬───────┘  └────────────────┘   │
-│       │        │                           │                                │
-│       │        │     ┌─────────────────┐   │   ┌────────────────────────┐   │
-│       │        │     │  TaskScheduler  │   │   │ WebDashboard (:9090)  │   │
-│       │        │     └─────────────────┘   │   └────────────────────────┘   │
-└───────┼────────┼───────────────────────────┼────────────────────────────────┘
-        │        │                           │
-        ▼        ▼                           ▼
-┌──────────┐ ┌─────────────────┐   ┌──────────────────────┐
-│Tool Exec │ │Secure Container │   │ Tizen Action          │
-│(socket-  │ │    (crun)       │   │ Framework             │
-│activated)│ │                 │   │                       │
-│          │ │ Python Skills   │   │ Device-specific       │
-│ CLI exec │ │ (sandboxed)     │   │ actions               │
-│ via IPC  │ │ 13 CLI suites   │   │ (auto-discovered)     │
-└──────────┘ └─────────────────┘   └──────────────────────┘
+│        MCP (stdio) · Web Dashboard (port 9090) · tizenclaw-cli             │
+└──────┬──────────────────────────────────────────────────────────┬───────────┘
+       │                                                          │
+       ▼                                                          ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  TizenClaw Daemon (Python / systemd)                                        │
+│                                                                              │
+│  ┌────────────────┐   ┌───────────────┐   ┌──────────────────────────────┐  │
+│  │  IPC Server    │──▶│   AgentCore   │──▶│    OpenAI-compatible LLM     │  │
+│  │ (asyncio UDS)  │   │ (Agentic Loop)│   │   Backend (urllib.request)   │  │
+│  │ JSON-RPC 2.0   │   │ max 10 iters  │   └──────────────────────────────┘  │
+│  └────────────────┘   └──┬───┬───┬────┘                                     │
+│                  ┌───────┘   │   └────────┐                                  │
+│                  ▼           ▼            ▼                                   │
+│  ┌──────────────────┐ ┌──────────┐ ┌────────────────┐  ┌────────────────┐   │
+│  │  ToolDispatcher  │ │ Session  │ │ WorkflowEngine │  │ EmbeddingStore │   │
+│  │  (type routing)  │ │ Store    │ │ (Markdown-based│  │ (SQLite + FTS5)│   │
+│  └────┬─────────────┘ └──────────┘ │  pipelines)    │  └────────────────┘   │
+│       │                            └────────────────┘                        │
+│       ▼                                                                      │
+│  ┌──────────────────┐   ┌─────────────────┐   ┌────────────────────────┐    │
+│  │  ToolIndexer     │   │  TaskScheduler  │   │ MemoryStore            │    │
+│  │ (.tool.md scan)  │   │ (asyncio tasks) │   │ (Markdown + YAML)      │    │
+│  └──────────────────┘   └─────────────────┘   └────────────────────────┘    │
+└───────┬──────────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  Container Engine (abstract UDS IPC)                                         │
+│                                                                              │
+│  ┌──────────────────────┐   ┌──────────────────────┐                        │
+│  │ Tool Executor        │   │ Code Sandbox          │                        │
+│  │ (socket-activated)   │   │ (socket-activated)    │                        │
+│  │ asyncio subprocess   │   │ asyncio stub          │                        │
+│  └──────────────────────┘   └──────────────────────┘                        │
+│                                                                              │
+│  13 CLI Tool Suites (ctypes FFI → Tizen C-API)                              │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 > 📖 For detailed architecture documentation, see [System Design](docs/DESIGN.md).
@@ -247,7 +216,7 @@ TizenClaw uses a **dual-container architecture** powered by OCI-compliant runtim
 
 ## 🧰 Skills & Tools
 
-TizenClaw ships with **13 native CLI tool suites** and **20+ built-in tools**. All tools are registered in the Capability Registry with function contracts.
+TizenClaw Python port ships with **13 native CLI tool suites** and **17 embedded tool MD schemas**. All tools are discovered by `ToolIndexer` at startup.
 
 ### Native CLI Tool Suites
 
@@ -262,52 +231,33 @@ TizenClaw ships with **13 native CLI tool suites** and **20+ built-in tools**. A
 
 > ⚡ Async skill using tizen-core event loop
 
-### Built-in Tools (Native C++)
+### Embedded Tool Schemas (17 built-in)
 
 | Category | Tools |
 |----------|-------|
-| **Code Execution** | `execute_code` (sandboxed Python) |
 | **Task Management** | `create_task`, `list_tasks`, `cancel_task` |
-| **Multi-Agent** | `create_session`, `list_sessions`, `send_to_session`, `run_supervisor` |
 | **Knowledge (RAG)** | `ingest_document`, `search_knowledge` |
-| **Workflow & Pipeline** | `create_workflow`, `run_workflow`, `create_pipeline`, `run_pipeline` |
-| **Memory** | `remember`, `recall`, `forget` |
-| **Device Actions** | `execute_action`, `action_<name>` (per-action), `execute_cli` |
+| **Session Management** | `create_session` |
+| **Workflow & Pipeline** | `create_workflow`, `list_workflows`, `run_workflow`, `delete_workflow`, `create_pipeline`, `list_pipelines`, `run_pipeline`, `delete_pipeline` |
+| **Multi-Agent** | `run_supervisor` |
+| **Code Execution** | `execute_code` |
+| **Web App** | `generate_web_app` |
 
 📖 **Full reference**: [Tools Reference](docs/TOOLS.md)
-
-### Extensibility
-
-TizenClaw supports three extensibility mechanisms for tools:
-
-| Mechanism | Package Type | Runtime | Use Case |
-|-----------|:---:|:---:|----------|
-| **[RPK Skill Plugins](docs/TOOLS.md#rpk-tool-distribution--extensibility)** | RPK | Python (OCI sandbox) | Sandboxed device analysis tools |
-| **[CLI Tool Plugins](docs/TOOLS.md#cli-tool-plugins-tpk-based)** | TPK | Native binary (host) | Privileged Tizen C-API access |
-| **[LLM Backend Plugins](https://github.com/hjhun/tizenclaw-llm-plugin-sample)** | RPK | Shared library | Custom LLM backends |
-
-All plugins use platform-level certificate signing for security.
 
 ---
 
 ## ⚙️ Configuration
 
-TizenClaw reads configuration from `/opt/usr/share/tizenclaw/` on the device. All files are editable via the **Web Dashboard** (port 9090).
+TizenClaw reads configuration from `/opt/usr/share/tizenclaw/` on the device. Configuration files are the same as the C++ version and remain editable via the **Web Dashboard** (port 9090).
 
 | Config File | Purpose |
 |---|---|
-| `llm_config.json` | LLM backend selection, API keys, model settings, fallback order |
+| `llm_config.json` | LLM backend selection, API keys, model settings |
 | `channels.json` | Channel activation and plugin paths |
-| `telegram_config.json` | Telegram bot token and allowed chat IDs |
-| `slack_config.json` | Slack app/bot tokens and channel lists |
-| `discord_config.json` | Discord bot token and guild/channel allowlists |
-| `webhook_config.json` | Webhook route mapping and HMAC secrets |
-| `web_search_config.json` | Web search engine keys (Naver, Google, Brave, Gemini, Grok) |
-| `tool_policy.json` | Tool execution policy (max iterations, blocked skills, risk overrides) |
+| `tool_policy.json` | Tool execution policy (max iterations, blocked skills) |
 | `agent_roles.json` | Agent roles and specialized system prompts |
-| `memory_config.json` | Memory retention periods, size limits, summary parameters |
-| `autonomous_trigger.json` | Autonomous trigger rules, cooldown, LLM evaluation settings |
-| `fleet_config.json` | Fleet management endpoint, heartbeat interval (disabled by default) |
+| `memory_config.json` | Memory retention periods, size limits |
 
 > Sample configurations are included in `data/sample/`.
 
@@ -334,58 +284,69 @@ gbs build -A armv7l --include-all
 
 # aarch64 (64-bit ARM devices)
 gbs build -A aarch64 --include-all
-
-# Subsequent builds (faster)
-gbs build -A x86_64 --include-all --noinit
 ```
-
-Unit tests are automatically executed during the build via `%check`.
 
 **RPM output**: `~/GBS-ROOT/local/repos/tizen/<arch>/RPMS/tizenclaw-1.0.0-1.<arch>.rpm`
 
 ### What Gets Installed
 
-| Package | Description |
-|---------|-------------|
-| **`tizenclaw`** | Core AI daemon, Action Framework bridge, CLI tools, and built-in skills |
-| **[`tizenclaw-assets`](https://github.com/hjhun/tizenclaw-assets)** | ONNX Runtime, RAG databases, embedding model, OCR engine *(recommended)* |
-
-> `deploy.sh` automatically detects and builds `tizenclaw-assets` if it exists at `../tizenclaw-assets`.
+| Path | Description |
+|------|-------------|
+| `/usr/bin/tizenclaw` | Daemon entry point (Python script) |
+| `/usr/bin/tizenclaw-daemon` | Daemon alias |
+| `/usr/bin/tizenclaw-cli` | CLI client (Python script) |
+| `/usr/bin/tizenclaw-tool-executor` | Socket-activated tool executor |
+| `/usr/bin/tizenclaw-code-sandbox` | Socket-activated code sandbox |
+| `/opt/usr/share/tizenclaw-python/` | Python package tree (`tizenclaw/` module) |
+| `/usr/lib/systemd/system/` | systemd service and socket units |
 
 ---
 
 ## 📋 Project Structure
 
 ```
-tizenclaw/
-├── src/
-│   ├── tizenclaw/                 # Daemon core (151 files across 7 subdirectories)
-│   │   ├── core/                  # Agent core, policies, tools (55 files)
-│   │   ├── llm/                   # LLM backend providers (14 files)
-│   │   ├── channel/               # Communication channels (23 files)
-│   │   ├── storage/               # Data persistence (8 files)
-│   │   ├── infra/                 # Infrastructure (28 files)
-│   │   ├── embedding/             # On-device ML embedding (5 files)
-│   │   └── scheduler/             # Task automation (2 files)
-│   ├── tizenclaw-cli/             # CLI client tool
-│   ├── tizenclaw-tool-executor/   # Tool executor daemon (socket-activated)
-│   ├── libtizenclaw/              # C-API client library (SDK)
-│   ├── libtizenclaw-core/         # Core library (curl, LLM backend)
-│   ├── pkgmgr-metadata-plugin/    # Metadata parser plugins
-│   └── common/                    # Logging, shared utilities
-├── tools/cli/                     # Native CLI tool suites (13 directories)
-├── tools/embedded/                # Embedded tool MD schemas (17 files)
-├── scripts/                       # Container setup, CI, hooks
+tizenclaw/  (develPython branch)
+├── src_py/                           # Python daemon source
+│   ├── tizenclaw_daemon.py           # Main daemon (IPC Server + MCP stdio)
+│   ├── tizenclaw_cli.py              # CLI client tool
+│   ├── tizenclaw_tool_executor.py    # Socket-activated tool executor
+│   ├── tizenclaw_code_sandbox.py     # Socket-activated code sandbox
+│   └── tizenclaw/                    # Core Python package
+│       ├── core/                     # Agent core, tool indexer, dispatcher, workflow
+│       │   ├── agent_core.py         # Agentic loop + LLM orchestration
+│       │   ├── tool_indexer.py       # .tool.md / .skill.md / .mcp.json scanner
+│       │   ├── tool_dispatcher.py    # Tool dispatch routing
+│       │   └── workflow_engine.py    # Markdown-based workflow pipelines
+│       ├── llm/                      # LLM backend providers
+│       │   ├── llm_backend.py        # Abstract base class + data types
+│       │   └── openai_backend.py     # OpenAI-compatible REST backend
+│       ├── infra/                    # Infrastructure
+│       │   ├── container_engine.py   # Tool executor IPC (UDS)
+│       │   └── tizen_system_event_adapter.py  # ctypes app_event adapter
+│       ├── storage/                  # Data persistence
+│       │   ├── session_store.py      # Markdown session serialization
+│       │   ├── memory_store.py       # Long/episodic/short-term memory
+│       │   └── embedding_store.py    # SQLite RAG + FTS5 + cosine similarity
+│       ├── embedding/                # On-device ML embedding
+│       │   └── on_device_embedding.py  # ONNX Runtime inference (lazy-loaded)
+│       ├── scheduler/                # Task automation
+│       │   └── task_scheduler.py     # asyncio-based cron/interval scheduler
+│       └── utils/                    # Utilities
+│           ├── tizen_dlog.py         # Python logging → Tizen dlog handler
+│           └── native_wrapper.py     # ctypes bindings for Tizen native APIs
+├── tools/cli/                        # 13 Native CLI tool suites
+├── tools/embedded/                   # 17 Embedded tool MD schemas
+├── scripts/                          # Container setup, CI, hooks
 ├── tests/
-│   ├── unit/                      # Google Test (42 test files)
-│   ├── e2e/                       # E2E smoke tests
-│   └── verification/              # Full verification suites
-├── data/                          # Config, web dashboard, rootfs images
-├── packaging/                     # RPM spec, systemd services & sockets
-├── docs/                          # Design, analysis, roadmap
-├── deploy.sh                      # Automated build & deploy script
-├── CMakeLists.txt                 # Build system (C++20)
-└── LICENSE                        # Apache License 2.0
+│   ├── unit/                         # Legacy C++ test files (from main branch)
+│   ├── e2e/                          # E2E smoke tests
+│   └── verification/                 # Shell-based verification suites (28 tests)
+├── data/                             # Config, web dashboard, rootfs images
+├── packaging/                        # RPM spec, systemd services & sockets
+├── docs/                             # Design, analysis, roadmap
+├── deploy.sh                         # Automated build & deploy script
+├── CMakeLists.txt                    # Install-only CMake (Python, no compilation)
+└── LICENSE                           # Apache License 2.0
 ```
 
 ---
@@ -394,14 +355,10 @@ tizenclaw/
 
 | Document | Description |
 |----------|-------------|
-| **[System Design](docs/DESIGN.md)** | Architecture, module design, data flow, security model |
+| **[System Design](docs/DESIGN.md)** | Architecture, module design, data flow |
 | **[Tools Reference](docs/TOOLS.md)** | Complete skill/tool catalog with parameters and C-API mapping |
-| **[Project Analysis](docs/ANALYSIS.md)** | Code statistics, module inventory, competitive gap analysis |
-| **[C-API Guide](docs/API_GUIDE.md)** | `libtizenclaw` SDK usage guide with code examples |
-| **[ML/AI Assets](docs/ASSETS.md)** | RAG databases, ONNX Runtime, OCR engine, embedding model |
-| **[Development Roadmap](docs/ROADMAP.md)** | Feature roadmap, completed phases, future enhancements |
-| **[Multi-Agent Roadmap](docs/ROADMAP_MULTI_AGENT.md)** | 11-agent MVP set and perception architecture plan |
-| **[PSS Memory Profiling](docs/PSS_PROFILING.md)** | Memory footprint optimization results |
+| **[Project Analysis](docs/ANALYSIS.md)** | Code statistics, module inventory |
+| **[Development Roadmap](docs/ROADMAP.md)** | Feature roadmap, completed phases |
 | **[Supported Features](docs/FEATURES.md)** | Detailed supported/unsupported feature matrix |
 
 ---
@@ -412,9 +369,7 @@ tizenclaw/
 |---------|-------------|
 | **[tizenclaw-assets](https://github.com/hjhun/tizenclaw-assets)** | Consolidated ML/AI asset package — ONNX Runtime, RAG databases, embedding model, PaddleOCR engine |
 | **[tizenclaw-webview](https://github.com/hjhun/tizenclaw-webview)** | Companion Tizen web app for on-device dashboard access |
-| **[tizenclaw-llm-plugin-sample](https://github.com/hjhun/tizenclaw-llm-plugin-sample)** | Sample RPK plugin for custom LLM backends |
 | **[tizenclaw-skill-plugin-sample](https://github.com/hjhun/tizenclaw-skill-plugin-sample)** | Sample RPK plugin for Python skill injection |
-| **[tizenclaw-cli-plugin-sample](https://github.com/hjhun/tizenclaw-cli-plugin-sample)** | Sample TPK plugin for native CLI tools |
 
 ---
 
@@ -422,11 +377,12 @@ tizenclaw/
 
 | Category | Count |
 |----------|------:|
-| C++ Source & Headers | 151 files (~34,200 LOC) |
-| Python Skills & Utils | 36 files (~4,700 LOC) |
-| Unit Tests | 42 files (~7,800 LOC) |
-| Web Frontend | 3 files (~3,700 LOC) |
-| **Total** | **~243 files (~52,150 LOC)** |
+| Python Source (src_py) | 20 files (~1,800 LOC) |
+| CLI Tools (Python/C) | 38 files |
+| Verification Tests (Shell) | 28 files (~3,400 LOC) |
+| Web Frontend | 5 files (~3,900 LOC) |
+| Embedded Tool Schemas | 17 files |
+| **Total Python** | **~7,600 LOC** |
 
 ---
 

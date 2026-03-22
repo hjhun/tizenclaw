@@ -1,23 +1,71 @@
-# TizenClaw Tools Reference
+# TizenClaw Tools Reference — Python Port
 
-> **Last Updated**: 2026-03-22
+> **Last Updated**: 2026-03-23
+> **Branch**: `develPython`
 
-TizenClaw provides **13 native CLI tool suites** (C++ command-line executables), **20+ built-in tools** (native C++), and support for dynamic tool expansion via RPK/TPK plugins. All tools are registered in the [Capability Registry](DESIGN.md#34-capability-registry) with function contracts.
+TizenClaw Python port provides **13 native CLI tool suites** (standalone executables shared with the C++ version), **17 embedded tool MD schemas**, and a `ToolIndexer` system for LLM tool discovery. All tools are discovered at daemon startup by scanning `.tool.md`, `.skill.md`, and `.mcp.json` files under `/opt/usr/share/tizenclaw/tools/`.
 
-> **Anthropic Standard Compatibility**: TizenClaw's skill system fully implements the **Anthropic Standard Skill Format** (`SKILL.md`, YAML frontmatter, JSON schema parameters). The daemon also features a built-in **MCP Client** (Model Context Protocol) to connect to external MCP tool servers.
+> **Tool Discovery**: The `ToolIndexer` class parses YAML frontmatter from Markdown schema files using regex, extracting `name` and `description` fields. Each tool gets a catch-all `arguments` parameter for flexible LLM invocation.
 
 > CLI tool suites use `ctypes` FFI to call Tizen C-API directly. Async skills (⚡) use the **tizen-core** event loop for callback-based APIs.
 
 ---
 
-## Native CLI Tool Suites (C++)
+## Tool Architecture (Python Port)
+
+```
+AgentCore
+    │
+    ▼
+ToolIndexer                          ToolDispatcher
+(scans filesystem for schemas)       (routes tool calls)
+    │                                     │
+    ├── tools/cli/*/*.tool.md        ┌────┤
+    ├── tools/embedded/*.md          │    │
+    └── *.mcp.json                   │    │
+                                     ▼    ▼
+                            ContainerEngine
+                            (abstract UDS IPC)
+                                     │
+                                     ▼
+                            Tool Executor
+                            (asyncio subprocess)
+                                     │
+                                     ▼
+                            CLI binary / Python script
+                            (Tizen C-API via ctypes)
+```
+
+### ToolIndexer (`tool_indexer.py`)
+
+| Feature | Details |
+|---------|---------|
+| **Base directory** | `/opt/usr/share/tizenclaw/tools/` |
+| **Scan pattern** | `os.walk()` for `*.tool.md`, `*.skill.md`, `*.mcp.json` |
+| **YAML parser** | Simplified regex (`^---\n(.*?)\n---`) + line-by-line `key: value` |
+| **Schema output** | `{name, description, parameters}` with catch-all `arguments` string |
+| **Indexing** | Writes `tools/tools.md` and `tools/skills/index.md` at load time |
+
+### ToolDispatcher (`tool_dispatcher.py`)
+
+| Tool Type | Execution Path |
+|-----------|---------------|
+| `cli` | `ContainerEngine.execute_cli_tool(name, args)` |
+| `skill` | `ContainerEngine.execute_skill(path, args)` |
+| `mcp` | `ContainerEngine.execute_mcp_tool(name, args)` |
+
+---
+
+## Native CLI Tool Suites (13 directories)
+
+These are standalone executable tools shared between C++ and Python daemon versions. They are located in `tools/cli/` and interface with Tizen C-APIs via `ctypes` FFI.
 
 ### App Management
 
 | Skill | Parameters | C-API | Description |
 |-------|-----------|-------|-------------|
 | `list_apps` | — | `app_manager` | List all installed applications |
-| `send_app_control` | `app_id`, `operation`, `uri`, `mime`, `extra_data` | `app_control` | Launch app via explicit app_id or implicit intent (operation/URI/MIME) |
+| `send_app_control` | `app_id`, `operation`, `uri`, `mime`, `extra_data` | `app_control` | Launch app via explicit app_id or implicit intent |
 | `terminate_app` | `app_id` | `app_manager` | Terminate a running app |
 | `get_package_info` | `package_id` | `package_manager` | Query package details (version, type, size) |
 
@@ -62,7 +110,7 @@ TizenClaw provides **13 native CLI tool suites** (C++ command-line executables),
 | `get_battery_info` | — | `device` (battery) | Battery level and charging status |
 | `get_sound_devices` | — | `sound_manager` (device) | List audio devices (speakers, mics) |
 | `get_media_content` | `media_type`, `max_count` | `media-content` | Search media files on device |
-| `get_metadata` | `file_path` | `metadata-extractor` | Extract media file metadata (title, artist, album, duration, etc.) |
+| `get_metadata` | `file_path` | `metadata-extractor` | Extract media file metadata |
 | `get_mime_type` | `file_extension`, `file_path`, `mime_type` | `mime-type` | MIME type ↔ extension lookup |
 
 ### System Actions
@@ -80,147 +128,67 @@ TizenClaw provides **13 native CLI tool suites** (C++ command-line executables),
 
 ---
 
-## Built-in Tools (AgentCore, Native C++)
+## Embedded Tool Schemas (17 files)
 
-| Tool | Description |
-|------|-------------|
-| `execute_code` | Execute Python code in sandbox |
-| `file_manager` | Read/write/list files on device |
-| `manage_custom_skill` | Create/update/delete/list custom skills at runtime |
-| `create_task` | Create a scheduled task |
-| `list_tasks` | List active scheduled tasks |
-| `cancel_task` | Cancel a scheduled task |
-| `create_session` | Create a new chat session |
-| `list_sessions` | List active sessions |
-| `send_to_session` | Send message to another session |
-| `ingest_document` | Ingest document into RAG store |
-| `search_knowledge` | Hybrid semantic search in RAG store (BM25 + vector RRF) |
-| `execute_action` | Execute a Tizen Action Framework action |
-| `action_<name>` | Per-action tools (auto-discovered from Action Framework) |
-| `execute_cli` | Execute CLI tool plugins installed via TPK packages |
-| `create_workflow` | Create a deterministic skill pipeline |
-| `list_workflows` | List registered workflows |
-| `run_workflow` | Execute a workflow pipeline |
-| `remember` | Save information to persistent memory |
-| `recall` | Search persistent memory by keyword |
-| `forget` | Delete a specific memory entry |
-| `delete_pipeline` | Delete a registered pipeline |
-| `delete_workflow` | Delete a registered workflow |
+Located in `tools/embedded/`, these Markdown files define tool schemas that the `ToolIndexer` loads for LLM discovery. In the Python port, these are read-only schema definitions — the actual execution logic is handled by `ToolDispatcher`.
 
-### Tool Dispatch Architecture
-
-Tool execution uses a modular `ToolDispatcher` class (`tool_dispatcher.cc`) extracted from `AgentCore` for independent testability:
-
-- **O(1) Lookup**: `std::unordered_map<std::string, ToolHandler>` for registered tools
-- **Dynamic Fallback**: `starts_with` matching for dynamically named tools (e.g., `action_*`)
-- **Thread Safety**: `std::shared_mutex` for concurrent read access
-- **Capability Integration**: All dispatched tools are registered in `CapabilityRegistry` with `FunctionContract`
+| Tool | File | Category |
+|------|------|----------|
+| `execute_code` | `execute_code.md` | Code Execution |
+| `create_task` | `create_task.md` | Task Scheduler |
+| `list_tasks` | `list_tasks.md` | Task Scheduler |
+| `cancel_task` | `cancel_task.md` | Task Scheduler |
+| `create_session` | `create_session.md` | Multi-Agent |
+| `ingest_document` | `ingest_document.md` | RAG |
+| `search_knowledge` | `search_knowledge.md` | RAG |
+| `create_workflow` | `create_workflow.md` | Workflow Engine |
+| `list_workflows` | `list_workflows.md` | Workflow Engine |
+| `run_workflow` | `run_workflow.md` | Workflow Engine |
+| `delete_workflow` | `delete_workflow.md` | Workflow Engine |
+| `create_pipeline` | `create_pipeline.md` | Pipeline Engine |
+| `list_pipelines` | `list_pipelines.md` | Pipeline Engine |
+| `run_pipeline` | `run_pipeline.md` | Pipeline Engine |
+| `delete_pipeline` | `delete_pipeline.md` | Pipeline Engine |
+| `run_supervisor` | `run_supervisor.md` | Multi-Agent |
+| `generate_web_app` | `generate_web_app.md` | Web App |
 
 ---
 
-## RPK Tool Distribution & Extensibility
+## Tool Dispatch Architecture (Python)
 
-TizenClaw's capability ecosystem extends beyond built-in tools via **Tizen Resource Packages (RPKs)**. This approach supersedes the legacy `manage_custom_skill` method by providing a structural delivery mechanism for enterprise environments.
+Tool execution uses a modular `ToolDispatcher` class for routing:
 
-An RPK tool package can contain:
-1. **Sandboxed Python Skills**: New tools executed safely inside the OCI container.
-2. **Host/Container CLI Tools**: Binary utilities or scripts to be invoked via `execute_action` or `execute_code`.
+- **Dict Lookup**: `Dict[str, Dict]` for O(1) registered tool access
+- **Type Routing**: `cli` → ContainerEngine CLI, `skill` → ContainerEngine Skill, `mcp` → ContainerEngine MCP
+- **Error Handling**: Unknown tools return descriptive error messages
+- **Argument Serialization**: Dict arguments auto-serialized to JSON strings
 
-### Capability Registry (`capability_registry.cc`)
-All dynamic RPK plugins, along with CLI tools and built-in skills, are registered in TizenClaw's unified **Capability Registry** (`CapabilityRegistry` singleton). This provides:
-- Clear **Function Contracts** (`FunctionContract` struct with Input/Output JSON Schemas).
-- Defined **Side Effects** (`SideEffect` enum: `kNone`, `kReversible`, `kIrreversible`, `kUnknown`).
-- Retry policies and required Sandbox/Tizen (SMACK) permissions.
-- **Category-based queries**: `GetByCategory()`, `GetBySideEffect()`, `GetByPermission()`.
-- **LLM Integration**: `GetSummaryForLLM()` generates a category-grouped JSON summary injected via `{{CAPABILITY_SUMMARY}}` placeholder.
+### Execution Flow
 
-At startup, 21 built-in capabilities are automatically registered. Skills loaded from manifests are also registered with their declared contracts.
-
-Once an RPK is installed via the system package manager (e.g. `pkgcmd`), TizenClaw automatically discovers and registers its capabilities, making them immediately available to the Planning Agent without daemon recompilation.
-
----
-
-## CLI Tool Plugins (TPK-based)
-
-In addition to Python skills, TizenClaw supports **native CLI tool plugins** packaged as TPKs (Tizen Packages). CLI tools run directly on the host for full Tizen C-API access, making them ideal for device queries that require privileged APIs.
-
-### Architecture
-
-| Component | Role |
-|-----------|------|
-| `CliPluginManager` | Discovers TPKs with `http://tizen.org/metadata/tizenclaw/cli` metadata, creates symlinks into `tools/cli/` |
-| `tizenclaw-metadata-cli-plugin.so` | Parser plugin enforcing platform-level certificate signing at install |
-| `execute_cli` (built-in tool) | Executes CLI tools via `popen()`, returns JSON output to LLM |
-| `.tool.md` descriptors | Rich Markdown files injected into system prompt for LLM tool discovery |
-
-### Tool Descriptor Format (`.tool.md`)
-
-Each CLI tool ships a `.tool.md` file describing its commands, arguments, and output format. This enables the LLM to construct correct invocations:
-
-```markdown
-# get_package_info
-
-**Category**: Package Management
-
-Query Tizen package information.
-
-## Commands
-
-| Command | Description | Arguments |
-|---------|-------------|-----------|
-| `list` | List all packages | `--type <tpk\|wgt>` (optional) |
-| `info` | Get package details | `--pkgid <id>` (required) |
 ```
-
-### Manifest Declaration
-
-CLI tools use `<service-application>` in `tizen-manifest.xml`:
-
-```xml
-<service-application appid="org.tizen.sample.get_package_info"
-                     exec="get_package_info" type="capp">
-    <metadata key="http://tizen.org/metadata/tizenclaw/cli"
-              value="get_package_info"/>
-</service-application>
+LLM Response
+    │
+    ▼
+AgentCore.process_prompt()
+    │
+    ├── tool_call.name = "get_device_info"
+    │   tool_call.arguments = {"arguments": ""}
+    │
+    ▼
+ToolDispatcher.execute_tool("get_device_info", args)
+    │
+    ├── ToolIndexer.get_tool_metadata("get_device_info")
+    │   → {type: "cli", path: "...", ...}
+    │
+    ▼
+ContainerEngine.execute_cli_tool("get_device_info", "", timeout=30)
+    │
+    ▼
+Tool Executor (UDS IPC) → asyncio subprocess → CLI binary
+    │
+    ▼
+{status: "success", stdout: "...", stderr: "...", exit_code: 0}
 ```
-
-> **Security**: Only platform-signed TPKs can register CLI tools.
-
-### Built-in CLI Tool: `aurum-cli`
-
-`aurum-cli` is a built-in native C++ CLI tool for **Aurum UI Automation**. It supports two backends:
-
-| Mode | Usage | Backend |
-|------|-------|---------|
-| **Default** | `aurum-cli <cmd>` | Direct `libaurum` (AT-SPI2) |
-| **gRPC** | `aurum-cli --grpc <cmd>` | `aurum-bootstrap` server (port 50051) |
-
-**Subcommands** (22): `screen-size`, `screenshot`, `get-angle`, `device-time`, `click`, `flick`, `send-key`, `touch-down/move/up`, `mouse-down/move/up`, `find-element`, `find-elements`, `dump-tree`, `click-element`, `set-focus`, `do-action`, `set-value`, `wait-event`, `watch`
-
-**Installation**: `/opt/usr/share/tizenclaw/tools/cli/aurum-cli/aurum-cli`
-
-> gRPC mode requires `aurum-bootstrap` running on the device (`app_launcher -s org.tizen.aurum-bootstrap`). Use `--grpc-addr HOST:PORT` for custom addresses.
-
----
-
-## Multi-Agent Ecosystem
-
-TizenClaw utilizes a highly decentralized **11 MVP Agent Set** to manage requests and device states reliably:
-
-| Category | Agent | Primary Responsibility |
-|----------|-------|------------------------|
-| **Understanding** | `Input Understanding Agent` | Standardizes user input across all 7 channels into a unified intent structure. |
-| **Perception** | `Environment Perception Agent` | Subscribes to the Event Bus to maintain the Common State Schema. |
-| **Memory** | `Session / Context Agent` | Manages working, long-term, and episodic memory Retrieval |
-| **Planning** | `Planning Agent` | Decomposes goals into logical steps based on the Capability Registry. |
-| **Execution** | `Action Execution Agent` | Invokes the actual OCI Container Skills and Action Framework commands. |
-| **Protection** | `Policy / Safety Agent` | Intercepts plans prior to execution to enforce restrictions (e.g. constraints). |
-| **Utility** | `Knowledge Retrieval Agent` | Interfaces with the SQLite RAG store for semantic lookups. |
-| **Monitoring** | `Health Monitoring Agent` | Monitors memory pressure (PSS constraints) and container health. |
-| | `Recovery Agent` | Analyzes structured failures and attempts error correction via the LLM. |
-| | `Logging / Trace Agent` | Centralizes context for debugging and audit logs. |
-
-Agents coordinate using the shared `Event Bus` and communicate via internal message passing. The *Planning Agent* serves as the primary gateway for translating user intents into executed actions based on real-time perception state.
 
 ---
 
@@ -241,3 +209,18 @@ tizen_core_init()
 ```
 
 This enables Python FFI to use any callback-based Tizen C-API without threading.
+
+---
+
+## Comparison: C++ vs Python Tool System
+
+| Feature | C++ (main/devel) | Python (develPython) |
+|---------|:---:|:---:|
+| **ToolIndexer** | C++ YAML parser | Python regex YAML parser |
+| **ToolDispatcher** | `std::unordered_map` + `std::shared_mutex` | `Dict` + `asyncio.Lock` |
+| **CapabilityRegistry** | Full FunctionContract system | Not ported |
+| **CLI execution** | `popen()` via C++ | `asyncio.create_subprocess_exec` |
+| **Container runtime** | crun 1.26 (OCI) | `unshare` fallback |
+| **Plugin discovery** | pkgmgrinfo (RPK/TPK) | Not ported |
+| **Skill hot-reload** | inotify watcher | Not ported |
+| **`.tool.md` format** | Same | Same |

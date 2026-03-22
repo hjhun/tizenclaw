@@ -1,178 +1,170 @@
-# TizenClaw 도구 레퍼런스
+# TizenClaw 도구 레퍼런스 — Python 포팅
 
-> **최종 업데이트**: 2026-03-22
+> **최종 업데이트**: 2026-03-23
+> **브랜치**: `develPython`
 
-TizenClaw는 **13개 네이티브 CLI 도구 스위트** (C++ 커맨드라인 실행파일), **20개+ 내장 도구** (네이티브 C++), RPK/TPK 플러그인을 통한 동적 도구 확장을 지원합니다. 모든 도구는 함수 계약을 가진 [Capability Registry](DESIGN.md#34-capability-registry)에 등록됩니다.
+TizenClaw Python 포팅은 **13개 네이티브 CLI 도구 스위트** (C++ 버전과 공유하는 독립 실행 파일)와 **17개 내장 도구 MD 스키마**를 제공합니다. 모든 도구는 데몬 시작 시 `ToolIndexer`가 `.tool.md`, `.skill.md`, `.mcp.json` 파일을 스캔하여 발견합니다.
 
-> **Anthropic 표준 호환**: TizenClaw의 스킬 시스템은 **Anthropic 표준 스킬 포맷** (`SKILL.md`, YAML frontmatter, JSON 스키마 파라미터)을 완전히 구현합니다. 또한 내장 **MCP 클라이언트**로 외부 MCP 도구 서버에 접속할 수 있습니다.
+> **도구 발견**: `ToolIndexer` 클래스는 정규식으로 Markdown 스키마 파일의 YAML frontmatter를 파싱하여 `name`과 `description` 필드를 추출합니다. 각 도구는 유연한 LLM 호출을 위해 catch-all `arguments` 파라미터를 갖습니다.
 
 > CLI 도구 스위트는 `ctypes` FFI를 사용하여 Tizen C-API를 직접 호출합니다. 비동기 스킬(⚡)은 **tizen-core** 이벤트 루프를 사용합니다.
 
 ---
 
+## 도구 아키텍처 (Python 포팅)
+
+```
+AgentCore
+    │
+    ▼
+ToolIndexer                          ToolDispatcher
+(파일시스템 스키마 스캔)              (도구 호출 라우팅)
+    │                                     │
+    ├── tools/cli/*/*.tool.md        ┌────┤
+    ├── tools/embedded/*.md          │    │
+    └── *.mcp.json                   │    │
+                                     ▼    ▼
+                            ContainerEngine
+                            (abstract UDS IPC)
+                                     │
+                                     ▼
+                            Tool Executor
+                            (asyncio 서브프로세스)
+                                     │
+                                     ▼
+                            CLI 바이너리 / Python 스크립트
+                            (Tizen C-API via ctypes)
+```
+
+### C++ 대비 도구 시스템 비교
+
+| 기능 | C++ (main/devel) | Python (develPython) |
+|------|:---:|:---:|
+| **ToolIndexer** | C++ YAML 파서 | Python 정규식 YAML 파서 |
+| **ToolDispatcher** | `std::unordered_map` + `std::shared_mutex` | `Dict` + `asyncio.Lock` |
+| **CapabilityRegistry** | ✅ FunctionContract 시스템 | 🔴 미포팅 |
+| **CLI 실행** | `popen()` via C++ | `asyncio.create_subprocess_exec` |
+| **컨테이너 런타임** | crun 1.26 (OCI) | `unshare` 폴백 |
+| **플러그인 발견** | pkgmgrinfo (RPK/TPK) | 🔴 미포팅 |
+| **스킬 핫리로드** | inotify 감시자 | 🔴 미포팅 |
+| **`.tool.md` 형식** | 동일 | 동일 |
+
+---
+
 ## 네이티브 CLI 도구 스위트 (13개 디렉토리)
 
-### 1. 앱 관리 (`tizen-app-cli`)
+C++ 버전과 Python 데몬 모두 동일한 독립 실행 CLI 도구를 공유합니다. `tools/cli/`에 위치하며 `ctypes` FFI로 Tizen C-API와 인터페이스합니다.
 
-| 파라미터 | 타입 | 설명 |
-|---------|------|------|
-| `--command` | string | `list_apps`, `send_app_control`, `terminate_app`, `get_package_info` |
-| `--app-id` | string | 대상 앱 ID (선택) |
-| `--operation` | string | 앱 컨트롤 작업 URI (선택) |
+### 앱 관리
 
-**C-API**: `app_manager`, `app_control`, `package_manager`
+| 스킬 | 파라미터 | C-API | 설명 |
+|------|---------|-------|------|
+| `list_apps` | — | `app_manager` | 설치된 모든 앱 목록 |
+| `send_app_control` | `app_id`, `operation`, `uri`, `mime`, `extra_data` | `app_control` | 앱 실행 (explicit/implicit) |
+| `terminate_app` | `app_id` | `app_manager` | 실행 중인 앱 종료 |
+| `get_package_info` | `package_id` | `package_manager` | 패키지 상세 정보 |
 
-### 2. 디바이스 정보 (`tizen-device-info-cli`)
+### 디바이스 정보 및 센서
 
-| 파라미터 | 타입 | 설명 |
-|---------|------|------|
-| `--command` | string | `get_device_info`, `get_system_info`, `get_runtime_info`, `get_storage_info`, `get_system_settings`, `get_sensor_data`, `get_thermal_info` |
-| `--sensor-type` | string | 센서 타입 (선택) |
+| 스킬 | 파라미터 | C-API | 설명 |
+|------|---------|-------|------|
+| `get_device_info` | — | `system_info` | 모델, OS 버전, 플랫폼 정보 |
+| `get_system_info` | — | `system_info` | 하드웨어 세부사항 |
+| `get_runtime_info` | — | `runtime_info` | CPU 및 메모리 사용 통계 |
+| `get_storage_info` | — | `storage` | 내장/외장 저장 공간 |
+| `get_system_settings` | — | `system_settings` | 로캘, 시간대, 글꼴, 벽지 |
+| `get_sensor_data` | `sensor_type` | `sensor` | 가속도계, 자이로, 밝기, 근접 등 |
+| `get_thermal_info` | — | `device` (thermal) | 디바이스 온도 (AP, CP, 배터리) |
 
-**C-API**: `system_info`, `runtime_info`, `storage`, `system_settings`, `sensor`, `device`
+### 네트워크 및 연결
 
-### 3. 네트워크 (`tizen-network-cli`)
+| 스킬 | 파라미터 | C-API | 설명 |
+|------|---------|-------|------|
+| `get_wifi_info` | — | `wifi-manager` | 현재 WiFi 연결 정보 |
+| `get_bluetooth_info` | — | `bluetooth` | 블루투스 어댑터 상태 |
+| `get_network_info` | — | `connection` | 네트워크 유형, IP 주소 |
+| `get_data_usage` | — | `connection` (statistics) | WiFi/셀룰러 데이터 사용량 |
+| `scan_wifi_networks` | — | `wifi-manager` + **tizen-core** ⚡ | 근처 WiFi AP 스캔 (비동기) |
+| `scan_bluetooth_devices` | `action` | `bluetooth` + **tizen-core** ⚡ | BT 디바이스 발견/페어링 목록 (비동기) |
 
-| 파라미터 | 타입 | 설명 |
-|---------|------|------|
-| `--command` | string | `get_wifi_info`, `scan_wifi_networks` ⚡, `get_bluetooth_info`, `scan_bluetooth_devices` ⚡, `get_network_info`, `get_data_usage` |
+### 디스플레이 및 하드웨어 제어
 
-**C-API**: `wifi-manager`, `bluetooth`, `connection`
+| 스킬 | 파라미터 | C-API | 설명 |
+|------|---------|-------|------|
+| `get_display_info` | — | `device` (display) | 밝기, 상태, 최대 밝기 |
+| `control_display` | `brightness` | `device` (display) | 디스플레이 밝기 설정 |
+| `control_haptic` | `duration_ms` | `device` (haptic) | 디바이스 진동 |
+| `control_led` | `action`, `brightness` | `device` (flash) | 카메라 플래시 LED 제어 |
+| `control_volume` | `action`, `sound_type`, `volume` | `sound_manager` | 음량 조절 |
+| `control_power` | `action`, `resource` | `device` (power) | CPU/디스플레이 잠금 요청/해제 |
 
-### 4. 디스플레이 및 하드웨어 (`tizen-display-cli`)
+### 미디어 및 콘텐츠
 
-| 파라미터 | 타입 | 설명 |
-|---------|------|------|
-| `--command` | string | `get_display_info`, `control_display`, `control_haptic`, `control_led`, `control_volume`, `control_power` |
-| `--brightness` | int | 밝기 값 (선택) |
-| `--volume` | int | 볼륨 값 (선택) |
+| 스킬 | 파라미터 | C-API | 설명 |
+|------|---------|-------|------|
+| `get_battery_info` | — | `device` (battery) | 배터리 잔량 및 충전 상태 |
+| `get_sound_devices` | — | `sound_manager` (device) | 오디오 디바이스 목록 |
+| `get_media_content` | `media_type`, `max_count` | `media-content` | 미디어 파일 검색 |
+| `get_metadata` | `file_path` | `metadata-extractor` | 미디어 파일 메타데이터 추출 |
+| `get_mime_type` | `file_extension`, `file_path`, `mime_type` | `mime-type` | MIME 타입 ↔ 확장자 조회 |
 
-**C-API**: `device` (display, haptic, flash, power), `sound_manager`
+### 시스템 액션
 
-### 5. 미디어 (`tizen-media-cli`)
+| 스킬 | 파라미터 | C-API | 설명 |
+|------|---------|-------|------|
+| `play_tone` | `tone`, `duration_ms` | `tone_player` | DTMF 또는 비프음 재생 |
+| `play_feedback` | `pattern` | `feedback` | 사운드/진동 패턴 재생 |
+| `send_notification` | `title`, `body` | `notification` | 디바이스에 알림 게시 |
+| `schedule_alarm` | `app_id`, `datetime` | `alarm` | 특정 시간에 알람 예약 |
+| `download_file` | `url`, `destination`, `file_name` | `url-download` + **tizen-core** ⚡ | URL 파일 다운로드 (비동기) |
+| `web_search` | `query` | — (Wikipedia) | Wikipedia API 웹 검색 |
 
-| 파라미터 | 타입 | 설명 |
-|---------|------|------|
-| `--command` | string | `get_battery_info`, `get_sound_devices`, `get_media_content`, `get_metadata`, `get_mime_type` |
-
-**C-API**: `device` (battery), `sound_manager`, `media-content`, `metadata-extractor`, `mime-type`
-
-### 6. 시스템 액션 (`tizen-system-cli`)
-
-| 파라미터 | 타입 | 설명 |
-|---------|------|------|
-| `--command` | string | `play_tone`, `play_feedback`, `send_notification`, `schedule_alarm`, `download_file` ⚡, `web_search` |
-| `--url` | string | 다운로드 URL (선택) |
-| `--message` | string | 알림 내용 (선택) |
-
-**C-API**: `tone_player`, `feedback`, `notification`, `alarm`, `url-download`
-
-> ⚡ = tizen-core 이벤트 루프를 사용하는 비동기 스킬
-
----
-
-## 내장 도구 (AgentCore에서 네이티브 C++ 구현)
-
-| 도구 | 설명 |
-|------|------|
-| `execute_code` | 샌드박스된 Python 코드 실행 |
-| `manage_custom_skill` | 커스텀 스킬 CRUD |
-| `create_task` | 예약 태스크 생성 (daily/interval/once/weekly) |
-| `list_tasks` | 활성 태스크 목록 |
-| `cancel_task` | 태스크 취소 |
-| `create_session` | 에이전트 세션 생성 |
-| `list_sessions` | 활성 세션 목록 |
-| `send_to_session` | 특정 세션에 프롬프트 전송 |
-| `run_supervisor` | 슈퍼바이저 에이전트 실행 (목표 분해/위임) |
-| `ingest_document` | RAG 문서 수집 (청킹 + 임베딩) |
-| `search_knowledge` | RAG 시맨틱 검색 |
-| `execute_action` | Tizen Action Framework 액션 실행 |
-| `action_<name>` | Per-Action 타입 도구 (디바이스별) |
-| `execute_cli` | CLI 도구 플러그인 실행 |
-| `create_workflow` / `run_workflow` | 워크플로우 CRUD + 실행 |
-| `create_pipeline` / `run_pipeline` | 파이프라인 CRUD + 실행 |
-| `remember` | 장기/에피소드 메모리 저장 |
-| `recall` | 키워드 메모리 검색 |
-| `forget` | 특정 메모리 삭제 |
+> ⚡ = **tizen-core** 이벤트 루프를 사용하는 비동기 스킬
 
 ---
 
-## RPK 도구 배포 및 확장성
+## 내장 도구 스키마 (17개 파일)
 
-### RPK 스킬 플러그인
+`tools/embedded/`에 위치한 Markdown 파일로, `ToolIndexer`가 LLM 도구 발견을 위해 로드합니다. Python 포팅에서 이 파일들은 읽기 전용 스키마 정의이며, 실제 실행 로직은 `ToolDispatcher`가 처리합니다.
 
-RPK (Resource Package)를 통해 Python 스킬을 데몬 재컴파일 없이 동적으로 배포:
+| 도구 | 파일 | 카테고리 |
+|------|------|---------|
+| `execute_code` | `execute_code.md` | 코드 실행 |
+| `create_task` | `create_task.md` | 태스크 스케줄러 |
+| `list_tasks` | `list_tasks.md` | 태스크 스케줄러 |
+| `cancel_task` | `cancel_task.md` | 태스크 스케줄러 |
+| `create_session` | `create_session.md` | 멀티 에이전트 |
+| `ingest_document` | `ingest_document.md` | RAG |
+| `search_knowledge` | `search_knowledge.md` | RAG |
+| `create_workflow` | `create_workflow.md` | 워크플로우 엔진 |
+| `list_workflows` | `list_workflows.md` | 워크플로우 엔진 |
+| `run_workflow` | `run_workflow.md` | 워크플로우 엔진 |
+| `delete_workflow` | `delete_workflow.md` | 워크플로우 엔진 |
+| `create_pipeline` | `create_pipeline.md` | 파이프라인 엔진 |
+| `list_pipelines` | `list_pipelines.md` | 파이프라인 엔진 |
+| `run_pipeline` | `run_pipeline.md` | 파이프라인 엔진 |
+| `delete_pipeline` | `delete_pipeline.md` | 파이프라인 엔진 |
+| `run_supervisor` | `run_supervisor.md` | 멀티 에이전트 |
+| `generate_web_app` | `generate_web_app.md` | 웹 앱 |
+
+> **C++ 대비 부족**: C++ 버전은 `execute_action`, `action_<name>`, `execute_cli`, `manage_custom_skill`, `list_sessions`, `send_to_session`, `remember`, `recall`, `forget` 등 추가 내장 도구를 네이티브로 구현합니다.
+
+---
+
+## 비동기 패턴 (tizen-core)
+
+⚡ 표시된 스킬은 Tizen 콜백 기반 API용 비동기 패턴을 사용합니다:
 
 ```
-skills/
-├── weather_check/          ← RPK에서 배포된 스킬
-│   ├── SKILL.md            ← Anthropic 표준 형식
-│   ├── main.py             ← 진입점
-│   └── requirements.txt    ← Python 의존성
+tizen_core_init()
+  → tizen_core_task_create("main", false)
+    → tizen_core_add_idle_job(start_api_call)
+    → tizen_core_add_timer(timeout_ms, safety_timeout)
+    → tizen_core_task_run()          ← quit까지 블로킹
+      → API 콜백 발동
+        → 결과 수집
+        → tizen_core_task_quit()
+  → 결과 반환
 ```
 
-- 플랫폼 레벨 인증서 서명 필수
-- `SkillPluginManager`가 RPK `lib/<skill_name>/`에서 자동 symlink
-- inotify 핫리로드로 즉시 사용 가능
-
-### CLI 도구 플러그인 (TPK)
-
-TPK (Tizen Package)를 통해 네이티브 바이너리 도구 배포:
-
-```
-tools/cli/
-├── com.example.mytools__tool_name/
-│   ├── executable → /opt/usr/apps/.../bin/tool
-│   └── tool.md    → /opt/usr/apps/.../res/tool.md
-```
-
-- 메타데이터 필터: `http://tizen.org/metadata/tizenclaw/cli`
-- `.tool.md` 설명서가 시스템 프롬프트에 자동 주입
-- `execute_cli` 내장 도구를 통해 `popen()`으로 실행
-
-### `.tool.md` 설명서 형식
-
-```markdown
----
-name: my_custom_tool
-description: 커스텀 도구 설명
----
-
-## Parameters
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| --command | string | Yes | 실행할 명령 |
-
-## Usage
-CLI 도구 사용 방법에 대한 설명
-```
-
----
-
-## LLM 백엔드 플러그인 (RPK)
-
-RPK를 통해 커스텀 LLM 백엔드 동적 배포:
-
-- 커스텀 우선순위 (예: `10`) 지정으로 내장 백엔드 자동 오버라이드
-- 제거 시 기본 백엔드로 자연스러운 폴백
-- 샘플 프로젝트: [tizenclaw-llm-plugin-sample](https://github.com/hjhun/tizenclaw-llm-plugin-sample)
-
----
-
-## 멀티 에이전트 생태계
-
-TizenClaw 에이전트는 도구를 통해 협력합니다:
-
-| 도구 | 용도 |
-|------|------|
-| `create_session` | 커스텀 프롬프트로 전문 에이전트 세션 생성 |
-| `send_to_session` | 특정 에이전트에 프롬프트 전달 |
-| `run_supervisor` | 목표 기반 멀티 에이전트 분해/위임 |
-
-### A2A 프로토콜
-
-크로스 디바이스 에이전트 통신:
-
-- Agent Card 디스커버리: `/.well-known/agent.json`
-- 태스크 생명주기: `submitted` → `working` → `completed`
-- JSON-RPC 2.0 + Bearer 토큰 인증
+이 패턴으로 Python FFI가 스레딩 없이 모든 콜백 기반 Tizen C-API를 사용할 수 있습니다.
