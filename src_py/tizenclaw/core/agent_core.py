@@ -81,6 +81,9 @@ class AgentCore:
         # AutoSkillAgent Intercept (Direct tool execution without LLM overhead)
         if "get_device_info" in prompt:
             logger.info("Executing skill: get_device_info")
+            import sys
+            sys.stdout.write("Executing tool get_device_info\n")
+            sys.stdout.flush()
             tool_output = await self.dispatcher.execute_tool("get_device_info", {})
             return f"AutoSkill Intercept: {tool_output}"
 

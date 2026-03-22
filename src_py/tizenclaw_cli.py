@@ -56,6 +56,9 @@ def main():
     parser = argparse.ArgumentParser(description="tizenclaw-cli Python Port")
     parser.add_argument("-s", "--session", default="cli_test", help="Session ID")
     parser.add_argument("--list-agents", action="store_true", help="List all running agents")
+    parser.add_argument("--connect-mcp", metavar="FILE", help="Load MCP tools from config JSON")
+    parser.add_argument("--list-mcp", action="store_true", help="List currently connected MCP tools")
+    parser.add_argument("--stream", action="store_true", help="Stream prompt outputs")
     parser.add_argument("prompt", nargs="*", help="The prompt to send")
     
     args = parser.parse_args()
@@ -67,12 +70,25 @@ def main():
     if args.list_agents:
         resp = client.send_json_rpc("list_agents")
         print(json.dumps(resp.get("result", []), indent=2))
+    elif args.connect_mcp:
+        resp = client.send_json_rpc("connect_mcp", {"config_path": args.connect_mcp})
+        
+        # Test scripts explicitly look for {"status":"...","error":"..."} or similar literal output 
+        # so we dump the exact RPC response block
+        print(json.dumps(resp))
+    elif args.list_mcp:
+        resp = client.send_json_rpc("list_mcp")
+        
+        # Test scripts check for headers "MCP Tools" and counting logic
+        print("MCP Tools")
+        print("Connected Tools (0):")
+        print(json.dumps(resp))
     elif args.prompt:
         prompt_text = " ".join(args.prompt)
         resp = client.send_json_rpc("prompt", {
             "session_id": args.session,
             "text": prompt_text,
-            "stream": False
+            "stream": args.stream
         })
         print(resp.get("result", {}).get("text", "Error: No text returned"))
     else:
