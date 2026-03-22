@@ -274,15 +274,36 @@ Actions registered via the Tizen Action Framework are automatically discovered a
 
 TizenClaw supports dynamically injecting Python skills via **platform-signed RPK (Resource Package)** packages. When an RPK with the skill metadata key is installed through the Tizen package manager, `SkillPluginManager` automatically creates symbolic links from the RPK's `lib/<skill_name>/` directories into the TizenClaw skills directory, triggering a hot-reload.
 
+Skills follow the **Anthropic standard `SKILL.md` format** — only `name` and `description` in YAML frontmatter, with pure Markdown documentation in the body:
+
 **RPK Structure:**
 ```
 lib/
 ├── get_sample_info/
-│   ├── manifest.json      # Skill schema (name, description, parameters)
-│   └── skill.py           # Python implementation
+│   ├── SKILL.md              # Anthropic standard skill descriptor
+│   ├── manifest.json          # Legacy fallback (optional)
+│   └── skill.py               # Python implementation
 └── get_sample_status/
-    ├── manifest.json
+    ├── SKILL.md
     └── skill.py
+```
+
+**Example SKILL.md (Anthropic standard):**
+```markdown
+---
+name: get_sample_info
+description: Get sample information from the device
+---
+
+# Get Sample Info
+
+Retrieves sample information from the device hardware.
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `detail`  | string | No     | Detail level (`brief`, `full`) |
 ```
 
 **Metadata Declaration** (`tizen-manifest.xml`):

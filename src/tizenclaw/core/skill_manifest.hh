@@ -27,20 +27,17 @@ namespace tizenclaw {
 //
 // Priority: SKILL.md > manifest.json
 //
-// SKILL.md format:
+// SKILL.md format (Anthropic standard):
 //   ---
 //   name: skill_name
 //   description: "What the skill does"
-//   category: Device Info
-//   risk_level: low
-//   runtime: python
-//   entry_point: skill_name.py
 //   ---
 //   # Skill Title
-//   Documentation body...
-//   ```json:parameters
-//   { "type": "object", "properties": {}, "required": [] }
-//   ```
+//   Documentation body (when to use, parameters, output...)
+//
+// Only `name` and `description` are in the frontmatter.
+// Parameters and other details are documented in the
+// Markdown body as human-readable documentation.
 class SkillManifest {
  public:
   // Load skill metadata from a skill directory.
