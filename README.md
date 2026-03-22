@@ -196,68 +196,49 @@ Edit `llm_config.json` on the device or use the Web Dashboard config editor:
 
 TizenClaw uses a **dual-container architecture** powered by OCI-compliant runtimes (`crun`) with **systemd socket activation** for on-demand service startup:
 
-```mermaid
-graph TB
-    subgraph Channels["Communication Channels"]
-        Telegram["Telegram"]
-        Slack["Slack"]
-        Discord["Discord"]
-        MCP["MCP (Claude Desktop)"]
-        Webhook["Webhook"]
-        Voice["Voice (STT/TTS)"]
-        WebUI["Web Dashboard"]
-    end
-
-    subgraph Daemon["TizenClaw Daemon (systemd)"]
-        ChannelReg["ChannelRegistry"]
-        IPC["IPC Server<br/>(JSON-RPC 2.0 via UDS)"]
-        AgentCore["AgentCore<br/>(Agentic Loop)"]
-        ContainerEngine["ContainerEngine"]
-        ActionBridge["ActionBridge<br/>(Tizen Action Framework Worker)"]
-        SessionStore["SessionStore"]
-        TaskScheduler["TaskScheduler"]
-        EmbeddingStore["EmbeddingStore (RAG)"]
-        WebDashboard["WebDashboard<br/>(libsoup, port 9090)"]
-
-        subgraph LLM["LlmBackend"]
-            Gemini["Gemini"]
-            OpenAI["OpenAI / xAI"]
-            Anthropic["Anthropic"]
-            Ollama["Ollama"]
-        end
-
-        ChannelReg --> IPC
-        IPC --> AgentCore
-        AgentCore --> LLM
-        AgentCore --> ContainerEngine
-        AgentCore --> ActionBridge
-        AgentCore --> SessionStore
-        AgentCore --> TaskScheduler
-        AgentCore --> EmbeddingStore
-    end
-
-    subgraph ToolExec["Tool Executor (socket-activated)"]
-        ToolExecSvc["tizenclaw-tool-executor<br/>(CLI + skill execution via IPC)"]
-    end
-
-    subgraph Secure["Secure Container (crun)"]
-        Skills["Python Skills<br/>(sandboxed)"]
-        SkillList["13 Native CLI Tool Suites<br/>App · Device · Network · Media<br/>Display · Sensor · System Control<br/>+ built-in Async streaming"]
-        Skills --- SkillList
-    end
-
-    subgraph ActionFW["Tizen Action Framework"]
-        ActionService["Action Service<br/>(on-demand)"]
-        ActionApps["Device-specific actions<br/>(auto-discovered)"]
-        ActionService --- ActionApps
-    end
-
-    Telegram & Slack & Discord & Voice --> ChannelReg
-    MCP --> IPC
-    Webhook & WebUI --> WebDashboard
-    ContainerEngine -- "UDS IPC" --> ToolExecSvc
-    ContainerEngine -- "crun exec" --> Skills
-    ActionBridge -- "action C API" --> ActionService
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Communication Channels                              │
+│  Telegram · Slack · Discord · MCP · Webhook · Voice (STT/TTS) · Dashboard  │
+└──────┬──────────┬────────────┬─────────┬──────────────────────────┬─────────┘
+       │          │            │         │                          │
+       ▼          ▼            │         ▼                         ▼
+┌──────────────────────────────┼────────────────────────────────────────────────┐
+│  TizenClaw Daemon (systemd)  │                                               │
+│                              │                                               │
+│  ┌────────────────┐   ┌──────┴──────┐   ┌──────────────────────────────────┐ │
+│  │ ChannelRegistry│──▶│  IPC Server │   │        LLM Backend Layer         │ │
+│  └────────────────┘   │ (JSON-RPC   │   │  ┌────────┐ ┌────────┐          │ │
+│                       │  2.0 / UDS) │   │  │ Gemini │ │ OpenAI │          │ │
+│                       └──────┬──────┘   │  └────────┘ └────────┘          │ │
+│                              │          │  ┌────────┐ ┌────────┐ ┌──────┐ │ │
+│                              ▼          │  │Anthropic│ │ Ollama │ │Plugin│ │ │
+│                       ┌─────────────┐   │  └────────┘ └────────┘ └──────┘ │ │
+│                       │  AgentCore  │──▶│         (priority-based)         │ │
+│                       │(Agentic Loop│   └──────────────────────────────────┘ │
+│                       │ + Streaming)│                                        │
+│                       └──┬───┬───┬──┘                                       │
+│                ┌─────────┘   │   └──────────┐                               │
+│                ▼             ▼               ▼                              │
+│  ┌──────────────────┐ ┌───────────┐ ┌──────────────┐  ┌────────────────┐   │
+│  │ ContainerEngine  │ │ Session   │ │ ActionBridge │  │ EmbeddingStore │   │
+│  │  (crun OCI)      │ │ Store     │ │(Action FW)   │  │  (SQLite RAG)  │   │
+│  └────┬────────┬────┘ └───────────┘ └──────┬───────┘  └────────────────┘   │
+│       │        │                           │                                │
+│       │        │     ┌─────────────────┐   │   ┌────────────────────────┐   │
+│       │        │     │  TaskScheduler  │   │   │ WebDashboard (:9090)  │   │
+│       │        │     └─────────────────┘   │   └────────────────────────┘   │
+└───────┼────────┼───────────────────────────┼────────────────────────────────┘
+        │        │                           │
+        ▼        ▼                           ▼
+┌──────────┐ ┌─────────────────┐   ┌──────────────────────┐
+│Tool Exec │ │Secure Container │   │ Tizen Action          │
+│(socket-  │ │    (crun)       │   │ Framework             │
+│activated)│ │                 │   │                       │
+│          │ │ Python Skills   │   │ Device-specific       │
+│ CLI exec │ │ (sandboxed)     │   │ actions               │
+│ via IPC  │ │ 13 CLI suites   │   │ (auto-discovered)     │
+└──────────┘ └─────────────────┘   └──────────────────────┘
 ```
 
 > 📖 For detailed architecture documentation, see [System Design](docs/DESIGN.md).

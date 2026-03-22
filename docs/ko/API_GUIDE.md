@@ -1,20 +1,22 @@
 # TizenClaw C-API 가이드 (`libtizenclaw`)
 
-`libtizenclaw` 라이브러리는 외부 Tizen 애플리케이션에서 TizenClaw 데몬과 상호작용할 수 있도록 네이티브 C-API를 제공합니다. 시스템 내부의 IPC 메커니즘(Abstract Unix Domain Sockets 기반 JSON-RPC 2.0)을 캡슐화하여, 비동기 콜백 기반의 단순한 인터페이스를 노출합니다.
+> **최종 업데이트**: 2026-03-22
 
-## 사전 준비 (Prerequisites)
+`libtizenclaw` 라이브러리는 다른 Tizen 앱에서 TizenClaw 데몬과 통신하기 위한 네이티브 C-API를 제공합니다. 내부 IPC 메커니즘(Abstract Unix Domain Socket을 통한 JSON-RPC 2.0)을 캡슐화하여 간단하고 비동기적인 콜백 기반 인터페이스를 제공합니다.
 
-Tizen 애플리케이션에서 `libtizenclaw`를 사용하려면 다음 헤더를 포함하십시오:
+## 사전 요구사항
+
+앱에서 `libtizenclaw`를 사용하려면 헤더를 포함하세요:
 
 ```c
 #include <tizenclaw.h>
 ```
 
-프로젝트 빌드 시 `libtizenclaw.so` 라이브러리와 링크되도록 설정해야 합니다.
+`libtizenclaw.so`에 대한 링크를 확인하세요.
 
-## 초기화 및 정리 (Initialization and Cleanup)
+## 초기화 및 정리
 
-데몬에 요청을 보내기 전 반드시 TizenClaw 클라이언트 핸들을 생성해야 하며, 사용이 끝난 후에는 관련 리소스를 해제하기 위해 파괴(destroy)해야 합니다.
+요청을 보내기 전에 클라이언트 핸들을 생성해야 합니다. 작업이 끝나면 반드시 소멸시켜 리소스를 해제하세요.
 
 ### 1. 클라이언트 생성
 
@@ -30,24 +32,24 @@ if (ret != TIZENCLAW_ERROR_NONE) {
 }
 ```
 
-### 2. 클라이언트 정리
+### 2. 클라이언트 소멸
 
 **API:** `int tizenclaw_client_destroy(tizenclaw_client_h client);`
 
-클라이언트 핸들을 정리하고, 연결되어 있다면 데몬과의 연결을 해제합니다.
+클라이언트 핸들을 정리하고, 연결 중이면 데몬과 연결을 해제합니다.
 
 ```c
 tizenclaw_client_destroy(client);
 client = NULL;
 ```
 
-## 요청 전송 (Sending Requests)
+## 요청 전송
 
-TizenClaw는 에이전트 데몬에 프롬프트를 전송하기 위한 두 가지 주요 방식을 제공합니다: **표준 비동기(Standard Asynchronous)** 방식과 **스트리밍(Streaming)** 방식입니다.
+TizenClaw는 에이전트 데몬에 프롬프트를 전송하는 두 가지 주요 방법을 제공합니다: **표준 비동기** 및 **스트리밍**.
 
-### 1. 표준 비동기 요청 (Standard Asynchronous Request)
+### 1. 표준 비동기 요청
 
-에이전트가 처리를 모두 마친 뒤 응답 전체를 한 번에 받고자 할 때 사용합니다.
+에이전트가 처리를 완료한 후 전체 응답을 한 번에 받고 싶을 때 사용합니다.
 
 **API:**
 ```c
@@ -59,40 +61,40 @@ int tizenclaw_client_send_request(tizenclaw_client_h client,
                                   void *user_data);
 ```
 
-- `session_id`: 대화 내역(History)을 유지하기 위한 선택적 식별자 문자열입니다. `NULL`이나 빈 문자열 `""`을 전달하면 기본 세션을 사용합니다.
-- `prompt`: LLM 에이전트에게 지시할 텍스트입니다.
-- `response_cb`: 텍스트 응답이 최종적으로 완성되었을 때 호출되는 콜백입니다.
-- `error_cb`: 실행 중 에러 발생 시 호출되는 콜백입니다.
-- `user_data`: 콜백으로 다시 돌려받을 커스텀 포인터입니다.
+- `session_id`: 대화 히스토리를 유지하기 위한 선택적 문자열. `NULL` 또는 빈 문자열 `""`을 전달하면 기본 세션 사용.
+- `prompt`: LLM 에이전트에 보내는 텍스트 지시.
+- `response_cb`: 최종 응답 수신 시 호출되는 콜백.
+- `error_cb`: 실행 중 에러 발생 시 호출되는 콜백.
+- `user_data`: 콜백에 전달되는 사용자 정의 포인터.
 
 #### 예제:
 
 ```c
 void on_response(const char *session_id, const char *response, void *user_data) {
-    printf("Session %s 응답: %s\n", session_id ? session_id : "default", response);
+    printf("세션 %s 응답: %s\n", session_id ? session_id : "default", response);
 }
 
 void on_error(const char *session_id, int error_code, const char *error_message, void *user_data) {
-    printf("에러 발생 [%d]: %s\n", error_code, error_message);
+    printf("에러 [%d]: %s\n", error_code, error_message);
 }
 
 // 프롬프트 전송
-int ret = tizenclaw_client_send_request(client, "my_session", "Hello, TizenClaw!", 
+int ret = tizenclaw_client_send_request(client, "my_session", "안녕, TizenClaw!", 
                                         on_response, on_error, NULL);
 if (ret != TIZENCLAW_ERROR_NONE) {
     printf("요청 전송 실패.\n");
 }
 ```
 
-### 2. 스트리밍 요청 (Streaming Request)
+### 2. 스트리밍 요청
 
-LLM이 토큰을 생성하는 즉시 실시간으로 응답을 받아야 할 때 사용합니다. 채팅 UI 구현이나 사용자에게 진행 상황을 보여주는 데 이상적입니다.
+LLM이 토큰을 생성하는 대로 응답을 점진적으로 받고 싶을 때 사용합니다. 채팅 인터페이스나 사용자에게 진행 상황을 보여줄 때 이상적입니다.
 
-**스트리밍 API는 왜 필요한가요?**
-대규모 언어 모델(LLM)이 답변 전체를 완성하는 데에는 수 초 이상의 시간이 걸릴 수 있습니다. 일반 비동기 API 방식은 전체 텍스트가 완성될 때까지 콜백이 오지 않아, 사용자는 앱이 멈춘 것으로 오해하거나 지루함을 느낄 수 있습니다. 반면, 스트리밍 API를 사용하면 타자를 치듯 단어가 생성되는 즉시 작은 조각(chunk) 단위로 콜백이 들어오기 때문에 즉각적이고 부드러운 사용자 경험(UX)을 제공할 수 있습니다.
+**왜 스트리밍을 사용하는가?**
+LLM에서 완전한 응답을 생성하는 데는 시간이 걸립니다. 복잡한 질문의 경우 표준 비동기 API는 텍스트 생성 중 수 초간 무응답으로 보일 수 있습니다. 스트리밍 API는 추론되는 즉시 텍스트 "청크"를 반환하여, UI에서 실시간 "타이핑" 효과를 만들 수 있으므로 UX를 크게 개선합니다.
 
-**대화 흐름 이어가기 (Session ID)**
-이전 대화의 문맥을 기억하고 이어나가는 것(Context 유지)은 방식에 상관없이 완전히 동일한 원리가 적용됩니다. TizenClaw 데몬은 전달받은 `session_id`를 기준으로 대화 기록을 관리하므로, 어떤 API를 호출하든 **동일한 `session_id` 문자열**만 계속해서 유지해주시면 됩니다.
+**대화 연속 (세션 ID)**
+대화 컨텍스트 유지는 표준/스트리밍 API와 무관합니다. 대화를 연속하려면 동일한 `session_id`를 계속 제공하세요. TizenClaw 데몬이 이 ID를 기반으로 히스토리를 관리합니다.
 
 **API:**
 ```c
@@ -104,7 +106,7 @@ int tizenclaw_client_send_request_stream(tizenclaw_client_h client,
                                          void *user_data);
 ```
 
-- `stream_cb`: 텍스트 청크가 생성될 때마다 연속적으로 호출되는 콜백입니다. `is_done` 불리언 값을 통해 마지막 청크인지 여부를 판별합니다.
+- `stream_cb`: 텍스트 청크 수신 시 계속 호출되는 콜백. `is_done` boolean 플래그가 마지막 청크를 나타냄.
 
 #### 예제:
 
@@ -114,28 +116,28 @@ void on_stream_chunk(const char *session_id, const char *chunk, bool is_done, vo
     fflush(stdout);
     
     if (is_done) {
-        printf("\n[스트리밍 완료]\n");
+        printf("\n[스트림 완료]\n");
     }
 }
 
 // 스트리밍 프롬프트 전송
-int ret = tizenclaw_client_send_request_stream(client, NULL, "타이젠에 대한 짧은 시를 써줘.", 
+int ret = tizenclaw_client_send_request_stream(client, NULL, "Tizen에 대한 짧은 시를 써줘.", 
                                                on_stream_chunk, on_error, NULL);
 ```
 
-## 에러 코드 (Error Codes)
+## 에러 코드
 
-API는 `<tizenclaw_error.h>`에 정의된 표준 TizenClaw 에러 코드를 반환합니다.
+API는 `<tizenclaw_error.h>`에 정의된 표준 TizenClaw 에러 코드를 반환합니다:
 
-| 분류 | 설명 |
-|------|-------------|
-| `TIZENCLAW_ERROR_NONE` | 성공적으로 처리됨 (0) |
-| `TIZENCLAW_ERROR_INVALID_PARAMETER` | 전달된 매개변수가 형식에 맞지 않거나 NULL 포인터가 입력됨 |
-| `TIZENCLAW_ERROR_OUT_OF_MEMORY` | 객체 생성 및 메모리 할당 중 실패 (OOM) |
-| `TIZENCLAW_ERROR_CONNECTION_REFUSED` | 데몬이 실행 중이 아니거나 소켓 파일 권한 등으로 접근할 수 없음 |
+| 코드 | 설명 |
+|------|------|
+| `TIZENCLAW_ERROR_NONE` | 작업 성공 (0) |
+| `TIZENCLAW_ERROR_INVALID_PARAMETER` | NULL 포인터 또는 잘못된 인자 |
+| `TIZENCLAW_ERROR_OUT_OF_MEMORY` | 핸들 생성 중 메모리 할당 실패 |
+| `TIZENCLAW_ERROR_CONNECTION_REFUSED` | 데몬이 실행 중이 아니거나 소켓 파일에 접근 불가 |
 
-## 모범 사례 (Best Practices)
+## 모범 사례
 
-1. **콜백 스레드 안전성 (Thread Safety)**: 모든 콜백(`response_cb`, `stream_cb`, `error_cb`)은 라이브러리가 관리하는 내부 glib 워커 스레드 위에서 실행됩니다. EFL/Ecore 같은 UI 프레임워크를 조작해야 할 경우 반드시 메인 UI 스레드로 컨텍스트를 넘겨서 동기화 후 처리해야 합니다(예: `ecore_main_loop_thread_safe_call_async` 사용).
-2. **세션 식별자**: 서로 다른 대화 컨텍스트나 독립적인 사용자 태스크마다 고유한 `session_id`를 부여하세요. 이를 통해 히스토리 정보가 교차 간섭받지 않습니다.
-3. **생명주기 유지**: 하나의 `tizenclaw_client_h` 인스턴스로 복수의 요청이나 동시 비동기 요청을 여러 개 처리할 수 있습니다. 각 요청(프롬프트)마다 클라이언트 핸들을 생성하고 파괴하는 것을 피해주십시오.
+1. **콜백 스레드 안전성**: 콜백 (`response_cb`, `stream_cb`, `error_cb`)은 라이브러리가 관리하는 내부 glib 워커 스레드에서 실행됩니다. UI(예: EFL/Ecore)를 업데이트하는 경우 메인 UI 스레드로 데이터를 마샬링하세요 (예: `ecore_main_loop_thread_safe_call_async`).
+2. **세션 ID**: 서로 다른 대화나 에이전트에 고유한 `session_id`를 사용하여 컨텍스트 누출을 방지하세요.
+3. **라이프사이클**: 하나의 `tizenclaw_client_h`를 여러 순차/동시 요청에 재사용할 수 있습니다. 매 프롬프트마다 클라이언트를 생성/소멸하지 마세요.
