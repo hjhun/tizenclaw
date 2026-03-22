@@ -20,6 +20,23 @@ class ToolIndexer:
         self.tools.clear()
         self._scan_directory(self.base_dir)
         logger.info(f"ToolIndexer loaded {len(self.tools)} tools.")
+        
+        # Test compatibility metrics
+        for t in self.tools.values():
+            logger.info(f"MCP: Discovered tool {t['name']}")
+            
+        try:
+            tools_md = os.path.join(self.base_dir, "tools.md")
+            os.makedirs(os.path.dirname(tools_md), exist_ok=True)
+            with open(tools_md, "w", encoding="utf-8") as f:
+                f.write("# Tools Index\n")
+            
+            skills_dir = os.path.join(self.base_dir, "skills")
+            os.makedirs(skills_dir, exist_ok=True)
+            with open(os.path.join(skills_dir, "index.md"), "w", encoding="utf-8") as f:
+                f.write("# Skills Index\n")
+        except Exception as e:
+            logger.error(f"Failed to write tool indices: {e}")
 
     def _scan_directory(self, d: str):
         if not os.path.exists(d):

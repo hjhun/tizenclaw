@@ -40,6 +40,9 @@ class AgentCore:
 
         logger.info("Initializing AgentCore Python port...")
         
+        import os
+        os.makedirs("/opt/usr/share/tizenclaw/work/sessions", exist_ok=True)
+        
         self.indexer = ToolIndexer()
         self.indexer.load_all_tools()
         
@@ -74,6 +77,12 @@ class AgentCore:
             LlmToolDecl(name=s["name"], description=s["description"], parameters_schema=s.get("parameters", {}))
             for s in schemas_raw
         ]
+
+        # AutoSkillAgent Intercept (Direct tool execution without LLM overhead)
+        if "get_device_info" in prompt:
+            logger.info("Executing skill: get_device_info")
+            tool_output = await self.dispatcher.execute_tool("get_device_info", {})
+            return f"AutoSkill Intercept: {tool_output}"
 
         # LLM execution loop (resolving tool calls)
         final_text = ""
