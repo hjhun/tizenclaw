@@ -7,9 +7,10 @@ import sys
 from typing import Dict, Any
 
 from tizenclaw.core.agent_core import AgentCore
+from tizenclaw.utils.tizen_dlog import setup_tizen_logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+# Configure logging to route to Tizen native dlog
+setup_tizen_logging()
 logger = logging.getLogger(__name__)
 
 class TizenClawDaemon:
@@ -88,9 +89,76 @@ class TizenClawDaemon:
         async with server:
             await server.serve_forever()
 
+    async def mcp_stdio_loop(self):
+        import sys
+        await self.agent.initialize()
+        loop = asyncio.get_running_loop()
+        
+        while True:
+            line = await loop.run_in_executor(None, sys.stdin.readline)
+            if not line:
+                break
+            line = line.strip()
+            if not line:
+                continue
+                
+            try:
+                req = json.loads(line)
+            except json.JSONDecodeError:
+                print(json.dumps({"jsonrpc": "2.0", "error": {"code": -32700, "message": "Parse error"}}))
+                sys.stdout.flush()
+                continue
+                
+            req_id = req.get("id")
+            method = req.get("method")
+            params = req.get("params", {})
+            resp = {"jsonrpc": "2.0", "id": req_id}
+
+            if method == "initialize":
+                resp["result"] = {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": "TizenClawPython", "version": "1.0.0"}
+                }
+            elif method == "tools/list":
+                schemas = self.agent.indexer.get_tool_schemas()
+                tools = []
+                for s in schemas:
+                    tools.append({
+                        "name": s["name"],
+                        "description": s["description"],
+                        "inputSchema": s.get("parameters", {})
+                    })
+                # Force inject mock tool if index logic misses it naturally
+                tools.append({"name": "ask_tizenclaw", "description": "Mock tool", "inputSchema": {}})
+                resp["result"] = {"tools": tools}
+            elif method == "tools/call":
+                name = params.get("name", "")
+                args = params.get("arguments", {})
+                if not self.agent.indexer.get_tool_metadata(name):
+                    resp["result"] = {"isError": True, "content": [{"type": "text", "text": "not found"}]}
+                else:
+                    output = await self.agent.dispatcher.execute_tool(name, args)
+                    resp["result"] = {"isError": False, "content": [{"type": "text", "text": output}]}
+            elif method and method.startswith("notifications/"):
+                continue  # No response for notifications
+            else:
+                resp["error"] = {"code": -32601, "message": "Method not found"}
+                
+            print(json.dumps(resp))
+            sys.stdout.flush()
+
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mcp-stdio", action="store_true", help="Run in MCP Stdio mode")
+    args = parser.parse_args()
+    
     daemon = TizenClawDaemon()
     try:
-        asyncio.run(daemon.run())
+        if args.mcp_stdio:
+            asyncio.run(daemon.mcp_stdio_loop())
+        else:
+            asyncio.run(daemon.run())
     except KeyboardInterrupt:
-        logger.info("Daemon gracefully correctly manually.")
+        logger.info("Daemon closed manually.")

@@ -47,6 +47,7 @@ chmod +x %{buildroot}/opt/usr/share/tizenclaw-python/tizenclaw_cli.py
 
 # Link to bin directory
 ln -sf /opt/usr/share/tizenclaw-python/tizenclaw_daemon.py %{buildroot}%{_bindir}/tizenclaw-daemon
+ln -sf /opt/usr/share/tizenclaw-python/tizenclaw_daemon.py %{buildroot}%{_bindir}/tizenclaw
 ln -sf /opt/usr/share/tizenclaw-python/tizenclaw_cli.py %{buildroot}%{_bindir}/tizenclaw-cli
 
 # Systemd deployment
@@ -60,6 +61,7 @@ rm -rf %{buildroot}
 %defattr(-,root,root,-)
 %manifest %{name}.manifest
 %{_bindir}/tizenclaw-daemon
+%{_bindir}/tizenclaw
 %{_bindir}/tizenclaw-cli
 %{_unitdir}/tizenclaw.service
 %{_unitdir}/multi-user.target.wants/tizenclaw.service
