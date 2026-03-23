@@ -287,11 +287,39 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif endpoint == "bridge/chat":
             self._handle_chat(data)
         elif endpoint == "ota/check":
-            self._send_json({"available_count": 0, "updates": []})
+            try:
+                from tizenclaw.core.ota_updater import OtaUpdater
+                updater = OtaUpdater()
+                updater.load_config()
+                result = updater.check_for_updates()
+                self._send_json(json.loads(result))
+            except Exception as e:
+                self._send_json({"error": str(e)})
         elif endpoint == "ota/update":
-            self._send_json({"status": "up_to_date"})
+            skill = data.get("skill", "")
+            if not skill:
+                self._send_json({"error": "No skill name specified"}, 400)
+                return
+            try:
+                from tizenclaw.core.ota_updater import OtaUpdater
+                updater = OtaUpdater()
+                updater.load_config()
+                result = updater.update_skill(skill)
+                self._send_json(json.loads(result))
+            except Exception as e:
+                self._send_json({"error": str(e)})
         elif endpoint == "ota/rollback":
-            self._send_json({"error": "No backup available"}, 400)
+            skill = data.get("skill", "")
+            if not skill:
+                self._send_json({"error": "No skill name specified"}, 400)
+                return
+            try:
+                from tizenclaw.core.ota_updater import OtaUpdater
+                updater = OtaUpdater()
+                result = updater.rollback_skill(skill)
+                self._send_json(json.loads(result))
+            except Exception as e:
+                self._send_json({"error": str(e)})
         else:
             self._send_json({"error": "Unknown endpoint"}, 404)
 

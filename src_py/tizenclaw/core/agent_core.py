@@ -150,6 +150,12 @@ class AgentCore:
                 self.sessions[session_id] = []
             self.sessions[session_id].append(LlmMessage(role="user", text=prompt))
 
+        # Auto-compact if history is too long
+        async with self.session_lock:
+            history_len = len(self.sessions.get(session_id, []))
+        if history_len > self.MAX_HISTORY_MESSAGES:
+            await self.compact_history(session_id)
+
         # Build tool schemas for LLM
         schemas_raw = self.indexer.get_tool_schemas()
         tools = [
@@ -308,6 +314,97 @@ class AgentCore:
         """Clear session history."""
         if session_id in self.sessions:
             del self.sessions[session_id]
+
+    # ── Context Compaction ──
+
+    MAX_HISTORY_MESSAGES = 30
+
+    async def compact_history(self, session_id: str) -> bool:
+        """Compact a session's history by summarizing older messages via LLM.
+
+        When history exceeds MAX_HISTORY_MESSAGES, the oldest messages are
+        summarized into a single system message, preserving context while
+        reducing token count.
+        """
+        from tizenclaw.llm.llm_backend import LlmMessage
+
+        async with self.session_lock:
+            history = self.sessions.get(session_id, [])
+            if len(history) <= self.MAX_HISTORY_MESSAGES:
+                return False  # No compaction needed
+
+        # Split: older messages to summarize, recent to keep
+        split_at = len(history) - (self.MAX_HISTORY_MESSAGES // 2)
+        older = history[:split_at]
+        recent = history[split_at:]
+
+        # Build a summary prompt from older messages
+        summary_parts = []
+        for msg in older:
+            role = msg.role
+            text = msg.text[:200] if msg.text else ""
+            if msg.tool_calls:
+                tc_names = ", ".join(tc.name for tc in msg.tool_calls)
+                text += f" [tool_calls: {tc_names}]"
+            if text.strip():
+                summary_parts.append(f"{role}: {text}")
+
+        if not summary_parts:
+            return False
+
+        conversation_text = "\n".join(summary_parts[-20:])  # Last 20 entries
+
+        # Use LLM to summarize
+        summary_prompt = [
+            LlmMessage(
+                role="user",
+                text=(
+                    "다음 대화 내역을 3-5문장으로 핵심 내용만 요약해주세요. "
+                    "도구 호출 결과와 사용자 요청의 핵심을 포함해주세요:\n\n"
+                    f"{conversation_text}"
+                )
+            )
+        ]
+
+        try:
+            response = await self.backend_manager.chat(
+                messages=summary_prompt, tools=[],
+                system_prompt="You are a conversation summarizer. Summarize concisely in Korean."
+            )
+            if response.success and response.text:
+                summary_msg = LlmMessage(
+                    role="system",
+                    text=f"[이전 대화 요약] {response.text.strip()}"
+                )
+                async with self.session_lock:
+                    self.sessions[session_id] = [summary_msg] + recent
+                logger.info(f"Compacted session '{session_id}': "
+                            f"{len(history)} → {len(self.sessions[session_id])} messages")
+                return True
+        except Exception as e:
+            logger.error(f"Context compaction failed: {e}")
+
+        return False
+
+    def get_session_info(self, session_id: str) -> Dict[str, Any]:
+        """Get session metadata for diagnostics."""
+        history = self.sessions.get(session_id, [])
+        return {
+            "session_id": session_id,
+            "message_count": len(history),
+            "max_messages": self.MAX_HISTORY_MESSAGES,
+            "needs_compaction": len(history) > self.MAX_HISTORY_MESSAGES,
+            "roles": {
+                "user": sum(1 for m in history if m.role == "user"),
+                "assistant": sum(1 for m in history if m.role == "assistant"),
+                "tool": sum(1 for m in history if m.role == "tool"),
+                "system": sum(1 for m in history if m.role == "system"),
+            }
+        }
+
+    def list_sessions(self) -> List[Dict[str, Any]]:
+        """List all active sessions."""
+        return [self.get_session_info(sid) for sid in self.sessions]
 
     async def start(self):
         self._running = True
