@@ -248,6 +248,18 @@ class TizenClawDaemon:
             logger.error(f"Failed to start PerceptionEngine: {e}")
             self.perception_engine = None
 
+        # Start skill file watcher (hot-reload)
+        self.skill_watcher = None
+        try:
+            from tizenclaw.core.skill_watcher import SkillWatcher
+            self.skill_watcher = SkillWatcher(
+                reload_callback=lambda: self.agent.indexer.load_all_tools() if self.agent.indexer else None
+            )
+            await self.skill_watcher.start()
+        except Exception as e:
+            logger.error(f"Failed to start SkillWatcher: {e}")
+            self.skill_watcher = None
+
         server = await asyncio.start_unix_server(
             self.handle_client,
             path=self.SOCKET_PATH
@@ -259,6 +271,8 @@ class TizenClawDaemon:
                 await server.serve_forever()
         finally:
             # Graceful shutdown
+            if self.skill_watcher:
+                await self.skill_watcher.stop()
             if self.perception_engine:
                 await self.perception_engine.stop()
             if self.autonomous_trigger:
