@@ -41,7 +41,7 @@ run_without_container() {
   if [ "${SAFE_MODE}" = "1" ]; then
     CMD="/usr/bin/sleep 2147483647"
   else
-    CMD="/usr/bin/bash -c '/usr/bin/tizenclaw-tool-executor & exec /usr/bin/tizenclaw-daemon'"
+    CMD="/usr/bin/bash -c 'PYTHONPATH=/opt/usr/share/tizenclaw-python /usr/bin/tizenclaw-tool-executor & TE_PID=\$!; trap \"kill \$TE_PID 2>/dev/null\" EXIT; PYTHONPATH=/opt/usr/share/tizenclaw-python exec /usr/bin/tizenclaw-daemon'"
   fi
 
   exec unshare -m --propagation unchanged /usr/bin/sh -c "
@@ -82,6 +82,10 @@ run_without_container() {
     mount --bind /etc/passwd \"${BUNDLE_DIR}/rootfs/etc/passwd\" || true
     touch \"${BUNDLE_DIR}/rootfs/etc/group\" 2>/dev/null || true
     mount --bind /etc/group \"${BUNDLE_DIR}/rootfs/etc/group\" || true
+    if [ -d /etc/ssl ]; then
+      mkdir -p \"${BUNDLE_DIR}/rootfs/etc/ssl\"
+      mount --rbind /etc/ssl \"${BUNDLE_DIR}/rootfs/etc/ssl\" || true
+    fi
     mount --rbind /opt/etc \"${BUNDLE_DIR}/rootfs/opt/etc\" || true
     mount -o remount,bind,ro \"${BUNDLE_DIR}/rootfs/opt/etc\" || true
     mount --rbind /opt/usr/share/tizenclaw \"${BUNDLE_DIR}/rootfs/opt/usr/share/tizenclaw\" || true
@@ -103,8 +107,8 @@ write_config() {
     # Reboot triage: use inert PID1 instead of launching tizenclaw directly.
     process_args_json='["/usr/bin/sleep", "2147483647"]'
   else
-    # Launch tool-executor in background, then exec tizenclaw as PID 1.
-    process_args_json='["/usr/bin/bash", "-c", "/usr/bin/tizenclaw-tool-executor & exec /usr/bin/tizenclaw-daemon"]'
+    # Launch tool-executor in background with trap to ensure cleanup on daemon exit.
+    process_args_json='["/usr/bin/bash", "-c", "PYTHONPATH=/opt/usr/share/tizenclaw-python /usr/bin/tizenclaw-tool-executor & TE_PID=$!; trap \"kill $TE_PID 2>/dev/null\" EXIT; PYTHONPATH=/opt/usr/share/tizenclaw-python exec /usr/bin/tizenclaw-daemon"]'
   fi
 
   # Build optional mount entries based on host filesystem
@@ -145,6 +149,15 @@ write_config() {
       \"options\": [\"rbind\", \"rw\"]
     }"
   fi
+  if [ -d /etc/ssl ]; then
+    OPTIONAL_MOUNTS="${OPTIONAL_MOUNTS},
+    {
+      \"destination\": \"/etc/ssl\",
+      \"type\": \"bind\",
+      \"source\": \"/etc/ssl\",
+      \"options\": [\"rbind\", \"ro\"]
+    }"
+  fi
 
   cat >"${BUNDLE_DIR}/config.json" <<EOF
 {
@@ -155,6 +168,7 @@ write_config() {
     "args": ${process_args_json},
     "env": [
       "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      "PYTHONPATH=/opt/usr/share/tizenclaw-python",
       "MALLOC_ARENA_MAX=2"
     ],
     "cwd": "/",

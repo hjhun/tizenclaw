@@ -1,103 +1,155 @@
+"""
+AgentCore — Central orchestration engine for TizenClaw Python port.
+
+Manages:
+  - LLM backend (via LlmBackendManager with active + fallback)
+  - Tool indexing and dispatch (ToolIndexer + ToolDispatcher)
+  - Session state (per-session message history with asyncio.Lock)
+  - Agentic loop (iterative tool calling, max 10 rounds)
+  - Auto-skill intercept (direct execution for known queries)
+"""
 import asyncio
 import logging
 import json
+import os
 from typing import Dict, List, Optional, Callable, Any
 
 logger = logging.getLogger(__name__)
 
+# Data directory
+DATA_DIR = "/opt/usr/share/tizenclaw"
+CONFIG_DIR = os.path.join(DATA_DIR, "config")
+WORK_DIR = os.path.join(DATA_DIR, "work")
+
+# Default system prompt
+DEFAULT_SYSTEM_PROMPT = (
+    "You are TizenClaw, an AI agent running on a Tizen embedded device. "
+    "You can control the device using the available tools. "
+    "When the user asks about device information, use the appropriate tool. "
+    "Always respond in the same language as the user's message."
+)
+
+
 class AgentCore:
-    """
-    Python implementation of TizenClaw AgentCore.
-    Handles task scheduling, execution, and LLM orchestration.
-    """
+    """Python implementation of TizenClaw AgentCore."""
+
     def __init__(self):
         self._running = False
         self._initialized = False
-        self.system_prompt: str = (
-            "You are TizenClaw, an AI agent running on a Tizen device. "
-            "You can control the device using the available tools. "
-            "When the user asks about device information, use the appropriate tool."
-        )
-        self.web_api_catalog: str = ""
-        
+        self.system_prompt: str = DEFAULT_SYSTEM_PROMPT
+
         # Session state management
         self.sessions: Dict[str, List] = {}
         self.session_prompts: Dict[str, str] = {}
         self.session_lock = asyncio.Lock()
-        
-        # Dispatch maps equivalent to std::unordered_map
-        self.tool_dispatch: Dict[str, Callable] = {}
-        
-        # Additional Component References (Placeholders)
-        self.container_engine = None
-        self.backend = None
-        self.backend_lock = asyncio.Lock()
+
+        # Component references (set during initialize)
+        self.indexer = None
+        self.dispatcher = None
+        self.backend_manager = None
         self.scheduler = None
+        self.container_engine = None
 
     async def initialize(self) -> bool:
-        """Initialize backend, routing, and system contexts."""
+        """Initialize all subsystems: config, backend, tools, container."""
         from tizenclaw.core.tool_indexer import ToolIndexer
         from tizenclaw.core.tool_dispatcher import ToolDispatcher
         from tizenclaw.infra.container_engine import ContainerEngine
-        from tizenclaw.llm.openai_backend import OpenAiBackend
-        from tizenclaw.llm.llm_backend import LlmMessage
+        from tizenclaw.llm.llm_backend import LlmBackendManager
 
-        logger.info("Initializing AgentCore Python port...")
-        
-        import os
-        os.makedirs("/opt/usr/share/tizenclaw/work/sessions", exist_ok=True)
-        
+        logger.info("Initializing AgentCore...")
+
+        # Ensure work directories exist
+        os.makedirs(os.path.join(WORK_DIR, "sessions"), exist_ok=True)
+        os.makedirs(CONFIG_DIR, exist_ok=True)
+
+        # Initialize LLM backend manager (loads llm_config.json)
+        self.backend_manager = LlmBackendManager()
+        await self.backend_manager.initialize()
+
+        # Use system prompt from config if loaded
+        if self.backend_manager.system_prompt:
+            self.system_prompt = self.backend_manager.system_prompt
+
+        # Initialize tool indexer
         self.indexer = ToolIndexer()
         self.indexer.load_all_tools()
-        
+
+        # Initialize container engine and dispatcher
         self.container_engine = ContainerEngine()
         self.dispatcher = ToolDispatcher(self.indexer, self.container_engine)
-        self.backend = OpenAiBackend()
-        
-        await self.backend.initialize()
 
         self._initialized = True
-        logger.info("AgentCore initialized successfully.")
+        logger.info(
+            f"AgentCore initialized. Active LLM: {self.backend_manager.get_active_name()}, "
+            f"Tools: {len(self.indexer.tools)}"
+        )
         return True
 
     def shutdown(self):
-        """Clean shutdown of all async resources and backends."""
+        """Clean shutdown of all resources."""
         self._running = False
-        logger.info("AgentCore shutdown initiated.")
+        if self.backend_manager:
+            self.backend_manager.shutdown()
+        logger.info("AgentCore shutdown.")
 
-    async def process_prompt(self, session_id: str, prompt: str, on_chunk: Optional[Callable[[str], None]] = None) -> str:
+    async def process_prompt(
+        self,
+        session_id: str,
+        prompt: str,
+        on_chunk: Optional[Callable[[str], None]] = None
+    ) -> str:
         """
-        Process a prompt through the LLM pipeline, looping over tool calls automatically.
+        Process a user prompt through the agentic loop:
+          1. Auto-skill intercept (bypass LLM for known queries)
+          2. Send to LLM with tool schemas
+          3. Execute tool calls, feed results back
+          4. Repeat until no more tool calls (max 10 iterations)
         """
         from tizenclaw.llm.llm_backend import LlmMessage, LlmToolDecl
 
+        # Add user message to session history
         async with self.session_lock:
             if session_id not in self.sessions:
                 self.sessions[session_id] = []
-            
             self.sessions[session_id].append(LlmMessage(role="user", text=prompt))
 
+        # Build tool schemas for LLM
         schemas_raw = self.indexer.get_tool_schemas()
         tools = [
-            LlmToolDecl(name=s["name"], description=s["description"], parameters=s.get("parameters", {}))
+            LlmToolDecl(
+                name=s["name"],
+                description=s["description"],
+                parameters=s.get("parameters", {})
+            )
             for s in schemas_raw
         ]
 
-        # AutoSkillAgent Intercept (Direct tool execution without LLM overhead)
-        lower_prompt = prompt.lower()
-        if "get_device_info" in lower_prompt or "device info" in lower_prompt:
-            logger.info("AutoSkill intercept: get_device_info")
-            tool_output = await self.dispatcher.execute_tool("get_device_info", {})
-            return f"{tool_output}"
+        # ── Auto-skill intercept ──
+        # For known device info queries, execute tool directly without LLM overhead
+        lower_prompt = prompt.lower().strip()
+        auto_skill = self._match_auto_skill(lower_prompt)
+        if auto_skill:
+            logger.info(f"AutoSkill intercept: {auto_skill}")
+            try:
+                tool_output = await self.dispatcher.execute_tool(auto_skill, {})
+                async with self.session_lock:
+                    self.sessions[session_id].append(
+                        LlmMessage(role="assistant", text=tool_output)
+                    )
+                return tool_output
+            except Exception as e:
+                logger.error(f"AutoSkill {auto_skill} failed: {e}")
+                # Fall through to LLM
 
-        # LLM execution loop (resolving tool calls)
+        # ── Agentic loop ──
         final_text = ""
-        for i in range(10): # Max 10 tool iterations
+        for iteration in range(10):
             async with self.session_lock:
                 current_history = list(self.sessions[session_id])
-            
-            # Send latest context to LLM
-            response = await self.backend.chat(
+
+            # Send to LLM via backend manager (auto-fallback)
+            response = await self.backend_manager.chat(
                 messages=current_history,
                 tools=tools,
                 on_chunk=on_chunk,
@@ -106,48 +158,74 @@ class AgentCore:
 
             if not response.success:
                 error_msg = response.error_message or "LLM request failed"
-                logger.error(f"LLM error: {error_msg}")
+                logger.error(f"LLM error (iteration {iteration}): {error_msg}")
                 return f"Error: {error_msg}"
-            
-            # Process returned text
+
+            # Accumulate response text
             if response.text:
                 final_text += response.text + "\n"
                 if on_chunk:
                     on_chunk(response.text)
-                
-            # If no tools called, we're done
+
+            # If no tool calls, we're done
             if not response.has_tool_calls():
                 async with self.session_lock:
-                    self.sessions[session_id].append(LlmMessage(role="assistant", text=response.text))
+                    self.sessions[session_id].append(
+                        LlmMessage(role="assistant", text=response.text)
+                    )
                 break
 
-            # Handle tools sequentially
+            # Record assistant message with tool calls
             async with self.session_lock:
-                self.sessions[session_id].append(LlmMessage(role="assistant", text=response.text, tool_calls=response.tool_calls))
-                
+                self.sessions[session_id].append(
+                    LlmMessage(
+                        role="assistant",
+                        text=response.text or "",
+                        tool_calls=response.tool_calls
+                    )
+                )
+
+            # Execute each tool call sequentially
             for tc in response.tool_calls:
-                logger.info(f"LLM tool call: {tc.name}({tc.args})")
-                tool_output = await self.dispatcher.execute_tool(tc.name, tc.args)
+                logger.info(f"Tool call [{iteration}]: {tc.name}({tc.args})")
+                try:
+                    tool_output = await self.dispatcher.execute_tool(tc.name, tc.args)
+                except Exception as e:
+                    tool_output = f"Tool execution error: {e}"
+                    logger.error(f"Tool {tc.name} failed: {e}")
+
                 async with self.session_lock:
-                    self.sessions[session_id].append(LlmMessage(role="tool", text=tool_output, tool_call_id=tc.id))
+                    self.sessions[session_id].append(
+                        LlmMessage(role="tool", text=tool_output, tool_call_id=tc.id)
+                    )
 
         return final_text.strip()
 
+    @staticmethod
+    def _match_auto_skill(prompt: str) -> Optional[str]:
+        """Match known prompts to tool names for direct execution."""
+        auto_map = {
+            "get_device_info": ["get_device_info", "device info", "디바이스 정보"],
+            "get_battery_info": ["get_battery_info", "battery info", "배터리 정보", "배터리"],
+            "get_wifi_info": ["get_wifi_info", "wifi info", "와이파이 정보"],
+            "get_system_info": ["get_system_info", "system info", "시스템 정보"],
+        }
+        for tool_name, keywords in auto_map.items():
+            for kw in keywords:
+                if kw in prompt:
+                    return tool_name
+        return None
+
     def clear_session(self, session_id: str):
-        """Clear session from memory (and eventually storage)."""
+        """Clear session history."""
         if session_id in self.sessions:
             del self.sessions[session_id]
-
-    async def execute_skill(self, skill_name: str, args: Dict[str, Any]) -> str:
-        """Execute a skill explicitly inside the secure python container engine."""
-        logger.debug(f"Executing skill: {skill_name} with args {args}")
-        return json.dumps({"status": "success", "output": "mock_skill_execution"})
 
     async def start(self):
         self._running = True
         logger.info("AgentCore main loop started.")
         while self._running:
             await asyncio.sleep(1.0)
-            
+
     def stop(self):
         self.shutdown()
