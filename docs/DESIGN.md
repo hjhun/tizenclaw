@@ -245,6 +245,11 @@ class LlmBackend(ABC):
 ### Comparison with C++ Version
 
 | Feature | C++ (main/devel) | Python (develPython) |
+| --- | --- | --- | 
+| **Web Dashboard** | libsoup | `http.server` (asyncio) |
+| **Channels** | Telegram, Slack, Discord | Telegram, Slack, Discord, Voice |
+| **ActionBridge** | Tizen Action Framework | ctypes FFI to Action Framework |
+| **Security & Tunnel** | TunnelManager, ActionPolicy | SecureTunnel (Reverse SSH), HealthMonitor |
 |---------|:---:|:---:|
 | **Backends** | 5 (Gemini, OpenAI, Anthropic, xAI, Ollama) | 1 (OpenAI-compatible) |
 | **Priority switching** | Yes (unified priority queue) | No (single backend) |
@@ -500,7 +505,7 @@ The Web Dashboard from the C++ version is preserved as static files in `data/web
 - 5 frontend files (~3,900 LOC)
 - Dark glassmorphism SPA design
 
-> **Note**: In the Python port, the web server is currently served by the same infrastructure as the C++ version. A Python-native web server (e.g., `asyncio` HTTP) may be implemented in a future iteration.
+> **Note**: The Python port uses a fully native `http.server` and `asyncio` based `DashboardServer` mapping to serve the Web Dashboard.
 
 ---
 

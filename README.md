@@ -72,24 +72,27 @@
 </td>
 <td width="50%">
 
-### 🔧 Modular Architecture
-- `AgentCore` — Central orchestration with agentic loop
-- `ToolIndexer` — Scans `.tool.md` / `.skill.md` / `.mcp.json` schemas
-- `ToolDispatcher` — Routes tool calls to container engine
-- `ContainerEngine` — IPC with secure tool executor
-- `WorkflowEngine` — Markdown-based deterministic pipelines
+### 🔧 Modular Architecture & Core Modules
+- `AgentCore` — Central orchestration with agentic loop and Context Compaction
+- `ToolIndexer` & `SkillWatcher` — Scans schemas and supports inotify-based hot reload
+- `ToolDispatcher` — Routes tool calls to container engine with parallel execution
+- `PerceptionEngine` — Device situation awareness (battery, memory, network)
+- `AutonomousTrigger` — Rule-based auto responses (Telegram, webhook)
+- `OtaUpdater` & `SkillPluginManager` — Remote skill deployment and management
 
-### 📡 IPC & Communication
-- JSON-RPC 2.0 over abstract Unix Domain Sockets
-- MCP server mode (`--mcp-stdio`) for Claude Desktop integration
-- `tizenclaw-cli` Python client for interactive/single-shot usage
-- Socket-activated tool executor and code sandbox services
+### 📡 IPC, Communications & Channels
+- JSON-RPC 2.0 over abstract Unix Domain Sockets with UID authentication
+- MCP Client Manager — External MCP server connection and tool discovery
+- **Channels**: Telegram, Slack, Discord, Webhook, and **Voice Channel** (STT/TTS via ctypes)
+- **Action Bridge**: Tizen Action Framework integration via ctypes FFI
+- Secure Tunneling (Reverse SSH) & FleetAgent for remote management
+- `tizenclaw-cli` Python client and Web Dashboard
 
-### 🧠 Intelligence & Storage
+### 🧠 Intelligence & Security
+- KeyStore — Device-specific encrypted API key storage (PBKDF+XOR)
 - SQLite-based RAG store (FTS5 + vector cosine similarity)
 - On-device ONNX embedding (all-MiniLM-L6-v2, lazy-loaded)
-- Persistent memory (long-term / episodic / short-term)
-- Markdown-based session persistence with YAML frontmatter
+- Persistent Markdown/YAML memory with automatic context compaction
 
 </td>
 </tr>

@@ -195,6 +195,11 @@ systemd
 ### C++ 대비 LLM 백엔드 비교
 
 | 기능 | C++ (main/devel) | Python (develPython) |
+| --- | --- | --- | 
+| **Web Dashboard** | libsoup | `http.server` (asyncio) |
+| **Channels** | Telegram, Slack, Discord | Telegram, Slack, Discord, Voice |
+| **ActionBridge** | Tizen Action Framework | ctypes FFI to Action Framework |
+| **운영 & 터널** | TunnelManager, ActionPolicy | SecureTunnel (Reverse SSH), HealthMonitor |
 |------|:---:|:---:|
 | 내장 백엔드 수 | **5개** (Gemini, OpenAI, Anthropic, xAI, Ollama) | **1개** (OpenAI 호환) |
 | 우선순위 전환 | ✅ 통합 우선순위 큐 | 🔴 단일 백엔드 |

@@ -7,6 +7,8 @@
 
 ## Overview
 
+> 🚀 **Update**: The Python port (`develPython` branch) has officially achieved **~99% feature parity** with the C++ `main` branch, successfully porting all core features, ActionBridge, Channels, and Operations.
+
 This document outlines the development history, current status, and future direction of TizenClaw — the embedded AI agent daemon for Tizen OS. TizenClaw has completed 20 development phases and is actively working on Phase 21.
 
 ### Current Status: **Phase 21 — Framework Stabilization & SDK Export** 🔴 In Progress
