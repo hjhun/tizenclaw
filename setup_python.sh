@@ -49,65 +49,85 @@ if [ ! -f "$REPO_INI" ]; then
     exit 1
 fi
 
-# Parse the base URL. e.g. base = https://download.tizen.org/.../packages/
+# Parse the base and platform URLs
 BASE_REPO_URL=$(awk -F '=' '/^base *[=]/ {gsub(/[ \t]+/, "", $2); print $2}' "$REPO_INI")
+PLATFORM_REPO_URL=$(awk -F '=' '/^platform *[=]/ {gsub(/[ \t]+/, "", $2); print $2}' "$REPO_INI")
+
 if [ -z "$BASE_REPO_URL" ]; then
     echo -e "${RED}[ERROR] Could not find 'base' repository URL in ${REPO_INI}${NC}"
     exit 1
 fi
 
-# Ensure trailing slash
+# Ensure trailing slashes
 [[ "${BASE_REPO_URL}" != */ ]] && BASE_REPO_URL="${BASE_REPO_URL}/"
-REPO_URL="${BASE_REPO_URL}${ARCH}/"
+[[ -n "${PLATFORM_REPO_URL}" && "${PLATFORM_REPO_URL}" != */ ]] && PLATFORM_REPO_URL="${PLATFORM_REPO_URL}/"
 
-echo -e "${GREEN}[ OK ] Python repository: ${REPO_URL}${NC}"
+REPO_URLS=("${BASE_REPO_URL}${ARCH}/" "${PLATFORM_REPO_URL}${ARCH}/")
+
+echo -e "${GREEN}[ OK ] Target Repositories detected.${NC}"
 
 OUTDIR="build/python_rpms_${ARCH}"
 mkdir -p "$OUTDIR"
 
-# Required Python core packages
+# Required Python core packages (and sqlite3 for TizenClaw embeddings)
 PACKAGES=(
     "python3-base"
     "python3"
-    "libpython"  # Sometimes named libpython3 or libpython3.x
+    "libpython"
+    "python3-sqlite"
 )
 
-echo -e "${CYAN}[DOWNLOAD] Fetching repository index...${NC}"
-INDEX_CONTENT=$(curl -sL "$REPO_URL" || echo "")
+echo -e "${CYAN}[DOWNLOAD] Fetching repository indices...${NC}"
 
-if [ -z "$INDEX_CONTENT" ]; then
-    echo -e "${RED}[ERROR] Failed to fetch repository index from ${REPO_URL}. Check internet connection.${NC}"
-    exit 1
-fi
+INDEX_CONTENTS=()
+for URL in "${REPO_URLS[@]}"; do
+    if [ -n "$URL" ]; then
+        echo -e "  Fetching index from ${URL}..."
+        IDX=$(curl -sL "$URL" || echo "")
+        INDEX_CONTENTS+=("$IDX")
+    else
+        INDEX_CONTENTS+=("")
+    fi
+done
 
 DOWNLOADED_RPMS=()
 
 for PKG in "${PACKAGES[@]}"; do
     echo -e "  -> Searching for ${PKG}..."
-    # Heuristic parsing of directory index (works for standard Apache/Nginx autoindex)
-    # Extracts exactly the href that starts with the package name.
-    # Exclude -devel, -debuginfo, etc.
-    MATCH=$(echo "$INDEX_CONTENT" | grep -oE "href=\"${PKG}-[0-9][^\"]+\.rpm\"" | grep -v "debuginfo" | grep -v "devel" | cut -d'"' -f2 | sort -V | tail -n 1)
+    MATCH=""
+    MATCH_URL=""
     
-    if [ -z "$MATCH" ]; then
-        # Check libpython3 instead of libpython
-        if [ "$PKG" = "libpython" ]; then
-            MATCH=$(echo "$INDEX_CONTENT" | grep -oE "href=\"libpython3-[0-9][^\"]+\.rpm\"" | grep -v "debuginfo" | grep -v "devel" | cut -d'"' -f2 | sort -V | tail -n 1)
+    for i in "${!REPO_URLS[@]}"; do
+        URL="${REPO_URLS[$i]}"
+        IDX="${INDEX_CONTENTS[$i]}"
+        
+        if [ -z "$IDX" ]; then continue; fi
+        
+        # Search exact match
+        TMP_MATCH=$(echo "$IDX" | grep -oE "href=\"${PKG}-[0-9][^\"]+\.rpm\"" | grep -v "debuginfo" | grep -v "devel" | cut -d'"' -f2 | sort -V | tail -n 1)
+        
+        if [ -z "$TMP_MATCH" ] && [ "$PKG" = "libpython" ]; then
+            TMP_MATCH=$(echo "$IDX" | grep -oE "href=\"libpython3-[0-9][^\"]+\.rpm\"" | grep -v "debuginfo" | grep -v "devel" | cut -d'"' -f2 | sort -V | tail -n 1)
         fi
         
-        if [ -z "$MATCH" ]; then
-             echo -e "${YELLOW}[WARN] Could not find ${PKG} in remote repo.${NC}"
-             continue
+        if [ -n "$TMP_MATCH" ]; then
+            MATCH="$TMP_MATCH"
+            MATCH_URL="${URL}${MATCH}"
+            break # Stop searching if found in first repo (priority base -> platform)
         fi
+    done
+    
+    if [ -z "$MATCH" ]; then
+         echo -e "${YELLOW}[WARN] Could not find ${PKG} in remote repos.${NC}"
+         continue
     fi
     
-    FILE_URL="${REPO_URL}${MATCH}"
     echo -e "  ${GREEN}[FOUND]${NC} ${MATCH}"
     
     # Download if not present
     if [ ! -f "${OUTDIR}/${MATCH}" ]; then
         echo -e "  Downloading..."
-        curl -SL -o "${OUTDIR}/${MATCH}" "${FILE_URL}"
+        curl -SL -o "${OUTDIR}/${MATCH}" "${MATCH_URL}"
     else
         echo -e "  Already downloaded."
     fi
