@@ -162,6 +162,11 @@ class TizenClawDaemon:
                 return {"jsonrpc": "2.0", "id": req_id, "result": self.fleet_agent.get_status()}
             return {"jsonrpc": "2.0", "id": req_id, "result": {"enabled": False}}
 
+        elif method == "get_tunnel_status":
+            if hasattr(self, 'secure_tunnel') and self.secure_tunnel:
+                return {"jsonrpc": "2.0", "id": req_id, "result": self.secure_tunnel.get_status()}
+            return {"jsonrpc": "2.0", "id": req_id, "result": {"enabled": False}}
+
         else:
             logger.warning(f"Unknown IPC method: {method}")
             return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": "Method not found"}}
@@ -260,6 +265,20 @@ class TizenClawDaemon:
             logger.error(f"Failed to start SkillWatcher: {e}")
             self.skill_watcher = None
 
+        # Start secure tunnel (reverse SSH)
+        self.secure_tunnel = None
+        try:
+            from tizenclaw.infra.secure_tunnel import SecureTunnel
+            self.secure_tunnel = SecureTunnel()
+            self.secure_tunnel.load_config()
+            if self.secure_tunnel.is_enabled():
+                await self.secure_tunnel.start()
+            else:
+                logger.info("SecureTunnel: Disabled by config")
+        except Exception as e:
+            logger.error(f"Failed to start SecureTunnel: {e}")
+            self.secure_tunnel = None
+
         server = await asyncio.start_unix_server(
             self.handle_client,
             path=self.SOCKET_PATH
@@ -271,6 +290,8 @@ class TizenClawDaemon:
                 await server.serve_forever()
         finally:
             # Graceful shutdown
+            if self.secure_tunnel:
+                await self.secure_tunnel.stop()
             if self.skill_watcher:
                 await self.skill_watcher.stop()
             if self.perception_engine:
