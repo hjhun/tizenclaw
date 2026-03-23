@@ -60,7 +60,9 @@ class ToolIndexer:
         for root, dirs, files in os.walk(d):
             for file in files:
                 path = os.path.join(root, file)
-                if file == "tool.md":
+                if "embedded" in path.split(os.sep) and file.endswith(".md"):
+                    self._parse_embedded_tool(path)
+                elif file == "tool.md":
                     # Native CLI tool: tool.md sits next to the ELF binary
                     self._parse_native_cli_tool(path)
                 elif file.endswith(".tool.md") or file.endswith(".skill.md"):
@@ -192,6 +194,32 @@ class ToolIndexer:
                 self.tools[name]["type"] = "mcp"
         except Exception as e:
             logger.error(f"Failed to parse MCP tool {path}: {e}")
+
+    def _parse_embedded_tool(self, path: str):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+            
+            # Simple heuristic to extract schema block
+            schema_pattern = re.compile(r"## Schema\s*```json\n(.*?)\n```", re.DOTALL | re.IGNORECASE)
+            match = schema_pattern.search(content)
+            if match:
+                schema_json = match.group(1)
+                data = json.loads(schema_json)
+                name = data.get("name")
+                if name:
+                    self.tools[name] = {
+                        "name": name,
+                        "description": data.get("description", "Embedded Tool"),
+                        "path": path,
+                        "type": "embedded",
+                        "parameters": data.get("inputSchema", {})
+                    }
+                    if "inputSchema" not in data and "parameters" in data:
+                        self.tools[name]["parameters"] = data["parameters"]
+                    logger.info(f"Indexed embedded tool: {name}")
+        except Exception as e:
+            logger.error(f"Failed to parse embedded tool {path}: {e}")
 
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
         schemas = []

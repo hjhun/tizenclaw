@@ -1,6 +1,8 @@
 import logging
 import json
 import time
+import os
+import asyncio
 from typing import Dict, Any, Optional
 from tizenclaw.core.tool_indexer import ToolIndexer
 from tizenclaw.infra.container_engine import ContainerEngine
@@ -83,6 +85,11 @@ class ToolDispatcher:
                 result = await self.container.execute_skill(path, args_str)
             elif tool_type == "mcp":
                 result = await self.container.execute_mcp_tool(name, args_str)
+            elif tool_type == "embedded":
+                if name == "generate_web_app":
+                    result = await self._handle_generate_web_app(args)
+                else:
+                    result = f"Error: Embedded tool {name} is not implemented in Python port yet."
             else:
                 result = f"Error: Unknown tool type '{tool_type}'"
         except Exception as e:
@@ -121,3 +128,55 @@ class ToolDispatcher:
             ))
 
         return result
+
+    async def _handle_generate_web_app(self, args: Dict[str, Any]) -> str:
+        """
+        Implements the generate_web_app embedded tool.
+        Saves HTML/CSS/JS to the web server directory and launches the tizenclaw-webview app.
+        """
+        app_id = args.get("app_id")
+        title = args.get("title", "Web App")
+        html = args.get("html")
+        css = args.get("css", "")
+        js = args.get("js", "")
+        allowed_tools = args.get("allowed_tools", [])
+
+        if not app_id or not html:
+            return "Error: app_id and html are required to generate web app."
+
+        # Sanitize app_id
+        app_id = "".join(c for c in app_id if c.isalnum() or c == "_").lower()
+
+        # Web App directory
+        app_dir = os.path.join("/opt/usr/share/tizenclaw/web/apps", app_id)
+        os.makedirs(app_dir, exist_ok=True)
+
+        try:
+            with open(os.path.join(app_dir, "index.html"), "w", encoding="utf-8") as f:
+                f.write(html)
+            if css:
+                with open(os.path.join(app_dir, "style.css"), "w", encoding="utf-8") as f:
+                    f.write(css)
+            if js:
+                with open(os.path.join(app_dir, "app.js"), "w", encoding="utf-8") as f:
+                    f.write(js)
+            if allowed_tools:
+                with open(os.path.join(app_dir, "permissions.json"), "w", encoding="utf-8") as f:
+                    json.dump({"allowed_tools": allowed_tools}, f)
+
+            url = f"http://127.0.0.1:8080/apps/{app_id}/index.html"
+            logger.info(f"Generated web app: {app_id} -> {url}")
+
+            # Send app control to launch tizenclaw-webview
+            args_str = f"launch --app-id org.tizenclaw.webview --operation http://tizen.org/appcontrol/operation/view --uri {url}"
+            result = await self.execute_tool("tizen-app-manager-cli", {"arguments": args_str})
+            
+            # Simple check if execution encountered error or command failure
+            if "Error" in result or "error" in result.lower():
+                logger.warning(f"Failed to launch webview (is org.tizenclaw.webview installed?): {result}")
+                return f"Success: App generated and accessible at {url}, but failed to auto-launch on device: {result}"
+                
+            return f"Success: Web app '{title}' generated at {url} and successfully launched on the device screen."
+        except Exception as e:
+            logger.error(f"Generate Web App failed: {e}")
+            return f"Error creating web app: {e}"

@@ -89,6 +89,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tools/cli_py)
             FILES_MATCHING PATTERN "*.py" PATTERN "*.tool.md")
 endif()
 
+# ── Install Embedded Tool Schemas ──
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tools/embedded)
+    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools/embedded/
+            DESTINATION /opt/usr/share/tizenclaw/tools/embedded
+            FILES_MATCHING PATTERN "*.md")
+endif()
+
 # ── Build crun OCI runtime from source ──
 # crun is built from third_party/crun/ and installed to /usr/libexec/tizenclaw/
 # This requires the project to use LANGUAGES C (enable C compiler for crun).
