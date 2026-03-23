@@ -125,8 +125,7 @@ void TizenClawDaemon::OnCreate() {
     auto guard = boot.Track("EventBus");
     EventBus::GetInstance().Start();
     std::string events_dir =
-        std::string(APP_DATA_DIR)
-        + "/tools/events";
+        "/opt/usr/share/tizen-tools/events";
     EventBus::GetInstance()
         .LoadPlugins(events_dir);
   }
@@ -237,8 +236,8 @@ void TizenClawDaemon::OnCreate() {
   {
     auto guard = boot.Track("SkillWatcher");
     skill_watcher_.Start(
-        "/opt/usr/share/tizenclaw/"
-        "tools/skills",
+        "/opt/usr/share/tizen-tools/"
+        "skills",
         [this]() {
           if (agent_) agent_->ReloadSkills();
         });

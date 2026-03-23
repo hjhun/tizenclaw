@@ -786,8 +786,7 @@ bool ContainerEngine::WriteSkillsConfig() const {
     {
       "destination": "/tools/custom_skills",
       "type": "bind",
-      "source": ")" + app_data_dir_ +
-                            R"(/tools/custom_skills",
+      "source": "/opt/usr/share/tizen-tools/custom_skills",
       "options": ["rbind", "rw"]
     },
     {

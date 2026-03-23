@@ -113,6 +113,8 @@ INSTALL(FILES ${CONFIG_FILES} DESTINATION /opt/usr/share/tizenclaw/config/)
 
 # Skills, tools, web
 INSTALL(FILES ${CMAKE_SOURCE_DIR}/tools/routing_guide.md DESTINATION /opt/usr/share/tizen-tools/)
+INSTALL(FILES ${CMAKE_SOURCE_DIR}/tools/tools.md DESTINATION /opt/usr/share/tizen-tools/)
+INSTALL(FILES ${CMAKE_SOURCE_DIR}/tools/cli/index.md DESTINATION /opt/usr/share/tizen-tools/cli/)
 # INSTALL(DIRECTORY ${CMAKE_SOURCE_DIR}/tools/skills/ DESTINATION /opt/usr/share/tizen-tools/skills/)
 INSTALL(DIRECTORY ${CMAKE_SOURCE_DIR}/tools/embedded/ DESTINATION /opt/usr/share/tizen-tools/embedded/)
 INSTALL(DIRECTORY ${CMAKE_SOURCE_DIR}/data/web/ DESTINATION /opt/usr/share/tizenclaw/web/)
