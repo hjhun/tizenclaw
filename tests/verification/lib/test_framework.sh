@@ -31,7 +31,7 @@ TC_START_TIME=0
 TC_DEVICE_SERIAL="${TC_DEVICE_SERIAL:-}"
 TC_TIMEOUT="${TC_TIMEOUT:-30}"
 TC_VERBOSE="${TC_VERBOSE:-0}"
-TC_CLI_BASE="/opt/usr/share/tizenclaw/tools/cli"
+TC_CLI_BASE="/opt/usr/share/tizen-tools/cli"
 
 # ═══════════════════════════════════════════════════════════════════
 # Device Communication

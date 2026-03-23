@@ -51,7 +51,7 @@ WebDashboard::WebDashboard(AgentCore* agent, TaskScheduler* scheduler)
   if (agent_) agent_->SetHealthMonitor(health_monitor_.get());
 
   // Initialize OTA updater
-  std::string skills_dir = std::string(APP_DATA_DIR) + "/tools/skills";
+  std::string skills_dir = "/opt/usr/share/tizen-tools/skills";
   ota_updater_ = std::make_unique<OtaUpdater>(skills_dir, [this]() {
     if (agent_) agent_->ReloadSkills();
   });

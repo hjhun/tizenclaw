@@ -50,11 +50,11 @@ fi
 # ── S5: Tool Directory ───────────────────────────────────────────
 section "S5" "Tool Directory Structure"
 assert_dir_exists "CLI tools directory" \
-  "/opt/usr/share/tizenclaw/tools/cli"
+  "/opt/usr/share/tizen-tools/cli"
 assert_dir_exists "Embedded tools directory" \
-  "/opt/usr/share/tizenclaw/tools/embedded"
+  "/opt/usr/share/tizen-tools/embedded"
 
-CLI_TOOL_COUNT=$(sdb_shell "ls -1d /opt/usr/share/tizenclaw/tools/cli/*/ 2>/dev/null | wc -l" | tr -d '[:space:]')
+CLI_TOOL_COUNT=$(sdb_shell "ls -1d /opt/usr/share/tizen-tools/cli/*/ 2>/dev/null | wc -l" | tr -d '[:space:]')
 assert_ge "CLI tools installed (>= 10)" "$CLI_TOOL_COUNT" 10
 
 # ── S6: Log Output ────────────────────────────────────────────────

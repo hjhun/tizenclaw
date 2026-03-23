@@ -30,7 +30,7 @@ The project produces an independent RPM containing:
 | ONNX Runtime | `/opt/usr/share/tizenclaw/lib/` | ~16 MB |
 | Embedding Model | `/opt/usr/share/tizenclaw/models/all-MiniLM-L6-v2/` | ~90 MB |
 | OCR Models (PP-OCRv3) | `/opt/usr/share/tizenclaw/models/ppocr/` | ~15 MB (lite) / ~86 MB (full) |
-| OCR CLI Tool | `/opt/usr/share/tizenclaw/tools/cli/tizenclaw-ocr/` | ~130 KB |
+| OCR CLI Tool | `/opt/usr/share/tizen-tools/cli/tizenclaw-ocr/` | ~130 KB |
 
 ### Knowledge Databases
 

@@ -1,7 +1,7 @@
 # TizenClaw CLI Tools Index
 
 CLI tools for the TizenClaw agent. All tools are installed under
-`/opt/usr/share/tizenclaw/tools/cli/<tool-name>/<tool-name>` and output JSON.
+`/opt/usr/share/tizen-tools/cli/<tool-name>/<tool-name>` and output JSON.
 
 ## Tool Summary
 

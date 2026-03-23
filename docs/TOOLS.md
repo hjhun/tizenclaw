@@ -197,7 +197,7 @@ CLI tools use `<service-application>` in `tizen-manifest.xml`:
 
 **Subcommands** (22): `screen-size`, `screenshot`, `get-angle`, `device-time`, `click`, `flick`, `send-key`, `touch-down/move/up`, `mouse-down/move/up`, `find-element`, `find-elements`, `dump-tree`, `click-element`, `set-focus`, `do-action`, `set-value`, `wait-event`, `watch`
 
-**Installation**: `/opt/usr/share/tizenclaw/tools/cli/aurum-cli/aurum-cli`
+**Installation**: `/opt/usr/share/tizen-tools/cli/aurum-cli/aurum-cli`
 
 > gRPC mode requires `aurum-bootstrap` running on the device (`app_launcher -s org.tizen.aurum-bootstrap`). Use `--grpc-addr HOST:PORT` for custom addresses.
 

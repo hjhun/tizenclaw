@@ -138,7 +138,7 @@ ContainerEngine::ContainerEngine()
     : initialized_(false),
       runtime_bin_("crun"),
       app_data_dir_(APP_DATA_DIR),
-      skills_dir_(BuildPaths("tools/skills")),
+      skills_dir_("/opt/usr/share/tizen-tools/skills"),
       bundle_dir_(BuildPaths("bundles/skills_secure")),
       rootfs_tar_(BuildPaths("img/rootfs.tar.gz")),
       container_id_(kSkillsContainerId),
@@ -181,7 +181,7 @@ bool ContainerEngine::Initialize() {
 
   // Ensure data and custom_skills directories exist
   RunCommand("mkdir -p " + EscapeShellArg(app_data_dir_ + "/data"));
-  RunCommand("mkdir -p " + EscapeShellArg(app_data_dir_ + "/tools/custom_skills"));
+  RunCommand("mkdir -p " + EscapeShellArg("/opt/usr/share/tizen-tools/custom_skills"));
 
   // Kill any stale container from a previous daemon run.
   // This ensures we always start a fresh container with the
@@ -834,9 +834,9 @@ bool ContainerEngine::WriteSkillsConfig() const {
       "options": ["rbind", "rw"]
     },
     {
-      "destination": "/opt/usr/share/tizenclaw/tools/cli",
+      "destination": "/opt/usr/share/tizen-tools/cli",
       "type": "bind",
-      "source": "/opt/usr/share/tizenclaw/tools/cli",
+      "source": "/opt/usr/share/tizen-tools/cli",
       "options": ["rbind", "ro"]
     })";
 

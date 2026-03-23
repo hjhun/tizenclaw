@@ -76,7 +76,7 @@ TARGET_COMPILE_OPTIONS(${AURUM_CLI_TARGET} PRIVATE
 
 # ─── Install ────────────────────────────────
 SET(INSTALL_DIR
-  "${APP_DATA_DIR}/tools/cli/${AURUM_CLI_TARGET}")
+  "/opt/usr/share/tizen-tools/cli/${AURUM_CLI_TARGET}")
 
 INSTALL(TARGETS ${AURUM_CLI_TARGET}
   DESTINATION ${INSTALL_DIR})

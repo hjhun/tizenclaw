@@ -31,7 +31,7 @@
 
 namespace tizenclaw {
 
-constexpr const char* kActionsDir = "/opt/usr/share/tizenclaw/tools/actions";
+constexpr const char* kActionsDir = "/opt/usr/share/tizen-tools/actions";
 
 // Command types sent via channel
 enum class ActionCommand : int { kList = 1, kExecute = 2, kSync = 3 };

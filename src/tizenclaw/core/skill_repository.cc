@@ -100,7 +100,7 @@ SkillRepository::CheckUpdates() const {
 bool SkillRepository::UninstallSkill(
     const std::string& name) {
   const std::string skills_dir =
-      "/opt/usr/share/tizenclaw/tools/skills";
+      "/opt/usr/share/tizen-tools/skills";
   std::string skill_path = skills_dir + "/" + name;
 
   namespace fs = std::filesystem;
@@ -125,7 +125,7 @@ nlohmann::json
 SkillRepository::ListInstalledSkills() const {
   nlohmann::json result = nlohmann::json::array();
   const std::string skills_dir =
-      "/opt/usr/share/tizenclaw/tools/skills";
+      "/opt/usr/share/tizen-tools/skills";
 
   namespace fs = std::filesystem;
   std::error_code ec;

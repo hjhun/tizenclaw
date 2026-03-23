@@ -30,7 +30,7 @@ RAG 에셋은 통합 **[tizenclaw-assets](https://github.com/hjhun/tizenclaw-ass
 | ONNX Runtime | `/opt/usr/share/tizenclaw/lib/` | ~16 MB |
 | 임베딩 모델 | `/opt/usr/share/tizenclaw/models/all-MiniLM-L6-v2/` | ~90 MB |
 | OCR 모델 (PP-OCRv3) | `/opt/usr/share/tizenclaw/models/ppocr/` | ~15 MB (lite) / ~86 MB (full) |
-| OCR CLI 도구 | `/opt/usr/share/tizenclaw/tools/cli/tizenclaw-ocr/` | ~130 KB |
+| OCR CLI 도구 | `/opt/usr/share/tizen-tools/cli/tizenclaw-ocr/` | ~130 KB |
 
 ### 지식 데이터베이스
 

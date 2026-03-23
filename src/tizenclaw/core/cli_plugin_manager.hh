@@ -32,7 +32,7 @@ namespace tizenclaw {
 // Manages CLI tool injection from TPK packages.
 // Listens for pkgmgr events and creates symlinks
 // from TPK bin/ and res/ directories into
-// /opt/usr/share/tizenclaw/tools/cli/.
+// /opt/usr/share/tizen-tools/cli/.
 //
 // Each CLI tool directory contains:
 //   - executable  (symlink to the TPK binary)
@@ -95,7 +95,7 @@ class CliPluginManager : public PkgmgrClient::IListener {
   ChangeCallback change_callback_;
 
   static constexpr const char* kCliDir =
-      "/opt/usr/share/tizenclaw/tools/cli";
+      "/opt/usr/share/tizen-tools/cli";
   static constexpr const char* kMetadataKey =
       "http://tizen.org/metadata/tizenclaw/cli";
 };

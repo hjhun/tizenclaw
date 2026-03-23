@@ -112,9 +112,9 @@ FILE(GLOB CONFIG_FILES ${CMAKE_SOURCE_DIR}/data/config/*.txt ${CMAKE_SOURCE_DIR}
 INSTALL(FILES ${CONFIG_FILES} DESTINATION /opt/usr/share/tizenclaw/config/)
 
 # Skills, tools, web
-INSTALL(FILES ${CMAKE_SOURCE_DIR}/tools/routing_guide.md DESTINATION /opt/usr/share/tizenclaw/tools/)
-# INSTALL(DIRECTORY ${CMAKE_SOURCE_DIR}/tools/skills/ DESTINATION /opt/usr/share/tizenclaw/tools/skills/)
-INSTALL(DIRECTORY ${CMAKE_SOURCE_DIR}/tools/embedded/ DESTINATION /opt/usr/share/tizenclaw/tools/embedded/)
+INSTALL(FILES ${CMAKE_SOURCE_DIR}/tools/routing_guide.md DESTINATION /opt/usr/share/tizen-tools/)
+# INSTALL(DIRECTORY ${CMAKE_SOURCE_DIR}/tools/skills/ DESTINATION /opt/usr/share/tizen-tools/skills/)
+INSTALL(DIRECTORY ${CMAKE_SOURCE_DIR}/tools/embedded/ DESTINATION /opt/usr/share/tizen-tools/embedded/)
 INSTALL(DIRECTORY ${CMAKE_SOURCE_DIR}/data/web/ DESTINATION /opt/usr/share/tizenclaw/web/)
 
 # System CLI tools config + descriptors
@@ -122,7 +122,7 @@ INSTALL(FILES "${CMAKE_SOURCE_DIR}/data/sample/system_cli_config.json.sample"
         DESTINATION "${APP_DATA_DIR}/config"
         RENAME "system_cli_config.json")
 INSTALL(DIRECTORY ${CMAKE_SOURCE_DIR}/data/system_cli/
-        DESTINATION /opt/usr/share/tizenclaw/tools/system_cli/)
+        DESTINATION /opt/usr/share/tizen-tools/system_cli/)
 
 # RAG data (compressed; unzipped during %post in spec)
 INSTALL(FILES ${CMAKE_SOURCE_DIR}/data/rag/web.zip

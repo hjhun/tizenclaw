@@ -61,7 +61,7 @@ constexpr size_t kMaxPayload = 10 * 1024 * 1024;
 constexpr int kCodeExecTimeout = 15;
 
 const std::string kAppDataDir = "/opt/usr/share/tizenclaw";
-const std::string kToolsDir = kAppDataDir + "/tools/skills";
+const std::string kToolsDir = "/opt/usr/share/tizen-tools/skills";
 
 volatile sig_atomic_t g_running = 1;
 void SignalHandler(int) { g_running = 0; }

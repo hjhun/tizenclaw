@@ -1,7 +1,7 @@
 # tizen-vconf-cli
 
 Read, write, and monitor Tizen vconf (virtual configuration) keys.
-Binary path: /opt/usr/share/tizenclaw/tools/cli/tizen-vconf-cli/tizen-vconf-cli
+Binary path: /opt/usr/share/tizen-tools/cli/tizen-vconf-cli/tizen-vconf-cli
 
 ## Commands
 

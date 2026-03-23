@@ -17,7 +17,7 @@ C++ built-in tools for system management and agent coordination.
 
 ### C. CLI Tools & System CLI (`cli/` + `system_cli/`) — Priority 3
 Native C++ CLI tools and system-level CLI tools for device information, hardware control, and system queries.
-- **CLI Tools** (`/opt/usr/share/tizenclaw/tools/cli/`): Pre-built native CLI tools (e.g., `tizen-file-manager-cli`, `tizen-device-info-cli`, `tizen-network-info-cli`, `tizen-app-manager-cli`, `tizen-media-cli`).
+- **CLI Tools** (`/opt/usr/share/tizen-tools/cli/`): Pre-built native CLI tools (e.g., `tizen-file-manager-cli`, `tizen-device-info-cli`, `tizen-network-info-cli`, `tizen-app-manager-cli`, `tizen-media-cli`).
 - **System CLI** (`/usr/bin`): System-level tools registered via `tizenclaw-cli --register-tool <path>`.
 - **Usage**: Use for device queries, file operations, network scanning, app management, and system-level operations.
 - **Priority**: Use after Tizen Actions and Embedded Tools, but before Python skills.

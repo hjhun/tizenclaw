@@ -33,7 +33,7 @@ namespace {
 
 const std::string kAppDataDir = "/opt/usr/share/tizenclaw";
 const std::vector<std::string> kAllowedPaths = {
-    kAppDataDir + "/tools/custom_skills",
+    "/opt/usr/share/tizen-tools/custom_skills",
     kAppDataDir + "/data",
     kAppDataDir + "/web/apps",
 };

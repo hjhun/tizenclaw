@@ -1180,7 +1180,7 @@ void ToolDeclarationBuilder::AppendCliTools(
     std::map<std::string, std::string>&
         cli_docs) {
   const std::string cli_dir =
-      "/opt/usr/share/tizenclaw/tools/cli";
+      "/opt/usr/share/tizen-tools/cli";
   namespace fs = std::filesystem;
   std::error_code ec;
   if (!fs::is_directory(cli_dir, ec)) return;

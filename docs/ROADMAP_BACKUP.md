@@ -455,7 +455,7 @@ timeline
 | **Impl** | `SkillWatcher` class using Linux `inotify` API with 500ms debouncing |
 
 **Implementation:**
-- `SkillWatcher` monitors `/opt/usr/share/tizenclaw/tools/skills/` for `manifest.json` changes
+- `SkillWatcher` monitors `/opt/usr/share/tizen-tools/skills/` for `manifest.json` changes
 - 500ms debouncing to batch rapid file changes
 - Auto-watch for newly created skill subdirectories
 - Thread-safe `ReloadSkills()` in `AgentCore` clears cache and rebuilds system prompt
@@ -789,7 +789,7 @@ timeline
 **Implementation:**
 - 13 MD files under `tools/embedded/` with detailed parameter tables and JSON schemas
 - Categories: code_execution, file_system, task_scheduler, multi_agent, rag, pipeline
-- Installed via RPM to `/opt/usr/share/tizenclaw/tools/embedded/`
+- Installed via RPM to `/opt/usr/share/tizen-tools/embedded/`
 - System prompt builder scans both `tools/embedded/` and `tools/actions/` directories
 - Schema-execution separation: MD files are LLM context only, execution logic unchanged
 

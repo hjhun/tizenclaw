@@ -100,10 +100,10 @@ mkdir -p %{buildroot}%{_unitdir}/multi-user.target.wants
 mkdir -p %{buildroot}%{_unitdir}/sockets.target.wants
 mkdir -p %{buildroot}%{_includedir}/tizenclaw
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/img
-# mkdir -p %{buildroot}/opt/usr/share/tizenclaw/tools/skills
+# mkdir -p %{buildroot}/opt/usr/share/tizen-tools/skills
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/config
-mkdir -p %{buildroot}/opt/usr/share/tizenclaw/tools/embedded
-mkdir -p %{buildroot}/opt/usr/share/tizenclaw/tools/cli
+mkdir -p %{buildroot}/opt/usr/share/tizen-tools/embedded
+mkdir -p %{buildroot}/opt/usr/share/tizen-tools/cli
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/sandbox/packages/pip
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/sandbox/packages/npm
 
@@ -146,13 +146,13 @@ fi
 /usr/libexec/tizenclaw/crun
 /opt/usr/share/tizenclaw/img/rootfs.tar.gz
 /opt/usr/share/tizenclaw/config/*
-# /opt/usr/share/tizenclaw/tools/skills/
-/opt/usr/share/tizenclaw/tools/routing_guide.md
+# /opt/usr/share/tizen-tools/skills/
+/opt/usr/share/tizen-tools/routing_guide.md
 /opt/usr/share/tizenclaw/web/
-/opt/usr/share/tizenclaw/tools/embedded/
-/opt/usr/share/tizenclaw/tools/cli/
-/opt/usr/share/tizenclaw/tools/system_cli/
-%dir /opt/usr/share/tizenclaw/tools/
+/opt/usr/share/tizen-tools/embedded/
+/opt/usr/share/tizen-tools/cli/
+/opt/usr/share/tizen-tools/system_cli/
+%dir /opt/usr/share/tizen-tools/
 %dir /opt/usr/share/tizenclaw/config/
 %dir /opt/usr/share/tizenclaw/sandbox/
 %dir /opt/usr/share/tizenclaw/sandbox/packages/

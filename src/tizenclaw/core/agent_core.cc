@@ -1032,7 +1032,7 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
   std::vector<LlmToolDecl> tools;
   skill_runtimes_.clear();
   skill_dirs_.clear();
-  const std::string skills_dir = "/opt/usr/share/tizenclaw/tools/skills";
+  const std::string skills_dir = "/opt/usr/share/tizen-tools/skills";
 
   // Lambda to scan a skills directory.
   // Supports both SKILL.md (Anthropic standard) and
@@ -1110,7 +1110,7 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
 
   // Also scan custom_skills directory
   const std::string custom_skills_dir =
-      "/opt/usr/share/tizenclaw/tools/"
+      "/opt/usr/share/tizen-tools/"
       "custom_skills";
   scan_dir(custom_skills_dir);
 
@@ -1136,7 +1136,7 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
 
   // Regenerate tool index files
   ToolIndexer::RegenerateAll(
-      "/opt/usr/share/tizenclaw/tools");
+      "/opt/usr/share/tizen-tools");
 
   // Detect and register capability overlaps
   // for automatic tool routing
@@ -1214,7 +1214,7 @@ std::string AgentCore::LoadSystemPrompt(const nlohmann::json& config) {
 
 std::string AgentCore::LoadRoutingGuide() {
   const std::string guide_path =
-      "/opt/usr/share/tizenclaw/tools/routing_guide.md";
+      "/opt/usr/share/tizen-tools/routing_guide.md";
   std::ifstream f(guide_path);
   if (f.is_open()) {
     std::string content((std::istreambuf_iterator<char>(f)),
@@ -1330,7 +1330,7 @@ std::string AgentCore::BuildSystemPrompt(
   // Load aggregated tool catalog from tools.md
   {
     const std::string tools_md_path =
-        "/opt/usr/share/tizenclaw/tools/tools.md";
+        "/opt/usr/share/tizen-tools/tools.md";
     std::ifstream in(tools_md_path);
     if (in.is_open()) {
       std::string catalog(
@@ -2688,7 +2688,7 @@ std::string AgentCore::ExecuteCustomSkillOp(const nlohmann::json& args) {
                  nlohmann::json::object());
 
   const std::string base_dir =
-      "/opt/usr/share/tizenclaw/tools/"
+      "/opt/usr/share/tizen-tools/"
       "custom_skills";
 
   // Ensure base directory exists
@@ -2982,7 +2982,7 @@ std::string AgentCore::ExecuteCli(const std::string& tool_name,
   }
 
   std::string cli_dir =
-      std::string("/opt/usr/share/tizenclaw/tools/cli/") + dir_name;
+      std::string("/opt/usr/share/tizen-tools/cli/") + dir_name;
 
   // Try executable name matching directory name first (e.g., aurum-cli/aurum-cli),
   // then fall back to generic "executable" name for backward compatibility

@@ -35,7 +35,7 @@ void McpServer::DiscoverTools() {
   tools_.clear();
 
   // Scan skill manifests (SKILL.md > manifest.json)
-  const std::string skills_dir = "/opt/usr/share/tizenclaw/tools/skills";
+  const std::string skills_dir = "/opt/usr/share/tizen-tools/skills";
 
   namespace fs = std::filesystem;
   std::error_code ec;

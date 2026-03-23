@@ -134,7 +134,7 @@ bool SystemCliAdapter::LoadConfig(const std::string& config_path) {
     config_path_ = config_path;
 
     tools_dir_ = config.value("tools_dir",
-        "/opt/usr/share/tizenclaw/tools/system_cli");
+        "/opt/usr/share/tizen-tools/system_cli");
     auto_discover_ = config.value("auto_discover", false);
     systemd_dir_ = config.value("systemd_dir",
         "/usr/lib/systemd/system");

@@ -25,7 +25,7 @@
 
 namespace tizenclaw {
 
-// Watches /opt/usr/share/tizenclaw/tools/skills/ for
+// Watches /opt/usr/share/tizen-tools/skills/ for
 // manifest.json changes using Linux inotify.
 // Calls a user-provided callback when skills
 // need reloading.

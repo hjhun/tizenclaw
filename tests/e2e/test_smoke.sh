@@ -140,9 +140,9 @@ assert_ge "Loaded tools count" "$TOOL_COUNT" 10
 # ── T3: tools.md Generation ────────────────
 echo -e "\n${CYAN}[T3] Tool Index Files${NC}"
 assert_file_exists "tools.md exists" \
-  "/opt/usr/share/tizenclaw/tools/tools.md"
+  "/opt/usr/share/tizen-tools/tools.md"
 assert_file_exists "skills/index.md exists" \
-  "/opt/usr/share/tizenclaw/tools/skills/index.md"
+  "/opt/usr/share/tizen-tools/skills/index.md"
 
 # ── T4: CLI Basic Response ─────────────────
 echo -e "\n${CYAN}[T4] CLI Basic Response${NC}"
@@ -165,7 +165,7 @@ assert_not_empty "Daemon log shows tool execution" "$TOOL_LOG"
 echo -e "\n${CYAN}[T6] Manifest Parsing Integrity${NC}"
 # Check that a known skill manifest is readable
 MANIFEST_CHECK=$(sdb_shell \
-  "cat /opt/usr/share/tizenclaw/tools/skills/get_device_info/manifest.json" \
+  "cat /opt/usr/share/tizen-tools/skills/get_device_info/manifest.json" \
   2>/dev/null || echo "")
 assert_contains "get_device_info manifest readable" \
   "$MANIFEST_CHECK" "parameters"

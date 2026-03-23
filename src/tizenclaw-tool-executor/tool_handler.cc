@@ -39,9 +39,9 @@ namespace {
 
 const std::string kAppDataDir = "/opt/usr/share/tizenclaw";
 const std::vector<std::string> kToolSearchPaths = {
-    kAppDataDir + "/tools/skills",
-    kAppDataDir + "/tools/custom_skills",
-    kAppDataDir + "/tools/cli",
+    "/opt/usr/share/tizen-tools/skills",
+    "/opt/usr/share/tizen-tools/custom_skills",
+    "/opt/usr/share/tizen-tools/cli",
 };
 constexpr int kExecTimeout = 30;
 constexpr size_t kMaxPayload = 10 * 1024 * 1024;

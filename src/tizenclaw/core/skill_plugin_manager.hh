@@ -32,7 +32,7 @@ namespace tizenclaw {
 // Manages skill injection from RPK packages.
 // Listens for pkgmgr events and creates symlinks (or copies)
 // from RPK lib/<skill_name>/ directories into
-// /opt/usr/share/tizenclaw/tools/skills/.
+// /opt/usr/share/tizen-tools/skills/.
 class SkillPluginManager : public PkgmgrClient::IListener {
  public:
   static SkillPluginManager& GetInstance();
@@ -85,7 +85,7 @@ class SkillPluginManager : public PkgmgrClient::IListener {
   ChangeCallback change_callback_;
 
   static constexpr const char* kSkillsDir =
-      "/opt/usr/share/tizenclaw/tools/skills";
+      "/opt/usr/share/tizen-tools/skills";
   static constexpr const char* kMetadataKey =
       "http://tizen.org/metadata/tizenclaw/skill";
 };
