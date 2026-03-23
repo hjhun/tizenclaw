@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import socket
 import struct
 import sys
 import os
@@ -28,7 +29,34 @@ class TizenClawDaemon:
     def __init__(self):
         self.agent = AgentCore()
         
+    # Allowed UIDs for IPC connections (0=root, service UID)
+    ALLOWED_UIDS = {0}  # root always allowed
+
+    def _check_peer_uid(self, writer: asyncio.StreamWriter) -> bool:
+        """Verify client UID via SO_PEERCRED (Linux-specific)."""
+        try:
+            sock = writer.get_extra_info('socket')
+            if sock is None:
+                return True  # Can't check, allow
+            # SO_PEERCRED returns (pid, uid, gid)
+            import struct as _s
+            cred = sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, _s.calcsize('3i'))
+            pid, uid, gid = _s.unpack('3i', cred)
+            if uid not in self.ALLOWED_UIDS:
+                # Also allow same UID as this process
+                if uid != os.getuid():
+                    logger.warning(f"IPC: Rejecting connection from UID {uid} (PID {pid})")
+                    return False
+            return True
+        except Exception:
+            return True  # If SO_PEERCRED not available, allow
+
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        # UID authentication
+        if not self._check_peer_uid(writer):
+            writer.close()
+            return
+
         try:
             while True:
                 # Read 4-byte network-endian length prefix
@@ -98,6 +126,41 @@ class TizenClawDaemon:
             if self.agent.backend_manager:
                 active_backend = self.agent.backend_manager.get_active_name()
             return {"jsonrpc": "2.0", "id": req_id, "result": [{"name": "PythonAgent_Core", "backend": active_backend}]}
+
+        elif method == "list_tools":
+            schemas = self.agent.indexer.get_tool_schemas() if self.agent.indexer else []
+            return {"jsonrpc": "2.0", "id": req_id, "result": schemas}
+
+        elif method == "call_tool":
+            tool_name = params.get("name", "")
+            tool_args = params.get("arguments", {})
+            if not tool_name:
+                return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32602, "message": "Missing tool name"}}
+            result = await self.agent.dispatcher.execute_tool(tool_name, tool_args)
+            return {"jsonrpc": "2.0", "id": req_id, "result": {"output": result}}
+
+        elif method == "get_metrics":
+            if self.agent.health_monitor:
+                return {"jsonrpc": "2.0", "id": req_id, "result": self.agent.health_monitor.get_metrics_dict()}
+            return {"jsonrpc": "2.0", "id": req_id, "result": {}}
+
+        elif method == "list_sessions":
+            return {"jsonrpc": "2.0", "id": req_id, "result": self.agent.list_sessions()}
+
+        elif method == "clear_session":
+            sid = params.get("session_id", "")
+            self.agent.clear_session(sid)
+            return {"jsonrpc": "2.0", "id": req_id, "result": {"status": "ok"}}
+
+        elif method == "get_perception":
+            if hasattr(self, 'perception_engine') and self.perception_engine:
+                return {"jsonrpc": "2.0", "id": req_id, "result": self.perception_engine.get_status()}
+            return {"jsonrpc": "2.0", "id": req_id, "result": {"status": "unavailable"}}
+
+        elif method == "get_fleet_status":
+            if hasattr(self, 'fleet_agent') and self.fleet_agent:
+                return {"jsonrpc": "2.0", "id": req_id, "result": self.fleet_agent.get_status()}
+            return {"jsonrpc": "2.0", "id": req_id, "result": {"enabled": False}}
 
         else:
             logger.warning(f"Unknown IPC method: {method}")
