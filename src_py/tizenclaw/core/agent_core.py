@@ -243,20 +243,29 @@ class AgentCore:
                     )
                 )
 
-            # Execute each tool call
-            for tc in response.tool_calls:
+            # Execute tool calls in parallel (asyncio.gather)
+            async def _exec_tool(tc):
                 logger.info(f"Tool call [{iteration}]: {tc.name}({tc.args})")
                 try:
-                    tool_output = await self.dispatcher.execute_tool(
+                    return tc, await self.dispatcher.execute_tool(
                         tc.name, tc.args, session_id=session_id
                     )
                 except Exception as e:
-                    tool_output = f"Tool execution error: {e}"
                     logger.error(f"Tool {tc.name} failed: {e}")
                     if self.health_monitor:
                         self.health_monitor.increment_error()
+                    return tc, f"Tool execution error: {e}"
 
-                async with self.session_lock:
+            results = await asyncio.gather(
+                *[_exec_tool(tc) for tc in response.tool_calls],
+                return_exceptions=True
+            )
+
+            async with self.session_lock:
+                for item in results:
+                    if isinstance(item, Exception):
+                        continue
+                    tc, tool_output = item
                     self.sessions[session_id].append(
                         LlmMessage(role="tool", text=tool_output, tool_call_id=tc.id)
                     )

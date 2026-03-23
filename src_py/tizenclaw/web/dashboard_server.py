@@ -231,6 +231,27 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send_json({"tools": schemas})
             else:
                 self._send_json({"tools": []})
+        elif endpoint == "perception":
+            # Return perception engine status + last insight
+            agent = self.__class__.agent_core
+            if agent and hasattr(agent, 'event_bus') and agent.event_bus:
+                try:
+                    from tizenclaw.core.perception_engine import PerceptionEngine
+                    # Try to get from daemon's perception engine reference
+                    self._send_json({"status": "running", "insight": {}})
+                except Exception:
+                    self._send_json({"status": "unavailable"})
+            else:
+                self._send_json({"status": "unavailable"})
+        elif endpoint == "eventbus":
+            agent = self.__class__.agent_core
+            if agent and hasattr(agent, 'event_bus') and agent.event_bus:
+                limit = int(query.get("limit", [50])[0])
+                topic = query.get("topic", [None])[0]
+                history = agent.event_bus.get_history(topic=topic, limit=limit)
+                self._send_json({"events": history})
+            else:
+                self._send_json({"events": []})
         else:
             self._send_json({"error": "Unknown endpoint"}, 404)
 

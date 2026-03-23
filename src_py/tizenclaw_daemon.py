@@ -161,6 +161,30 @@ class TizenClawDaemon:
             logger.error(f"Failed to start AutonomousTrigger: {e}")
             self.autonomous_trigger = None
 
+        # Start perception engine (proactive device situation awareness)
+        self.perception_engine = None
+        try:
+            from tizenclaw.core.perception_engine import PerceptionEngine
+
+            notify_cb = None
+            if self.telegram_client:
+                async def _pe_notify(msg: str):
+                    config = self.telegram_client._load_config() or {}
+                    for cid in config.get("allowed_chat_ids", []):
+                        await self.telegram_client.send_message(cid, msg)
+                notify_cb = _pe_notify
+
+            self.perception_engine = PerceptionEngine(
+                agent_core=self.agent,
+                event_bus=self.agent.event_bus,
+                notification_callback=notify_cb,
+            )
+            await self.perception_engine.start()
+            logger.info("PerceptionEngine started (30s analysis interval)")
+        except Exception as e:
+            logger.error(f"Failed to start PerceptionEngine: {e}")
+            self.perception_engine = None
+
         server = await asyncio.start_unix_server(
             self.handle_client,
             path=self.SOCKET_PATH
@@ -172,6 +196,8 @@ class TizenClawDaemon:
                 await server.serve_forever()
         finally:
             # Graceful shutdown
+            if self.perception_engine:
+                await self.perception_engine.stop()
             if self.autonomous_trigger:
                 await self.autonomous_trigger.stop()
             if self.telegram_client:
