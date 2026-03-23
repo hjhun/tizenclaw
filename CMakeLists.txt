@@ -66,6 +66,17 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/data/devel)
             FILES_MATCHING PATTERN "*.json")
 endif()
 
+# ── Install channel config files to config dir ──
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/data/devel/telegram_config.json)
+    install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/data/devel/telegram_config.json
+            DESTINATION /opt/usr/share/tizenclaw/config)
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/data/config/channels.json)
+    install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/data/config/channels.json
+            DESTINATION /opt/usr/share/tizenclaw/config)
+endif()
+
 # ── Install Python CLI tools ──
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tools/cli_py)
     install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools/cli_py/

@@ -115,14 +115,34 @@ class TizenClawDaemon:
         except Exception as e:
             logger.error(f"Failed to start dashboard server: {e}")
 
+        # Start Telegram bot channel
+        self.telegram_client = None
+        try:
+            from tizenclaw.channels.telegram_client import TelegramClient
+            self.telegram_client = TelegramClient()
+            ok = await self.telegram_client.start(self.agent)
+            if ok:
+                logger.info("Telegram channel started successfully")
+            else:
+                logger.warning("Telegram channel disabled (config missing or invalid)")
+                self.telegram_client = None
+        except Exception as e:
+            logger.error(f"Failed to start Telegram channel: {e}")
+            self.telegram_client = None
+
         server = await asyncio.start_unix_server(
             self.handle_client,
             path=self.SOCKET_PATH
         )
         logger.info(f"IPC Server listening on abstract namespace socket: {self.SOCKET_PATH}")
 
-        async with server:
-            await server.serve_forever()
+        try:
+            async with server:
+                await server.serve_forever()
+        finally:
+            # Graceful shutdown
+            if self.telegram_client:
+                await self.telegram_client.stop()
 
     async def mcp_stdio_loop(self):
         import sys
