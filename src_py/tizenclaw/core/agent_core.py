@@ -130,16 +130,18 @@ class AgentCore:
         lower_prompt = prompt.lower().strip()
         auto_skill = self._match_auto_skill(lower_prompt)
         if auto_skill:
-            logger.info(f"AutoSkill intercept: {auto_skill}")
+            skill_name = auto_skill["name"]
+            skill_args = {"arguments": auto_skill["arguments"]}
+            logger.info(f"AutoSkill intercept: {skill_name} {skill_args}")
             try:
-                tool_output = await self.dispatcher.execute_tool(auto_skill, {})
+                tool_output = await self.dispatcher.execute_tool(skill_name, skill_args)
                 async with self.session_lock:
                     self.sessions[session_id].append(
                         LlmMessage(role="assistant", text=tool_output)
                     )
                 return tool_output
             except Exception as e:
-                logger.error(f"AutoSkill {auto_skill} failed: {e}")
+                logger.error(f"AutoSkill {skill_name} failed: {e}")
                 # Fall through to LLM
 
         # ── Agentic loop ──
@@ -202,18 +204,35 @@ class AgentCore:
         return final_text.strip()
 
     @staticmethod
-    def _match_auto_skill(prompt: str) -> Optional[str]:
-        """Match known prompts to tool names for direct execution."""
-        auto_map = {
-            "get_device_info": ["get_device_info", "device info", "디바이스 정보"],
-            "get_battery_info": ["get_battery_info", "battery info", "배터리 정보", "배터리"],
-            "get_wifi_info": ["get_wifi_info", "wifi info", "와이파이 정보"],
-            "get_system_info": ["get_system_info", "system info", "시스템 정보"],
-        }
-        for tool_name, keywords in auto_map.items():
+    def _match_auto_skill(prompt: str) -> Optional[Dict[str, str]]:
+        """Match known prompts to tool names for direct execution.
+
+        Returns a dict with 'name' and 'arguments' keys, or None.
+        The tool names must match the actual indexed tool names
+        (e.g. 'tizen-device-info-cli') and the arguments should be
+        the actual CLI subcommands.
+        """
+        auto_map = [
+            # (tool_name, subcommand, keywords)
+            ("tizen-device-info-cli", "battery",
+             ["배터리", "battery", "충전"]),
+            ("tizen-device-info-cli", "system-info",
+             ["디바이스 정보", "device info", "시스템 정보", "system info", "기기 정보"]),
+            ("tizen-device-info-cli", "runtime",
+             ["cpu", "메모리 사용", "memory usage", "런타임"]),
+            ("tizen-device-info-cli", "storage",
+             ["저장공간", "storage", "디스크"]),
+            ("tizen-device-info-cli", "display",
+             ["밝기", "brightness", "디스플레이"]),
+            ("tizen-network-info-cli", "wifi",
+             ["와이파이", "wifi", "무선랜"]),
+            ("tizen-sound-cli", "get",
+             ["볼륨", "volume", "소리", "sound"]),
+        ]
+        for tool_name, subcommand, keywords in auto_map:
             for kw in keywords:
                 if kw in prompt:
-                    return tool_name
+                    return {"name": tool_name, "arguments": subcommand}
         return None
 
     def clear_session(self, session_id: str):

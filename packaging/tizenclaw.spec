@@ -10,6 +10,11 @@ Source1001: %{name}.manifest
 BuildRequires:  python3
 BuildRequires:  python3-devel
 BuildRequires:  cmake
+BuildRequires:  autoconf
+BuildRequires:  automake
+BuildRequires:  libtool
+BuildRequires:  gcc
+BuildRequires:  make
 
 %description
 TizenClaw Native Agent ported from C++ to Python to evaluate memory, speed, and storage footprints on Tizen.
@@ -53,4 +58,7 @@ rm -rf %{buildroot}
 %{_unitdir}/sockets.target.wants/tizenclaw-tool-executor.socket
 %{_unitdir}/sockets.target.wants/tizenclaw-code-sandbox.socket
 /opt/usr/share/tizenclaw-python/*
-/opt/usr/share/tizenclaw/scripts/run_standard_container.sh
+/opt/usr/share/tizenclaw/
+/usr/libexec/tizenclaw/crun
+/usr/libexec/tizenclaw/tizenclaw_secure_container.sh
+/usr/libexec/tizenclaw/tizenclaw_code_executor.py

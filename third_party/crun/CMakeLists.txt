@@ -46,7 +46,7 @@ export YAJL_LIBS=\" \"
     --disable-seccomp
 
 # 4. Build
-make -j$(nproc)
+make -j$(nproc 2>/dev/null || echo 1)
 
 echo \"crun ${CRUN_VERSION} built successfully.\"
 ")

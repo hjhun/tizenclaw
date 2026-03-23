@@ -41,6 +41,18 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_standard_container.sh)
             DESTINATION /opt/usr/share/tizenclaw/scripts)
 endif()
 
+# ── Install secure container script + code executor to /usr/libexec/tizenclaw/ ──
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/tizenclaw_secure_container.sh)
+    install(PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/tizenclaw_secure_container.sh
+            DESTINATION /usr/libexec/tizenclaw)
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src_py/tizenclaw_code_sandbox.py)
+    install(PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/src_py/tizenclaw_code_sandbox.py
+            DESTINATION /usr/libexec/tizenclaw
+            RENAME tizenclaw_code_executor.py)
+endif()
+
 # ── Install web dashboard ──
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/data/web)
     install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data/web/
@@ -52,4 +64,19 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/data/devel)
     install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data/devel/
             DESTINATION /opt/usr/share/tizenclaw/data/devel
             FILES_MATCHING PATTERN "*.json")
+endif()
+
+# ── Install Python CLI tools ──
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tools/cli_py)
+    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools/cli_py/
+            DESTINATION /opt/usr/share/tizenclaw/tools/cli_py
+            FILES_MATCHING PATTERN "*.py" PATTERN "*.tool.md")
+endif()
+
+# ── Build crun OCI runtime from source ──
+# crun is built from third_party/crun/ and installed to /usr/libexec/tizenclaw/
+# This requires the project to use LANGUAGES C (enable C compiler for crun).
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/crun/CMakeLists.txt)
+    enable_language(C)
+    add_subdirectory(third_party/crun)
 endif()

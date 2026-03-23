@@ -92,13 +92,11 @@ class LlmBackendFactory:
         if name in ("openai", "xai", "ollama"):
             return OpenAiCompatibleBackend(backend_name=name)
         elif name == "gemini":
-            # Gemini uses incompatible REST API — stub for now
-            logger.warning(f"Gemini backend not yet ported to Python. Skipping.")
-            return None
+            from tizenclaw.llm.gemini_backend import GeminiBackend
+            return GeminiBackend()
         elif name == "anthropic":
-            # Anthropic uses different message format — stub for now
-            logger.warning(f"Anthropic backend not yet ported to Python. Skipping.")
-            return None
+            from tizenclaw.llm.anthropic_backend import AnthropicBackend
+            return AnthropicBackend()
         else:
             logger.warning(f"Unknown backend: {name}")
             return None

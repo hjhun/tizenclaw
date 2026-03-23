@@ -1,34 +1,33 @@
 [Unit]
-Description=TizenClaw Agent System Service (Python Port within Container)
+Description=TizenClaw Agent System Service (Python Port)
 After=network.target network-online.target dbus.service
 Requires=dbus.service
+# Prevent infinite restart loops — must be in [Unit] section
+StartLimitBurst=3
+StartLimitIntervalSec=120
 
 [Service]
 Type=simple
 User=root
 Group=root
 Environment=PYTHONPATH=/opt/usr/share/tizenclaw-python
-ExecStart=/opt/usr/share/tizenclaw/scripts/run_standard_container.sh
-Restart=on-failure
-RestartSec=5
 
-# Prevent infinite restart loops that exhaust emulator resources.
-# After 5 failures within 60 seconds, stop trying.
-StartLimitBurst=5
-StartLimitIntervalSec=60
+# Direct execution (no container overhead) — saves ~30MB RAM
+ExecStart=/usr/bin/python3 /usr/bin/tizenclaw-daemon
+Restart=on-failure
+RestartSec=10
 
 StandardOutput=syslog
 StandardError=syslog
 SyslogIdentifier=tizenclaw-python
 LimitNOFILE=65536
 
-# Do NOT protect from OOM killer on resource-constrained devices.
-# -900 caused emulator freezes because the kernel killed other essential
-# processes instead of tizenclaw when memory ran low.
-OOMScoreAdjust=0
+# Allow OOM killer to terminate us on low-memory devices
+OOMScoreAdjust=100
 
-CapabilityBoundingSet=CAP_SYS_ADMIN CAP_MAC_ADMIN CAP_NET_ADMIN CAP_SYS_PTRACE CAP_SETUID CAP_SETGID CAP_SYS_CHROOT
-AmbientCapabilities=CAP_SYS_ADMIN CAP_MAC_ADMIN CAP_NET_ADMIN CAP_SYS_PTRACE CAP_SETUID CAP_SETGID CAP_SYS_CHROOT
+# Memory limit: prevent runaway usage on 1GB emulator
+MemoryMax=150M
+MemoryHigh=120M
 
 [Install]
 WantedBy=multi-user.target
