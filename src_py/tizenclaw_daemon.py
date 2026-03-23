@@ -130,6 +130,37 @@ class TizenClawDaemon:
             logger.error(f"Failed to start Telegram channel: {e}")
             self.telegram_client = None
 
+        # Start autonomous trigger engine
+        self.autonomous_trigger = None
+        try:
+            from tizenclaw.core.autonomous_trigger import AutonomousTrigger
+
+            # If Telegram is running, use it for notifications
+            notify_cb = None
+            if self.telegram_client:
+                async def _tg_notify(msg: str):
+                    # Broadcast to all allowed chats (or last active)
+                    config = self.telegram_client._load_config() or {}
+                    chat_ids = config.get("allowed_chat_ids", [])
+                    for cid in chat_ids:
+                        await self.telegram_client.send_message(cid, msg)
+                notify_cb = _tg_notify
+
+            self.autonomous_trigger = AutonomousTrigger(
+                agent_core=self.agent,
+                notification_callback=notify_cb,
+            )
+            self.autonomous_trigger.load_rules()
+            await self.autonomous_trigger.start(event_bus=self.agent.event_bus)
+            if self.autonomous_trigger.is_enabled():
+                logger.info("AutonomousTrigger started with "
+                            f"{len(self.autonomous_trigger.list_rules())} rules")
+            else:
+                logger.info("AutonomousTrigger loaded but disabled by config")
+        except Exception as e:
+            logger.error(f"Failed to start AutonomousTrigger: {e}")
+            self.autonomous_trigger = None
+
         server = await asyncio.start_unix_server(
             self.handle_client,
             path=self.SOCKET_PATH
@@ -141,6 +172,8 @@ class TizenClawDaemon:
                 await server.serve_forever()
         finally:
             # Graceful shutdown
+            if self.autonomous_trigger:
+                await self.autonomous_trigger.stop()
             if self.telegram_client:
                 await self.telegram_client.stop()
 

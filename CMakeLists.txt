@@ -77,6 +77,11 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/data/config/channels.json)
             DESTINATION /opt/usr/share/tizenclaw/config)
 endif()
 
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/data/config/autonomous_trigger.json)
+    install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/data/config/autonomous_trigger.json
+            DESTINATION /opt/usr/share/tizenclaw/config)
+endif()
+
 # ── Install Python CLI tools ──
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tools/cli_py)
     install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools/cli_py/

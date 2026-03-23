@@ -1,5 +1,6 @@
 import logging
 import json
+import time
 from typing import Dict, Any, Optional
 from tizenclaw.core.tool_indexer import ToolIndexer
 from tizenclaw.infra.container_engine import ContainerEngine
@@ -14,16 +15,28 @@ class ToolDispatcher:
     """
     Validates LLM tool calls against the ToolIndexer and executes them
     by dispatching to the secure ContainerEngine via abstract namespace IPC.
+
+    Integrated with:
+      - ToolPolicy: blocklist, rate-limit, loop detection
+      - AuditLogger: persistent audit trail for all tool calls
+      - EventBus: publishes tool_call events for other subsystems
+      - HealthMonitor: increments tool call counters
     """
-    def __init__(self, indexer: ToolIndexer, container_engine: ContainerEngine):
+    def __init__(self, indexer: ToolIndexer, container_engine: ContainerEngine,
+                 tool_policy=None, audit_logger=None, event_bus=None,
+                 health_monitor=None):
         self.indexer = indexer
         self.container = container_engine
+        self.policy = tool_policy
+        self.audit = audit_logger
+        self.event_bus = event_bus
+        self.health = health_monitor
 
     def _resolve_cli_command(self, metadata: Dict[str, Any]) -> str:
         """Resolve the CLI executable for a tool.
 
         Priority:
-          1. ``binary`` — native ELF path (e.g. /opt/usr/share/tizenclaw/tools/cli/<name>/<name>)
+          1. ``binary`` — native ELF path
           2. ``command`` — explicit command string from .tool.md frontmatter
           3. tool ``name`` — fallback (assumes it's in $PATH)
         """
@@ -33,33 +46,78 @@ class ToolDispatcher:
             return metadata["command"]
         return metadata.get("name", "")
 
-    async def execute_tool(self, name: str, args: Dict[str, Any]) -> str:
+    async def execute_tool(self, name: str, args: Dict[str, Any],
+                           session_id: str = "") -> str:
         metadata = self.indexer.get_tool_metadata(name)
         if not metadata:
             return f"Error: Tool '{name}' not found or not registered."
 
-        tool_type = metadata.get("type", "cli")
+        # ── Policy check ──
+        if self.policy:
+            allowed, reason = self.policy.check(name)
+            if not allowed:
+                logger.warning(f"ToolPolicy blocked '{name}': {reason}")
+                if self.audit:
+                    self.audit.log_security_event(
+                        f"tool_blocked:{name}", reason
+                    )
+                return f"Error: {reason}"
 
+        tool_type = metadata.get("type", "cli")
         args_str = args.get("arguments", "")
         if isinstance(args_str, dict):
             args_str = json.dumps(args_str)
 
         logger.info(f"Dispatching tool '{name}' (Type: {tool_type})")
+        t0 = time.time()
 
         try:
             if tool_type == "cli":
                 command = self._resolve_cli_command(metadata)
                 logger.info(f"CLI command resolved: {command}")
-                return await self.container.execute_cli_tool(
+                result = await self.container.execute_cli_tool(
                     command, args_str, DEFAULT_CLI_TIMEOUT
                 )
             elif tool_type == "skill":
                 path = metadata.get("path", "")
-                return await self.container.execute_skill(path, args_str)
+                result = await self.container.execute_skill(path, args_str)
             elif tool_type == "mcp":
-                return await self.container.execute_mcp_tool(name, args_str)
+                result = await self.container.execute_mcp_tool(name, args_str)
             else:
-                return f"Error: Unknown tool type '{tool_type}'"
+                result = f"Error: Unknown tool type '{tool_type}'"
         except Exception as e:
             logger.error(f"Tool execution failed for '{name}': {e}")
-            return f"Internal Execution Error: {e}"
+            result = f"Internal Execution Error: {e}"
+
+        elapsed_ms = int((time.time() - t0) * 1000)
+
+        # ── Record call for rate-limit / loop detection ──
+        if self.policy:
+            self.policy.record_call(name)
+
+        # ── Audit logging ──
+        if self.audit:
+            self.audit.log_tool_call(
+                tool_name=name,
+                arguments=args_str,
+                result=result,
+                session_id=session_id,
+                duration_ms=elapsed_ms,
+            )
+
+        # ── Health counter ──
+        if self.health:
+            self.health.increment_tool_call()
+
+        # ── Publish event ──
+        if self.event_bus:
+            from tizenclaw.core.event_bus import Event
+            await self.event_bus.publish_fire_and_forget(Event(
+                topic="tool.executed",
+                data={"tool": name, "args": args_str[:200],
+                      "duration_ms": elapsed_ms,
+                      "success": not result.startswith("Error")},
+                source="tool_dispatcher",
+            ))
+
+        return result

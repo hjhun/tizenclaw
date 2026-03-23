@@ -7,11 +7,16 @@ Manages:
   - Session state (per-session message history with asyncio.Lock)
   - Agentic loop (iterative tool calling, max 10 rounds)
   - Auto-skill intercept (direct execution for known queries)
+  - AuditLogger (persistent tool/LLM call audit trail)
+  - ToolPolicy (blocklist, rate-limit, loop detection)
+  - EventBus (async pub/sub for internal events)
+  - HealthMonitor (request/error/tool/LLM counters)
 """
 import asyncio
 import logging
 import json
 import os
+import time
 from typing import Dict, List, Optional, Callable, Any
 
 logger = logging.getLogger(__name__)
@@ -49,19 +54,44 @@ class AgentCore:
         self.backend_manager = None
         self.scheduler = None
         self.container_engine = None
+        self.audit_logger = None
+        self.tool_policy = None
+        self.event_bus = None
+        self.health_monitor = None
 
     async def initialize(self) -> bool:
-        """Initialize all subsystems: config, backend, tools, container."""
+        """Initialize all subsystems: config, backend, tools, container, security, monitoring."""
         from tizenclaw.core.tool_indexer import ToolIndexer
         from tizenclaw.core.tool_dispatcher import ToolDispatcher
         from tizenclaw.infra.container_engine import ContainerEngine
         from tizenclaw.llm.llm_backend import LlmBackendManager
+        from tizenclaw.core.audit_logger import get_audit_logger
+        from tizenclaw.core.tool_policy import ToolPolicy
+        from tizenclaw.core.event_bus import get_event_bus
 
         logger.info("Initializing AgentCore...")
 
         # Ensure work directories exist
         os.makedirs(os.path.join(WORK_DIR, "sessions"), exist_ok=True)
         os.makedirs(CONFIG_DIR, exist_ok=True)
+
+        # Initialize audit logger
+        self.audit_logger = get_audit_logger()
+        logger.info("AuditLogger initialized")
+
+        # Initialize tool policy (blocklist, rate-limit, loop detection)
+        self.tool_policy = ToolPolicy()
+        self.tool_policy.load_policy()
+        logger.info("ToolPolicy initialized")
+
+        # Initialize event bus
+        self.event_bus = get_event_bus()
+        logger.info("EventBus initialized")
+
+        # Initialize health monitor
+        from tizenclaw.core.health_monitor import get_health_monitor
+        self.health_monitor = get_health_monitor()
+        logger.info("HealthMonitor initialized")
 
         # Initialize LLM backend manager (loads llm_config.json)
         self.backend_manager = LlmBackendManager()
@@ -75,9 +105,15 @@ class AgentCore:
         self.indexer = ToolIndexer()
         self.indexer.load_all_tools()
 
-        # Initialize container engine and dispatcher
+        # Initialize container engine and dispatcher (with policy)
         self.container_engine = ContainerEngine()
-        self.dispatcher = ToolDispatcher(self.indexer, self.container_engine)
+        self.dispatcher = ToolDispatcher(
+            self.indexer, self.container_engine,
+            tool_policy=self.tool_policy,
+            audit_logger=self.audit_logger,
+            event_bus=self.event_bus,
+            health_monitor=self.health_monitor,
+        )
 
         self._initialized = True
         logger.info(
@@ -145,22 +181,42 @@ class AgentCore:
                 # Fall through to LLM
 
         # ── Agentic loop ──
+        if self.health_monitor:
+            self.health_monitor.increment_request()
+
         final_text = ""
         for iteration in range(10):
             async with self.session_lock:
                 current_history = list(self.sessions[session_id])
 
             # Send to LLM via backend manager (auto-fallback)
+            t0 = time.time()
             response = await self.backend_manager.chat(
                 messages=current_history,
                 tools=tools,
                 on_chunk=on_chunk,
                 system_prompt=self.system_prompt
             )
+            llm_ms = int((time.time() - t0) * 1000)
+
+            # Audit + health tracking
+            if self.health_monitor:
+                self.health_monitor.increment_llm_call()
+            if self.audit_logger:
+                self.audit_logger.log_llm_request(
+                    backend=self.backend_manager.get_active_name(),
+                    model=self.backend_manager.get_active_name(),
+                    prompt_preview=prompt[:100],
+                    duration_ms=llm_ms,
+                    success=response.success,
+                    error=response.error_message or "",
+                )
 
             if not response.success:
                 error_msg = response.error_message or "LLM request failed"
                 logger.error(f"LLM error (iteration {iteration}): {error_msg}")
+                if self.health_monitor:
+                    self.health_monitor.increment_error()
                 return f"Error: {error_msg}"
 
             # Accumulate response text
@@ -187,14 +243,18 @@ class AgentCore:
                     )
                 )
 
-            # Execute each tool call sequentially
+            # Execute each tool call
             for tc in response.tool_calls:
                 logger.info(f"Tool call [{iteration}]: {tc.name}({tc.args})")
                 try:
-                    tool_output = await self.dispatcher.execute_tool(tc.name, tc.args)
+                    tool_output = await self.dispatcher.execute_tool(
+                        tc.name, tc.args, session_id=session_id
+                    )
                 except Exception as e:
                     tool_output = f"Tool execution error: {e}"
                     logger.error(f"Tool {tc.name} failed: {e}")
+                    if self.health_monitor:
+                        self.health_monitor.increment_error()
 
                 async with self.session_lock:
                     self.sessions[session_id].append(

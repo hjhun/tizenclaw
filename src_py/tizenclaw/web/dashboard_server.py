@@ -73,40 +73,27 @@ class DashboardAPI:
         return False
 
     def get_metrics(self) -> dict:
+        # Use HealthMonitor if available, fallback to local counters
+        try:
+            from tizenclaw.core.health_monitor import get_health_monitor
+            hm = get_health_monitor()
+            return hm.get_metrics_dict()
+        except Exception:
+            pass
+
+        # Fallback: manual metrics
         uptime_sec = int(time.time() - self.start_time)
         hours = uptime_sec // 3600
         minutes = (uptime_sec % 3600) // 60
         secs = uptime_sec % 60
-
-        mem_info = {}
-        try:
-            with open("/proc/self/status", "r") as f:
-                for line in f:
-                    if line.startswith("VmRSS:"):
-                        mem_info["vm_rss_kb"] = int(line.split()[1])
-                    elif line.startswith("Threads:"):
-                        mem_info["threads"] = int(line.split()[1])
-        except Exception:
-            pass
-
-        load_1m = 0.0
-        try:
-            with open("/proc/loadavg", "r") as f:
-                load_1m = float(f.read().split()[0])
-        except Exception:
-            pass
-
         return {
             "status": "running",
             "uptime": {
                 "seconds": uptime_sec,
                 "formatted": f"{hours}h {minutes}m {secs}s"
             },
-            "memory": {"vm_rss_kb": mem_info.get("vm_rss_kb", 0)},
-            "cpu": {"load_1m": load_1m},
-            "threads": mem_info.get("threads", 1),
-            "pid": os.getpid(),
             "counters": self.counters,
+            "pid": os.getpid(),
         }
 
     def get_sessions(self) -> list:
