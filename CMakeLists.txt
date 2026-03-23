@@ -40,3 +40,16 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_standard_container.sh)
     install(PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_standard_container.sh 
             DESTINATION /opt/usr/share/tizenclaw/scripts)
 endif()
+
+# ── Install web dashboard ──
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/data/web)
+    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data/web/
+            DESTINATION /opt/usr/share/tizenclaw/web)
+endif()
+
+# ── Install dev config files ──
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/data/devel)
+    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data/devel/
+            DESTINATION /opt/usr/share/tizenclaw/data/devel
+            FILES_MATCHING PATTERN "*.json")
+endif()

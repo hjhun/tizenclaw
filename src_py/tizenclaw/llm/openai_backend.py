@@ -215,6 +215,11 @@ class OpenAiCompatibleBackend(LlmBackend):
             payload["tools"] = converted_tools
             payload["tool_choice"] = "auto"
 
+        logger.info(
+            f"LLM API call: {self._backend_name}/{self.model}, "
+            f"messages={len(api_messages)}, tools={len(converted_tools)}"
+        )
+
         # Offload synchronous urllib to thread pool
         result = await asyncio.to_thread(self._make_http_request, payload)
 
@@ -241,6 +246,11 @@ class OpenAiCompatibleBackend(LlmBackend):
             except (json.JSONDecodeError, TypeError):
                 args = {"arguments": args_str}
             tcalls.append(LlmToolCall(id=tc.get("id", ""), name=name, args=args))
+
+        logger.info(
+            f"LLM API response: text={len(text)} chars, "
+            f"tool_calls={len(tcalls)}, tokens={usage.get('total_tokens', 0)}"
+        )
 
         return LlmResponse(
             success=True,

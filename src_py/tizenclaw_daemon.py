@@ -68,38 +68,59 @@ class TizenClawDaemon:
         method = req.get("method")
         params = req.get("params", {})
 
+        logger.info(f"IPC request: method={method}, id={req_id}")
+
         if method == "prompt":
             session_id = params.get("session_id", "default")
             prompt_text = params.get("text", "")
             stream_mode = params.get("stream", False)
-            
-            # Execute the prompt
+
+            logger.info(f"LLM Chat Request: session={session_id}, prompt={prompt_text[:100]}")
+
+            import time
+            t0 = time.time()
             result = await self.agent.process_prompt(session_id, prompt_text)
-            
-            # Simulated naive streaming return (test doesn't strictly stream bytes over socket, just checks output)
+            elapsed = time.time() - t0
+
+            logger.info(f"LLM Chat Response ({elapsed:.2f}s): {result[:200]}")
+
             return {"jsonrpc": "2.0", "id": req_id, "result": {"text": result}}
-            
+
         elif method == "connect_mcp":
+            logger.info("MCP connect request")
             return {"jsonrpc": "2.0", "id": req_id, "result": {"status": "ok", "message": "Successfully loaded"}, "error": None}
-            
+
         elif method == "list_mcp":
             return {"jsonrpc": "2.0", "id": req_id, "result": {"tools": []}}
-            
+
         elif method == "list_agents":
-            return {"jsonrpc": "2.0", "id": req_id, "result": [{"name": "PythonAgent_Core"}]}
-            
+            active_backend = "unknown"
+            if self.agent.backend_manager:
+                active_backend = self.agent.backend_manager.get_active_name()
+            return {"jsonrpc": "2.0", "id": req_id, "result": [{"name": "PythonAgent_Core", "backend": active_backend}]}
+
         else:
+            logger.warning(f"Unknown IPC method: {method}")
             return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": "Method not found"}}
 
     async def run(self):
         await self.agent.initialize()
-        
+
+        # Start web dashboard HTTP server
+        try:
+            from tizenclaw.web.dashboard_server import start_dashboard_server
+            loop = asyncio.get_running_loop()
+            self.http_server = start_dashboard_server(self.agent, loop, port=8080)
+            logger.info("Web Dashboard available at http://0.0.0.0:8080")
+        except Exception as e:
+            logger.error(f"Failed to start dashboard server: {e}")
+
         server = await asyncio.start_unix_server(
             self.handle_client,
             path=self.SOCKET_PATH
         )
         logger.info(f"IPC Server listening on abstract namespace socket: {self.SOCKET_PATH}")
-        
+
         async with server:
             await server.serve_forever()
 
