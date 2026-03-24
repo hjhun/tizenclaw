@@ -281,7 +281,7 @@ class AgentCore {
   // Cached skill declarations
   std::vector<LlmToolDecl> cached_tools_;
   std::atomic<bool> cached_tools_loaded_{false};
-  std::mutex tools_mutex_;  // Protects cached_tools_
+  mutable std::mutex tools_mutex_;  // Protects cached_tools_
 
   // Skill runtime map: skill_name -> "python"|"node"|"native"
   std::map<std::string, std::string> skill_runtimes_;

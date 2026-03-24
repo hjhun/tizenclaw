@@ -166,29 +166,33 @@ std::string ToolProber::GenerateToolDoc(
   // Extract description
   std::string desc =
       ExtractDescription(name, help_output);
-  doc << desc << "\n\n";
+  doc << "## Description\n" << desc << "\n\n";
 
-  doc << "**Binary**: `" << binary_path << "`\n";
-  doc << "**Category**: system_cli\n\n";
+  doc << "## Metadata\n";
+  doc << "- **Binary**: `" << binary_path << "`\n";
+  doc << "- **Category**: system_cli\n\n";
 
-  doc << "## Usage\n\n";
-  doc << "```\n"
+  doc << "## Usage Details\n";
+  doc << "This is a System CLI tool. To use it, invoke `execute_cli` with the `tool_name` set to `" << name << "` and the appropriate `arguments`.\n\n";
+  doc << "```bash\n"
       << name << " [options...]\n"
       << "```\n\n";
 
   // Include full help output
   if (!help_output.empty()) {
-    doc << "## Help Output\n\n";
-    doc << "```\n";
-    // Limit to 4KB to avoid huge docs
-    if (help_output.size() <= 4096) {
+    doc << "## Technical Reference & Execution Output\n";
+    doc << "Review the help details below to construct valid options and arguments.\n\n";
+    doc << "```text\n";
+    
+    // Allow up to 8KB of output to provide deep context, but truncate if needed
+    if (help_output.size() <= 8192) {
       doc << help_output;
     } else {
-      doc << help_output.substr(0, 4096);
-      doc << "\n... (truncated)\n";
+      doc << help_output.substr(0, 8192);
+      doc << "\n... (truncated for brevity)\n";
     }
-    if (!help_output.empty() &&
-        help_output.back() != '\n') {
+    
+    if (help_output.back() != '\n') {
       doc << "\n";
     }
     doc << "```\n";

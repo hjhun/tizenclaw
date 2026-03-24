@@ -117,18 +117,20 @@ ToolRouter::GetAllRedirects() const {
 int ToolRouter::SourcePriority(
     CapabilitySource src) {
   switch (src) {
-    case CapabilitySource::kAction:
-      return 0;
-    case CapabilitySource::kSystemCli:
-      return 1;
-    case CapabilitySource::kCli:
-      return 2;
     case CapabilitySource::kSkill:
-      return 3;
+      return 0;
+    case CapabilitySource::kCustomSkill:
+      return 1;
+    case CapabilitySource::kAction:
+      return 2;
     case CapabilitySource::kBuiltin:
+      return 3;
+    case CapabilitySource::kSystemCli:
       return 4;
-    case CapabilitySource::kRpk:
+    case CapabilitySource::kCli:
       return 5;
+    case CapabilitySource::kRpk:
+      return 6;
   }
   return 99;
 }

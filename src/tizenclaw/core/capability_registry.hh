@@ -48,12 +48,13 @@ struct FunctionContract {
 
 // Source of the capability registration
 enum class CapabilitySource {
-  kBuiltin,   // Built-in C++ tools
-  kSkill,     // Python container skills
-  kAction,    // Tizen Action Framework
-  kRpk,       // RPK plugin skills
-  kCli,       // CLI tool plugins (TPK)
-  kSystemCli, // System CLI tools (/usr/bin)
+  kSkill,       // Python container skills (Standard)
+  kCustomSkill, // Runtime-generated custom skills
+  kAction,      // Tizen Action Framework
+  kBuiltin,     // Built-in C++ tools (Embedded)
+  kSystemCli,   // System CLI tools (/usr/bin)
+  kCli,         // CLI tool plugins (TPK)
+  kRpk,         // RPK plugin skills
 };
 
 // Full capability descriptor for a tool

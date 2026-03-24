@@ -4,36 +4,29 @@ You must follow this guide strictly when selecting tools to fulfill user request
 
 ## 1. Tool Categories
 
-### A. Tizen Actions (`action_*`) — Priority 1 (Highest)
-Native Tizen Platform features. These are the fastest and most reliable for core device control.
+### A. Standard Skills & Custom Skills (`skills/` + `custom_skills/`) — Priority 1 & 2 (Highest)
+- **Standard Skills** (`skills/`) [Priority 1]: Pre-defined Python scripts for specific functionalities (e.g., `web_search`, `get_battery_info`).
+- **Custom Skills** (`custom_skills/`) [Priority 2]: User-defined or AI-generated scripts added at runtime via `manage_custom_skill`.
+- **Usage**: Use when complex logic, web scraping, data parsing, or specialized workflows are needed.
+
+### B. Tizen Actions (`action_*`) — Priority 3
+Native Tizen Platform features. These are fast and reliable for core device control.
 - **Usage**: Use for display brightness, volume, flashlight, notifications, and core system settings.
-- **Priority**: Always check if an `action_` tool exists for a task before using any other tool.
 
-### B. Embedded Tools (`embedded`) — Priority 2
+### C. Embedded Tools (`embedded`) — Priority 4
 C++ built-in tools for system management and agent coordination.
-- **Core Operations**: `file_manager` (file I/O), `task_scheduler` (automation).
-- **Agent Coordination**: `supervisor_engine` (multi-agent delegation), `session_manager` (context handling).
-- **Web App Generation**: `generate_web_app` (dynamic HTML/CSS/JS apps served at `/apps/<id>/`).
+- **Core Operations**: `task_scheduler` (automation), `execute_code`.
+- **Agent Coordination**: `supervisor_engine`.
 
-### C. CLI Tools & System CLI (`cli/` + `system_cli/`) — Priority 3
-Native C++ CLI tools and system-level CLI tools for device information, hardware control, and system queries.
-- **CLI Tools** (`/opt/usr/share/tizen-tools/cli/`): Pre-built native CLI tools (e.g., `tizen-file-manager-cli`, `tizen-device-info-cli`, `tizen-network-info-cli`, `tizen-app-manager-cli`, `tizen-media-cli`).
-- **System CLI** (`/usr/bin`): System-level tools registered via `tizenclaw-cli --register-tool <path>`.
-- **Usage**: Use for device queries, file operations, network scanning, app management, and system-level operations.
-- **Priority**: Use after Tizen Actions and Embedded Tools, but before Python skills.
+### D. System CLI (`system_cli/`) — Priority 5
+System-level tools registered via `tizenclaw-cli --register-tool <path>`.
+- **Usage**: General system commands, host-level operations.
 
-### D. Standard Skills & Custom Skills (`skills/` + `custom_skills/`) — Priority 4
-- **Standard Skills** (`skills/`): Pre-defined Python scripts for specific functionalities (e.g., `web_search`, `get_battery_info`).
-- **Custom Skills** (`custom_skills/`): User-defined or AI-generated scripts added at runtime.
-- **Usage**: Use when native actions, embedded tools, and CLI tools are insufficient, or for specialized logic like web scraping, data parsing, and complex workflows.
+### E. CLI Tools (`cli/`) & TPK Plugins — Priority 6 & 7
+Native C++ CLI tools and TPK-based resource plugins.
+- **Usage**: Pre-built native CLI tools (e.g., `tizen-file-manager-cli`).
 
-### E. CLI Tool Plugins — Priority 5
-TPK-based CLI tool plugins installed via package manager.
-- **Usage**: Third-party CLI extensions registered through TPK packages.
 
-### F. TPK Plugins — Priority 6 (Lowest)
-TPK-based resource package tools and plugins.
-- **Usage**: Additional resource-based tools from installed TPK packages.
 
 ## 2. Selection Strategy & Logic
 
@@ -103,12 +96,13 @@ than handling everything in the main session.
 TizenClaw includes a **ToolRouter** that automatically redirects tool calls to higher-priority alternatives at runtime. If a duplicate tool redirection occurs, the system has already chosen the best tool — you do not need to retry.
 
 ### Priority Order (highest to lowest)
-1. **Tizen Actions** (`action_*`) — Native platform features
-2. **Embedded Tools** — C++ built-in tools
-3. **CLI Tools + System CLI** — Native CLI tools and host-level tools
-4. **Standard Skills & Custom Skills** — Python container skills
-5. **CLI Tool Plugins** — TPK-based CLI tool extensions
-6. **TPK Plugins** — Resource package tools
+1. **Standard Skills** (`skill`) — Pre-defined standard python skills
+2. **Custom Skills** (`custom_skill`) — Runtime-generated custom skills
+3. **Tizen Actions** (`action_`) — Native platform features
+4. **Embedded Tools** (`embedded`) — C++ built-in tools
+5. **System CLI** (`system_cli`) — System-level host tools
+6. **CLI Tools** (`cli`) — Native CLI tools plugins
+7. **RPK Plugins** (`rpk`) — Resource package tools
 
 ### Routing Mechanisms
 - **Manual Aliases**: Configured in `tool_policy.json` (e.g., `control_display` → `action_brightness`)

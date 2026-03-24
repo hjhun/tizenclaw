@@ -75,48 +75,55 @@ void AgentCore::MaintenanceLoop() {
   while (!stop_maintenance_) {
     std::this_thread::sleep_for(std::chrono::seconds(10));
 
-    auto now = std::chrono::duration_cast<std::chrono::seconds>(
-                   std::chrono::system_clock::now().time_since_epoch())
-                   .count();
-    auto last_active = last_activity_time_.load();
+    try {
+      auto now = std::chrono::duration_cast<std::chrono::seconds>(
+                     std::chrono::system_clock::now().time_since_epoch())
+                     .count();
+      auto last_active = last_activity_time_.load();
 
-    if (last_active > 0 && (now - last_active) > IDLE_TIMEOUT_SEC) {
-      LOG(INFO) << "System idle for " << (now - last_active)
-                << "s, flushing memory...";
+      if (last_active > 0 && (now - last_active) > IDLE_TIMEOUT_SEC) {
+        LOG(INFO) << "System idle for " << (now - last_active)
+                  << "s, flushing memory...";
 
-      // Release SQLite memory cache
-      int bytes_freed =
-          sqlite3_release_memory(1024 * 1024 * 50);  // Try to free 50MB
-      if (bytes_freed > 0) {
-        LOG(INFO) << "sqlite3_release_memory freed " << bytes_freed << " bytes";
-      }
+        // Release SQLite memory cache
+        int bytes_freed =
+            sqlite3_release_memory(1024 * 1024 * 50);  // Try to free 50MB
+        if (bytes_freed > 0) {
+          LOG(INFO) << "sqlite3_release_memory freed " << bytes_freed << " bytes";
+        }
 
-      // Return heap memory to OS
-      int trim_result = malloc_trim(0);
-      LOG(INFO) << "malloc_trim(0) returned " << trim_result;
+        // Return heap memory to OS
+        int trim_result = malloc_trim(0);
+        LOG(INFO) << "malloc_trim(0) returned " << trim_result;
 
-      // Reset activity time so we don't spam flush
-      last_activity_time_.store(0);
+        // Reset activity time so we don't spam flush
+        last_activity_time_.store(0);
 
-      // Regenerate memory summary if dirty
-      if (memory_store_.IsSummaryDirty()) {
-        memory_store_.RegenerateSummary();
-        LOG(INFO) << "Memory summary regenerated "
-                  << "(idle)";
-      }
+        // Regenerate memory summary if dirty
+        if (memory_store_.IsSummaryDirty()) {
+          memory_store_.RegenerateSummary();
+          LOG(INFO) << "Memory summary regenerated "
+                    << "(idle)";
+        }
 
-      // Prune old memory entries
-      memory_store_.PruneShortTerm();
-      memory_store_.PruneEpisodic();
+        // Prune old memory entries
+        memory_store_.PruneShortTerm();
+        memory_store_.PruneEpisodic();
 
-      // Free ONNX Runtime memory embedding if loaded (lazy un-load)
-      {
-        std::lock_guard<std::mutex> lock(embedding_mutex_);
-        if (on_device_embedding_.IsAvailable()) {
-          on_device_embedding_.Shutdown();
-          LOG(INFO) << "On-device embedding model unloaded to save memory (idle)";
+        // Free ONNX Runtime memory embedding if loaded (lazy un-load)
+        {
+          std::lock_guard<std::mutex> lock(embedding_mutex_);
+          if (on_device_embedding_.IsAvailable()) {
+            on_device_embedding_.Shutdown();
+            LOG(INFO) << "On-device embedding model unloaded to save memory (idle)";
+          }
         }
       }
+    } catch (const std::exception& e) {
+      LOG(ERROR) << "MaintenanceLoop exception: "
+                 << e.what();
+    } catch (...) {
+      LOG(ERROR) << "MaintenanceLoop unknown exception";
     }
   }
 }
@@ -550,6 +557,44 @@ std::string AgentCore::ProcessPrompt(
 
   UpdateActivityTime();
 
+  // Prompt injection guard: detect known jailbreak patterns
+  {
+    static const std::vector<std::string> kInjectionPatterns = {
+        "ignore previous instructions",
+        "ignore all previous",
+        "disregard your instructions",
+        "forget your instructions",
+        "you are now",
+        "pretend you are",
+        "act as if you have no restrictions",
+        "override your system prompt",
+        "bypass your safety",
+        "DAN mode",
+        "jailbreak",
+        "이전 지시를 무시",
+        "시스템 프롬프트를 무시",
+        "제한을 해제",
+    };
+
+    std::string lower_prompt = prompt;
+    std::transform(lower_prompt.begin(), lower_prompt.end(),
+                   lower_prompt.begin(), ::tolower);
+    for (const auto& pattern : kInjectionPatterns) {
+      std::string lower_pat = pattern;
+      std::transform(lower_pat.begin(), lower_pat.end(),
+                     lower_pat.begin(), ::tolower);
+      if (lower_prompt.find(lower_pat) != std::string::npos) {
+        LOG(WARNING) << "Prompt injection detected: \""
+                     << pattern << "\" in session: " << session_id;
+        AuditLogger::Instance().Log(AuditLogger::MakeEvent(
+            AuditEventType::kToolBlocked, session_id,
+            {{"reason", "prompt_injection_detected"},
+             {"pattern", pattern}}));
+        break;
+      }
+    }
+  }
+
   auto tools = LoadSkillDeclarations();
 
   std::vector<LlmMessage> local_history;
@@ -588,15 +633,31 @@ std::string AgentCore::ProcessPrompt(
     // Build session-specific system prompt
     std::string full_prompt = GetSessionPrompt(session_id, tools);
 
-    // Query LLM backend without holding lock
-    LlmResponse resp =
-        current_backend->Chat(local_history, tools, on_chunk, full_prompt);
+    // Query LLM backend with retry (max 3 attempts)
+    LlmResponse resp;
+    static constexpr int kMaxLlmRetries = 3;
+    static constexpr int kLlmRetryBaseMs = 500;
+    for (int llm_attempt = 0; llm_attempt < kMaxLlmRetries; ++llm_attempt) {
+      resp = current_backend->Chat(
+          local_history, tools, on_chunk, full_prompt);
+      if (resp.success) break;
+
+      LOG(WARNING) << "LLM attempt " << (llm_attempt + 1)
+                   << "/" << kMaxLlmRetries
+                   << " failed: " << resp.error_message;
+
+      if (llm_attempt + 1 < kMaxLlmRetries) {
+        int delay_ms = kLlmRetryBaseMs * (1 << llm_attempt);
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(delay_ms));
+      }
+    }
 
     // Track LLM call in health metrics
     if (health_monitor_) health_monitor_->IncrementLlmCallCount();
 
     if (!resp.success) {
-      LOG(ERROR) << "LLM error: " << resp.error_message;
+      LOG(ERROR) << "LLM error after retries: " << resp.error_message;
 
       // Try fallback backends
       resp = TryFallbackBackends(local_history, tools, on_chunk, full_prompt);
@@ -718,17 +779,59 @@ std::string AgentCore::ProcessPrompt(
         }
 
         auto start = std::chrono::steady_clock::now();
-        auto it = tool_dispatch_.find(resolved_name);
-        if (it != tool_dispatch_.end()) {
-          r.output = it->second(
-              tc.args, resolved_name, session_id);
-        } else if (resolved_name == "execute_action" ||
-                   resolved_name.starts_with("action_")) {
-          r.output = ExecuteActionOp(resolved_name, tc.args);
-        } else if (McpClientManager::IsMcpTool(resolved_name)) {
-          r.output = mcp_client_manager_->ExecuteTool(resolved_name, tc.args);
-        } else {
-          r.output = ExecuteSkill(resolved_name, tc.args);
+
+        // Tool execution with retry (max 3 attempts)
+        static constexpr int kMaxToolRetries = 3;
+        static constexpr int kRetryBaseDelayMs = 200;
+        for (int attempt = 0; attempt < kMaxToolRetries; ++attempt) {
+          auto it = tool_dispatch_.find(resolved_name);
+          if (it != tool_dispatch_.end()) {
+            r.output = it->second(
+                tc.args, resolved_name, session_id);
+          } else if (resolved_name == "execute_action" ||
+                     resolved_name.starts_with("action_")) {
+            r.output = ExecuteActionOp(resolved_name, tc.args);
+          } else if (McpClientManager::IsMcpTool(resolved_name)) {
+            r.output = mcp_client_manager_->ExecuteTool(resolved_name, tc.args);
+          } else {
+            r.output = ExecuteSkill(resolved_name, tc.args);
+          }
+
+          // Check if execution failed
+          bool has_error =
+              r.output.find("\"error\"") != std::string::npos ||
+              r.output.find("Skill failed") != std::string::npos ||
+              r.output.empty();
+
+          if (!has_error || attempt + 1 >= kMaxToolRetries) {
+            if (has_error && attempt > 0) {
+              LOG(WARNING) << "Tool '" << resolved_name
+                           << "' failed after " << (attempt + 1)
+                           << " attempts";
+            }
+            break;
+          }
+
+          // Exponential backoff before retry
+          int delay_ms = kRetryBaseDelayMs * (1 << attempt);
+          LOG(INFO) << "Tool '" << resolved_name
+                    << "' failed (attempt " << (attempt + 1)
+                    << "/" << kMaxToolRetries
+                    << "), retrying in " << delay_ms << "ms";
+          std::this_thread::sleep_for(
+              std::chrono::milliseconds(delay_ms));
+        }
+
+        // Truncate large outputs to save LLM tokens
+        static constexpr size_t kMaxToolOutputSize = 4096;
+        if (r.output.size() > kMaxToolOutputSize) {
+          LOG(INFO) << "Truncating tool output from "
+                    << r.output.size() << " to "
+                    << kMaxToolOutputSize << " bytes";
+          r.output = r.output.substr(0, kMaxToolOutputSize) +
+                     "\n... (truncated, " +
+                     std::to_string(r.output.size()) +
+                     " bytes total)";
         }
 
         // Append routing hint to output
@@ -1037,7 +1140,7 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
   // Lambda to scan a skills directory.
   // Supports both SKILL.md (Anthropic standard) and
   // manifest.json (legacy). SKILL.md takes priority.
-  auto scan_dir = [&](const std::string& dir) {
+  auto scan_dir = [&](const std::string& dir, CapabilitySource source_type) {
     std::error_code ec;
     if (!fs::is_directory(dir, ec)) return;
 
@@ -1073,7 +1176,7 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
           Capability cap;
           cap.name = t.name;
           cap.description = t.description;
-          cap.source = CapabilitySource::kSkill;
+          cap.source = source_type;
           cap.category =
               j.contains("category")
                   ? j["category"].get<std::string>()
@@ -1106,13 +1209,13 @@ std::vector<LlmToolDecl> AgentCore::LoadSkillDeclarations() {
     }
   };
 
-  scan_dir(skills_dir);
+  scan_dir(skills_dir, CapabilitySource::kSkill);
 
   // Also scan custom_skills directory
   const std::string custom_skills_dir =
       "/opt/usr/share/tizen-tools/"
       "custom_skills";
-  scan_dir(custom_skills_dir);
+  scan_dir(custom_skills_dir, CapabilitySource::kCustomSkill);
 
   // Append all built-in tool declarations
   ToolDeclarationBuilder::AppendBuiltinTools(tools);
@@ -3807,8 +3910,7 @@ std::string AgentCore::ExecuteBridgeTool(
 
 std::vector<LlmToolDecl>
 AgentCore::GetToolDeclarations() const {
-  std::lock_guard<std::mutex> lock(
-      const_cast<std::mutex&>(tools_mutex_));
+  std::lock_guard<std::mutex> lock(tools_mutex_);
   return cached_tools_;
 }
 

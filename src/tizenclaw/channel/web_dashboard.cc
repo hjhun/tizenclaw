@@ -76,6 +76,7 @@ bool WebDashboard::LoadConfig() {
       nlohmann::json j;
       f >> j;
       port_ = j.value("port", 9090);
+      localhost_only_ = j.value("localhost_only", true);
       web_root_ = j.value("web_root", web_root_);
     } catch (const std::exception& e) {
       LOG(WARNING) << "Failed to parse dashboard " << "config: " << e.what();
@@ -893,10 +894,19 @@ bool WebDashboard::Start() {
     soup_server_add_handler(server_, "/", HandleRequest, this, nullptr);
 
     GError* error = nullptr;
-    if (!soup_server_listen_all(
-            server_, port_,
-            static_cast<SoupServerListenOptions>(0), &error)) {
+    bool listen_ok = false;
+    if (localhost_only_) {
+      listen_ok = soup_server_listen_local(
+          server_, port_,
+          static_cast<SoupServerListenOptions>(0), &error);
+    } else {
+      listen_ok = soup_server_listen_all(
+          server_, port_,
+          static_cast<SoupServerListenOptions>(0), &error);
+    }
+    if (!listen_ok) {
       LOG(ERROR) << "Dashboard: failed to listen "
+                 << (localhost_only_ ? "locally " : "")
                  << "on port " << port_ << ": "
                  << error->message;
       g_error_free(error);
@@ -919,7 +929,9 @@ bool WebDashboard::Start() {
       cv.notify_one();
     }
 
-    LOG(INFO) << "Web dashboard running on " << "port " << port_;
+    LOG(INFO) << "Web dashboard running on "
+               << (localhost_only_ ? "localhost:" : "0.0.0.0:")
+               << port_;
 
     if (tunnel_manager_) {
       tunnel_manager_->StartTunnel(port_);
@@ -949,7 +961,9 @@ bool WebDashboard::Start() {
   }
 
   running_ = true;
-  LOG(INFO) << "WebDashboard started on " << "port " << port_;
+  LOG(INFO) << "WebDashboard started on "
+             << (localhost_only_ ? "localhost:" : "0.0.0.0:")
+             << port_;
   return true;
 }
 
@@ -2277,6 +2291,37 @@ void WebDashboard::ApiBridgeChat(
 
 void WebDashboard::ApiBridgeEvents(
     SoupMessage* msg, GHashTable* query) {
+  // Authenticate SSE connections when network-exposed.
+  // SSE (EventSource) can't set headers, so also
+  // accept token via ?token= query parameter.
+  if (!localhost_only_) {
+    bool authed = ValidateToken(msg);
+    if (!authed && query) {
+      const char* tk =
+          static_cast<const char*>(
+              g_hash_table_lookup(
+                  query, "token"));
+      if (tk) {
+        std::lock_guard<std::mutex> lock(
+            tokens_mutex_);
+        authed = active_tokens_.count(
+                     std::string(tk)) > 0;
+      }
+    }
+    if (!authed) {
+      soup_message_set_status(
+          msg, SOUP_STATUS_UNAUTHORIZED);
+      std::string err =
+          "{\"error\":\"Authentication required"
+          " for SSE\"}";
+      soup_message_set_response(
+          msg, "application/json",
+          SOUP_MEMORY_COPY, err.c_str(),
+          static_cast<gsize>(err.size()));
+      return;
+    }
+  }
+
   // Parse query parameters
   std::string app_id;
   std::set<std::string> topics;

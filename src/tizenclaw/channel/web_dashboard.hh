@@ -160,6 +160,7 @@ class WebDashboard : public Channel {
 
   // Configuration
   int port_ = 9090;
+  bool localhost_only_ = true;  // Bind to 127.0.0.1 only (security default)
   std::string web_root_;
   std::string config_dir_;
 

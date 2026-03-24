@@ -21,6 +21,21 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PKG_NAME="tizenclaw"
 GBS_BUILD_LOG="/tmp/gbs_build_output.log"
 
+# Auto-detect sdb if not in PATH (non-interactive shell
+# doesn't source ~/.bashrc)
+if ! command -v sdb &>/dev/null; then
+  for _sdb_candidate in \
+      "${HOME}/tizen-studio/tools" \
+      "${HOME}/tizen-studio/tools/emulator/bin" \
+      "/opt/tizen-studio/tools" \
+      "/usr/local/tizen-studio/tools"; do
+    if [ -x "${_sdb_candidate}/sdb" ]; then
+      export PATH="${_sdb_candidate}:${PATH}"
+      break
+    fi
+  done
+fi
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -343,7 +358,16 @@ check_prerequisites() {
     fi
   fi
 
-
+  # Check sdb
+  if ! command -v sdb &>/dev/null; then
+    if [ "${DRY_RUN}" = true ]; then
+      warn "sdb not found (ignored in dry-run)"
+    else
+      fail "sdb not found. Install Tizen Studio or add sdb to PATH.\n       Searched:\n         ~/tizen-studio/tools/\n         /opt/tizen-studio/tools/"
+    fi
+  else
+    ok "sdb found: $(command -v sdb)"
+  fi
 
   log "Architecture : ${ARCH}"
   log "Project dir  : ${PROJECT_DIR}"
