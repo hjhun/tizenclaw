@@ -247,6 +247,20 @@ bool AgentCore::Initialize() {
     }
   }
 
+  // Load safety guard (physical bounds + device profile)
+  {
+    auto guard = boot.Track("SafetyGuard");
+    std::string bounds_path =
+        std::string(APP_DATA_DIR) +
+        "/config/safety_bounds.json";
+    safety_guard_.LoadConfig(bounds_path);
+
+    std::string profile_path =
+        std::string(APP_DATA_DIR) +
+        "/config/device_profile.json";
+    safety_guard_.LoadDeviceProfile(profile_path);
+  }
+
   {
     auto guard = boot.Track("LlmBackend");
     if (!SwitchToBestBackend(false)) {
@@ -762,6 +776,37 @@ std::string AgentCore::ProcessPrompt(
           AuditLogger::Instance().Log(AuditLogger::MakeEvent(
               AuditEventType::kToolBlocked, session_id,
               {{"skill", tc.name}, {"reason", violation}}));
+          return r;
+        }
+
+        // Safety guard: physical bounds + device exclusion
+        auto safety_result =
+            safety_guard_.Validate(tc.name, tc.args);
+        if (!safety_result.allowed) {
+          LOG(WARNING) << "Tool blocked by SafetyGuard: "
+                       << tc.name << " - "
+                       << safety_result.reason;
+          r.output = "{\"error\": \"" +
+                     safety_result.reason + "\"}";
+          AuditLogger::Instance().Log(
+              AuditLogger::MakeEvent(
+                  AuditEventType::kToolBlocked,
+                  session_id,
+                  {{"skill", tc.name},
+                   {"reason", safety_result.reason},
+                   {"layer", "safety_guard"}}));
+          return r;
+        }
+
+        // Safety guard: action rate limiting
+        if (safety_guard_.CheckActionRateLimit(
+                tc.name)) {
+          std::string rate_msg =
+              "Action rate limit exceeded for " +
+              tc.name +
+              ". Please wait before retrying.";
+          LOG(WARNING) << rate_msg;
+          r.output = "{\"error\": \"" + rate_msg + "\"}";
           return r;
         }
 

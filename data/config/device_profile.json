@@ -1,0 +1,11 @@
+{
+  "device_type": "generic",
+  "capabilities": [
+    "display",
+    "audio",
+    "network",
+    "bluetooth"
+  ],
+  "excluded_tools": [],
+  "safety_bounds": {}
+}

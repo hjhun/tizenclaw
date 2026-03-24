@@ -32,6 +32,7 @@
 #include "../storage/memory_store.hh"
 #include "agent_role.hh"
 #include "agent_factory.hh"
+#include "safety_guard.hh"
 #include "tool_policy.hh"
 #include "tool_router.hh"
 #include "action_bridge.hh"
@@ -275,6 +276,7 @@ class AgentCore {
   static constexpr size_t kCompactionCount = 10;
 
   SessionStore session_store_;
+  SafetyGuard safety_guard_;
   ToolPolicy tool_policy_;
   ToolRouter tool_router_;
 
