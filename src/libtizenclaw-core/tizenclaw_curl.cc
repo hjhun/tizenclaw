@@ -87,6 +87,7 @@ API int tizenclaw_curl_create(tizenclaw_curl_h* curl) {
   curl_easy_setopt(instance->curl_, CURLOPT_ERRORBUFFER, instance->errbuf_);
   curl_easy_setopt(instance->curl_, CURLOPT_SSL_VERIFYPEER, 1L);
   curl_easy_setopt(instance->curl_, CURLOPT_SSL_VERIFYHOST, 2L);
+  curl_easy_setopt(instance->curl_, CURLOPT_NOSIGNAL, 1L);
 
   const char* ca_paths[] = {
       "/etc/ssl/certs/ca-certificates.crt", "/etc/ssl/ca-bundle.pem",

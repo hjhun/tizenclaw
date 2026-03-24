@@ -76,6 +76,7 @@ int TizenClawDaemon::Run() {
   // Set up signal handling
   std::signal(SIGINT, signal_handler);
   std::signal(SIGTERM, signal_handler);
+  std::signal(SIGPIPE, SIG_IGN);
 
   int ret = tizen_core_task_run(task_);
   if (ret != 0) {
