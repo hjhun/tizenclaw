@@ -30,7 +30,17 @@ Generate a dynamic web application and serve it via the built-in web server (por
       "html": {"type": "string", "description": "Complete HTML content"},
       "css": {"type": "string", "description": "Optional CSS stylesheet"},
       "js": {"type": "string", "description": "Optional JavaScript code"},
-      "assets": {"type": "array", "description": "External assets [{url,filename}]"},
+      "assets": {
+        "type": "array",
+        "description": "External assets [{url,filename}]",
+        "items": {
+          "type": "object",
+          "properties": {
+            "url": {"type": "string"},
+            "filename": {"type": "string"}
+          }
+        }
+      },
       "allowed_tools": {"type": "array", "items": {"type": "string"}, "description": "Tool names this app can call via Bridge API"}
     },
     "required": ["app_id", "title", "html"]
