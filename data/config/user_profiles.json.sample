@@ -1,0 +1,27 @@
+{
+  "profiles": [
+    {
+      "user_id": "dad_01",
+      "name": "Dad",
+      "role": "admin",
+      "preferences": {
+        "temperature_unit": "celsius",
+        "language": "en-US"
+      }
+    },
+    {
+      "user_id": "mom_01",
+      "name": "Mom",
+      "role": "admin",
+      "preferences": {}
+    },
+    {
+      "user_id": "child_01",
+      "name": "Tommy",
+      "role": "child",
+      "preferences": {
+        "content_filter": "strict"
+      }
+    }
+  ]
+}

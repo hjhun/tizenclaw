@@ -270,6 +270,15 @@ bool AgentCore::Initialize() {
     offline_fallback_.LoadConfig(fallback_path);
   }
 
+  // Load user profiles
+  {
+    auto guard = boot.Track("UserProfile");
+    std::string profile_db_path =
+        std::string(APP_DATA_DIR) +
+        "/config/user_profiles.json";
+    user_profile_store_.Initialize(profile_db_path);
+  }
+
   {
     auto guard = boot.Track("LlmBackend");
     if (!SwitchToBestBackend(false)) {
@@ -835,9 +844,13 @@ std::string AgentCore::ProcessPrompt(
           return r;
         }
 
-        // Safety guard: physical bounds + device exclusion
+        // Look up user profile for RBAC
+        std::string u_id = user_profile_store_.GetUserIdForSession(session_id);
+        UserProfile profile = user_profile_store_.GetProfile(u_id);
+
+        // Safety guard: physical bounds, device exclusion, RBAC
         auto safety_result =
-            safety_guard_.Validate(tc.name, tc.args);
+            safety_guard_.Validate(tc.name, tc.args, profile.role);
         if (!safety_result.allowed) {
           LOG(WARNING) << "Tool blocked by SafetyGuard: "
                        << tc.name << " - "
@@ -2046,33 +2059,45 @@ std::string AgentCore::ExecuteSessionOp(const std::string& operation,
 
 std::string AgentCore::GetSessionPrompt(const std::string& session_id,
                                         const std::vector<LlmToolDecl>& tools) {
-  // Check for per-session prompt override
+  std::string base_prompt;
   {
     std::lock_guard<std::mutex> lock(session_mutex_);
     auto it = session_prompts_.find(session_id);
     if (it != session_prompts_.end()) {
-      // Use custom prompt with tool list
-      std::string prompt = it->second;
-
+      base_prompt = it->second;
       std::string tool_list;
       for (const auto& t : tools) {
         tool_list += "- " + t.name + ": " + t.description + "\n";
       }
 
       const std::string placeholder = "{{AVAILABLE_TOOLS}}";
-      size_t pos = prompt.find(placeholder);
+      size_t pos = base_prompt.find(placeholder);
       if (pos != std::string::npos) {
-        prompt.replace(pos, placeholder.size(), tool_list);
+        base_prompt.replace(pos, placeholder.size(), tool_list);
       } else if (!tool_list.empty()) {
-        prompt += "\n\nAvailable tools:\n" + tool_list;
+        base_prompt += "\n\nAvailable tools:\n" + tool_list;
       }
-
-      return prompt;
     }
   }
 
-  // Fallback to global system prompt
-  return BuildSystemPrompt(tools);
+  if (base_prompt.empty()) {
+    base_prompt = BuildSystemPrompt(tools);
+  }
+
+  // Inject user profile context
+  std::string u_id = user_profile_store_.GetUserIdForSession(session_id);
+  UserProfile profile = user_profile_store_.GetProfile(u_id);
+
+  std::string user_context = "\n\n[USER CONTEXT]\n";
+  user_context += "Current User ID: " + profile.user_id + "\n";
+  user_context += "User Name: " + profile.name + "\n";
+  user_context += "User Role: " + UserProfileStore::RoleToString(profile.role) + "\n";
+  if (!profile.preferences.empty()) {
+    user_context += "Preferences: " + profile.preferences.dump() + "\n";
+  }
+  user_context += "Note: Keep the role and preferences in mind when performing actions.\n";
+
+  return base_prompt + user_context;
 }
 
 std::string AgentCore::ExecuteRagOp(const std::string& operation,
@@ -3282,6 +3307,19 @@ void AgentCore::InitializeToolDispatcher() {
 
   // file_manager removed — use tizen-file-manager-cli
   // via execute_cli instead
+
+  tool_dispatch_["switch_user"] =
+      [this](const nlohmann::json& args,
+             const std::string&,
+             const std::string& session_id) {
+        std::string target_user = args.value("user_id", "");
+        if (target_user.empty()) {
+          return std::string("{\"error\": \"user_id is required\"}");
+        }
+        user_profile_store_.BindSession(session_id, target_user);
+        return std::string("{\"status\": \"success\", \"message\": \"Switched to ") +
+            target_user + "\"}";
+      };
 
   for (const auto& n :
        {"create_task", "list_tasks",

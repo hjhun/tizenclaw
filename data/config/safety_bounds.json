@@ -93,5 +93,20 @@
     "set_cook_program",
     "control_power",
     "terminate_app"
-  ]
+  ],
+  "restricted_tools": {
+    "child": [
+      "control_oven_temperature",
+      "preheat_oven",
+      "start_wash_cycle",
+      "set_cook_program"
+    ],
+    "guest": [
+      "control_oven_temperature",
+      "preheat_oven",
+      "start_wash_cycle",
+      "set_cook_program",
+      "control_power"
+    ]
+  }
 }

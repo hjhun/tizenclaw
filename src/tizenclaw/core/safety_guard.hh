@@ -22,6 +22,8 @@
 #include <string>
 #include <vector>
 
+#include "user_profile_store.hh"
+
 namespace tizenclaw {
 
 // Physical safety boundary for a numeric parameter.
@@ -80,7 +82,8 @@ class SafetyGuard {
   // Returns SafetyCheckResult with allowed/blocked status.
   [[nodiscard]] SafetyCheckResult Validate(
       const std::string& tool_name,
-      const nlohmann::json& args) const;
+      const nlohmann::json& args,
+      UserRole role = UserRole::kGuest) const;
 
   // Check if a tool is excluded for this device type.
   [[nodiscard]] bool IsExcludedTool(
@@ -129,6 +132,10 @@ class SafetyGuard {
 
   // Tools requiring user confirmation before execution
   std::vector<std::string> confirmation_tools_;
+
+  // RBAC restricted tools
+  std::vector<std::string> child_restricted_tools_;
+  std::vector<std::string> guest_restricted_tools_;
 
   // Device profile
   DeviceProfile device_profile_;

@@ -80,6 +80,21 @@ bool SafetyGuard::LoadConfig(
       }
     }
 
+    // Parse restricted tools based on RBAC
+    if (j.contains("restricted_tools") && j["restricted_tools"].is_object()) {
+      auto& req = j["restricted_tools"];
+      if (req.contains("child") && req["child"].is_array()) {
+        for (auto& t : req["child"]) {
+          if (t.is_string()) child_restricted_tools_.push_back(t.get<std::string>());
+        }
+      }
+      if (req.contains("guest") && req["guest"].is_array()) {
+        for (auto& t : req["guest"]) {
+          if (t.is_string()) guest_restricted_tools_.push_back(t.get<std::string>());
+        }
+      }
+    }
+
     config_loaded_ = true;
     LOG(INFO) << "SafetyGuard: loaded "
               << bounds_.size() << " tool bounds, "
@@ -167,8 +182,32 @@ bool SafetyGuard::LoadDeviceProfile(
 
 SafetyCheckResult SafetyGuard::Validate(
     const std::string& tool_name,
-    const nlohmann::json& args) const {
+    const nlohmann::json& args,
+    UserRole role) const {
   SafetyCheckResult result;
+
+  // RBAC checks
+  if (role == UserRole::kGuest) {
+    for (const auto& t : guest_restricted_tools_) {
+      if (t == tool_name) {
+        result.allowed = false;
+        result.reason = "Guest users are not allowed "
+                        "to use the '" + tool_name + "' action.";
+        return result;
+      }
+    }
+  }
+
+  if (role == UserRole::kChild || role == UserRole::kGuest) {
+    for (const auto& t : child_restricted_tools_) {
+      if (t == tool_name) {
+        result.allowed = false;
+        result.reason = "This action ('" + tool_name + "') "
+                        "is restricted for child/guest users.";
+        return result;
+      }
+    }
+  }
 
   // Check device exclusion list
   if (IsExcludedTool(tool_name)) {

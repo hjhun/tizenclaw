@@ -54,6 +54,26 @@ void ToolDeclarationBuilder::AppendBuiltinTools(
   // file_manager removed — use tizen-file-manager-cli
   // via execute_cli instead
 
+  // switch_user
+  {
+    LlmToolDecl t;
+    t.name = "switch_user";
+    t.description =
+        "Switch the current active user profile for "
+        "the session. Used to simulate different users "
+        "(e.g., adult vs child) when testing permissions.";
+    t.parameters = {
+        {"type", "object"},
+        {"properties",
+         {{"user_id",
+           {{"type", "string"},
+            {"description",
+             "The user_id to switch to (e.g. child_01, admin_01)"}}}}},
+        {"required",
+         nlohmann::json::array({"user_id"})}};
+    tools.push_back(t);
+  }
+
   // create_task
   {
     LlmToolDecl t;
