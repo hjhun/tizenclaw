@@ -104,6 +104,7 @@ mkdir -p %{buildroot}/opt/usr/share/tizenclaw/img
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/config
 mkdir -p %{buildroot}/opt/usr/share/tizen-tools/embedded
 mkdir -p %{buildroot}/opt/usr/share/tizen-tools/cli
+mkdir -p %{buildroot}/opt/usr/share/tizen-tools/actions
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/sandbox/packages/pip
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/sandbox/packages/npm
 
@@ -153,6 +154,7 @@ fi
 /opt/usr/share/tizen-tools/embedded/
 /opt/usr/share/tizen-tools/cli/
 /opt/usr/share/tizen-tools/system_cli/
+%dir /opt/usr/share/tizen-tools/actions/
 %dir /opt/usr/share/tizen-tools/
 %dir /opt/usr/share/tizenclaw/config/
 %dir /opt/usr/share/tizenclaw/sandbox/

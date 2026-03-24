@@ -42,3 +42,10 @@ The `custom_skills/index.md` file is auto-generated when custom skills are insta
 
 System CLI tools are host-level tools registered via `tizenclaw-cli --register-tool`.
 The `system_cli/index.md` file is auto-generated based on registered tools.
+
+## Device Actions
+
+See [actions/index.md](actions/index.md) for the dynamically generated list of native Tizen actions.
+
+Device Actions are native Tizen platform features provided by the Action Framework.
+The `actions/index.md` file and its contents are auto-generated at runtime when action schemas are synced by `ActionBridge`. They handle core device control such as display brightness, volume, network toggles, and more.
