@@ -66,6 +66,7 @@ RUN_FULL_TESTS=false
 WITH_ASSETS=false
 WITH_BRIDGE=false
 RAG_PROJECT_DIR=""
+DEVICE_SERIAL=""
 
 # ─────────────────────────────────────────────
 # Logging helpers

@@ -125,8 +125,10 @@ IF(TIZENCLAW_ARCH MATCHES "^arm" AND NOT TIZENCLAW_ARCH STREQUAL "aarch64")
   SET(TIZENCLAW_ARCH "armv7l")
 ENDIF()
 MESSAGE(STATUS "Target architecture for rootfs: ${TIZENCLAW_ARCH}")
-INSTALL(FILES ${CMAKE_SOURCE_DIR}/data/img/${TIZENCLAW_ARCH}/rootfs.tar.gz
-  DESTINATION /opt/usr/share/tizenclaw/img/)
+if(WITH_CRUN)
+  INSTALL(FILES ${CMAKE_SOURCE_DIR}/data/img/${TIZENCLAW_ARCH}/rootfs.tar.gz
+    DESTINATION /opt/usr/share/tizenclaw/img/)
+endif()
 
 # Config samples
 FILE(GLOB CONFIG_FILES ${CMAKE_SOURCE_DIR}/data/config/*.txt ${CMAKE_SOURCE_DIR}/data/config/*.json)

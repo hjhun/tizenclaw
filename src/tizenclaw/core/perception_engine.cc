@@ -211,80 +211,70 @@ void PerceptionEngine::AnalysisLoop() {
 }
 
 void PerceptionEngine::RunAnalysisTick() {
-  // Skip if not enough data yet
-  if (profiler_->GetEventCount() <
-      kMinEventsForAnalysis) {
-    return;
-  }
+  nlohmann::json insight;
 
-  // Step 1: Analyze device profile
-  auto profile = profiler_->Analyze();
-
-  // Step 2: Get current device state from
-  // SystemContextProvider
-  nlohmann::json device_state;
-  if (context_) {
-    auto ctx = context_->GetContextJson();
-    if (ctx.contains("device")) {
-      device_state = ctx["device"];
+  // Step 1: Unconditional screen perception
+  if (screen_perceptor_) {
+    auto screen_ctx = screen_perceptor_->GetLatestScreenContext();
+    if (!screen_ctx.empty()) {
+      insight["screen_context"] = screen_ctx;
+      insight["screen_status"] = "Text extracted via OCR";
+    } else {
+      auto surfaces = screen_perceptor_->GetTrackedSurfaces();
+      if (!surfaces.empty()) {
+        std::string apps = "";
+        for (const auto& s : surfaces) {
+          if (s["visible"].get<bool>()) {
+            apps += s["appid"].get<std::string>() + " ";
+          }
+        }
+        insight["screen_context"] = "Currently visible applications: " + apps;
+        insight["screen_status"] = "App tracking only (No OCR text)";
+      } else {
+        insight["screen_context"] = "Nothing visible.";
+        insight["screen_status"] = "Blank or idle";
+      }
     }
   }
 
-  // Step 3: Fuse into situation assessment
-  auto assessment =
-      fusion_->Fuse(profile, device_state);
+  // Step 2: Conditional profile and situation analysis
+  if (profiler_->GetEventCount() >= kMinEventsForAnalysis) {
+    auto profile = profiler_->Analyze();
+    nlohmann::json device_state;
+    if (context_) {
+      auto ctx = context_->GetContextJson();
+      if (ctx.contains("device")) {
+        device_state = ctx["device"];
+      }
+    }
+    auto assessment = fusion_->Fuse(profile, device_state);
+    
+    insight["situation"] = ContextFusionEngine::ToJson(assessment);
+    insight["trends"] = {
+        {"battery_drain_rate", profile.battery_drain_rate},
+        {"battery_health", profile.battery_health},
+        {"memory_trend", profile.memory_trend},
+        {"network_stability",
+         profile.network_drop_count == 0 ? "stable" : (profile.network_drop_count < 3 ? "degraded" : "unstable")},
+        {"memory_warning_count", profile.memory_warning_count}
+    };
+    if (!profile.top_apps.empty()) insight["top_apps"] = profile.top_apps;
+    if (!profile.foreground_app.empty()) insight["foreground_app"] = profile.foreground_app;
+    if (!profile.anomalies.empty()) insight["anomalies"] = profile.anomalies;
 
-  // Step 4: Build perception insight JSON
-  nlohmann::json insight;
-  insight["situation"] =
-      ContextFusionEngine::ToJson(assessment);
-  insight["trends"] = {
-      {"battery_drain_rate",
-       profile.battery_drain_rate},
-      {"battery_health", profile.battery_health},
-      {"memory_trend", profile.memory_trend},
-      {"network_stability",
-       profile.network_drop_count == 0
-           ? "stable"
-           : (profile.network_drop_count < 3
-                  ? "degraded"
-                  : "unstable")},
-      {"memory_warning_count",
-       profile.memory_warning_count}};
+    auto advisory = advisor_->Evaluate(assessment);
+    advisor_->Execute(advisory);
 
-  if (!profile.top_apps.empty()) {
-    insight["top_apps"] = profile.top_apps;
-  }
-  if (!profile.foreground_app.empty()) {
-    insight["foreground_app"] =
-        profile.foreground_app;
-  }
-  if (!profile.anomalies.empty()) {
-    insight["anomalies"] = profile.anomalies;
+    if (assessment.level != SituationLevel::kNormal) {
+      LOG(INFO) << "PerceptionEngine: " << ContextFusionEngine::LevelToString(assessment.level)
+                << " (risk=" << static_cast<int>(assessment.risk_score * 100)
+                << "%, factors=" << assessment.factors.size() << ")";
+    }
   }
 
-  // Step 5: Inject insight into
-  // SystemContextProvider
+  // Step 3: Inject built insight into SystemContextProvider
   if (context_) {
     context_->SetPerceptionInsight(insight);
-  }
-
-  // Step 6: ProactiveAdvisor evaluates and
-  // potentially acts
-  auto advisory = advisor_->Evaluate(assessment);
-  advisor_->Execute(advisory);
-
-  // Log only on non-normal situations
-  if (assessment.level !=
-      SituationLevel::kNormal) {
-    LOG(INFO) << "PerceptionEngine: "
-              << ContextFusionEngine::LevelToString(
-                     assessment.level)
-              << " (risk="
-              << static_cast<int>(
-                     assessment.risk_score * 100)
-              << "%, factors="
-              << assessment.factors.size() << ")";
   }
 }
 
