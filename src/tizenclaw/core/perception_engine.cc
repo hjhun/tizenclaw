@@ -97,34 +97,43 @@ void PerceptionEngine::Start() {
     screen_perceptor_->SetFrameCallback([this](const CapturedFrame& frame) {
       if (frame.width == 0 || frame.height == 0 || frame.data.empty()) return;
       
-      std::lock_guard<std::mutex> lock(g_ocr_mutex);
-      if (!g_ocr_engine) return;
+      static std::atomic<bool> ocr_busy{false};
+      if (ocr_busy.exchange(true)) return; // Drop frame if OCR is already running
       
-      // Analyze buffer in-memory directly
-      char* json_str = g_tizenclaw_ocr_analyze_buffer(
-          g_ocr_engine, frame.data.data(), frame.width, frame.height, 4, 1 /* is_bgra */);
-          
-      if (!json_str) return;
-      std::string output(json_str);
-      free(json_str);
+      auto stored_frame = std::make_shared<CapturedFrame>(frame);
       
-      // Parse JSON and set context
-      try {
-        auto j = nlohmann::json::parse(output);
-        std::string all_text;
-        if (j.contains("texts")) {
-          for (const auto& item : j["texts"]) {
-            if (item.contains("text")) {
-              all_text += item["text"].get<std::string>() + " ";
+      std::thread([this, stored_frame]() {
+        std::lock_guard<std::mutex> lock(g_ocr_mutex);
+        if (g_ocr_engine) {
+          // Analyze buffer in-memory directly
+          char* json_str = g_tizenclaw_ocr_analyze_buffer(
+              g_ocr_engine, stored_frame->data.data(), stored_frame->width, stored_frame->height, 4, 1 /* is_bgra */);
+              
+          if (json_str) {
+            std::string output(json_str);
+            free(json_str);
+            
+            // Parse JSON and set context
+            try {
+              auto j = nlohmann::json::parse(output);
+              std::string all_text;
+              if (j.contains("texts")) {
+                for (const auto& item : j["texts"]) {
+                  if (item.contains("text")) {
+                    all_text += item["text"].get<std::string>() + " ";
+                  }
+                }
+              }
+              if (!all_text.empty()) {
+                this->screen_perceptor_->SetScreenContext(all_text);
+              }
+            } catch (...) {
+              LOG(ERROR) << "Failed to parse OCR JSON output.";
             }
           }
         }
-        if (!all_text.empty()) {
-          this->screen_perceptor_->SetScreenContext(all_text);
-        }
-      } catch (...) {
-        LOG(ERROR) << "Failed to parse OCR JSON output.";
-      }
+        ocr_busy.store(false);
+      }).detach();
     });
 
     if (screen_perceptor_->Start()) {
