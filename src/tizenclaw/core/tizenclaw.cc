@@ -19,6 +19,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
+#include <dlfcn.h>
 
 #include <algorithm>
 #include <csignal>
@@ -840,6 +841,12 @@ constexpr uid_t TizenClawDaemon::kAllowedUids[];
 
 
 int main(int argc, char* argv[]) {
+  // CRITICAL FIX: Pre-load ONNX Runtime dependency before ANY threads are spawned
+  // (such as GLib, Ecore, std::threads) to prevent glibc static TLS exhaustion
+  // which strictly causes Segfaults during Ort::Env initialization on Tizen 10.
+  void* preload = dlopen("/opt/usr/share/tizenclaw/lib/libtizenclaw-ocr.so", RTLD_NOW | RTLD_GLOBAL);
+  (void)preload;
+
   using namespace tizenclaw;
 
   // Add file-based logging for debugging
