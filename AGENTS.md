@@ -1,19 +1,25 @@
 # TizenClaw Main Development Workflow
 
-This document defines the core development process (Plan → Develop → Verify → Review → Commit) for the TizenClaw project. The AGENT must always follow this process when performing tasks.
+This document defines the core development process (Plan → Design → Develop → Build & Deploy → Test & Review → Commit) for the TizenClaw project. The AGENT must always follow this process when performing tasks.
 
 > [!IMPORTANT]
 > For detailed procedures on each topic, refer to the workflow documents under [`.agents/workflows/`](.agents/workflows/).
 
-## 1. Plan
-- Accurately understand the objectives and requirements.
-- Analyze existing code and check applicable workflows. **CRITICAL**: The Agent MUST strictly adhere to the project's coding style as defined in [`.agents/workflows/coding_rules.md`](.agents/workflows/coding_rules.md) (e.g., Google C++ Style, 2-space indentation, trailing underscore `_` for members). Do not introduce or mimic inconsistent styles found in older legacy parts of the codebase.
+## 1. Plan (기획)
+- Accurately understand the objectives and user requirements.
+- Write a work unit (`task.md`) and establish a high-level plan before proceeding.
+
+## 2. Design (설계)
+- Analyze existing code and check applicable workflows to ensure the appropriate approach is selected.
+- **CRITICAL**: The Agent MUST strictly adhere to the project's coding style as defined in [`.agents/workflows/coding_rules.md`](.agents/workflows/coding_rules.md) (e.g., Google C++ Style, 2-space indentation, trailing underscore `_` for members). Do not introduce or mimic inconsistent styles found in older legacy parts of the codebase.
+- Establish architectural/structural decisions and write a detailed implementation plan (`implementation_plan.md`) if necessary.
+
+## 3. Develop (개발)
+- Modify source code and add/modify unit tests based on the design approach.
 - **CRITICAL BRANCH POLICY**: Do not create or switch to new branches for development or feature work. Always apply patches, make commits, and push changes directly to the **current branch** you are currently on. Maintain this single-branch development policy at all times.
 - **WORKFLOW DOC POLICY**: Workflow documents (.md) must only be created or modified after the corresponding feature has been fully verified (build, deploy, and runtime validation) on an actual device. Writing workflow documents for unverified features is prohibited. When adding a new workflow, you must also update the workflow README.
-- Write a work unit (`task.md`) and establish a detailed plan before implementation.
 
-## 2. Develop & Deploy
-- Modify source code and add/modify unit tests.
+## 4. Build & Deploy (빌드 및 배포)
 - After writing code, use the `deploy.sh` script to build, deploy, and restart the daemon via a single command.
   - Run: `./deploy.sh`
   - The script will automatically trigger a `gbs build`, locate the built rpm packages, install them on the device, and restart the `tizenclaw` service.
@@ -21,8 +27,8 @@ This document defines the core development process (Plan → Develop → Verify 
   - For advanced build options, refer to [`.agents/workflows/gbs_build.md`](.agents/workflows/gbs_build.md).
   - For deployment details, refer to [`.agents/workflows/deploy_to_emulator.md`](.agents/workflows/deploy_to_emulator.md).
 
-## 3. Verify
-Once `deploy.sh` successfully finishes:
+## 5. Test & Review (테스트 및 리뷰)
+Once `deploy.sh` successfully finishes, verify functionality and perform code review:
 - Check the log output of the TizenClaw daemon to verify correct startup and runtime execution:
   - Command: `sdb shell dlogutil TIZENCLAW TIZENCLAW_WEBVIEW`
 - **Functional Testing via `tizenclaw-cli`**:
@@ -41,28 +47,16 @@ Once `deploy.sh` successfully finishes:
 > [!TIP]
 > If a crash occurs after deployment, refer to [`.agents/workflows/crash_debug.md`](.agents/workflows/crash_debug.md) to analyze the crash dump.
 
-## 4. Code Review
-After verification passes, perform a code review on all changed files using the [`.agents/workflows/code_review.md`](.agents/workflows/code_review.md) workflow checklist:
-1. **Coding Style** — [`.agents/workflows/coding_rules.md`](.agents/workflows/coding_rules.md) compliance
-2. **Correctness** — logic errors, boundary conditions, missing error handling
-3. **Memory Issues** — memory leaks, dangling pointer, use-after-free
-4. **Performance** — unnecessary copies, inefficient loops, lock contention
-5. **Logic Issues** — dead code, unreachable branches, variable shadowing
-6. **Security** — missing input validation, buffer overflow, injection vulnerabilities
-7. **Thread Safety** — race condition, deadlock, GLib callback safety
-8. **Resource Management** — fd/socket/D-Bus release, GLib resources, container cleanup
-9. **Test Coverage** — gtest additions/modifications, unit tests for new functions
-10. **Error Propagation & Logging** — dlog usage, error propagation paths, silent failure prevention
+After functional verification passes, perform a code review on all changed files using the [`.agents/workflows/code_review.md`](.agents/workflows/code_review.md) workflow checklist.
+Key areas include Coding Style, Correctness, Memory, Performance, Logic, Security, Thread Safety, Resource Management, Test Coverage, and Error Handling.
 
-### Review-Fix Loop (max 5 iterations)
-- **PASS**: All items pass → proceed to Commit stage
-- **FAIL**: Issues found → return to **Develop** stage to fix → `deploy.sh` → **Verify** → re-**Review**
-- This loop repeats up to **5 times**. If exceeded, escalate to the user.
+### Issue Resolution Loop
+- **PASS**: All items pass → proceed to Commit stage.
+- **FAIL (Development Fix)**: Issues found during test/review → return to **Develop (개발)** stage to fix → Build & Deploy → Test & Review.
+- **CONTINUOUS FAIL (Design Re-evaluation)**: If the same or related issues continuously occur during the Test & Review stage despite fixes, you MUST pause development and return to the **Design (설계)** stage to completely re-evaluate the technical approach and root cause.
+- This Review-Fix loop repeats up to **5 times**. If issues remain after 5 iterations, escalate to the user to prevent an infinite loop.
 
-> [!CAUTION]
-> If the Review-Fix loop exceeds 5 iterations, you must report to the user to prevent an infinite loop.
-
-## 5. Commit (Completion of Work)
+## 6. Commit (커밋)
 When all review passes, perform a `git commit` to finalize the work according to [`.agents/workflows/commit_guidelines.md`](.agents/workflows/commit_guidelines.md).
 Refer to the detailed rules in the respective workflow, but the core points are as follows.
 

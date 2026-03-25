@@ -5,7 +5,7 @@ description: Code Review Checklist and Review-Fix Loop (max 5 iterations)
 # Code Review Workflow
 
 This workflow defines a structured code review process for all code changes.
-It must be performed after the Verify stage and before the Commit stage.
+It must be performed during the Test & Review stage, before the Commit stage.
 
 ## Review Checklist
 
@@ -84,44 +84,47 @@ Review all changed source files against the following 10 categories in order.
 - Silent failure detection — at minimum, errors must be logged
 - Verify sensitive information is not exposed in logs
 
-## Review-Fix Loop
+## Issue Resolution Loop
 
 When issues are found, follow the loop below. **Repeats up to 5 times maximum.**
 
 ```
-┌─────────────────────────────────────────────────┐
-│                  Review-Fix Loop                │
-│                  (max 5 iterations)             │
-│                                                 │
-│   ┌──────────┐    ┌──────────┐    ┌──────────┐  │
-│   │ Develop  │───▶│  Verify  │───▶│  Review  │  │
-│   │ (fix)    │    │ (build/  │    │ (check-  │  │
-│   │          │    │  deploy/ │    │  list)   │  │
-│   │          │    │  test)   │    │          │  │
-│   └──────────┘    └──────────┘    └─────┬────┘  │
-│        ▲                                │       │
-│        │          FAIL                  │       │
-│        └────────────────────────────────┘       │
-│                                 │               │
-│                            PASS │               │
-│                                 ▼               │
-│                          ┌──────────┐           │
-│                          │  Commit  │           │
-│                          └──────────┘           │
-└─────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                    Issue Resolution Loop                        │
+│                    (max 5 iterations)                           │
+│                                                                 │
+│   ┌──────────┐    ┌──────────┐    ┌─────────┐   ┌───────────┐   │
+│   │  Design  │───▶│ Develop  │───▶│ Build & │──▶│  Test &   │   │
+│   │(re-eval) │    │  (fix)   │    │ Deploy  │   │  Review   │   │
+│   └──────────┘    └──────────┘    └─────────┘   └─────┬─────┘   │
+│        ▲               ▲                              │         │
+│        │               │          FAIL                │         │
+│        │               └──────────────────────────────┤         │
+│        │                                              │         │
+│        │          CONTINUOUS FAIL                     │         │
+│        └──────────────────────────────────────────────┘         │
+│                                                       │         │
+│                                                  PASS │         │
+│                                                       ▼         │
+│                                                 ┌───────────┐   │
+│                                                 │  Commit   │   │
+│                                                 └───────────┘   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Procedure
 
 1. Review all changed files against the 10-category checklist in order.
 2. **PASS**: If no issues are found in any category, proceed to the Commit stage.
-3. **FAIL**: If one or more issues are found:
+3. **FAIL (Development Fix)**: If one or more issues are found:
    - Record the discovered issues clearly (category, filename, line number, description).
    - Return to the **Develop** stage to fix the issues.
-   - Build/deploy via `deploy.sh`, then re-run the **Verify** stage.
-   - Perform a **Review** again on the corrected code.
-4. This loop repeats up to **5 times maximum**.
-5. If issues remain after 5 iterations, **escalate** to the user for a decision.
+   - Build/deploy via `deploy.sh`, then perform **Test & Review** again.
+4. **CONTINUOUS FAIL (Design Re-evaluation)**: If the same or related issues continuously occur across iterations without resolution:
+   - Stop and return to the **Design** stage.
+   - Re-evaluate the technical approach, architecture, or root cause before returning to development.
+5. This loop repeats up to **5 times maximum**.
+6. If issues remain after 5 iterations, **escalate** to the user for a decision.
 
 > [!CAUTION]
 > To prevent infinite loops, you must report to the user and request
