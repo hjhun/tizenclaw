@@ -122,7 +122,7 @@ bool ScreenPerceptor::Start() {
   // user data
   toolkit_handle_ = fn_add_(
       reinterpret_cast<void*>(&ops),
-      "",  // id: empty string instead of nullptr to prevent basic_string throw
+      "org.tizen.tizenclaw",  // id: valid string instead of "" or nullptr
       kScreenTypeAll,
       this);
 
