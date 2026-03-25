@@ -5,21 +5,21 @@ This document defines the core development process (Plan → Design → Develop 
 > [!IMPORTANT]
 > For detailed procedures on each topic, refer to the workflow documents under [`.agents/workflows/`](.agents/workflows/).
 
-## 1. Plan (기획)
+## 1. Plan
 - Accurately understand the objectives and user requirements.
 - Write a work unit (`task.md`) and establish a high-level plan before proceeding.
 
-## 2. Design (설계)
+## 2. Design
 - Analyze existing code and check applicable workflows to ensure the appropriate approach is selected.
 - **CRITICAL**: The Agent MUST strictly adhere to the project's coding style as defined in [`.agents/workflows/coding_rules.md`](.agents/workflows/coding_rules.md) (e.g., Google C++ Style, 2-space indentation, trailing underscore `_` for members). Do not introduce or mimic inconsistent styles found in older legacy parts of the codebase.
 - Establish architectural/structural decisions and write a detailed implementation plan (`implementation_plan.md`) if necessary.
 
-## 3. Develop (개발)
+## 3. Develop
 - Modify source code and add/modify unit tests based on the design approach.
 - **CRITICAL BRANCH POLICY**: Development must be conducted on the `devel` branch, and related changes must be pushed only to the `devel` branch unless explicitly commanded otherwise by the user. If development proceeds on a branch whose name starts with `devel` (e.g., `devel-feature`), changes must only be pushed to that specific branch. Do not create new branches or push to `main` without explicit permission.
 - **WORKFLOW DOC POLICY**: Workflow documents (.md) must only be created or modified after the corresponding feature has been fully verified (build, deploy, and runtime validation) on an actual device. Writing workflow documents for unverified features is prohibited. When adding a new workflow, you must also update the workflow README.
 
-## 4. Build & Deploy (빌드 및 배포)
+## 4. Build & Deploy
 - **NO LOCAL CMAKE/MAKE**: Because this project is developed for Tizen, you MUST NEVER run `cmake` or `make` directly in the WSL or shell environment. Build targeting the appropriate platform using the provided rules.
 - After writing code, use the `deploy.sh` script to build, deploy, and restart the daemon via a single command.
   - Run: `./deploy.sh`
@@ -28,7 +28,7 @@ This document defines the core development process (Plan → Design → Develop 
   - For advanced build options, refer to [`.agents/workflows/gbs_build.md`](.agents/workflows/gbs_build.md).
   - For deployment details, refer to [`.agents/workflows/deploy_to_emulator.md`](.agents/workflows/deploy_to_emulator.md).
 
-## 5. Test & Review (테스트 및 리뷰)
+## 5. Test & Review
 Once `deploy.sh` successfully finishes, verify functionality and perform code review:
 - Check the log output of the TizenClaw daemon to verify correct startup and runtime execution:
   - Command: `sdb shell dlogutil TIZENCLAW TIZENCLAW_WEBVIEW`
@@ -53,11 +53,11 @@ Key areas include Coding Style, Correctness, Memory, Performance, Logic, Securit
 
 ### Issue Resolution Loop
 - **PASS**: All items pass → proceed to Commit stage.
-- **FAIL (Development Fix)**: Issues found during test/review → return to **Develop (개발)** stage to fix → Build & Deploy → Test & Review.
-- **CONTINUOUS FAIL (Design Re-evaluation)**: If the same or related issues continuously occur during the Test & Review stage despite fixes, you MUST pause development and return to the **Design (설계)** stage to completely re-evaluate the technical approach and root cause.
+- **FAIL (Development Fix)**: Issues found during test/review → return to **Develop** stage to fix → Build & Deploy → Test & Review.
+- **CONTINUOUS FAIL (Design Re-evaluation)**: If the same or related issues continuously occur during the Test & Review stage despite fixes, you MUST pause development and return to the **Design** stage to completely re-evaluate the technical approach and root cause.
 - This Review-Fix loop repeats up to **5 times**. If issues remain after 5 iterations, escalate to the user to prevent an infinite loop.
 
-## 6. Commit (커밋)
+## 6. Commit
 When all review passes, perform a `git commit` to finalize the work according to [`.agents/workflows/commit_guidelines.md`](.agents/workflows/commit_guidelines.md).
 Refer to the detailed rules in the respective workflow, but the core points are as follows.
 
