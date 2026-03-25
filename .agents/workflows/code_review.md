@@ -5,7 +5,7 @@ description: Code Review Checklist and Review-Fix Loop (max 5 iterations)
 # Code Review Workflow
 
 This workflow defines a structured code review process for all code changes.
-It must be performed during the Test & Review stage, before the Commit stage.
+It MUST be performed during the **Test & Review** stage, alongside actual runtime verification on the device. **You are strictly prohibited from proceeding to the Commit stage until both runtime testing and this code review are complete and successful.**
 
 ## Review Checklist
 

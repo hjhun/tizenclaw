@@ -4,7 +4,7 @@ description: TizenClaw Git Commit Guidelines
 
 # TizenClaw Commit Message Workflow
 
-During the development of the TizenClaw project (Phase 2 ~ Phase 5), the following rules must always be strictly adhered to during automated, step-by-step commits.
+During the development of the TizenClaw project (Phase 1 ~ Phase 6), the following rules must always be strictly adhered to during automated, step-by-step commits. You MUST NEVER bypass the Test & Review phase.
 
 ## 1. Basic Structure of a Commit Message
 Similar to the Conventional Commits style, write a title that clearly reveals the purpose, and separate the body into one or more paragraphs.
@@ -46,14 +46,17 @@ Verification:
 *-> Do not leave such log-based confirmation text in the commit message; use it only for visual confirmation in terminal outputs or PR reviews.*
 
 ## 4. Commit Timing (Workflow)
-1. One unit feature specified in the document (such as `implementation_phases.md`) is implemented.
-2. `gbs build` (including `%check` gtests internally) passes completely without errors. (If errors occur, modify the code).
-3. Perform `git add .` followed by `git commit -m "$(Message in the above format)"` according to the workflow rules.
+**CRITICAL**: You MUST NOT generate a commit simply because the build succeeded. A commit can ONLY be generated after the **Test & Review** phase is fully complete.
+
+1. **Develop**: One unit feature specified in the document is implemented.
+2. **Build & Deploy**: `deploy.sh` (or `gbs build`) passes completely without errors and the package is deployed.
+3. **Test & Review**: The feature is ACTIVELY verified at runtime on the device (e.g., using `tizenclaw-cli`, checking `dlogutil`, verifying Web UI) and the Code Review checklist is completely passed.
+4. **Commit**: Only after all tests and reviews pass, perform `git add .` followed by `git commit -m "..."`.
 
 ## 5. Push (Reflect to Remote Repository)
-Once the commit is complete, push it to the remote repository.
+Once the commit is complete, push it to the remote repository. According to the branch policy, **never push to `main`**. Always push to `devel` or your current `devel-*` branch.
 ```bash
-git push origin main
+git push origin HEAD
 ```
 
 // turbo-all

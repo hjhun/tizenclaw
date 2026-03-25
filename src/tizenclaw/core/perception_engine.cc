@@ -18,10 +18,21 @@
 #include <chrono>
 #include <cstdio>
 #include <fstream>
+#include <dlfcn.h>
+#include <mutex>
 
 #include "../../common/logging.hh"
 
 namespace tizenclaw {
+
+namespace {
+  void* g_ocr_lib = nullptr;
+  void* g_ocr_engine = nullptr;
+  void* (*g_tizenclaw_ocr_create)(const char*) = nullptr;
+  void (*g_tizenclaw_ocr_destroy)(void*) = nullptr;
+  char* (*g_tizenclaw_ocr_analyze_buffer)(void*, const unsigned char*, int, int, int, int) = nullptr;
+  std::mutex g_ocr_mutex;
+}
 
 PerceptionEngine::PerceptionEngine(
     AgentCore* agent,
@@ -56,65 +67,48 @@ void PerceptionEngine::Start() {
   analysis_thread_ = std::thread(
       &PerceptionEngine::AnalysisLoop, this);
 
-  // Start screen perception (optional — graceful
-  // degradation if screen-connector unavailable)
+  // Start screen perception
   if (screen_perceptor_) {
-    // Register OCR pipeline callback
+    // Attempt to load OCR library dynamically
+    g_ocr_lib = dlopen("/opt/usr/share/tizenclaw/lib/libtizenclaw-ocr.so", RTLD_LAZY);
+    if (!g_ocr_lib) {
+      LOG(WARNING) << "OCR library (tizenclaw-assets) not found. Disabling ScreenPerceptor.";
+      screen_perceptor_.reset();
+    } else {
+      g_tizenclaw_ocr_create = reinterpret_cast<void*(*)(const char*)>(dlsym(g_ocr_lib, "tizenclaw_ocr_create"));
+      g_tizenclaw_ocr_destroy = reinterpret_cast<void(*)(void*)>(dlsym(g_ocr_lib, "tizenclaw_ocr_destroy"));
+      g_tizenclaw_ocr_analyze_buffer = reinterpret_cast<char*(*)(void*, const unsigned char*, int, int, int, int)>(dlsym(g_ocr_lib, "tizenclaw_ocr_analyze_buffer"));
+      
+      if (!g_tizenclaw_ocr_create || !g_tizenclaw_ocr_destroy || !g_tizenclaw_ocr_analyze_buffer) {
+        LOG(WARNING) << "OCR library missing expected symbols. Disabling ScreenPerceptor.";
+        screen_perceptor_.reset();
+      } else {
+        g_ocr_engine = g_tizenclaw_ocr_create("/opt/usr/share/tizenclaw/models/ppocr");
+        if (!g_ocr_engine) {
+          LOG(ERROR) << "Failed to initialize OCR engine context. Disabling ScreenPerceptor.";
+          screen_perceptor_.reset();
+        }
+      }
+    }
+  }
+
+  if (screen_perceptor_) {
+    // Register OCR pipeline callback (In-Memory!)
     screen_perceptor_->SetFrameCallback([this](const CapturedFrame& frame) {
       if (frame.width == 0 || frame.height == 0 || frame.data.empty()) return;
       
-      // 1. Write the raw RGBA/BGRA pixels to a BMP file
-      std::string path = "/tmp/tizenclaw_screen_" + frame.appid + ".bmp";
-      std::ofstream out(path, std::ios::binary);
-      if (!out) return;
+      std::lock_guard<std::mutex> lock(g_ocr_mutex);
+      if (!g_ocr_engine) return;
       
-      uint32_t w = frame.width;
-      uint32_t h = frame.height;
-      uint32_t row_size = w * 4;
-      uint32_t pixel_size = row_size * h;
-      uint32_t file_size = 54 + pixel_size;
+      // Analyze buffer in-memory directly
+      char* json_str = g_tizenclaw_ocr_analyze_buffer(
+          g_ocr_engine, frame.data.data(), frame.width, frame.height, 4, 1 /* is_bgra */);
+          
+      if (!json_str) return;
+      std::string output(json_str);
+      free(json_str);
       
-      out.write("BM", 2);
-      out.write(reinterpret_cast<const char*>(&file_size), 4);
-      uint32_t reserved = 0;
-      out.write(reinterpret_cast<const char*>(&reserved), 4);
-      uint32_t data_offset = 54;
-      out.write(reinterpret_cast<const char*>(&data_offset), 4);
-      
-      uint32_t header_size = 40;
-      out.write(reinterpret_cast<const char*>(&header_size), 4);
-      int32_t width = w, height = -static_cast<int32_t>(h); // Top-down
-      out.write(reinterpret_cast<const char*>(&width), 4);
-      out.write(reinterpret_cast<const char*>(&height), 4);
-      uint16_t planes = 1, bpp = 32;
-      out.write(reinterpret_cast<const char*>(&planes), 2);
-      out.write(reinterpret_cast<const char*>(&bpp), 2);
-      uint32_t comp = 0; // BI_RGB
-      out.write(reinterpret_cast<const char*>(&comp), 4);
-      out.write(reinterpret_cast<const char*>(&pixel_size), 4);
-      int32_t ppm = 2835;
-      out.write(reinterpret_cast<const char*>(&ppm), 4);
-      out.write(reinterpret_cast<const char*>(&ppm), 4);
-      uint32_t colors = 0, colors_imp = 0;
-      out.write(reinterpret_cast<const char*>(&colors), 4);
-      out.write(reinterpret_cast<const char*>(&colors_imp), 4);
-      
-      out.write(reinterpret_cast<const char*>(frame.data.data()), frame.data.size());
-      out.close();
-
-      // 2. Invoke tizenclaw-ocr to extract text
-      std::string cmd = "/opt/usr/share/tizen-tools/cli/tizenclaw-ocr " + path + " --json";
-      FILE* pipe = popen(cmd.c_str(), "r");
-      if (!pipe) return;
-      
-      std::string output;
-      char buffer[2048];
-      while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-      }
-      pclose(pipe);
-      
-      // 3. Parse JSON and set context
+      // Parse JSON and set context
       try {
         auto j = nlohmann::json::parse(output);
         std::string all_text;
@@ -134,14 +128,12 @@ void PerceptionEngine::Start() {
     });
 
     if (screen_perceptor_->Start()) {
-      LOG(INFO) << "ScreenPerceptor active";
+      LOG(INFO) << "ScreenPerceptor active (In-Memory OCR)";
     } else {
       LOG(WARNING) << "ScreenPerceptor unavailable";
     }
   } else {
-    LOG(INFO) << "ScreenPerceptor: visual "
-              << "perception unavailable "
-              << "(no screen-connector)";
+    LOG(INFO) << "ScreenPerceptor: disabled (assets missing or unavailable)";
   }
 
   LOG(INFO) << "PerceptionEngine started "
@@ -174,6 +166,15 @@ void PerceptionEngine::Stop() {
   // Stop screen perception
   if (screen_perceptor_) {
     screen_perceptor_->Stop();
+    std::lock_guard<std::mutex> lock(g_ocr_mutex);
+    if (g_ocr_engine) {
+      if (g_tizenclaw_ocr_destroy) g_tizenclaw_ocr_destroy(g_ocr_engine);
+      g_ocr_engine = nullptr;
+    }
+    if (g_ocr_lib) {
+      dlclose(g_ocr_lib);
+      g_ocr_lib = nullptr;
+    }
   }
 
   LOG(INFO) << "PerceptionEngine stopped";
