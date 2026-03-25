@@ -23,6 +23,9 @@ BuildRequires:  jsoncpp-devel
 BuildRequires:  pkgconfig(sqlite3)
 BuildRequires:  pkgconfig(capi-appfw-tizen-action)
 BuildRequires:  pkgconfig(libaurum)
+BuildRequires:  pkgconfig(ecore)
+BuildRequires:  pkgconfig(ecore-wl2)
+BuildRequires:  libscreen_connector_watcher-devel
 BuildRequires:  pkgconfig(grpc++)
 BuildRequires:  pkgconfig(protobuf)
 BuildRequires:  pkgconfig(capi-appfw-event)

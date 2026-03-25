@@ -59,6 +59,8 @@ APPLY_PKG_CONFIG(tizenclaw-unittests PUBLIC
   APP_EVENT_DEPS
   AUL_DEPS
   RUA_DEPS
+  ECORE_DEPS
+  SCREEN_CONNECTOR_DEPS
 )
 
 TARGET_LINK_LIBRARIES(tizenclaw-unittests PUBLIC pthread tizenclaw-core dl xml2)

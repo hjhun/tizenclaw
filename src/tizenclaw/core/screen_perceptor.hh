@@ -28,6 +28,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <screen_connector_toolkit.h>
+
 namespace tizenclaw {
 
 // Represents metadata for a single visible window surface
@@ -66,9 +68,8 @@ using FrameCapturedCallback =
 //       → copy raw pixels
 //       → invoke callback for Vision/OCR pipeline
 //
-// This class uses dlopen() to load the screen-connector
-// library at runtime, allowing graceful degradation if
-// the library is not available on the target device.
+// This class relies on ecore_wl2 and screen_connector
+// libraries at compile-time.
 class ScreenPerceptor {
  public:
   ScreenPerceptor();
@@ -112,11 +113,11 @@ class ScreenPerceptor {
 
   // screen-connector callbacks (static, forwarded to instance)
   static void OnSurfaceAdded(const char* appid,
-                              const char* instance_id,
-                              int pid, void* data);
+                             const char* instance_id,
+                             const int pid, void* data);
   static void OnSurfaceRemoved(const char* appid,
-                                const char* instance_id,
-                                int pid, void* data);
+                               const char* instance_id,
+                               const int pid, void* data);
   static void OnSurfaceUpdated(
       struct tizen_remote_surface* trs,
       uint32_t type,
@@ -127,19 +128,19 @@ class ScreenPerceptor {
       struct wl_array* keys,
       const char* appid,
       const char* instance_id,
-      int pid, void* data);
+      const int pid, void* data);
 
   // Instance-level handlers
   void HandleSurfaceAdded(const std::string& appid,
-                           const std::string& instance_id,
-                           int pid);
+                          const std::string& instance_id,
+                          int pid);
   void HandleSurfaceRemoved(const std::string& appid,
-                             const std::string& instance_id,
-                             int pid);
+                            const std::string& instance_id,
+                            int pid);
   void HandleSurfaceUpdated(const std::string& appid,
-                             const std::string& instance_id,
-                             int pid,
-                             struct wl_buffer* tbm);
+                            const std::string& instance_id,
+                            int pid,
+                            struct wl_buffer* tbm);
 
   // Periodic sampling thread
   void SamplingLoop();
@@ -151,23 +152,10 @@ class ScreenPerceptor {
   bool ExtractPixels(struct wl_buffer* tbm,
                      CapturedFrame& frame);
 
-  // Dynamic library handle
-  void* lib_handle_ = nullptr;
+  void EcoreLoop();
 
-  // Function pointers loaded via dlopen
-  using InitFn = int (*)(int type);
-  using FiniFn = int (*)(int type);
-  using AddFn = void* (*)(void* ops, const char* id,
-                          int type, void* data);
-  using RemoveFn = int (*)(void* h);
-
-  InitFn fn_init_ = nullptr;
-  FiniFn fn_fini_ = nullptr;
-  AddFn fn_add_ = nullptr;
-  RemoveFn fn_remove_ = nullptr;
-
-  // Toolkit handle
-  void* toolkit_handle_ = nullptr;
+  screen_connector_toolkit_h toolkit_handle_ = nullptr;
+  void* wl2_display_ = nullptr;
 
   // Tracked surfaces
   mutable std::mutex surfaces_mutex_;
@@ -176,6 +164,7 @@ class ScreenPerceptor {
   // Capture state
   std::atomic<bool> running_{false};
   std::thread sampling_thread_;
+  std::thread ecore_thread_;
   FrameCapturedCallback frame_callback_;
 
   // Latest screen context (OCR result)
@@ -190,10 +179,6 @@ class ScreenPerceptor {
 
   // Maximum frames to process per sampling tick
   static constexpr int kMaxFramesPerTick = 2;
-
-  // screen-connector library name (versioned for runtime)
-  static constexpr const char* kLibScreenConnector =
-      "libscreen_connector_watcher.so.1";
 };
 
 }  // namespace tizenclaw

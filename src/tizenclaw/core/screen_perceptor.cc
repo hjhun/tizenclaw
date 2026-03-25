@@ -15,21 +15,16 @@
  */
 #include "screen_perceptor.hh"
 
-#include <dlfcn.h>
-#include <dlog.h>
-#include <tbm_surface.h>
-
 #include <algorithm>
 #include <cstring>
+#include <cstdlib>
 
-#ifdef LOG_TAG
-#undef LOG_TAG
-#endif
-#define LOG_TAG "TIZENCLAW_SCREEN"
+#include "../../common/logging.hh"
 
-// AUL screen type enum value for ALL
-// (matches AUL_SCREEN_TYPE_ALL from aul_screen_connector.h)
-static constexpr int kScreenTypeAll = 0xFFFF;
+#include <Ecore.h>
+#include <Ecore_Wl2.h>
+#include <screen_connector_toolkit.h>
+#include <tbm_surface.h>
 
 namespace tizenclaw {
 
@@ -40,105 +35,23 @@ ScreenPerceptor::~ScreenPerceptor() {
 }
 
 bool ScreenPerceptor::LoadLibrary() {
-  lib_handle_ = dlopen(kLibScreenConnector, RTLD_LAZY);
-  if (!lib_handle_) {
-    LOGW("screen-connector library not available: %s",
-         dlerror());
-    return false;
-  }
-
-  fn_init_ = reinterpret_cast<InitFn>(
-      dlsym(lib_handle_, "screen_connector_toolkit_init"));
-  fn_fini_ = reinterpret_cast<FiniFn>(
-      dlsym(lib_handle_, "screen_connector_toolkit_fini"));
-  fn_add_ = reinterpret_cast<AddFn>(
-      dlsym(lib_handle_, "screen_connector_toolkit_add"));
-  fn_remove_ = reinterpret_cast<RemoveFn>(
-      dlsym(lib_handle_,
-            "screen_connector_toolkit_remove"));
-
-  if (!fn_init_ || !fn_fini_ || !fn_add_ || !fn_remove_) {
-    LOGE("Failed to resolve screen-connector symbols");
-    UnloadLibrary();
-    return false;
-  }
-
-  LOGI("screen-connector library loaded successfully");
   return true;
 }
 
-void ScreenPerceptor::UnloadLibrary() {
-  if (lib_handle_) {
-    dlclose(lib_handle_);
-    lib_handle_ = nullptr;
-  }
-  fn_init_ = nullptr;
-  fn_fini_ = nullptr;
-  fn_add_ = nullptr;
-  fn_remove_ = nullptr;
-}
+void ScreenPerceptor::UnloadLibrary() {}
 
 bool ScreenPerceptor::Start() {
-  if (running_.load()) {
-    LOGW("ScreenPerceptor already running");
-    return true;
-  }
+  if (running_.load()) return true;
 
-  if (!LoadLibrary()) {
-    LOGW("ScreenPerceptor: screen-connector unavailable, "
-         "visual perception disabled");
-    return false;
-  }
 
-  // Initialize screen-connector for ALL screen types
-  int ret = fn_init_(kScreenTypeAll);
-  if (ret != 0) {
-    LOGE("screen_connector_toolkit_init(ALL) failed: %d",
-         ret);
-    UnloadLibrary();
-    return false;
-  }
-
-  // Set up callbacks structure
-  // We use a static struct that lives for the duration of
-  // the ScreenPerceptor — the ops struct is copied by the
-  // toolkit internally.
-  struct ToolkitOps {
-    void (*added_cb)(const char*, const char*, int, void*);
-    void (*removed_cb)(const char*, const char*, int, void*);
-    void (*updated_cb)(void*, uint32_t, void*, int32_t,
-                       uint32_t, uint32_t, void*,
-                       const char*, const char*, int,
-                       void*);
-  };
-
-  static ToolkitOps ops{};
-  ops.added_cb = &ScreenPerceptor::OnSurfaceAdded;
-  ops.removed_cb = &ScreenPerceptor::OnSurfaceRemoved;
-  ops.updated_cb = reinterpret_cast<decltype(ops.updated_cb)>(
-      &ScreenPerceptor::OnSurfaceUpdated);
-
-  // Register toolkit with ALL type, passing 'this' as
-  // user data
-  toolkit_handle_ = fn_add_(
-      reinterpret_cast<void*>(&ops),
-      "org.tizen.tizenclaw",  // id: valid string instead of "" or nullptr
-      kScreenTypeAll,
-      this);
-
-  if (!toolkit_handle_) {
-    LOGE("screen_connector_toolkit_add failed");
-    fn_fini_(kScreenTypeAll);
-    UnloadLibrary();
-    return false;
-  }
 
   running_.store(true);
   last_capture_time_ = std::chrono::steady_clock::now();
 
-  LOGI("ScreenPerceptor started — watching all visible "
-       "surfaces (sampling every %dms)",
-       kSamplingIntervalMs);
+  LOG(INFO) << "ScreenPerceptor started — watching all visible "
+               "surfaces (sampling every " << kSamplingIntervalMs << "ms)";
+
+  ecore_thread_ = std::thread(&ScreenPerceptor::EcoreLoop, this);
   return true;
 }
 
@@ -151,21 +64,16 @@ void ScreenPerceptor::Stop() {
     sampling_thread_.join();
   }
 
-  if (toolkit_handle_ && fn_remove_) {
-    fn_remove_(toolkit_handle_);
-    toolkit_handle_ = nullptr;
-  }
+  ecore_main_loop_quit();
 
-  if (fn_fini_) {
-    fn_fini_(kScreenTypeAll);
+  if (ecore_thread_.joinable()) {
+    ecore_thread_.join();
   }
-
-  UnloadLibrary();
 
   std::lock_guard<std::mutex> lock(surfaces_mutex_);
   surfaces_.clear();
 
-  LOGI("ScreenPerceptor stopped");
+  LOG(INFO) << "ScreenPerceptor stopped";
 }
 
 void ScreenPerceptor::SetFrameCallback(
@@ -174,9 +82,9 @@ void ScreenPerceptor::SetFrameCallback(
 }
 
 // Static callbacks — forward to instance via user_data
-void ScreenPerceptor::OnSurfaceAdded(
-    const char* appid, const char* instance_id,
-    int pid, void* data) {
+void ScreenPerceptor::OnSurfaceAdded(const char* appid,
+                                     const char* instance_id,
+                                     const int pid, void* data) {
   auto* self = static_cast<ScreenPerceptor*>(data);
   if (!self || !self->running_.load()) return;
 
@@ -185,9 +93,9 @@ void ScreenPerceptor::OnSurfaceAdded(
   self->HandleSurfaceAdded(app, inst, pid);
 }
 
-void ScreenPerceptor::OnSurfaceRemoved(
-    const char* appid, const char* instance_id,
-    int pid, void* data) {
+void ScreenPerceptor::OnSurfaceRemoved(const char* appid,
+                                       const char* instance_id,
+                                       const int pid, void* data) {
   auto* self = static_cast<ScreenPerceptor*>(data);
   if (!self || !self->running_.load()) return;
 
@@ -196,17 +104,16 @@ void ScreenPerceptor::OnSurfaceRemoved(
   self->HandleSurfaceRemoved(app, inst, pid);
 }
 
-void ScreenPerceptor::OnSurfaceUpdated(
-    struct tizen_remote_surface* /*trs*/,
-    uint32_t /*type*/,
-    struct wl_buffer* tbm,
-    int32_t /*img_file_fd*/,
-    uint32_t /*img_file_size*/,
-    uint32_t /*time*/,
-    struct wl_array* /*keys*/,
-    const char* appid,
-    const char* instance_id,
-    int pid, void* data) {
+void ScreenPerceptor::OnSurfaceUpdated(struct tizen_remote_surface* /*trs*/,
+                                       uint32_t /*type*/,
+                                       struct wl_buffer* tbm,
+                                       int32_t /*img_file_fd*/,
+                                       uint32_t /*img_file_size*/,
+                                       uint32_t /*time*/,
+                                       struct wl_array* /*keys*/,
+                                       const char* appid,
+                                       const char* instance_id,
+                                       const int pid, void* data) {
   auto* self = static_cast<ScreenPerceptor*>(data);
   if (!self || !self->running_.load()) return;
 
@@ -215,11 +122,68 @@ void ScreenPerceptor::OnSurfaceUpdated(
   self->HandleSurfaceUpdated(app, inst, pid, tbm);
 }
 
+void ScreenPerceptor::EcoreLoop() {
+  // Force XDG_RUNTIME_DIR and WAYLAND_DISPLAY to connect to /run/wayland-0
+  setenv("XDG_RUNTIME_DIR", "/run", 1);
+  setenv("WAYLAND_DISPLAY", "wayland-0", 1);
+
+  // Initialize Ecore for this thread
+  ecore_init();
+  ecore_wl2_init();
+
+  wl2_display_ = ecore_wl2_display_connect(nullptr);
+  if (!wl2_display_) {
+    LOG(ERROR) << "Failed to connect to wayland display via ecore_wl2";
+    ecore_wl2_shutdown();
+    ecore_shutdown();
+    return;
+  }
+
+  screen_connector_toolkit_ops ops{};
+  ops.added_cb = &ScreenPerceptor::OnSurfaceAdded;
+  ops.removed_cb = &ScreenPerceptor::OnSurfaceRemoved;
+  ops.updated_cb = &ScreenPerceptor::OnSurfaceUpdated;
+
+  screen_connector_toolkit_init(SCREEN_CONNECTOR_SCREEN_TYPE_ALL);
+
+  toolkit_handle_ = screen_connector_toolkit_add(
+      &ops,
+      "org.tizen.tizenclaw",
+      SCREEN_CONNECTOR_SCREEN_TYPE_ALL,
+      this);
+
+  if (!toolkit_handle_) {
+    LOG(ERROR) << "Failed to add toolkit in EcoreLoop";
+    ecore_wl2_display_disconnect(static_cast<Ecore_Wl2_Display*>(wl2_display_));
+    ecore_wl2_shutdown();
+    ecore_shutdown();
+    return;
+  }
+
+  LOG(INFO) << "Starting isolated Ecore loop for Wayland dispatch";
+
+  // This loop block until ecore_main_loop_quit is called
+  ecore_main_loop_begin();
+
+  LOG(INFO) << "Isolated Ecore loop finished";
+
+  if (toolkit_handle_) {
+    screen_connector_toolkit_remove(toolkit_handle_);
+    toolkit_handle_ = nullptr;
+  }
+
+  screen_connector_toolkit_fini(SCREEN_CONNECTOR_SCREEN_TYPE_ALL);
+
+  ecore_wl2_display_disconnect(static_cast<Ecore_Wl2_Display*>(wl2_display_));
+  wl2_display_ = nullptr;
+  ecore_wl2_shutdown();
+  ecore_shutdown();
+}
+
 // Instance handlers
-void ScreenPerceptor::HandleSurfaceAdded(
-    const std::string& appid,
-    const std::string& instance_id,
-    int pid) {
+void ScreenPerceptor::HandleSurfaceAdded(const std::string& appid,
+                                         const std::string& instance_id,
+                                         int pid) {
   std::lock_guard<std::mutex> lock(surfaces_mutex_);
 
   std::string key = appid + ":" + instance_id;
@@ -230,26 +194,24 @@ void ScreenPerceptor::HandleSurfaceAdded(
       .visible = true,
       .last_update = std::chrono::steady_clock::now()};
 
-  LOGI("Surface added: %s (PID %d)", appid.c_str(), pid);
+  LOG(INFO) << "Surface added: " << appid << " (PID " << pid << ")";
 }
 
-void ScreenPerceptor::HandleSurfaceRemoved(
-    const std::string& appid,
-    const std::string& instance_id,
-    int /*pid*/) {
+void ScreenPerceptor::HandleSurfaceRemoved(const std::string& appid,
+                                           const std::string& instance_id,
+                                           int /*pid*/) {
   std::lock_guard<std::mutex> lock(surfaces_mutex_);
 
   std::string key = appid + ":" + instance_id;
   surfaces_.erase(key);
 
-  LOGI("Surface removed: %s", appid.c_str());
+  LOG(INFO) << "Surface removed: " << appid;
 }
 
-void ScreenPerceptor::HandleSurfaceUpdated(
-    const std::string& appid,
-    const std::string& instance_id,
-    int pid,
-    struct wl_buffer* tbm) {
+void ScreenPerceptor::HandleSurfaceUpdated(const std::string& appid,
+                                           const std::string& instance_id,
+                                           int pid,
+                                           struct wl_buffer* tbm) {
   // Rate-limit: only capture if enough time has elapsed
   auto now = std::chrono::steady_clock::now();
   auto elapsed =
@@ -288,9 +250,7 @@ void ScreenPerceptor::HandleSurfaceUpdated(
   if (ExtractPixels(tbm, frame)) {
     last_capture_time_ = now;
 
-    LOGI("Frame captured from %s (%dx%d, %zu bytes)",
-         appid.c_str(), frame.width, frame.height,
-         frame.data.size());
+    LOG(INFO) << "Frame captured from " << appid << " (" << frame.width << "x" << frame.height << ", " << frame.data.size() << " bytes)";
 
     // Invoke callback for Vision/OCR pipeline
     if (frame_callback_) {
@@ -309,7 +269,7 @@ bool ScreenPerceptor::ExtractPixels(
   tbm_surface_info_s info;
   if (tbm_surface_map(surface, TBM_SURF_OPTION_READ, &info) !=
       TBM_SURFACE_ERROR_NONE) {
-    LOGE("Failed to map tbm_surface_h for pixel extraction");
+    LOG(ERROR) << "Failed to map tbm_surface_h for pixel extraction";
     return false;
   }
 
@@ -325,13 +285,12 @@ bool ScreenPerceptor::ExtractPixels(
     frame.data.assign(info.planes[0].ptr,
                       info.planes[0].ptr + size);
   } else {
-    LOGW("TBM surface mapped, but no planes available");
+    LOG(WARNING) << "TBM surface mapped, but no planes available";
   }
 
   tbm_surface_unmap(surface);
 
-  LOGD("ExtractPixels Success: %dx%d, format=%x, bytes=%zu",
-       frame.width, frame.height, frame.format, frame.data.size());
+  LOG(INFO) << "ExtractPixels Success: " << frame.width << "x" << frame.height << ", format=" << frame.format << ", bytes=" << frame.data.size();
 
   return true;
 }
@@ -369,7 +328,7 @@ nlohmann::json ScreenPerceptor::GetStatus() const {
 
   status["sampling_interval_ms"] = kSamplingIntervalMs;
   status["max_frames_per_tick"] = kMaxFramesPerTick;
-  status["library_loaded"] = (lib_handle_ != nullptr);
+  status["library_loaded"] = true;
 
   {
     std::lock_guard<std::mutex> lock(context_mutex_);
