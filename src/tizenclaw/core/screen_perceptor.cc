@@ -122,7 +122,7 @@ bool ScreenPerceptor::Start() {
   // user data
   toolkit_handle_ = fn_add_(
       reinterpret_cast<void*>(&ops),
-      nullptr,  // id: null for all
+      "",  // id: empty string instead of nullptr to prevent basic_string throw
       kScreenTypeAll,
       this);
 
