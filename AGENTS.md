@@ -20,10 +20,11 @@ This document defines the core development process (Plan → Design → Develop 
 - **WORKFLOW DOC POLICY**: Workflow documents (.md) must only be created or modified after the corresponding feature has been fully verified (build, deploy, and runtime validation) on an actual device. Writing workflow documents for unverified features is prohibited. When adding a new workflow, you must also update the workflow README.
 
 ## 4. Build & Deploy (빌드 및 배포)
+- **NO LOCAL CMAKE/MAKE**: Because this project is developed for Tizen, you MUST NEVER run `cmake` or `make` directly in the WSL or shell environment. Build targeting the appropriate platform using the provided rules.
 - After writing code, use the `deploy.sh` script to build, deploy, and restart the daemon via a single command.
   - Run: `./deploy.sh`
   - The script will automatically trigger a `gbs build`, locate the built rpm packages, install them on the device, and restart the `tizenclaw` service.
-  - **IMPORTANT**: Do NOT run raw `gbs build` commands directly. Always use `deploy.sh` for build and deployment. Raw GBS commands should only be executed when explicitly requested by the user.
+  - **IMPORTANT**: Always use `deploy.sh` as the primary tool. If there is no device (e.g., emulator) connected and you only need to build, you may use raw `gbs build` commands directly.
   - For advanced build options, refer to [`.agents/workflows/gbs_build.md`](.agents/workflows/gbs_build.md).
   - For deployment details, refer to [`.agents/workflows/deploy_to_emulator.md`](.agents/workflows/deploy_to_emulator.md).
 
