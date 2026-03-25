@@ -16,6 +16,8 @@
 #include "perception_engine.hh"
 
 #include <chrono>
+#include <cstdio>
+#include <fstream>
 
 #include "../../common/logging.hh"
 
@@ -57,14 +59,89 @@ void PerceptionEngine::Start() {
   // Start screen perception (optional — graceful
   // degradation if screen-connector unavailable)
   if (screen_perceptor_) {
+    // Register OCR pipeline callback
+    screen_perceptor_->SetFrameCallback([this](const CapturedFrame& frame) {
+      if (frame.width == 0 || frame.height == 0 || frame.data.empty()) return;
+      
+      // 1. Write the raw RGBA/BGRA pixels to a BMP file
+      std::string path = "/tmp/tizenclaw_screen_" + frame.appid + ".bmp";
+      std::ofstream out(path, std::ios::binary);
+      if (!out) return;
+      
+      uint32_t w = frame.width;
+      uint32_t h = frame.height;
+      uint32_t row_size = w * 4;
+      uint32_t pixel_size = row_size * h;
+      uint32_t file_size = 54 + pixel_size;
+      
+      out.write("BM", 2);
+      out.write(reinterpret_cast<const char*>(&file_size), 4);
+      uint32_t reserved = 0;
+      out.write(reinterpret_cast<const char*>(&reserved), 4);
+      uint32_t data_offset = 54;
+      out.write(reinterpret_cast<const char*>(&data_offset), 4);
+      
+      uint32_t header_size = 40;
+      out.write(reinterpret_cast<const char*>(&header_size), 4);
+      int32_t width = w, height = -static_cast<int32_t>(h); // Top-down
+      out.write(reinterpret_cast<const char*>(&width), 4);
+      out.write(reinterpret_cast<const char*>(&height), 4);
+      uint16_t planes = 1, bpp = 32;
+      out.write(reinterpret_cast<const char*>(&planes), 2);
+      out.write(reinterpret_cast<const char*>(&bpp), 2);
+      uint32_t comp = 0; // BI_RGB
+      out.write(reinterpret_cast<const char*>(&comp), 4);
+      out.write(reinterpret_cast<const char*>(&pixel_size), 4);
+      int32_t ppm = 2835;
+      out.write(reinterpret_cast<const char*>(&ppm), 4);
+      out.write(reinterpret_cast<const char*>(&ppm), 4);
+      uint32_t colors = 0, colors_imp = 0;
+      out.write(reinterpret_cast<const char*>(&colors), 4);
+      out.write(reinterpret_cast<const char*>(&colors_imp), 4);
+      
+      out.write(reinterpret_cast<const char*>(frame.data.data()), frame.data.size());
+      out.close();
+
+      // 2. Invoke tizenclaw-ocr to extract text
+      std::string cmd = "/opt/usr/share/tizen-tools/cli/tizenclaw-ocr " + path + " --json";
+      FILE* pipe = popen(cmd.c_str(), "r");
+      if (!pipe) return;
+      
+      std::string output;
+      char buffer[2048];
+      while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        output += buffer;
+      }
+      pclose(pipe);
+      
+      // 3. Parse JSON and set context
+      try {
+        auto j = nlohmann::json::parse(output);
+        std::string all_text;
+        if (j.contains("texts")) {
+          for (const auto& item : j["texts"]) {
+            if (item.contains("text")) {
+              all_text += item["text"].get<std::string>() + " ";
+            }
+          }
+        }
+        if (!all_text.empty()) {
+          this->screen_perceptor_->SetScreenContext(all_text);
+        }
+      } catch (...) {
+        LOG(ERROR) << "Failed to parse OCR JSON output.";
+      }
+    });
+
     if (screen_perceptor_->Start()) {
-      LOG(INFO) << "ScreenPerceptor: visual "
-                << "perception active";
+      LOG(INFO) << "ScreenPerceptor active";
     } else {
-      LOG(INFO) << "ScreenPerceptor: visual "
-                << "perception unavailable "
-                << "(no screen-connector)";
+      LOG(WARNING) << "ScreenPerceptor unavailable";
     }
+  } else {
+    LOG(INFO) << "ScreenPerceptor: visual "
+              << "perception unavailable "
+              << "(no screen-connector)";
   }
 
   LOG(INFO) << "PerceptionEngine started "
