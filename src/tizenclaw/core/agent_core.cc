@@ -1689,6 +1689,12 @@ void AgentCore::CompactHistory(const std::string& session_id) {
   }
   if (!backend_) return;
 
+  // Prevent concurrent compaction/trim for the same session
+  if (session_compacting_.contains(session_id)) {
+    return;
+  }
+  session_compacting_.insert(session_id);
+
   // Gather oldest N messages to summarize
   size_t count = std::min(kCompactionCount, history.size() - 2);
   if (count < 2) return;
@@ -1764,6 +1770,9 @@ void AgentCore::CompactHistory(const std::string& session_id) {
 
   session_mutex_.lock();
 
+  // Ensure we clear the compacting flag
+  session_compacting_.erase(session_id);
+
   // Verify session still exists after re-lock
   if (!sessions_.contains(session_id)) {
     return;
@@ -1773,9 +1782,14 @@ void AgentCore::CompactHistory(const std::string& session_id) {
   if (!resp.success || resp.text.empty()) {
     LOG(WARNING) << "Compaction failed, " << "falling back to FIFO";
     // Fallback: simple FIFO trim
-    while (hist.size() > kCompactionThreshold) {
+    while (hist.size() > kCompactionThreshold && !hist.empty()) {
       hist.erase(hist.begin());
     }
+    return;
+  }
+
+  // Safety check to prevent out-of-bounds erase
+  if (hist.size() < count) {
     return;
   }
 

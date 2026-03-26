@@ -270,6 +270,8 @@ class AgentCore {
   // Session-based conversation history
   std::map<std::string, std::vector<LlmMessage>> sessions_;
   std::mutex session_mutex_;  // Protects sessions_
+  std::set<std::string> session_compacting_;  // Set of sessions currently compacting
+
 
   // Per-session system prompt overrides
   // session_id → custom system_prompt

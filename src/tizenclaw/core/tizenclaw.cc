@@ -315,10 +315,15 @@ void TizenClawDaemon::OnDestroy() {
     ipc_thread_.join();
   }
 
-  // Wait for active client threads to finish
-  while (active_clients_.load() > 0) {
+  // Wait for active client threads to finish (max ~2 seconds)
+  int wait_count = 0;
+  while (active_clients_.load() > 0 && wait_count < 20) {
     std::this_thread::sleep_for(
         std::chrono::milliseconds(100));
+    wait_count++;
+  }
+  if (active_clients_.load() > 0) {
+    LOG(WARNING) << "Daemon shutdown proceeding with " << active_clients_.load() << " active clients remaining.";
   }
 
   // Stop Task Scheduler (before AgentCore)

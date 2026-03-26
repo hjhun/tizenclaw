@@ -132,13 +132,16 @@ void TaskScheduler::ExecutorLoop() {
       exec_queue_.pop();
     }
 
-    // Execute in this thread (one-at-a-time)
-    std::lock_guard<std::mutex> lock(tasks_mutex_);
-    auto it = tasks_.find(task_id);
-    if (it == tasks_.end()) continue;
-    if (it->second.status == TaskStatus::kCancelled) continue;
+    ScheduledTask task_copy;
+    {
+      std::lock_guard<std::mutex> lock(tasks_mutex_);
+      auto it = tasks_.find(task_id);
+      if (it == tasks_.end()) continue;
+      if (it->second.status == TaskStatus::kCancelled) continue;
+      task_copy = it->second;
+    }
 
-    ExecuteTask(it->second);
+    ExecuteTask(task_copy);
   }
 
   LOG(INFO) << "Executor worker thread exiting";
@@ -159,18 +162,12 @@ void TaskScheduler::ExecuteTask(ScheduledTask& task) {
   std::string sched_session = "scheduler_" + task.id;
 
   try {
-    // Release tasks_mutex_ during LLM call
-    // to avoid blocking CRUD operations
-    tasks_mutex_.unlock();
-
     std::string result;
     if (agent_) {
       result = agent_->ProcessPrompt(sched_session, task.prompt);
     } else {
       result = "Error: AgentCore not available";
     }
-
-    tasks_mutex_.lock();
 
     auto end = std::chrono::steady_clock::now();
     entry.duration_ms =
@@ -190,8 +187,6 @@ void TaskScheduler::ExecuteTask(ScheduledTask& task) {
     LOG(INFO) << "Task " << task.id << " completed in " << entry.duration_ms
               << "ms";
   } catch (const std::exception& e) {
-    tasks_mutex_.lock();
-
     auto end = std::chrono::steady_clock::now();
     entry.duration_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
@@ -219,7 +214,13 @@ void TaskScheduler::ExecuteTask(ScheduledTask& task) {
     task.history.resize(kMaxHistoryEntries);
   }
 
-  SaveTask(task);
+  {
+    std::lock_guard<std::mutex> lock(tasks_mutex_);
+    if (tasks_.contains(task.id)) {
+      tasks_[task.id] = task;
+      SaveTask(task);
+    }
+  }
 }
 
 // -------------------------------------------------
