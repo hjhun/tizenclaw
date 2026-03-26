@@ -194,7 +194,11 @@ void SwarmManager::HeartbeatLoop() {
 
     RemoveStalePeers();
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(kHeartbeatIntervalMs));
+    int slept = 0;
+    while (running_ && slept < kHeartbeatIntervalMs) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      slept += 100;
+    }
   }
 }
 

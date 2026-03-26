@@ -73,7 +73,10 @@ void AgentCore::MaintenanceLoop() {
   const int64_t IDLE_TIMEOUT_SEC = 300;
 
   while (!stop_maintenance_) {
-    std::this_thread::sleep_for(std::chrono::seconds(10));
+    for (int i = 0; i < 100 && !stop_maintenance_; ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    if (stop_maintenance_) break;
 
     try {
       auto now = std::chrono::duration_cast<std::chrono::seconds>(

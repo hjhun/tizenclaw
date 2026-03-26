@@ -98,57 +98,74 @@ void WebDashboard::HandleRequest(SoupServer* /*server*/,
                                  GHashTable* query,
                                  SoupClientContext* /*client*/,
                                  gpointer user_data) {
-  auto* self = static_cast<WebDashboard*>(user_data);
+  // CRITICAL: This function is a C callback invoked by libsoup.
+  // Any unhandled C++ exception that escapes here crosses the
+  // C/C++ boundary and triggers std::terminate() → SIGABRT.
+  // Wrap the entire body in try-catch as a safety net.
+  try {
+    auto* self = static_cast<WebDashboard*>(user_data);
 
-  // Add CORS headers
-  SoupMessageHeaders* resp_headers =
-      msg->response_headers;
-  soup_message_headers_append(
-      resp_headers,
-      "Access-Control-Allow-Origin", "*");
-  soup_message_headers_append(
-      resp_headers,
-      "Access-Control-Allow-Methods",
-      "GET, POST, OPTIONS");
-  soup_message_headers_append(
-      resp_headers,
-      "Access-Control-Allow-Headers",
-      "Content-Type, Authorization");
+    // Add CORS headers
+    SoupMessageHeaders* resp_headers =
+        msg->response_headers;
+    soup_message_headers_append(
+        resp_headers,
+        "Access-Control-Allow-Origin", "*");
+    soup_message_headers_append(
+        resp_headers,
+        "Access-Control-Allow-Methods",
+        "GET, POST, OPTIONS");
+    soup_message_headers_append(
+        resp_headers,
+        "Access-Control-Allow-Headers",
+        "Content-Type, Authorization");
 
-  // Handle OPTIONS (CORS preflight)
-  if (msg->method == SOUP_METHOD_OPTIONS) {
-    soup_message_set_status(msg, SOUP_STATUS_OK);
-    return;
-  }
+    // Handle OPTIONS (CORS preflight)
+    if (msg->method == SOUP_METHOD_OPTIONS) {
+      soup_message_set_status(msg, SOUP_STATUS_OK);
+      return;
+    }
 
-  std::string req_path(path);
+    std::string req_path(path);
 
-  // A2A: /.well-known/agent.json
-  if (req_path == "/.well-known/agent.json") {
-    self->ApiAgentCard(msg);
-    return;
-  }
+    // A2A: /.well-known/agent.json
+    if (req_path == "/.well-known/agent.json") {
+      self->ApiAgentCard(msg);
+      return;
+    }
 
-  // Route API requests
-  if (req_path.substr(0, 5) == "/api/") {
-    self->HandleApi(msg, req_path, query);
-    return;
-  }
+    // Route API requests
+    if (req_path.substr(0, 5) == "/api/") {
+      self->HandleApi(msg, req_path, query);
+      return;
+    }
 
-  // Serve generated web apps from /apps/ path
-  if (req_path.substr(0, 6) == "/apps/") {
-    self->ServeAppFile(msg, req_path);
-    return;
-  }
+    // Serve generated web apps from /apps/ path
+    if (req_path.substr(0, 6) == "/apps/") {
+      self->ServeAppFile(msg, req_path);
+      return;
+    }
 
-  // Serve SDK files from /sdk/ path
-  if (req_path.substr(0, 5) == "/sdk/") {
+    // Serve SDK files from /sdk/ path
+    if (req_path.substr(0, 5) == "/sdk/") {
+      self->ServeStaticFile(msg, req_path);
+      return;
+    }
+
+    // Serve static files
     self->ServeStaticFile(msg, req_path);
-    return;
+  } catch (const std::exception& e) {
+    LOG(ERROR) << "HandleRequest exception: " << e.what();
+    std::string err = std::string("{\"error\":\"") + e.what() + "\"}";
+    soup_message_set_status(msg, SOUP_STATUS_INTERNAL_SERVER_ERROR);
+    soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
+                              err.c_str(), static_cast<gsize>(err.size()));
+  } catch (...) {
+    LOG(ERROR) << "HandleRequest unknown exception";
+    soup_message_set_status(msg, SOUP_STATUS_INTERNAL_SERVER_ERROR);
+    soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
+                              "{\"error\":\"Internal error\"}", 25);
   }
-
-  // Serve static files
-  self->ServeStaticFile(msg, req_path);
 }
 
 void WebDashboard::HandleApi(
@@ -492,7 +509,7 @@ void WebDashboard::ApiSessions(
     sessions.push_back(std::move(entry_j));
   }
 
-  std::string body = sessions.dump();
+  std::string body = sessions.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
   soup_message_set_status(msg, SOUP_STATUS_OK);
   soup_message_set_response(
       msg, "application/json", SOUP_MEMORY_COPY,
@@ -560,7 +577,7 @@ void WebDashboard::ApiSessionDetail(SoupMessage* msg,
   nlohmann::json resp;
   resp["id"] = id;
   resp["content"] = std::move(content);
-  std::string body = resp.dump();
+  std::string body = resp.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
   soup_message_set_status(msg, SOUP_STATUS_OK);
   soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
                             body.c_str(), static_cast<gsize>(body.size()));
@@ -604,7 +621,7 @@ void WebDashboard::ApiTasks(
     tasks.push_back(std::move(task_j));
   }
 
-  std::string body = tasks.dump();
+  std::string body = tasks.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
   soup_message_set_status(msg, SOUP_STATUS_OK);
   soup_message_set_response(
       msg, "application/json", SOUP_MEMORY_COPY,
@@ -678,7 +695,7 @@ void WebDashboard::ApiTaskDetail(SoupMessage* msg,
   nlohmann::json resp;
   resp["file"] = fname;
   resp["content"] = std::move(content);
-  std::string body = resp.dump();
+  std::string body = resp.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
   soup_message_set_status(msg, SOUP_STATUS_OK);
   soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
                             body.c_str(), static_cast<gsize>(body.size()));
@@ -721,7 +738,7 @@ void WebDashboard::ApiLogs(
          {"content", std::move(content)}});
   }
 
-  std::string body = logs.dump();
+  std::string body = logs.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
   soup_message_set_status(msg, SOUP_STATUS_OK);
   soup_message_set_response(
       msg, "application/json", SOUP_MEMORY_COPY,
@@ -813,13 +830,23 @@ void WebDashboard::ApiChat(SoupMessage* msg) {
   } else {
     // Fallback if pool creation failed
     std::thread([ctx]() {
-      ctx->result = ctx->self->agent_->ProcessPrompt(ctx->session_id, ctx->prompt);
+      try {
+        ctx->result = ctx->self->agent_->ProcessPrompt(ctx->session_id, ctx->prompt);
+      } catch (const std::exception& e) {
+        ctx->result = std::string("Error: ") + e.what();
+      } catch (...) {
+        ctx->result = "Unknown internal error";
+      }
       g_main_context_invoke(ctx->self->context_, [](gpointer data) -> gboolean {
         auto* c = static_cast<ChatCtx*>(data);
-        nlohmann::json resp = {{"status", "ok"}, {"session_id", c->session_id}, {"response", c->result}};
-        std::string resp_str = resp.dump();
-        soup_message_set_status(c->msg, SOUP_STATUS_OK);
-        soup_message_set_response(c->msg, "application/json", SOUP_MEMORY_COPY, resp_str.c_str(), static_cast<gsize>(resp_str.size()));
+        try {
+          nlohmann::json resp = {{"status", "ok"}, {"session_id", c->session_id}, {"response", c->result}};
+          std::string resp_str = resp.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
+          soup_message_set_status(c->msg, SOUP_STATUS_OK);
+          soup_message_set_response(c->msg, "application/json", SOUP_MEMORY_COPY, resp_str.c_str(), static_cast<gsize>(resp_str.size()));
+        } catch (...) {
+          soup_message_set_status(c->msg, SOUP_STATUS_INTERNAL_SERVER_ERROR);
+        }
         soup_server_unpause_message(c->self->server_, c->msg);
         g_object_unref(c->msg);
         auto* self = c->self;
@@ -849,13 +876,23 @@ bool WebDashboard::Start() {
   chat_thread_pool_ = g_thread_pool_new(
       [](gpointer data, gpointer /* user_data */) {
         auto* ctx = static_cast<ChatCtx*>(data);
-        ctx->result = ctx->self->agent_->ProcessPrompt(ctx->session_id, ctx->prompt);
+        try {
+          ctx->result = ctx->self->agent_->ProcessPrompt(ctx->session_id, ctx->prompt);
+        } catch (const std::exception& e) {
+          ctx->result = std::string("Error: ") + e.what();
+        } catch (...) {
+          ctx->result = "Unknown internal error";
+        }
         g_main_context_invoke(ctx->self->context_, [](gpointer data2) -> gboolean {
           auto* c = static_cast<ChatCtx*>(data2);
-          nlohmann::json resp = {{"status", "ok"}, {"session_id", c->session_id}, {"response", c->result}};
-          std::string resp_str = resp.dump();
-          soup_message_set_status(c->msg, SOUP_STATUS_OK);
-          soup_message_set_response(c->msg, "application/json", SOUP_MEMORY_COPY, resp_str.c_str(), static_cast<gsize>(resp_str.size()));
+          try {
+            nlohmann::json resp = {{"status", "ok"}, {"session_id", c->session_id}, {"response", c->result}};
+            std::string resp_str = resp.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
+            soup_message_set_status(c->msg, SOUP_STATUS_OK);
+            soup_message_set_response(c->msg, "application/json", SOUP_MEMORY_COPY, resp_str.c_str(), static_cast<gsize>(resp_str.size()));
+          } catch (...) {
+            soup_message_set_status(c->msg, SOUP_STATUS_INTERNAL_SERVER_ERROR);
+          }
           soup_server_unpause_message(c->self->server_, c->msg);
           g_object_unref(c->msg);
           auto* self = c->self;
@@ -1081,7 +1118,7 @@ void WebDashboard::ApiA2A(SoupMessage* msg) {
   // Handle JSON-RPC
   nlohmann::json response = a2a_handler_->HandleJsonRpc(request);
 
-  std::string body = response.dump();
+  std::string body = response.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
   soup_message_set_status(msg, SOUP_STATUS_OK);
   soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
                             body.c_str(), static_cast<gsize>(body.size()));
@@ -1527,7 +1564,7 @@ void WebDashboard::ApiAppDetail(
   }
   app_j["files"] = files;
 
-  std::string body = app_j.dump();
+  std::string body = app_j.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
   soup_message_set_status(msg, SOUP_STATUS_OK);
   soup_message_set_response(
       msg, "application/json",
@@ -1800,7 +1837,7 @@ void WebDashboard::ApiBridgeTool(
                 {"result", resp}};
   }
 
-  std::string body = envelope.dump();
+  std::string body = envelope.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
   soup_message_set_status(msg, SOUP_STATUS_OK);
   soup_message_headers_replace(
       msg->response_headers,
@@ -1862,7 +1899,7 @@ void WebDashboard::ApiBridgeTools(
   nlohmann::json resp = {
       {"tools", tools_arr},
       {"count", tools_arr.size()}};
-  std::string body = resp.dump();
+  std::string body = resp.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
   soup_message_set_status(msg, SOUP_STATUS_OK);
   soup_message_set_response(
       msg, "application/json",
@@ -2251,27 +2288,37 @@ void WebDashboard::ApiBridgeChat(
 
   pending_workers_.fetch_add(1);
   std::thread([ctx, session_id]() {
-    ctx->result =
-        ctx->self->agent_->ProcessPrompt(
-            session_id, ctx->prompt);
+    try {
+      ctx->result =
+          ctx->self->agent_->ProcessPrompt(
+              session_id, ctx->prompt);
+    } catch (const std::exception& e) {
+      ctx->result = std::string("Error: ") + e.what();
+    } catch (...) {
+      ctx->result = "Unknown error";
+    }
     g_main_context_invoke(
         ctx->self->context_,
         [](gpointer data) -> gboolean {
           auto* c =
               static_cast<BridgeChatCtx*>(
                   data);
-          nlohmann::json resp = {
-              {"status", "ok"},
-              {"response", c->result}};
-          std::string resp_str = resp.dump();
-          soup_message_set_status(
-              c->msg, SOUP_STATUS_OK);
-          soup_message_set_response(
-              c->msg, "application/json",
-              SOUP_MEMORY_COPY,
-              resp_str.c_str(),
-              static_cast<gsize>(
-                  resp_str.size()));
+          try {
+            nlohmann::json resp = {
+                {"status", "ok"},
+                {"response", c->result}};
+            std::string resp_str = resp.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
+            soup_message_set_status(
+                c->msg, SOUP_STATUS_OK);
+            soup_message_set_response(
+                c->msg, "application/json",
+                SOUP_MEMORY_COPY,
+                resp_str.c_str(),
+                static_cast<gsize>(
+                    resp_str.size()));
+          } catch (...) {
+            soup_message_set_status(c->msg, SOUP_STATUS_INTERNAL_SERVER_ERROR);
+          }
           soup_server_unpause_message(
               c->self->server_, c->msg);
           g_object_unref(c->msg);
@@ -2408,9 +2455,13 @@ void WebDashboard::ApiBridgeEvents(
     j["data"] = event.data;
     j["timestamp"] = event.timestamp;
 
-    std::string sse =
-        "event: " + event.source + "\n" +
-        "data: " + j.dump() + "\n\n";
+    std::string sse;
+    try {
+      sse = "event: " + event.source + "\n" +
+            "data: " + j.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace) + "\n\n";
+    } catch (...) {
+      sse = "event: error\ndata: invalid event data\n\n";
+    }
 
     // Schedule send on main loop
     auto* payload = new std::string(sse);

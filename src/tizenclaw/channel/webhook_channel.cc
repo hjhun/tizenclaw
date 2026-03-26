@@ -108,155 +108,179 @@ void WebhookChannel::HandleRequest(SoupServer* server, SoupMessage* msg,
                                    const char* path, GHashTable* /*query*/,
                                    SoupClientContext* /*client*/,
                                    gpointer user_data) {
-  auto* self = static_cast<WebhookChannel*>(user_data);
+  // CRITICAL: C callback from libsoup. Any unhandled C++ exception
+  // causes std::terminate() → SIGABRT. Wrap entire body.
+  try {
+    auto* self = static_cast<WebhookChannel*>(user_data);
 
-  // Only accept POST requests
-  if (msg->method != SOUP_METHOD_POST) {
-    soup_message_set_status(msg, SOUP_STATUS_METHOD_NOT_ALLOWED);
-    soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
-                              "{\"error\":\"Method not allowed\"}", 30);
-    return;
-  }
-
-  // Extract body
-  SoupMessageBody* body = msg->request_body;
-  std::string payload;
-  if (body && body->data && body->length > 0) {
-    payload.assign(body->data, body->length);
-  }
-
-  LOG(INFO) << "Webhook request: " << path << " (" << payload.size()
-            << " bytes)";
-
-  // HMAC signature verification
-  if (!self->hmac_secret_.empty()) {
-    SoupMessageHeaders* headers = msg->request_headers;
-    const char* sig_header =
-        soup_message_headers_get_one(headers, "X-Hub-Signature-256");
-    std::string sig = sig_header ? sig_header : "";
-
-    if (!VerifyHmac(self->hmac_secret_, payload, sig)) {
-      LOG(WARNING) << "Webhook HMAC " << "verification failed " << "for "
-                   << path;
-      soup_message_set_status(msg, SOUP_STATUS_FORBIDDEN);
+    // Only accept POST requests
+    if (msg->method != SOUP_METHOD_POST) {
+      soup_message_set_status(msg, SOUP_STATUS_METHOD_NOT_ALLOWED);
       soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
-                                "{\"error\":\"Invalid "
-                                "signature\"}",
-                                27);
+                                "{\"error\":\"Method not allowed\"}", 30);
       return;
     }
-  }
 
-  // Find matching route
-  std::string req_path(path);
-  std::string session_id = "webhook_default";
-  bool found = false;
-  for (auto& route : self->routes_) {
-    if (req_path == route.path) {
-      session_id = route.session_id;
-      found = true;
-      break;
+    // Extract body
+    SoupMessageBody* body = msg->request_body;
+    std::string payload;
+    if (body && body->data && body->length > 0) {
+      payload.assign(body->data, body->length);
     }
-  }
 
-  if (!found) {
-    soup_message_set_status(msg, SOUP_STATUS_NOT_FOUND);
-    soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
-                              "{\"error\":\"No matching route\"}", 30);
-    return;
-  }
+    LOG(INFO) << "Webhook request: " << path << " (" << payload.size()
+              << " bytes)";
 
-  // Extract text from payload
-  std::string prompt;
-  try {
-    auto j = nlohmann::json::parse(payload);
-    prompt = j.value("text", "");
-    if (prompt.empty()) {
-      // Use the entire payload as prompt
+    // HMAC signature verification
+    if (!self->hmac_secret_.empty()) {
+      SoupMessageHeaders* headers = msg->request_headers;
+      const char* sig_header =
+          soup_message_headers_get_one(headers, "X-Hub-Signature-256");
+      std::string sig = sig_header ? sig_header : "";
+
+      if (!VerifyHmac(self->hmac_secret_, payload, sig)) {
+        LOG(WARNING) << "Webhook HMAC " << "verification failed " << "for "
+                     << path;
+        soup_message_set_status(msg, SOUP_STATUS_FORBIDDEN);
+        soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
+                                  "{\"error\":\"Invalid "
+                                  "signature\"}",
+                                  27);
+        return;
+      }
+    }
+
+    // Find matching route
+    std::string req_path(path);
+    std::string session_id = "webhook_default";
+    bool found = false;
+    for (auto& route : self->routes_) {
+      if (req_path == route.path) {
+        session_id = route.session_id;
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+      soup_message_set_status(msg, SOUP_STATUS_NOT_FOUND);
+      soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
+                                "{\"error\":\"No matching route\"}", 30);
+      return;
+    }
+
+    // Extract text from payload
+    std::string prompt;
+    try {
+      auto j = nlohmann::json::parse(payload);
+      prompt = j.value("text", "");
+      if (prompt.empty()) {
+        // Use the entire payload as prompt
+        prompt = payload;
+      }
+    } catch (...) {
+      // Non-JSON payload — use as-is
       prompt = payload;
     }
-  } catch (...) {
-    // Non-JSON payload — use as-is
-    prompt = payload;
-  }
 
-  if (prompt.empty()) {
-    soup_message_set_status(msg, SOUP_STATUS_BAD_REQUEST);
-    soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
-                              "{\"error\":\"Empty payload\"}", 25);
-    return;
-  }
-
-  // Reject new requests during shutdown to prevent Stop() deadlock.
-  if (!self->running_.load()) {
-    soup_message_set_status(msg, SOUP_STATUS_SERVICE_UNAVAILABLE);
-    soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
-                              "{\"error\":\"Shutting down\"}", 24);
-    return;
-  }
-
-  // Run ProcessPrompt on a worker thread to avoid
-  // blocking the GMainLoop (prevents deadlock).
-  g_object_ref(msg);  // prevent libsoup from freeing msg early
-  soup_server_pause_message(server, msg);
-
-  struct WebhookCtx {
-    SoupServer* server;
-    SoupMessage* msg;
-    AgentCore* agent;
-    GMainContext* context;
-    std::string session_id;
-    std::string result;
-    WebhookChannel* channel;
-  };
-
-  auto* ctx = new WebhookCtx{
-      server, msg, self->agent_, self->context_, session_id, "", self};
-
-  self->pending_workers_.fetch_add(1);
-  std::thread([ctx, prompt]() {
-    if (ctx->agent) {
-      ctx->result = ctx->agent->ProcessPrompt(
-          ctx->session_id, prompt);
-    } else {
-      ctx->result = "Error: agent not available";
+    if (prompt.empty()) {
+      soup_message_set_status(msg, SOUP_STATUS_BAD_REQUEST);
+      soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
+                                "{\"error\":\"Empty payload\"}", 25);
+      return;
     }
 
-    g_main_context_invoke(
-        ctx->context,
-        [](gpointer data) -> gboolean {
-          auto* c = static_cast<WebhookCtx*>(data);
-          nlohmann::json resp = {
-              {"status", "ok"},
-              {"session_id", c->session_id},
-              {"response", c->result}};
-          std::string resp_str = resp.dump();
+    // Reject new requests during shutdown to prevent Stop() deadlock.
+    if (!self->running_.load()) {
+      soup_message_set_status(msg, SOUP_STATUS_SERVICE_UNAVAILABLE);
+      soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
+                                "{\"error\":\"Shutting down\"}", 24);
+      return;
+    }
 
-          soup_message_set_status(
-              c->msg, SOUP_STATUS_OK);
-          soup_message_set_response(
-              c->msg, "application/json",
-              SOUP_MEMORY_COPY,
-              resp_str.c_str(),
-              static_cast<gsize>(resp_str.size()));
-          soup_server_unpause_message(
-              c->server, c->msg);
-          g_object_unref(c->msg);  // release our ref
+    // Run ProcessPrompt on a worker thread to avoid
+    // blocking the GMainLoop (prevents deadlock).
+    g_object_ref(msg);  // prevent libsoup from freeing msg early
+    soup_server_pause_message(server, msg);
 
-          // Decrement pending workers and notify Stop() on the
-          // GMainLoop thread to avoid use-after-free on the
-          // detached worker thread.
-          auto* ch = c->channel;
-          delete c;
-          ch->pending_workers_.fetch_sub(1);
-          {
-            std::lock_guard<std::mutex> lk(ch->workers_mutex_);
-            ch->workers_cv_.notify_all();
-          }
-          return G_SOURCE_REMOVE;
-        },
-        ctx);
-  }).detach();
+    struct WebhookCtx {
+      SoupServer* server;
+      SoupMessage* msg;
+      AgentCore* agent;
+      GMainContext* context;
+      std::string session_id;
+      std::string result;
+      WebhookChannel* channel;
+    };
+
+    auto* ctx = new WebhookCtx{
+        server, msg, self->agent_, self->context_, session_id, "", self};
+
+    self->pending_workers_.fetch_add(1);
+    std::thread([ctx, prompt]() {
+      if (ctx->agent) {
+        try {
+          ctx->result = ctx->agent->ProcessPrompt(
+              ctx->session_id, prompt);
+        } catch (const std::exception& e) {
+          ctx->result = std::string("Error: ") + e.what();
+        } catch (...) {
+          ctx->result = "Unknown internal error";
+        }
+      } else {
+        ctx->result = "Error: agent not available";
+      }
+
+      g_main_context_invoke(
+          ctx->context,
+          [](gpointer data) -> gboolean {
+            auto* c = static_cast<WebhookCtx*>(data);
+            try {
+              nlohmann::json resp = {
+                  {"status", "ok"},
+                  {"session_id", c->session_id},
+                  {"response", c->result}};
+              std::string resp_str = resp.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
+
+              soup_message_set_status(
+                  c->msg, SOUP_STATUS_OK);
+              soup_message_set_response(
+                  c->msg, "application/json",
+                  SOUP_MEMORY_COPY,
+                  resp_str.c_str(),
+                  static_cast<gsize>(resp_str.size()));
+            } catch (...) {
+              soup_message_set_status(c->msg, SOUP_STATUS_INTERNAL_SERVER_ERROR);
+            }
+            soup_server_unpause_message(
+                c->server, c->msg);
+            g_object_unref(c->msg);  // release our ref
+
+            // Decrement pending workers and notify Stop() on the
+            // GMainLoop thread to avoid use-after-free on the
+            // detached worker thread.
+            auto* ch = c->channel;
+            delete c;
+            ch->pending_workers_.fetch_sub(1);
+            {
+              std::lock_guard<std::mutex> lk(ch->workers_mutex_);
+              ch->workers_cv_.notify_all();
+            }
+            return G_SOURCE_REMOVE;
+          },
+          ctx);
+    }).detach();
+  } catch (const std::exception& e) {
+    LOG(ERROR) << "Webhook HandleRequest exception: " << e.what();
+    soup_message_set_status(msg, SOUP_STATUS_INTERNAL_SERVER_ERROR);
+    soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
+                              "{\"error\":\"Internal error\"}", 25);
+  } catch (...) {
+    LOG(ERROR) << "Webhook HandleRequest unknown exception";
+    soup_message_set_status(msg, SOUP_STATUS_INTERNAL_SERVER_ERROR);
+    soup_message_set_response(msg, "application/json", SOUP_MEMORY_COPY,
+                              "{\"error\":\"Internal error\"}", 25);
+  }
 }
 
 bool WebhookChannel::Start() {

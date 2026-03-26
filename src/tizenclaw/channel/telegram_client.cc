@@ -180,11 +180,12 @@ void TelegramClient::PollingLoop() {
   while (running_) {
     std::string req_url =
         url + "/getUpdates?offset=" + std::to_string(update_offset_) +
-        "&timeout=30";
+        "&timeout=2";
 
-    // Call HTTP GET with a 40 second timeout
-    // (to allow for 30s long polling + network)
-    auto resp = HttpClient::Get(req_url, {}, 1, 10, 40);
+    // Call HTTP GET with a 5 second timeout
+    // (to allow for 2s long polling + network)
+    // Sorter poll allows quick termination on shutdown.
+    auto resp = HttpClient::Get(req_url, {}, 1, 3, 5);
 
     if (!running_) break;
 
