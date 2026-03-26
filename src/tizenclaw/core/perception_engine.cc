@@ -14,25 +14,14 @@
  * limitations under the License.
  */
 #include "perception_engine.hh"
-
 #include <chrono>
 #include <cstdio>
 #include <fstream>
-#include <dlfcn.h>
 #include <mutex>
 
 #include "../../common/logging.hh"
 
 namespace tizenclaw {
-
-namespace {
-  void* g_ocr_lib = nullptr;
-  void* g_ocr_engine = nullptr;
-  void* (*g_tizenclaw_ocr_create)(const char*) = nullptr;
-  void (*g_tizenclaw_ocr_destroy)(void*) = nullptr;
-  char* (*g_tizenclaw_ocr_analyze_buffer)(void*, const unsigned char*, int, int, int, int) = nullptr;
-  std::mutex g_ocr_mutex;
-}
 
 PerceptionEngine::PerceptionEngine(
     AgentCore* agent,
@@ -43,8 +32,6 @@ PerceptionEngine::PerceptionEngine(
       profiler_(std::make_unique<DeviceProfiler>()),
       fusion_(
           std::make_unique<ContextFusionEngine>()),
-      screen_perceptor_(
-          std::make_unique<ScreenPerceptor>()),
       advisor_(std::make_unique<ProactiveAdvisor>(
           agent, channels)) {}
 
@@ -66,84 +53,6 @@ void PerceptionEngine::Start() {
   running_.store(true);
   analysis_thread_ = std::thread(
       &PerceptionEngine::AnalysisLoop, this);
-
-  // Start screen perception
-  if (screen_perceptor_) {
-    // Attempt to load OCR library dynamically
-    g_ocr_lib = dlopen("/opt/usr/share/tizenclaw/lib/libtizenclaw-ocr.so", RTLD_LAZY);
-    if (!g_ocr_lib) {
-      LOG(WARNING) << "OCR library (tizenclaw-assets) not found. Disabling ScreenPerceptor.";
-      screen_perceptor_.reset();
-    } else {
-      g_tizenclaw_ocr_create = reinterpret_cast<void*(*)(const char*)>(dlsym(g_ocr_lib, "tizenclaw_ocr_create"));
-      g_tizenclaw_ocr_destroy = reinterpret_cast<void(*)(void*)>(dlsym(g_ocr_lib, "tizenclaw_ocr_destroy"));
-      g_tizenclaw_ocr_analyze_buffer = reinterpret_cast<char*(*)(void*, const unsigned char*, int, int, int, int)>(dlsym(g_ocr_lib, "tizenclaw_ocr_analyze_buffer"));
-      
-      if (!g_tizenclaw_ocr_create || !g_tizenclaw_ocr_destroy || !g_tizenclaw_ocr_analyze_buffer) {
-        LOG(WARNING) << "OCR library missing expected symbols. Disabling ScreenPerceptor.";
-        screen_perceptor_.reset();
-      } else {
-        g_ocr_engine = g_tizenclaw_ocr_create("/opt/usr/share/tizenclaw/models/ppocr");
-        if (!g_ocr_engine) {
-          LOG(ERROR) << "Failed to initialize OCR engine context. Disabling ScreenPerceptor.";
-          screen_perceptor_.reset();
-        }
-      }
-    }
-  }
-
-  if (screen_perceptor_) {
-    // Register OCR pipeline callback (In-Memory!)
-    screen_perceptor_->SetFrameCallback([this](const CapturedFrame& frame) {
-      if (frame.width == 0 || frame.height == 0 || frame.data.empty()) return;
-      
-      static std::atomic<bool> ocr_busy{false};
-      if (ocr_busy.exchange(true)) return; // Drop frame if OCR is already running
-      
-      auto stored_frame = std::make_shared<CapturedFrame>(frame);
-      
-      std::thread([this, stored_frame]() {
-        std::lock_guard<std::mutex> lock(g_ocr_mutex);
-        if (g_ocr_engine) {
-          // Analyze buffer in-memory directly
-          char* json_str = g_tizenclaw_ocr_analyze_buffer(
-              g_ocr_engine, stored_frame->data.data(), stored_frame->width, stored_frame->height, 4, 1 /* is_bgra */);
-              
-          if (json_str) {
-            std::string output(json_str);
-            free(json_str);
-            
-            // Parse JSON and set context
-            try {
-              auto j = nlohmann::json::parse(output);
-              std::string all_text;
-              if (j.contains("texts")) {
-                for (const auto& item : j["texts"]) {
-                  if (item.contains("text")) {
-                    all_text += item["text"].get<std::string>() + " ";
-                  }
-                }
-              }
-              if (!all_text.empty()) {
-                this->screen_perceptor_->SetScreenContext(all_text);
-              }
-            } catch (...) {
-              LOG(ERROR) << "Failed to parse OCR JSON output.";
-            }
-          }
-        }
-        ocr_busy.store(false);
-      }).detach();
-    });
-
-    if (screen_perceptor_->Start()) {
-      LOG(INFO) << "ScreenPerceptor active (In-Memory OCR)";
-    } else {
-      LOG(WARNING) << "ScreenPerceptor unavailable";
-    }
-  } else {
-    LOG(INFO) << "ScreenPerceptor: disabled (assets missing or unavailable)";
-  }
 
   LOG(INFO) << "PerceptionEngine started "
             << "(hybrid: event-driven + "
@@ -170,20 +79,6 @@ void PerceptionEngine::Stop() {
     EventBus::GetInstance().Unsubscribe(
         subscription_id_);
     subscription_id_ = -1;
-  }
-
-  // Stop screen perception
-  if (screen_perceptor_) {
-    screen_perceptor_->Stop();
-    std::lock_guard<std::mutex> lock(g_ocr_mutex);
-    if (g_ocr_engine) {
-      if (g_tizenclaw_ocr_destroy) g_tizenclaw_ocr_destroy(g_ocr_engine);
-      g_ocr_engine = nullptr;
-    }
-    if (g_ocr_lib) {
-      dlclose(g_ocr_lib);
-      g_ocr_lib = nullptr;
-    }
   }
 
   LOG(INFO) << "PerceptionEngine stopped";
@@ -300,30 +195,6 @@ void PerceptionEngine::AnalysisLoop() {
 void PerceptionEngine::RunAnalysisTick() {
   nlohmann::json insight;
 
-  // Step 1: Unconditional screen perception
-  if (screen_perceptor_) {
-    auto screen_ctx = screen_perceptor_->GetLatestScreenContext();
-    if (!screen_ctx.empty()) {
-      insight["screen_context"] = screen_ctx;
-      insight["screen_status"] = "Text extracted via OCR";
-    } else {
-      auto surfaces = screen_perceptor_->GetTrackedSurfaces();
-      if (!surfaces.empty()) {
-        std::string apps = "";
-        for (const auto& s : surfaces) {
-          if (s["visible"].get<bool>()) {
-            apps += s["appid"].get<std::string>() + " ";
-          }
-        }
-        insight["screen_context"] = "Currently visible applications: " + apps;
-        insight["screen_status"] = "App tracking only (No OCR text)";
-      } else {
-        insight["screen_context"] = "Nothing visible.";
-        insight["screen_status"] = "Blank or idle";
-      }
-    }
-  }
-
   // Step 2: Conditional profile and situation analysis
   if (profiler_->GetEventCount() >= kMinEventsForAnalysis) {
     auto profile = profiler_->Analyze();
@@ -436,17 +307,6 @@ nlohmann::json PerceptionEngine::GetStatus()
     auto insight = advisor_->GetLastInsight();
     if (!insight.empty()) {
       status["last_insight"] = insight;
-    }
-  }
-
-  // Screen perception status
-  if (screen_perceptor_) {
-    status["screen_perception"] =
-        screen_perceptor_->GetStatus();
-    auto ctx =
-        screen_perceptor_->GetLatestScreenContext();
-    if (!ctx.empty()) {
-      status["screen_context"] = ctx;
     }
   }
 
