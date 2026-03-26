@@ -62,6 +62,7 @@ void EmbeddingStore::Close() {
                    nullptr);
     }
     knowledge_aliases_.clear();
+    knowledge_attached_ = false;
     sqlite3_close(db_);
     db_ = nullptr;
   }
@@ -173,7 +174,9 @@ bool EmbeddingStore::StoreChunk(const std::string& source,
 }
 
 std::vector<EmbeddingStore::SearchResult> EmbeddingStore::Search(
-    const std::vector<float>& query_embedding, int top_k) const {
+    const std::vector<float>& query_embedding, int top_k) {
+  // Lazy-attach knowledge DBs on first search
+  EnsureKnowledgeAttached();
   std::vector<SearchResult> results;
   if (!db_ || query_embedding.empty()) {
     return results;
@@ -297,7 +300,45 @@ bool EmbeddingStore::AttachKnowledgeDB(const std::string& path) {
   return true;
 }
 
-int EmbeddingStore::GetKnowledgeChunkCount() const {
+void EmbeddingStore::RegisterKnowledgeDB(const std::string& path) {
+  // Check file exists at registration time
+  FILE* f = fopen(path.c_str(), "r");
+  if (!f) {
+    LOG(WARNING) << "Knowledge DB not found: " << path;
+    return;
+  }
+  fclose(f);
+
+  pending_paths_.push_back(path);
+  LOG(INFO) << "Knowledge DB registered (lazy): " << path;
+}
+
+void EmbeddingStore::EnsureKnowledgeAttached() {
+  if (knowledge_attached_ || pending_paths_.empty()) return;
+
+  LOG(INFO) << "Lazy-attaching " << pending_paths_.size()
+            << " knowledge DB(s)...";
+  for (const auto& path : pending_paths_) {
+    AttachKnowledgeDB(path);
+  }
+  knowledge_attached_ = true;
+}
+
+void EmbeddingStore::DetachKnowledgeDBs() {
+  if (!db_ || knowledge_aliases_.empty()) return;
+
+  for (const auto& alias : knowledge_aliases_) {
+    std::string sql = "DETACH DATABASE " + alias + ";";
+    sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, nullptr);
+  }
+  LOG(INFO) << "Detached " << knowledge_aliases_.size()
+            << " knowledge DB(s) to reclaim memory";
+  knowledge_aliases_.clear();
+  knowledge_attached_ = false;
+}
+
+int EmbeddingStore::GetKnowledgeChunkCount() {
+  EnsureKnowledgeAttached();
   if (!db_ || knowledge_aliases_.empty()) return 0;
 
   int total = 0;
@@ -452,7 +493,7 @@ std::vector<EmbeddingStore::SearchResult>
 EmbeddingStore::HybridSearch(
     const std::string& query_text,
     const std::vector<float>& query_embedding,
-    int top_k) const {
+    int top_k) {
   // Step 1: Vector search
   auto vector_results = Search(
       query_embedding, top_k * 2);

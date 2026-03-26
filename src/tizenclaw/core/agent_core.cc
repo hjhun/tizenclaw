@@ -95,6 +95,9 @@ void AgentCore::MaintenanceLoop() {
           LOG(INFO) << "sqlite3_release_memory freed " << bytes_freed << " bytes";
         }
 
+        // Detach knowledge DBs to reclaim file cache
+        embedding_store_.DetachKnowledgeDBs();
+
         // Return heap memory to OS
         int trim_result = malloc_trim(0);
         LOG(INFO) << "malloc_trim(0) returned " << trim_result;
@@ -386,20 +389,20 @@ bool AgentCore::Initialize() {
             continue;
           if (fname == "embeddings.db")
             continue;
-          if (embedding_store_
-                  .AttachKnowledgeDB(
+          embedding_store_
+                  .RegisterKnowledgeDB(
                       entry.path()
-                          .string())) {
-            LOG(INFO)
-                << "Knowledge DB loaded: "
-                << fname;
-          }
+                          .string());
+          LOG(INFO)
+              << "Knowledge DB registered: "
+              << fname;
         }
       }
       LOG(INFO)
-          << "Total knowledge chunks: "
+          << "Knowledge DBs registered: "
           << embedding_store_
-                 .GetKnowledgeChunkCount();
+                 .GetPendingKnowledgeCount()
+          << " (lazy, will attach on first search)";
     } else {
       guard.SetFailed("init failed");
       LOG(WARNING)
