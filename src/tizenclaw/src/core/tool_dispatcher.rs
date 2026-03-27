@@ -30,6 +30,27 @@ impl ToolDispatcher {
         self.tools.insert(decl.name.clone(), decl);
     }
 
+    /// Load tools from all subdirectories under a root directory.
+    ///
+    /// Scans all immediate child directories of `root` and invokes
+    /// `load_tools_from_dir()` on each one.
+    pub fn load_tools_from_root(&mut self, root: &str) {
+        let entries = match std::fs::read_dir(root) {
+            Ok(e) => e,
+            Err(e) => {
+                log::warn!("Cannot read tools root '{}': {}", root, e);
+                return;
+            }
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let dir_str = path.to_string_lossy().to_string();
+                self.load_tools_from_dir(&dir_str);
+            }
+        }
+    }
+
     /// Load tools from a directory of tool.md files.
     pub fn load_tools_from_dir(&mut self, dir: &str) {
         let entries = match std::fs::read_dir(dir) {

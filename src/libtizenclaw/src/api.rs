@@ -261,18 +261,21 @@ impl TizenClaw {
             .map_err(|e| format!("Invalid UTF-8 response: {}", e))
     }
 
-    /// Discover tool names from the tools directories.
+    /// Discover tool names from all subdirectories under /opt/usr/share/tizen-tools.
     fn discover_tools() -> Vec<String> {
         let mut tools = Vec::new();
-        let dirs = [
-            "/opt/usr/share/tizen-tools/cli",
-            "/opt/usr/share/tizen-tools/embedded",
-            "/opt/usr/share/tizen-tools/system_cli",
-            "/opt/usr/share/tizen-tools/skills",
-        ];
+        let root = "/opt/usr/share/tizen-tools";
 
-        for dir in &dirs {
-            if let Ok(entries) = std::fs::read_dir(dir) {
+        let root_entries = match std::fs::read_dir(root) {
+            Ok(e) => e,
+            Err(_) => return tools,
+        };
+
+        for root_entry in root_entries.flatten() {
+            let sub_dir = root_entry.path();
+            if !sub_dir.is_dir() { continue; }
+
+            if let Ok(entries) = std::fs::read_dir(&sub_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
                     if !path.is_dir() { continue; }

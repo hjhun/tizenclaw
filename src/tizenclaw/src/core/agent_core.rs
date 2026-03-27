@@ -149,10 +149,8 @@ impl AgentCore {
             Err(e) => log::error!("Session store failed: {}", e),
         }
 
-        // Load tools from tools directories
-        self.tool_dispatcher.load_tools_from_dir("/opt/usr/share/tizen-tools/cli");
-        self.tool_dispatcher.load_tools_from_dir("/opt/usr/share/tizen-tools/embedded");
-        self.tool_dispatcher.load_tools_from_dir("/opt/usr/share/tizen-tools/system_cli");
+        // Load tools from all subdirectories under /opt/usr/share/tizen-tools
+        self.tool_dispatcher.load_tools_from_root("/opt/usr/share/tizen-tools");
         log::info!("Tools loaded");
 
         true
@@ -321,9 +319,7 @@ impl AgentCore {
 
     pub fn reload_tools(&mut self) {
         self.tool_dispatcher = ToolDispatcher::new();
-        self.tool_dispatcher.load_tools_from_dir("/opt/usr/share/tizen-tools/cli");
-        self.tool_dispatcher.load_tools_from_dir("/opt/usr/share/tizen-tools/embedded");
-        self.tool_dispatcher.load_tools_from_dir("/opt/usr/share/tizen-tools/system_cli");
+        self.tool_dispatcher.load_tools_from_root("/opt/usr/share/tizen-tools");
         log::info!("Tools reloaded");
     }
 }

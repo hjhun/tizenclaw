@@ -4,7 +4,7 @@ pub mod agent_core;
 pub mod tool_dispatcher;
 pub mod tool_declaration_builder;
 pub mod tool_policy;
-pub mod tool_router;
+
 pub mod tool_indexer;
 pub mod ipc_server;
 pub mod event_bus;

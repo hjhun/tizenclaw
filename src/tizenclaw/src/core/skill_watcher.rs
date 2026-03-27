@@ -1,21 +1,20 @@
-//! Skill watcher — watches filesystem for SKILL.md changes via polling.
+//! Skill watcher — watches filesystem for tool/skill changes via polling.
 //!
-//! Monitors the skills directory for add/remove/modify events
-//! and invokes a callback when changes are detected.
+//! Monitors `/opt/usr/share/tizen-tools` and all subdirectories for
+//! add/remove/modify events and invokes a callback when changes are detected.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-/// Default skill installation directory.
-const SKILLS_DIR: &str = "/opt/usr/share/tizen-tools/skills";
+/// Root tool/skill installation directory.
+const TOOLS_ROOT: &str = "/opt/usr/share/tizen-tools";
 
 /// Polling interval for filesystem changes.
 const POLL_INTERVAL_SECS: u64 = 5;
 
 pub struct SkillWatcher {
     running: Arc<AtomicBool>,
-    watch_dirs: Vec<String>,
     on_change: Option<Box<dyn Fn() + Send + Sync>>,
 }
 
@@ -23,7 +22,6 @@ impl SkillWatcher {
     pub fn new() -> Self {
         SkillWatcher {
             running: Arc::new(AtomicBool::new(false)),
-            watch_dirs: vec![SKILLS_DIR.into()],
             on_change: None,
         }
     }
@@ -39,18 +37,17 @@ impl SkillWatcher {
         self.running.store(true, Ordering::SeqCst);
 
         let running = self.running.clone();
-        let dirs = self.watch_dirs.clone();
 
         let handle = std::thread::spawn(move || {
-            log::info!("SkillWatcher started, monitoring: {:?}", dirs);
-            let mut mtimes = collect_mtimes(&dirs);
+            log::info!("SkillWatcher started, monitoring: {}", TOOLS_ROOT);
+            let mut mtimes = collect_mtimes_recursive(TOOLS_ROOT);
 
             while running.load(Ordering::SeqCst) {
                 std::thread::sleep(std::time::Duration::from_secs(POLL_INTERVAL_SECS));
 
-                let new_mtimes = collect_mtimes(&dirs);
+                let new_mtimes = collect_mtimes_recursive(TOOLS_ROOT);
                 if new_mtimes != mtimes {
-                    log::info!("SkillWatcher: change detected in skills directory");
+                    log::info!("SkillWatcher: change detected under {}", TOOLS_ROOT);
                     mtimes = new_mtimes;
                     // Note: on_change callback invocation would be wired
                     // through AgentCore to trigger skill reload
@@ -67,29 +64,30 @@ impl SkillWatcher {
     }
 }
 
-/// Collect modification times for all SKILL.md files in the watched directories.
-fn collect_mtimes(dirs: &[String]) -> HashMap<String, u64> {
+/// Recursively collect modification times for all files under the given root.
+fn collect_mtimes_recursive(root: &str) -> HashMap<String, u64> {
     let mut mtimes = HashMap::new();
-    for dir in dirs {
-        let entries = match std::fs::read_dir(dir) {
+    let mut stack = vec![std::path::PathBuf::from(root)];
+
+    while let Some(dir) = stack.pop() {
+        let entries = match std::fs::read_dir(&dir) {
             Ok(e) => e,
             Err(_) => continue,
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if !path.is_dir() {
-                continue;
-            }
-            // Track SKILL.md mtime specifically
-            let skill_md = path.join("SKILL.md");
-            if let Ok(meta) = skill_md.metadata() {
-                let mtime = meta
-                    .modified()
-                    .ok()
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
-                mtimes.insert(skill_md.to_string_lossy().to_string(), mtime);
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                if let Ok(meta) = path.metadata() {
+                    let mtime = meta
+                        .modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    mtimes.insert(path.to_string_lossy().to_string(), mtime);
+                }
             }
         }
     }
