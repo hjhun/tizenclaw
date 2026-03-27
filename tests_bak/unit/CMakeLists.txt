@@ -1,0 +1,85 @@
+## Test sources (auto-collected)
+AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR} UNIT_TEST_SRCS)
+
+## Core sources to test (excluding daemon main)
+AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/../../src/tizenclaw/core CORE_SRCS)
+AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/../../src/tizenclaw/llm LLM_SRCS)
+AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/../../src/tizenclaw/channel CHANNEL_SRCS)
+AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/../../src/tizenclaw/storage STORAGE_SRCS)
+AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/../../src/tizenclaw/infra INFRA_SRCS)
+AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/../../src/tizenclaw/scheduler SCHEDULER_SRCS)
+AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/../../src/tizenclaw/embedding EMBEDDING_SRCS)
+AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/../../src/common COMMON_SRCS)
+
+# Exclude daemon main (tizenclaw.cc) from test build
+LIST(FILTER CORE_SRCS EXCLUDE REGEX "tizenclaw\\.cc$")
+
+ADD_EXECUTABLE(tizenclaw-unittests
+  ${UNIT_TEST_SRCS}
+  ${COMMON_SRCS}
+  ${CORE_SRCS}
+  ${LLM_SRCS}
+  ${CHANNEL_SRCS}
+  ${STORAGE_SRCS}
+  ${INFRA_SRCS}
+  ${SCHEDULER_SRCS}
+  ${EMBEDDING_SRCS}
+)
+
+TARGET_INCLUDE_DIRECTORIES(tizenclaw-unittests PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/mock"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../src/common"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../src/common/nlohmann"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../src/tizenclaw"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../src/tizenclaw/core"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../src/tizenclaw/llm"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../src/tizenclaw/channel"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../src/tizenclaw/storage"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../src/tizenclaw/infra"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../src/tizenclaw/scheduler"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../src/tizenclaw/embedding"
+)
+
+APPLY_PKG_CONFIG(tizenclaw-unittests PUBLIC
+  GTEST_DEPS
+  TIZEN_CORE_DEPS
+  GLIB_DEPS
+  DLOG_DEPS
+  LIBCURL_DEPS
+  SQLITE3_DEPS
+  TIZEN_ACTION_DEPS
+  LIBSOUP_DEPS
+  LIBWEBSOCKETS_DEPS
+  PKGMGR_DEPS
+  PKGMGR_INFO_DEPS
+  PKGMGR_INSTALLER_DEPS
+  PKGMGR_PARSER_DEPS
+  APP_EVENT_DEPS
+  AUL_DEPS
+  RUA_DEPS
+)
+
+TARGET_LINK_LIBRARIES(tizenclaw-unittests PUBLIC pthread tizenclaw-core dl xml2)
+
+TARGET_COMPILE_DEFINITIONS(tizenclaw-unittests PUBLIC
+  APP_DATA_DIR="${APP_DATA_DIR}"
+)
+
+IF(TIZEN_STT_FOUND)
+  TARGET_LINK_LIBRARIES(tizenclaw-unittests PUBLIC ${TIZEN_STT_LIBRARIES})
+  TARGET_INCLUDE_DIRECTORIES(tizenclaw-unittests PUBLIC ${TIZEN_STT_INCLUDE_DIRS})
+  TARGET_COMPILE_DEFINITIONS(tizenclaw-unittests PUBLIC TIZEN_STT_ENABLED)
+ENDIF()
+IF(TIZEN_TTS_FOUND)
+  TARGET_LINK_LIBRARIES(tizenclaw-unittests PUBLIC ${TIZEN_TTS_LIBRARIES})
+  TARGET_INCLUDE_DIRECTORIES(tizenclaw-unittests PUBLIC ${TIZEN_TTS_INCLUDE_DIRS})
+  TARGET_COMPILE_DEFINITIONS(tizenclaw-unittests PUBLIC TIZEN_TTS_ENABLED)
+ENDIF()
+
+## CTest
+ENABLE_TESTING()
+include(GoogleTest)
+gtest_discover_tests(tizenclaw-unittests DISCOVERY_MODE PRE_TEST)
+
+INSTALL(TARGETS tizenclaw-unittests DESTINATION ${BINDIR})

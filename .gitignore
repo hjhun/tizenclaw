@@ -59,13 +59,14 @@ dlog_dump.txt
 # Plans (local only)
 plan/
 
+# C++ backup (migrated to Rust)
+src_bak/
+
 # RAG generated data (only data/rag/*.zip is committed)
 /rag/
-src/tizenclaw/tizenclaw
 test/unit_tests/tizenclaw-unittests
 tools/cli/aurum-cli/aurum-cli
-src/tizenclaw-cli/tizenclaw-cli
-src/tizenclaw-tool-executor/tizenclaw-tool-executor
 tools/skills_backup/
 cli_res.txt
 journal.txt
+.plan/

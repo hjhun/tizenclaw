@@ -26,9 +26,11 @@ ADD_CUSTOM_TARGET(cargo_build ALL
 INSTALL(PROGRAMS "${CMAKE_SOURCE_DIR}/target/release/tizenclaw"
         DESTINATION "${BINDIR}")
 
-INSTALL(PROGRAMS "${CMAKE_SOURCE_DIR}/target/release/tizenclaw-cli-rust"
-        DESTINATION "${BINDIR}"
-        RENAME "tizenclaw-cli")
+INSTALL(PROGRAMS "${CMAKE_SOURCE_DIR}/target/release/tizenclaw-cli"
+        DESTINATION "${BINDIR}")
+
+INSTALL(PROGRAMS "${CMAKE_SOURCE_DIR}/target/release/tizenclaw-tool-executor"
+        DESTINATION "${BINDIR}")
 
 ## ═══════════════════════════════════════════
 ##  Install data & config files
@@ -81,3 +83,46 @@ INSTALL(PROGRAMS "${CMAKE_SOURCE_DIR}/scripts/start_mcp_tunnel.sh"
 # RAG web docs
 INSTALL(FILES "${CMAKE_SOURCE_DIR}/data/rag/web.zip"
         DESTINATION "${APP_DATA_DIR}/rag")
+
+## ═══════════════════════════════════════════
+##  Install libtizenclaw shared library & headers
+## ═══════════════════════════════════════════
+INSTALL(FILES "${CMAKE_SOURCE_DIR}/target/release/libtizenclaw.so"
+        DESTINATION "${CMAKE_INSTALL_PREFIX}/lib64")
+
+# C header
+INSTALL(FILES "${CMAKE_SOURCE_DIR}/src/libtizenclaw/include/tizenclaw.h"
+        DESTINATION "${CMAKE_INSTALL_PREFIX}/include/tizenclaw")
+
+# pkgconfig
+CONFIGURE_FILE(
+    "${CMAKE_SOURCE_DIR}/packaging/tizenclaw.pc.in"
+    "${CMAKE_BINARY_DIR}/tizenclaw.pc"
+    @ONLY
+)
+INSTALL(FILES "${CMAKE_BINARY_DIR}/tizenclaw.pc"
+        DESTINATION "${CMAKE_INSTALL_PREFIX}/lib64/pkgconfig")
+
+## ═══════════════════════════════════════════
+##  Install libtizenclaw-core (plugin SDK)
+## ═══════════════════════════════════════════
+INSTALL(FILES "${CMAKE_SOURCE_DIR}/target/release/libtizenclaw_core.so"
+        DESTINATION "${CMAKE_INSTALL_PREFIX}/lib64")
+
+# Plugin SDK headers
+INSTALL(FILES
+    "${CMAKE_SOURCE_DIR}/src/libtizenclaw-core/include/tizenclaw_error.h"
+    "${CMAKE_SOURCE_DIR}/src/libtizenclaw-core/include/tizenclaw_channel.h"
+    "${CMAKE_SOURCE_DIR}/src/libtizenclaw-core/include/tizenclaw_llm_backend.h"
+    "${CMAKE_SOURCE_DIR}/src/libtizenclaw-core/include/tizenclaw_curl.h"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/include/tizenclaw")
+
+# pkgconfig for tizenclaw-core
+CONFIGURE_FILE(
+    "${CMAKE_SOURCE_DIR}/packaging/tizenclaw-core.pc.in"
+    "${CMAKE_BINARY_DIR}/tizenclaw-core.pc"
+    @ONLY
+)
+INSTALL(FILES "${CMAKE_BINARY_DIR}/tizenclaw-core.pc"
+        DESTINATION "${CMAKE_INSTALL_PREFIX}/lib64/pkgconfig")
+

@@ -1,0 +1,15 @@
+[workspace]
+members = [
+    "src/tizen-sys",
+    "src/tizenclaw",
+    "src/tizenclaw-cli",
+    "src/libtizenclaw",
+    "src/libtizenclaw-core",
+    "src/tizenclaw-tool-executor",
+]
+
+[profile.release]
+opt-level = "s"  # Optimize for size
+lto = true       # Enable Link Time Optimization
+panic = "abort"  # Abort on panic for smaller binary size
+codegen-units = 1 # Better optimization

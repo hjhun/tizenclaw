@@ -1,0 +1,9 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+libdir=${prefix}/lib64
+includedir=${prefix}/include
+
+Name: tizenclaw-core
+Description: TizenClaw Plugin SDK — LLM handles, HTTP helper, plugin interfaces
+Version: 1.0.0
+Libs: -L${libdir} -ltizenclaw_core
+Cflags: -I${includedir}

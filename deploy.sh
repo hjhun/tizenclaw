@@ -666,6 +666,38 @@ do_deploy() {
     log "[DRY-RUN] Unzip web.zip -> /opt/usr/share/tizenclaw/rag/web/"
   fi
 
+  # 3-5.5. Install Web Dashboard frontend files
+  log "Installing Web Dashboard frontend..."
+  local web_src="${PROJECT_DIR}/data/web"
+  local web_dst="/opt/usr/data/tizenclaw/web"
+  if [ -d "${web_src}" ]; then
+    if [ "${DRY_RUN}" = false ]; then
+      sdb_shell "mkdir -p ${web_dst}/img ${web_dst}/sdk ${web_dst}/apps"
+      # Push each file individually (sdb push doesn't handle recursive dirs)
+      for f in "${web_src}"/*; do
+        if [ -f "$f" ]; then
+          run sdb_cmd push "$f" "${web_dst}/$(basename "$f")"
+        fi
+      done
+      # Push subdirectories
+      if [ -d "${web_src}/img" ]; then
+        for f in "${web_src}/img"/*; do
+          [ -f "$f" ] && run sdb_cmd push "$f" "${web_dst}/img/$(basename "$f")"
+        done
+      fi
+      if [ -d "${web_src}/sdk" ]; then
+        for f in "${web_src}/sdk"/*; do
+          [ -f "$f" ] && run sdb_cmd push "$f" "${web_dst}/sdk/$(basename "$f")"
+        done
+      fi
+      ok "Web Dashboard frontend installed to ${web_dst}"
+    else
+      log "[DRY-RUN] Push data/web/* -> ${web_dst}/"
+    fi
+  else
+    warn "Web Dashboard source not found: ${web_src}"
+  fi
+
   # 3-6. Auto-download and install ngrok if requested
   if [ "${WITH_NGROK}" = true ]; then
     log "Auto-installing ngrok..."

@@ -96,6 +96,42 @@ does not provide the `pkgconfig(lxc)` dependency.
 
 ---
 
+## Rust Migration
+
+The project is actively migrating from C++ to Rust. The following rules apply during the migration:
+
+### Migration Plan Tracking
+- The migration plan lives at `.plan/migration_plan.md`.
+- **After each phase or module is completed**, you MUST update `migration_plan.md` to reflect the current status (mark items with `[x]` and add completion dates).
+- Keep the plan as the single source of truth for migration progress.
+
+### Zero Warnings Build Policy (Rust)
+- **All Rust code must compile with zero warnings.** This is a build-breaking policy — treat any `rustc` warning (unused imports, dead code, missing docs, etc.) as an error.
+- `#![allow(unused)]` is **temporarily** enabled in `main.rs` during migration only. When a module is wired into the daemon and actively used, its unused items must be cleaned up.
+- **TODO**: Remove `#![allow(unused)]` once all ported modules are integrated (Phase 6).
+
+### Idiomatic Rust Style
+- Leverage Rust's type system: use `enum` for discriminated unions, `Option`/`Result` for error handling, and trait objects for polymorphism.
+- Prefer `impl Trait` over `Box<dyn Trait>` where possible.
+- Use `?` operator for error propagation instead of nested `match` blocks.
+- Use iterators and closures over explicit loops when they improve readability.
+- Derive common traits (`Debug`, `Clone`, `Default`, `Serialize`, `Deserialize`) liberally.
+- Follow Rust naming conventions: `snake_case` for functions/variables, `CamelCase` for types, `SCREAMING_SNAKE_CASE` for constants.
+
+### Auto Build, Deploy & Test
+When developing Rust modules, the AGENT must automatically perform the full cycle without waiting for user approval:
+1. **Develop** — Write/modify Rust code in `src/` crates
+2. **Build & Deploy** — Run `./deploy.sh` (includes GBS build + RPM install + daemon restart)
+3. **Test** — Check daemon logs via `sdb shell journalctl -u tizenclaw -n 30`
+4. **Review** — Verify no crashes, check for warnings in build log
+5. **Fix & Repeat** — If build/test fails, fix and re-run `./deploy.sh` automatically
+
+### Testing Config
+- Development/testing configuration lives at `data/devel/` (contains API keys — **excluded from git**).
+- Use `data/devel/llm_config.json` for testing LLM backends on the emulator.
+
+---
+
 ## Skill Format Standard (Anthropic Standard)
 
 TizenClaw skills follow the Anthropic standard skill format. Each skill is organized as a directory containing a `SKILL.md` file with YAML frontmatter.

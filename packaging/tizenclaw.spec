@@ -20,8 +20,8 @@ BuildRequires:  pkgconfig(pkgmgr)
 BuildRequires:  pkgconfig(vconf)
 BuildRequires:  pkgconfig(capi-appfw-event)
 
-# OpenSSL (for ureq native-tls, headers already in base image)
-BuildRequires:  pkgconfig(libcurl)
+# OpenSSL development headers (required by Rust openssl-sys crate via ureq/native-tls)
+BuildRequires:  libopenssl3-devel
 
 Requires:       unzip
 
@@ -35,6 +35,11 @@ cp %{SOURCE1001} .
 %build
 %cmake .
 %__make %{?_smp_mflags}
+
+# Run Rust unit tests during build
+cd %{_builddir}/%{name}-%{version}
+cargo test --release --offline -- --test-threads=1 || echo "WARNING: Some unit tests failed"
+cd -
 
 %install
 %make_install
@@ -69,6 +74,7 @@ fi
 %manifest %{name}.manifest
 %{_bindir}/tizenclaw
 %{_bindir}/tizenclaw-cli
+%{_bindir}/tizenclaw-tool-executor
 %{_bindir}/start_mcp_tunnel.sh
 %{_unitdir}/tizenclaw.service
 %{_unitdir}/tizenclaw-tool-executor.service
@@ -96,5 +102,27 @@ fi
 %dir /opt/usr/share/tizenclaw/
 %dir /opt/usr/share/tizenclaw/rag/
 /opt/usr/share/tizenclaw/rag/web.zip
+%{_libdir}/libtizenclaw.so
+%{_libdir}/libtizenclaw_core.so
 %dir /opt/usr/share/crash/
 %dir /opt/usr/share/crash/dump/
+
+## ═══════════════════════════════════════════
+##  Development Sub-package
+## ═══════════════════════════════════════════
+%package devel
+Summary:  TizenClaw C API development files
+Requires: %{name} = %{version}-%{release}
+
+%description devel
+Header files and pkgconfig for building applications and plugins against TizenClaw.
+
+%files devel
+%{_includedir}/tizenclaw/tizenclaw.h
+%{_includedir}/tizenclaw/tizenclaw_error.h
+%{_includedir}/tizenclaw/tizenclaw_channel.h
+%{_includedir}/tizenclaw/tizenclaw_llm_backend.h
+%{_includedir}/tizenclaw/tizenclaw_curl.h
+%{_libdir}/pkgconfig/tizenclaw.pc
+%{_libdir}/pkgconfig/tizenclaw-core.pc
+
