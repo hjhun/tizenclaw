@@ -41,7 +41,7 @@ async fn main() {
     // Initialize AgentCore
     log::info!("[Boot] Initializing AgentCore...");
     let agent = core::agent_core::AgentCore::new();
-    if !agent.initialize() {
+    if !agent.initialize().await {
         log::error!("AgentCore initialization failed");
     }
     let agent = Arc::new(agent);

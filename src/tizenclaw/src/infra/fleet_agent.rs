@@ -90,7 +90,7 @@ impl FleetAgent {
 
         let url = format!("http://{}:{}/api/task", peer.ip_address, peer.port);
         let body = serde_json::to_string(task).map_err(|e| e.to_string())?;
-        let resp = crate::infra::http_client::http_post(&url, &[], &body, 1, 30);
+        let resp = crate::infra::http_client::http_post_sync(&url, &[], &body, 1, 30);
 
         if resp.success {
             serde_json::from_str(&resp.body).map_err(|e| e.to_string())

@@ -163,7 +163,7 @@ impl TunnelManager {
             }
             std::thread::sleep(std::time::Duration::from_secs(1));
 
-            let resp = crate::infra::http_client::http_get(api_url, &[], 0, 5);
+            let resp = crate::infra::http_client::http_get_sync(api_url, &[], 0, 5);
             if resp.success && resp.status_code == 200 && !resp.body.is_empty() {
                 if let Ok(j) = serde_json::from_str::<Value>(&resp.body) {
                     if let Some(tunnels) = j["tunnels"].as_array() {

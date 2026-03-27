@@ -66,11 +66,11 @@ impl TelegramClient {
         }).to_string();
 
         let client = crate::infra::http_client::HttpClient::new();
-        match client.post(&url, &payload) {
+        match client.post_sync(&url, &payload) {
             Ok(resp) if resp.status_code >= 400 => {
                 // Markdown failed, retry plain text
                 let plain = json!({"chat_id": chat_id, "text": safe_text}).to_string();
-                let _ = client.post(&url, &plain);
+                let _ = client.post_sync(&url, &plain);
             }
             Err(e) => log::error!("Telegram sendMessage failed: {}", e),
             _ => {}
@@ -94,7 +94,7 @@ impl Channel for TelegramClient {
             self.bot_token
         );
         let client = crate::infra::http_client::HttpClient::new();
-        match client.get(&reset_url) {
+        match client.get_sync(&reset_url) {
             Ok(_) => log::info!("TelegramClient: cleared prior session"),
             Err(e) => log::warn!("TelegramClient: deleteWebhook failed: {}", e),
         }
@@ -116,7 +116,7 @@ impl Channel for TelegramClient {
                 );
 
                 let client = crate::infra::http_client::HttpClient::new();
-                let resp = match client.get(&url) {
+                let resp = match client.get_sync(&url) {
                     Ok(r) => r,
                     Err(e) => {
                         log::error!("Telegram polling error: {}", e);

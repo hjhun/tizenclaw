@@ -89,8 +89,8 @@ impl LlmConfig {
 /// - `session_store`: Mutex (SQLite is not Sync)
 /// - `tool_dispatcher`: RwLock (reads are frequent, writes are rare)
 pub struct AgentCore {
-    backend: Mutex<Option<Box<dyn LlmBackend>>>,
-    fallback_backends: Mutex<Vec<Box<dyn LlmBackend>>>,
+    backend: tokio::sync::RwLock<Option<Box<dyn LlmBackend>>>,
+    fallback_backends: tokio::sync::RwLock<Vec<Box<dyn LlmBackend>>>,
     session_store: Mutex<Option<SessionStore>>,
     tool_dispatcher: RwLock<ToolDispatcher>,
     key_store: Mutex<KeyStore>,
@@ -108,8 +108,8 @@ impl Default for AgentCore {
 impl AgentCore {
     pub fn new() -> Self {
         AgentCore {
-            backend: Mutex::new(None),
-            fallback_backends: Mutex::new(Vec::new()),
+            backend: tokio::sync::RwLock::new(None),
+            fallback_backends: tokio::sync::RwLock::new(Vec::new()),
             session_store: Mutex::new(None),
             tool_dispatcher: RwLock::new(ToolDispatcher::new()),
             key_store: Mutex::new(KeyStore::new()),
@@ -119,7 +119,7 @@ impl AgentCore {
         }
     }
 
-    pub fn initialize(&self) -> bool {
+    pub async fn initialize(&self) -> bool {
         log::info!("AgentCore initializing...");
 
         // Load API keys
@@ -153,9 +153,7 @@ impl AgentCore {
             log::error!("Primary LLM backend '{}' failed to initialize", active_name);
         }
 
-        if let Ok(mut be) = self.backend.lock() {
-            *be = primary;
-        }
+        *self.backend.write().await = primary;
         if let Ok(mut bn) = self.backend_name.write() {
             *bn = active_name;
         }
@@ -168,9 +166,7 @@ impl AgentCore {
                 fallbacks.push(be);
             }
         }
-        if let Ok(mut fbs) = self.fallback_backends.lock() {
-            *fbs = fallbacks;
-        }
+        *self.fallback_backends.write().await = fallbacks;
 
         // Store config for later use
         if let Ok(mut cfg) = self.llm_config.lock() {
@@ -216,11 +212,11 @@ impl AgentCore {
     /// Execute a chat request against the primary backend, falling back on failure.
     ///
     /// Acquires backend lock only for the duration of each `chat()` call.
-    fn chat_with_fallback(
+    async fn chat_with_fallback(
         &self,
         messages: &[LlmMessage],
         tools: &[crate::llm::backend::LlmToolDecl],
-        on_chunk: Option<&dyn Fn(&str)>,
+        on_chunk: Option<&(dyn Fn(&str) + Send + Sync)>,
     ) -> LlmResponse {
         let system_prompt = self.system_prompt.read()
             .map(|sp| sp.clone())
@@ -228,40 +224,36 @@ impl AgentCore {
 
         // Try primary backend — lock is held only during chat()
         {
-            let be_guard = self.backend.lock();
-            if let Ok(be_opt) = be_guard {
-                if let Some(be) = be_opt.as_ref() {
-                    let resp = be.chat(messages, tools, on_chunk, &system_prompt);
-                    if resp.success {
-                        return resp;
-                    }
-                    let bn = self.backend_name.read()
-                        .map(|n| n.clone())
-                        .unwrap_or_default();
-                    log::warn!(
-                        "Primary backend '{}' failed (HTTP {}): {}",
-                        bn, resp.http_status, resp.error_message
-                    );
+            let be_guard = self.backend.read().await;
+            if let Some(be) = be_guard.as_ref() {
+                let resp = be.chat(messages, tools, on_chunk, &system_prompt).await;
+                if resp.success {
+                    return resp;
                 }
+                let bn = self.backend_name.read()
+                    .map(|n| n.clone())
+                    .unwrap_or_default();
+                log::warn!(
+                    "Primary backend '{}' failed (HTTP {}): {}",
+                    bn, resp.http_status, resp.error_message
+                );
             }
         }
         // Primary lock is released here
 
         // Try fallback backends in order
         {
-            let fbs_guard = self.fallback_backends.lock();
-            if let Ok(fbs) = fbs_guard {
-                for fb in fbs.iter() {
-                    log::info!("Trying fallback backend '{}'", fb.get_name());
-                    let resp = fb.chat(messages, tools, on_chunk, &system_prompt);
-                    if resp.success {
-                        return resp;
-                    }
-                    log::warn!(
-                        "Fallback '{}' also failed: {}",
-                        fb.get_name(), resp.error_message
-                    );
+            let fbs_guard = self.fallback_backends.read().await;
+            for fb in fbs_guard.iter() {
+                log::info!("Trying fallback backend '{}'", fb.get_name());
+                let resp = fb.chat(messages, tools, on_chunk, &system_prompt).await;
+                if resp.success {
+                    return resp;
                 }
+                log::warn!(
+                    "Fallback '{}' also failed: {}",
+                    fb.get_name(), resp.error_message
+                );
             }
         }
 
@@ -275,22 +267,18 @@ impl AgentCore {
     ///
     /// Thread-safe: acquires fine-grained locks on individual fields
     /// rather than locking the entire AgentCore.
-    pub fn process_prompt(
+    pub async fn process_prompt(
         &self,
         session_id: &str,
         prompt: &str,
-        on_chunk: Option<&dyn Fn(&str)>,
+        on_chunk: Option<&(dyn Fn(&str) + Send + Sync)>,
     ) -> String {
         log::info!("Processing prompt for session '{}' ({} chars)", session_id, prompt.len());
 
         // Quick check: do we have any backend?
         {
-            let has_primary = self.backend.lock()
-                .map(|b| b.is_some())
-                .unwrap_or(false);
-            let has_fallback = self.fallback_backends.lock()
-                .map(|f| !f.is_empty())
-                .unwrap_or(false);
+            let has_primary = self.backend.read().await.is_some();
+            let has_fallback = !self.fallback_backends.read().await.is_empty();
             if !has_primary && !has_fallback {
                 return "Error: No LLM backend configured".into();
             }
@@ -332,7 +320,7 @@ impl AgentCore {
 
         // Agentic loop — no global lock held during LLM calls
         for round in 0..MAX_TOOL_ROUNDS {
-            let response = self.chat_with_fallback(&messages, &tools, on_chunk);
+            let response = self.chat_with_fallback(&messages, &tools, on_chunk).await;
 
             if !response.success {
                 let err = format!(
@@ -345,9 +333,9 @@ impl AgentCore {
 
             // Record token usage (short lock on session_store)
             {
-                let be_name = self.backend.lock()
-                    .ok()
-                    .and_then(|b| b.as_ref().map(|be| be.get_name().to_string()))
+                let be_name = self.backend.read().await
+                    .as_ref()
+                    .map(|be| be.get_name().to_string())
                     .unwrap_or_else(|| "unknown".into());
                 if let Ok(ss) = self.session_store.lock() {
                     if let Some(store) = ss.as_ref() {
@@ -417,17 +405,13 @@ impl AgentCore {
         "Error: Maximum tool call rounds exceeded".into()
     }
 
-    pub fn shutdown(&self) {
+    pub async fn shutdown(&self) {
         log::info!("AgentCore shutting down");
-        if let Ok(mut be) = self.backend.lock() {
-            if let Some(b) = be.as_mut() {
-                b.shutdown();
-            }
+        if let Some(b) = self.backend.write().await.as_mut() {
+            b.shutdown();
         }
-        if let Ok(mut fbs) = self.fallback_backends.lock() {
-            for fb in fbs.iter_mut() {
-                fb.shutdown();
-            }
+        for fb in self.fallback_backends.write().await.iter_mut() {
+            fb.shutdown();
         }
     }
 

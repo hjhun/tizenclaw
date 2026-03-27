@@ -33,7 +33,7 @@ impl OtaUpdater {
 
     /// Check for available updates.
     pub fn check_update(&self) -> Option<UpdateManifest> {
-        let resp = crate::infra::http_client::http_get(&self.manifest_url, &[], 1, 15);
+        let resp = crate::infra::http_client::http_get_sync(&self.manifest_url, &[], 1, 15);
         if !resp.success {
             log::warn!("OTA: failed to fetch update manifest: {}", resp.error);
             return None;

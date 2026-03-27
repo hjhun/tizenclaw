@@ -89,6 +89,7 @@ impl PluginLlmBackend {
     }
 }
 
+#[async_trait::async_trait]
 impl LlmBackend for PluginLlmBackend {
     fn initialize(&mut self, config: &Value) -> bool {
         if let Err(e) = self.load_library() {
@@ -115,11 +116,11 @@ impl LlmBackend for PluginLlmBackend {
         }
     }
 
-    fn chat(
+    async fn chat(
         &self,
         messages: &[LlmMessage],
         tools: &[LlmToolDecl],
-        _on_chunk: Option<&dyn Fn(&str)>,
+        _on_chunk: Option<&(dyn Fn(&str) + Send + Sync)>,
         system_prompt: &str,
     ) -> LlmResponse {
         let handle = match self.lib_handle {

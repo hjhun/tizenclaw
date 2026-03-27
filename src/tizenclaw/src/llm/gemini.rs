@@ -97,6 +97,7 @@ impl GeminiBackend {
     }
 }
 
+#[async_trait::async_trait]
 impl LlmBackend for GeminiBackend {
     fn initialize(&mut self, config: &Value) -> bool {
         if let Some(k) = config["api_key"].as_str() { self.api_key = k.into(); }
@@ -105,10 +106,10 @@ impl LlmBackend for GeminiBackend {
         !self.api_key.is_empty()
     }
 
-    fn chat(&self, messages: &[LlmMessage], tools: &[LlmToolDecl], _on_chunk: Option<&dyn Fn(&str)>, system_prompt: &str) -> LlmResponse {
+    async fn chat(&self, messages: &[LlmMessage], tools: &[LlmToolDecl], _on_chunk: Option<&(dyn Fn(&str) + Send + Sync)>, system_prompt: &str) -> LlmResponse {
         let body = self.build_request(messages, tools, system_prompt).to_string();
         let url = format!("{}/models/{}:generateContent?key={}", self.endpoint, self.model, self.api_key);
-        let http_resp = http_client::http_post(&url, &[], &body, 1, 60);
+        let http_resp = http_client::http_post(&url, &[], &body, 1, 60).await;
         let mut resp = if http_resp.success { self.parse_response(&http_resp.body) } else {
             let mut r = LlmResponse::default(); r.error_message = http_resp.error; r
         };

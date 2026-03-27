@@ -71,7 +71,7 @@ impl Channel for DiscordChannel {
                     let client = crate::infra::http_client::HttpClient::new();
                     // Note: Discord Bot requires Authorization: Bot <token> header
                     // For now, use GET which needs the auth header through custom client config
-                    match client.get(&url) {
+                    match client.get_sync(&url) {
                         Ok(resp) => {
                             if let Ok(messages) = serde_json::from_str::<Value>(&resp.body) {
                                 if let Some(arr) = messages.as_array() {
@@ -127,7 +127,7 @@ impl Channel for DiscordChannel {
 
         let body = json!({"content": safe_msg}).to_string();
         crate::infra::http_client::HttpClient::new()
-            .post(&self.webhook_url, &body)
+            .post_sync(&self.webhook_url, &body)
             .map_err(|e| e.to_string())?;
         Ok(())
     }

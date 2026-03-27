@@ -23,6 +23,7 @@ impl OllamaBackend {
     }
 }
 
+#[async_trait::async_trait]
 impl LlmBackend for OllamaBackend {
     fn initialize(&mut self, config: &Value) -> bool {
         if let Some(m) = config["model"].as_str() { self.model = m.into(); }
@@ -30,7 +31,7 @@ impl LlmBackend for OllamaBackend {
         true
     }
 
-    fn chat(&self, messages: &[LlmMessage], _tools: &[LlmToolDecl], _on_chunk: Option<&dyn Fn(&str)>, system_prompt: &str) -> LlmResponse {
+    async fn chat(&self, messages: &[LlmMessage], _tools: &[LlmToolDecl], _on_chunk: Option<&(dyn Fn(&str) + Send + Sync)>, system_prompt: &str) -> LlmResponse {
         let mut msgs = vec![];
         if !system_prompt.is_empty() {
             msgs.push(json!({"role": "system", "content": system_prompt}));
@@ -41,7 +42,7 @@ impl LlmBackend for OllamaBackend {
         let req = json!({"model": self.model, "messages": msgs, "stream": false});
 
         let url = format!("{}/api/chat", self.endpoint);
-        let http_resp = http_client::http_post(&url, &[], &req.to_string(), 1, 120);
+        let http_resp = http_client::http_post(&url, &[], &req.to_string(), 1, 120).await;
 
         let mut resp = LlmResponse::default();
         resp.http_status = http_resp.status_code;

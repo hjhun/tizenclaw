@@ -116,35 +116,32 @@ pub unsafe extern "C" fn tizenclaw_curl_perform(h: *mut libc::c_void) -> i32 {
     if h.is_null() { return EINVAL; }
     let inner = &mut *(h as *mut CurlInner);
 
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(std::time::Duration::from_secs(inner.connect_timeout))
+    let client = reqwest::blocking::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(inner.connect_timeout))
         .timeout(std::time::Duration::from_secs(inner.request_timeout))
-        .build();
+        .build()
+        .unwrap_or_default();
 
     let mut req = if inner.method_get || inner.post_data.is_none() {
-        agent.get(&inner.url)
+        client.get(&inner.url)
     } else {
-        agent.post(&inner.url)
+        client.post(&inner.url)
     };
 
     for (k, v) in &inner.headers {
-        req = req.set(k, v);
+        req = req.header(k, v);
     }
 
-    let result = if let Some(ref data) = inner.post_data {
+    if let Some(ref data) = inner.post_data {
         if !inner.method_get {
-            req.send_string(data)
-        } else {
-            req.call()
+            req = req.body(data.clone());
         }
-    } else {
-        req.call()
-    };
+    }
 
-    match result {
+    match req.send() {
         Ok(resp) => {
-            inner.response_code = resp.status() as i64;
-            inner.response_body = resp.into_string().unwrap_or_default();
+            inner.response_code = resp.status().as_u16() as i64;
+            inner.response_body = resp.text().unwrap_or_default();
 
             if let Some(cb) = inner.chunk_cb {
                 if let Ok(cs) = CString::new(inner.response_body.as_str()) {
@@ -153,16 +150,15 @@ pub unsafe extern "C" fn tizenclaw_curl_perform(h: *mut libc::c_void) -> i32 {
             }
             OK
         }
-        Err(ureq::Error::Status(code, resp)) => {
-            inner.response_code = code as i64;
-            inner.response_body = resp.into_string().unwrap_or_default();
-            inner.error_message = format!("HTTP {}", code);
-            OK  // Not a transport error — caller checks response_code
-        }
         Err(e) => {
             inner.error_message = format!("{}", e);
-            inner.response_code = 0;
-            EIO
+            if let Some(status) = e.status() {
+                inner.response_code = status.as_u16() as i64;
+                OK  // Not a transport error — caller checks response_code
+            } else {
+                inner.response_code = 0;
+                EIO
+            }
         }
     }
 }

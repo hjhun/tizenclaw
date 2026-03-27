@@ -164,7 +164,12 @@ impl IpcServer {
             Ok(v) => v,
             Err(_) => {
                 // Plain text prompt — no lock needed, AgentCore handles its own locking
-                let result = agent.process_prompt("default", raw, None);
+                let fut = agent.process_prompt("default", raw, None);
+                let result = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    tokio::task::block_in_place(|| handle.block_on(fut))
+                } else {
+                    tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(fut)
+                };
                 return json!({"jsonrpc":"2.0","id":null,"result":{"text":result}}).to_string();
             }
         };
@@ -184,7 +189,12 @@ impl IpcServer {
                 if text.is_empty() {
                     return json!({"jsonrpc":"2.0","error":{"code":-32602,"message":"Empty prompt"},"id":req_id}).to_string();
                 }
-                let result = agent.process_prompt(session_id, text, None);
+                let fut = agent.process_prompt(session_id, text, None);
+                let result = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    tokio::task::block_in_place(|| handle.block_on(fut))
+                } else {
+                    tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(fut)
+                };
                 json!({"text": result})
             }
             "get_usage" => {

@@ -23,6 +23,7 @@ impl OpenAiBackend {
     }
 }
 
+#[async_trait::async_trait]
 impl LlmBackend for OpenAiBackend {
     fn initialize(&mut self, config: &Value) -> bool {
         if let Some(k) = config["api_key"].as_str() { self.api_key = k.into(); }
@@ -31,7 +32,7 @@ impl LlmBackend for OpenAiBackend {
         !self.api_key.is_empty()
     }
 
-    fn chat(&self, messages: &[LlmMessage], tools: &[LlmToolDecl], _on_chunk: Option<&dyn Fn(&str)>, system_prompt: &str) -> LlmResponse {
+    async fn chat(&self, messages: &[LlmMessage], tools: &[LlmToolDecl], _on_chunk: Option<&(dyn Fn(&str) + Send + Sync)>, system_prompt: &str) -> LlmResponse {
         let mut msgs = vec![];
         if !system_prompt.is_empty() {
             msgs.push(json!({"role": "system", "content": system_prompt}));
@@ -62,7 +63,7 @@ impl LlmBackend for OpenAiBackend {
         let url = format!("{}/chat/completions", self.endpoint);
         let auth = format!("Bearer {}", self.api_key);
         let headers = [("Authorization", auth.as_str())];
-        let http_resp = http_client::http_post(&url, &headers, &req.to_string(), 1, 60);
+        let http_resp = http_client::http_post(&url, &headers, &req.to_string(), 1, 60).await;
 
         let mut resp = LlmResponse::default();
         resp.http_status = http_resp.status_code;

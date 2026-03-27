@@ -91,11 +91,12 @@ pub struct LlmToolDecl {
 }
 
 /// Abstract LLM backend interface.
+#[async_trait::async_trait]
 pub trait LlmBackend: Send + Sync {
     fn initialize(&mut self, config: &Value) -> bool;
-    fn chat(
+    async fn chat(
         &self, messages: &[LlmMessage], tools: &[LlmToolDecl],
-        on_chunk: Option<&dyn Fn(&str)>, system_prompt: &str,
+        on_chunk: Option<&(dyn Fn(&str) + Send + Sync)>, system_prompt: &str,
     ) -> LlmResponse;
     fn get_name(&self) -> &str;
     fn shutdown(&mut self) {}

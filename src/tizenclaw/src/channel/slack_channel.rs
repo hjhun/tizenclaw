@@ -48,7 +48,7 @@ impl SlackChannel {
 
         // Slack Bot API requires Authorization: Bearer <token> header
         let client = crate::infra::http_client::HttpClient::new();
-        client.post(url, &payload).map_err(|e| e.to_string())?;
+        client.post_sync(url, &payload).map_err(|e| e.to_string())?;
         Ok(())
     }
 }
@@ -89,7 +89,7 @@ impl Channel for SlackChannel {
                     };
 
                     let client = crate::infra::http_client::HttpClient::new();
-                    match client.get(&url) {
+                    match client.get_sync(&url) {
                         Ok(resp) => {
                             if let Ok(data) = serde_json::from_str::<Value>(&resp.body) {
                                 if data["ok"].as_bool().unwrap_or(false) {
@@ -136,7 +136,7 @@ impl Channel for SlackChannel {
         if !self.webhook_url.is_empty() {
             let body = json!({"text": msg}).to_string();
             crate::infra::http_client::HttpClient::new()
-                .post(&self.webhook_url, &body)
+                .post_sync(&self.webhook_url, &body)
                 .map_err(|e| e.to_string())?;
             return Ok(());
         }
