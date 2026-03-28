@@ -7,7 +7,7 @@ use std::ffi::CString;
 
 const TAG: &str = "TIZENCLAW";
 
-/// Tizen dlog-based logger.
+/// Tizen dlog-based logger (Rust API).
 pub struct DlogLogger;
 
 impl PlatformLogger for DlogLogger {
@@ -19,15 +19,26 @@ impl PlatformLogger for DlogLogger {
             LogLevel::Debug => tizen_sys::dlog::DLOG_DEBUG,
         };
 
-        // Use provided tag or default to TIZENCLAW
         let use_tag = if tag.is_empty() { TAG } else { tag };
-
-        // Escape '%' to prevent format string attacks in dlog
         let escaped = msg.replace('%', "%%");
         if let (Ok(tag_c), Ok(msg_c)) = (CString::new(use_tag), CString::new(escaped)) {
             unsafe {
                 tizen_sys::dlog::dlog_print(prio, tag_c.as_ptr(), msg_c.as_ptr());
             }
         }
+    }
+}
+
+/// C ABI for platform plugin logger (called by the main daemon via dlopen)
+#[no_mangle]
+pub extern "C" fn claw_plugin_log(level: i32, tag: *const std::os::raw::c_char, msg: *const std::os::raw::c_char) {
+    let prio = match level {
+        0 => tizen_sys::dlog::DLOG_ERROR,
+        1 => tizen_sys::dlog::DLOG_WARN,
+        2 => tizen_sys::dlog::DLOG_INFO,
+        _ => tizen_sys::dlog::DLOG_DEBUG,
+    };
+    unsafe {
+        tizen_sys::dlog::dlog_print(prio, tag, msg);
     }
 }

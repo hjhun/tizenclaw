@@ -141,7 +141,7 @@ pub struct PlatformContext {
     /// Active platform plugin.
     pub platform: Box<dyn PlatformPlugin>,
     /// Platform logger (from active plugin or generic stderr).
-    pub logger: Box<dyn PlatformLogger>,
+    pub logger: std::sync::Arc<dyn PlatformLogger>,
     /// System info provider.
     pub system_info: Box<dyn SystemInfoProvider>,
     /// Package manager (optional — may be no-op).
@@ -179,7 +179,7 @@ impl PlatformContext {
         log::info!("No platform plugin found, using Generic Linux fallback");
         let generic = generic_linux::GenericLinuxPlatform::new();
         PlatformContext {
-            logger: Box::new(generic_linux::StderrLogger),
+            logger: std::sync::Arc::new(generic_linux::StderrLogger),
             system_info: Box::new(generic_linux::LinuxSystemInfo),
             package_manager: Box::new(generic_linux::GenericPackageManager),
             app_control: Box::new(generic_linux::GenericAppControl),

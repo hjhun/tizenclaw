@@ -185,29 +185,44 @@ fn probe_plugin_info(so_path: &Path) -> Result<PluginMeta, String> {
     }
 }
 
-/// Try to fully activate a plugin — load it and extract trait implementations.
-///
-/// For now, this creates a PlatformContext using the Generic Linux fallback
-/// implementations as the base, and the plugin will override capabilities
-/// it supports. Full trait-object extraction via C ABI will be added when
-/// the first real platform plugin (libtizenclaw_plugin.so) is implemented.
 fn try_activate_plugin(
     meta: &PluginMeta,
     paths: &PlatformPaths,
 ) -> Result<PlatformContext, String> {
     // Verify the plugin is compatible by checking if it can be loaded
-    unsafe {
-        let _lib = libloading::Library::new(&meta.so_path)
-            .map_err(|e| format!("dlopen failed: {}", e))?;
-    }
+    let lib = unsafe {
+        std::sync::Arc::new(
+            libloading::Library::new(&meta.so_path)
+                .map_err(|e| format!("dlopen failed: {}", e))?
+        )
+    };
+
+    // Try to load the logger C ABI function
+    let log_fn = unsafe {
+        lib.get::<unsafe extern "C" fn(i32, *const std::os::raw::c_char, *const std::os::raw::c_char)>(
+            b"claw_plugin_log",
+        )
+        .ok()
+        .map(|sym| *sym)
+    };
+
+    let logger: std::sync::Arc<dyn crate::PlatformLogger> = if let Some(f) = log_fn {
+        std::sync::Arc::new(PluginLogger {
+            _lib: lib.clone(),
+            log_fn: f,
+        })
+    } else {
+        std::sync::Arc::new(generic_linux::StderrLogger)
+    };
 
     // Create a PluginPlatform wrapper
     let plugin_platform = PluginPlatform {
         meta: meta.clone(),
+        _lib: lib.clone(),
     };
 
     Ok(PlatformContext {
-        logger: Box::new(generic_linux::StderrLogger),
+        logger,
         system_info: Box::new(generic_linux::LinuxSystemInfo),
         package_manager: Box::new(generic_linux::GenericPackageManager),
         app_control: Box::new(generic_linux::GenericAppControl),
@@ -216,9 +231,34 @@ fn try_activate_plugin(
     })
 }
 
+struct PluginLogger {
+    _lib: std::sync::Arc<libloading::Library>,
+    log_fn: unsafe extern "C" fn(i32, *const std::os::raw::c_char, *const std::os::raw::c_char),
+}
+
+impl crate::PlatformLogger for PluginLogger {
+    fn log(&self, level: crate::LogLevel, tag: &str, msg: &str) {
+        use std::ffi::CString;
+        let lvl = match level {
+            crate::LogLevel::Error => 0,
+            crate::LogLevel::Warn => 1,
+            crate::LogLevel::Info => 2,
+            crate::LogLevel::Debug => 3,
+        };
+        // Escape '%' to prevent format string attacks in dlog
+        let escaped = msg.replace('%', "%%");
+        if let (Ok(t), Ok(m)) = (CString::new(tag), CString::new(escaped)) {
+            unsafe {
+                (self.log_fn)(lvl, t.as_ptr(), m.as_ptr());
+            }
+        }
+    }
+}
+
 /// A PlatformPlugin backed by a dynamically loaded .so.
 struct PluginPlatform {
     meta: PluginMeta,
+    _lib: std::sync::Arc<libloading::Library>,
 }
 
 impl crate::PlatformPlugin for PluginPlatform {

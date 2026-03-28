@@ -14,19 +14,11 @@ const TAG: &str = "TIZENCLAW";
 static INIT: Once = Once::new();
 
 /// Global platform logger reference — set once during init.
-static PLATFORM_LOGGER: Mutex<Option<&'static dyn libtizenclaw::PlatformLogger>> =
+static PLATFORM_LOGGER: Mutex<Option<std::sync::Arc<dyn libtizenclaw::PlatformLogger>>> =
     Mutex::new(None);
 
-/// Initialize the logging backend.
-///
-/// If a `PlatformLogger` is provided, use it (e.g., Tizen dlog).
-/// Otherwise, use the built-in stderr logger.
-pub fn init() {
-    init_with_logger(None);
-}
-
 /// Initialize with a specific platform logger.
-pub fn init_with_logger(logger: Option<&'static dyn libtizenclaw::PlatformLogger>) {
+pub fn init_with_logger(logger: Option<std::sync::Arc<dyn libtizenclaw::PlatformLogger>>) {
     INIT.call_once(|| {
         if let Some(pl) = logger {
             if let Ok(mut guard) = PLATFORM_LOGGER.lock() {
@@ -66,7 +58,7 @@ impl log::Log for PlatformLogBridge {
 
         // Use platform logger if available, otherwise stderr
         if let Ok(guard) = PLATFORM_LOGGER.lock() {
-            if let Some(pl) = *guard {
+            if let Some(pl) = &*guard {
                 pl.log(level, TAG, &msg);
                 // Also write to file log if configured
                 FileLogBackend::write(&msg, level);

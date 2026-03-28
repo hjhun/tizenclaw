@@ -38,6 +38,7 @@ cp %{SOURCE1001} .
 export CFLAGS=$(echo "$CFLAGS" | sed 's/-flto[^ ]*//g')
 export CXXFLAGS=$(echo "$CXXFLAGS" | sed 's/-flto[^ ]*//g')
 export LDFLAGS=$(echo "$LDFLAGS" | sed 's/-flto[^ ]*//g')
+export CFLAGS="$CFLAGS -Wno-error=missing-field-initializers -Wno-error"
 
 %cmake .
 %__make %{?_smp_mflags}

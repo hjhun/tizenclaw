@@ -34,9 +34,8 @@ async fn main() {
     platform.paths.ensure_dirs();
 
     // ── Phase 2: Initialize logging (platform-aware) ──
-    // For now use the stderr fallback; when plugins provide PlatformLogger
-    // it will be automatically wired via the platform context.
-    common::logging::init();
+    // The platform logger is loaded dynamically from the platform context
+    common::logging::init_with_logger(Some(platform.logger.clone()));
     log::info!("═══════════════════════════════════════");
     log::info!("  TizenClaw Daemon v1.0.0");
     log::info!("  Platform: {}", platform.platform_name());
