@@ -103,23 +103,7 @@ impl ToolDeclarationBuilder {
             }),
         });
 
-        // manage_custom_skill
-        tools.push(LlmToolDecl {
-            name: "manage_custom_skill".into(),
-            description: "Create, update, delete, or list custom skills at runtime.".into(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "operation": {"type": "string", "enum": ["create", "update", "delete", "list"]},
-                    "skill_name": {"type": "string"},
-                    "description": {"type": "string"},
-                    "parameters_schema": {"type": "object"},
-                    "code": {"type": "string"},
-                    "runtime": {"type": "string", "enum": ["python", "node", "native"]}
-                },
-                "required": ["operation"]
-            }),
-        });
+
 
         // ingest_document (RAG)
         tools.push(LlmToolDecl {
@@ -305,31 +289,6 @@ impl ToolDeclarationBuilder {
         });
     }
 
-    /// Build tool declarations from SKILL.md files in a directory.
-    ///
-    /// Uses the Anthropic-standard SKILL.md format with `input_schema`.
-    pub fn build_from_skill_dir(dir: &str) -> Vec<LlmToolDecl> {
-        use crate::core::skill_manifest::SkillManifest;
-
-        let mut tools = vec![];
-        let entries = match std::fs::read_dir(dir) {
-            Ok(e) => e,
-            Err(_) => return tools,
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                if let Some(manifest) = SkillManifest::load(&path) {
-                    tools.push(LlmToolDecl {
-                        name: manifest.name,
-                        description: manifest.description,
-                        parameters: manifest.input_schema,
-                    });
-                }
-            }
-        }
-        tools
-    }
 
     /// Build declarations from system CLI tools.
     pub fn build_from_system_cli(cli_tools: &[(String, String, Value)]) -> Vec<LlmToolDecl> {

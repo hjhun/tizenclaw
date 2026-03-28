@@ -98,9 +98,10 @@ pub struct AgentCore {
     backend: tokio::sync::RwLock<Option<Box<dyn LlmBackend>>>,
     fallback_backends: tokio::sync::RwLock<Vec<Box<dyn LlmBackend>>>,
     session_store: Mutex<Option<SessionStore>>,
-    tool_dispatcher: RwLock<ToolDispatcher>,
+    tool_dispatcher: tokio::sync::RwLock<ToolDispatcher>,
     key_store: Mutex<KeyStore>,
     system_prompt: RwLock<String>,
+    soul_content: RwLock<Option<String>>,
     backend_name: RwLock<String>,
     llm_config: Mutex<LlmConfig>,
     circuit_breakers: RwLock<std::collections::HashMap<String, CircuitBreakerState>>,
@@ -118,9 +119,10 @@ impl AgentCore {
             backend: tokio::sync::RwLock::new(None),
             fallback_backends: tokio::sync::RwLock::new(Vec::new()),
             session_store: Mutex::new(None),
-            tool_dispatcher: RwLock::new(ToolDispatcher::new()),
+            tool_dispatcher: tokio::sync::RwLock::new(ToolDispatcher::new()),
             key_store: Mutex::new(KeyStore::new()),
             system_prompt: RwLock::new(String::new()),
+            soul_content: RwLock::new(None),
             backend_name: RwLock::new(String::new()),
             llm_config: Mutex::new(LlmConfig::default()),
             circuit_breakers: RwLock::new(std::collections::HashMap::new()),
@@ -145,6 +147,15 @@ impl AgentCore {
         });
         if let Ok(mut sp) = self.system_prompt.write() {
             *sp = prompt;
+        }
+
+        // Load SOUL persona if present
+        let soul_path = format!("{}/config/SOUL.md", APP_DATA_DIR);
+        if let Ok(soul) = std::fs::read_to_string(&soul_path) {
+            log::info!("Loaded persona from SOUL.md");
+            if let Ok(mut sc) = self.soul_content.write() {
+                *sc = Some(soul);
+            }
         }
 
         // Load LLM config (supports multi-backend + fallback)
@@ -194,7 +205,8 @@ impl AgentCore {
         }
 
         // Load tools from all subdirectories under /opt/usr/share/tizen-tools
-        if let Ok(mut td) = self.tool_dispatcher.write() {
+        {
+            let mut td = self.tool_dispatcher.write().await;
             td.load_tools_from_root("/opt/usr/share/tizen-tools");
         }
         log::info!("Tools loaded");
@@ -259,18 +271,15 @@ impl AgentCore {
         messages: &[LlmMessage],
         tools: &[crate::llm::backend::LlmToolDecl],
         on_chunk: Option<&(dyn Fn(&str) + Send + Sync)>,
+        system_prompt: &str,
     ) -> LlmResponse {
-        let system_prompt = self.system_prompt.read()
-            .map(|sp| sp.clone())
-            .unwrap_or_default();
-
         // Try primary backend — lock is held only during chat()
         {
             let bn = self.backend_name.read().map(|n| n.clone()).unwrap_or_default();
             if self.is_backend_available(&bn) {
                 let be_guard = self.backend.read().await;
                 if let Some(be) = be_guard.as_ref() {
-                    let resp = be.chat(messages, tools, on_chunk, &system_prompt).await;
+                    let resp = be.chat(messages, tools, on_chunk, system_prompt).await;
                     if resp.success {
                         self.record_success(&bn);
                         return resp;
@@ -294,7 +303,7 @@ impl AgentCore {
                 let bn = fb.get_name().to_string();
                 if self.is_backend_available(&bn) {
                     log::info!("Trying fallback backend '{}'", bn);
-                    let resp = fb.chat(messages, tools, on_chunk, &system_prompt).await;
+                    let resp = fb.chat(messages, tools, on_chunk, system_prompt).await;
                     if resp.success {
                         self.record_success(&bn);
                         return resp;
@@ -367,13 +376,41 @@ impl AgentCore {
         }
 
         // Get tool declarations (read lock — allows concurrent reads)
-        let tools = self.tool_dispatcher.read()
-            .map(|td| td.get_tool_declarations())
-            .unwrap_or_default();
+        let tools = self.tool_dispatcher.read().await.get_tool_declarations();
+
+        // Build System Prompt Dynamically
+        let system_prompt = {
+            let mut builder = crate::core::prompt_builder::SystemPromptBuilder::new();
+            if let Ok(base) = self.system_prompt.read() {
+                builder = builder.set_base_prompt(base.clone());
+            }
+            if let Ok(soul_lock) = self.soul_content.read() {
+                if let Some(ref soul) = *soul_lock {
+                    builder = builder.set_soul_content(soul.clone());
+                }
+            }
+            let tool_names = tools.iter().map(|t| t.name.clone()).collect();
+            builder = builder.add_tool_names(tool_names);
+            
+            let skills_dir = format!("{}/skills", APP_DATA_DIR);
+            let textual_skills = crate::core::textual_skill_scanner::scan_textual_skills(&skills_dir);
+            let formatted_skills = textual_skills.into_iter()
+                .map(|s| (s.absolute_path, s.description))
+                .collect();
+            builder = builder.add_available_skills(formatted_skills);
+            
+            let model_name = self.backend_name.read().unwrap().clone();
+            builder = builder.set_runtime_context(
+                "Tizen".into(),
+                model_name,
+                APP_DATA_DIR.to_string(), // use the constant representing data dir
+            );
+            builder.build()
+        };
 
         // Agentic loop — no global lock held during LLM calls
         for round in 0..MAX_TOOL_ROUNDS {
-            let response = self.chat_with_fallback(&messages, &tools, on_chunk).await;
+            let response = self.chat_with_fallback(&messages, &tools, on_chunk, &system_prompt).await;
 
             if !response.success {
                 let err = format!(
@@ -413,35 +450,18 @@ impl AgentCore {
                     ..Default::default()
                 });
 
-                // Execute tool calls — parallel when multiple, sequential when single
-                if response.tool_calls.len() == 1 {
-                    let tc = &response.tool_calls[0];
-                    log::info!("Executing tool: {} (id: {})", tc.name, tc.id);
-                    let result = if let Ok(td) = self.tool_dispatcher.read() {
-                        td.execute(&tc.name, &tc.args)
-                    } else {
-                        json!({"error": "Tool dispatcher unavailable"})
-                    };
-                    messages.push(LlmMessage::tool_result(&tc.id, &tc.name, result));
-                } else {
-                    // Parallel execution for multiple tool calls
-                    let results: Vec<_> = std::thread::scope(|s| {
-                        let handles: Vec<_> = response.tool_calls.iter().map(|tc| {
-                            log::info!("Executing tool (parallel): {} (id: {})", tc.name, tc.id);
-                            s.spawn(|| {
-                                if let Ok(td) = self.tool_dispatcher.read() {
-                                    td.execute(&tc.name, &tc.args)
-                                } else {
-                                    json!({"error": "Tool dispatcher unavailable"})
-                                }
-                            })
-                        }).collect();
-                        handles.into_iter().map(|h| h.join().unwrap_or(json!({"error": "Thread panicked"}))).collect()
+                // Execute tool calls — parallel with tokio join_all
+                let td_guard = self.tool_dispatcher.read().await;
+                let mut futures_list = Vec::new();
+                for tc in response.tool_calls.iter() {
+                    log::info!("Executing tool (async): {} (id: {})", tc.name, tc.id);
+                    futures_list.push(async {
+                        let result = td_guard.execute(&tc.name, &tc.args).await;
+                        LlmMessage::tool_result(&tc.id, &tc.name, result)
                     });
-                    for (tc, result) in response.tool_calls.iter().zip(results) {
-                        messages.push(LlmMessage::tool_result(&tc.id, &tc.name, result));
-                    }
                 }
+                let results = futures_util::future::join_all(futures_list).await;
+                messages.extend(results);
                 // Continue loop for next LLM response
             } else {
                 // Final text response
@@ -477,8 +497,9 @@ impl AgentCore {
         }
     }
 
-    pub fn reload_tools(&self) {
-        if let Ok(mut td) = self.tool_dispatcher.write() {
+    pub async fn reload_tools(&self) {
+        {
+            let mut td = self.tool_dispatcher.write().await;
             *td = ToolDispatcher::new();
             td.load_tools_from_root("/opt/usr/share/tizen-tools");
         }

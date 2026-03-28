@@ -388,10 +388,6 @@ fn ctrlc_handler(running: Arc<AtomicBool>) {
     }
     // Simple SIGTERM/SIGINT handler via thread
     std::thread::spawn(move || {
-        let mut signals = [0i32; 2];
-        signals[0] = libc::SIGTERM;
-        signals[1] = libc::SIGINT;
-
         let mut sigset: libc::sigset_t = unsafe { std::mem::zeroed() };
         unsafe {
             libc::sigemptyset(&mut sigset);

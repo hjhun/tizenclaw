@@ -46,14 +46,15 @@ async fn main() {
     }
     let agent = Arc::new(agent);
 
-    // Start SkillWatcher
-    log::info!("[Boot] Starting SkillWatcher...");
-    let mut skill_watcher = core::skill_watcher::SkillWatcher::new();
+
+    // Start ToolWatcher
+    log::info!("[Boot] Starting ToolWatcher...");
+    let mut tool_watcher = core::tool_watcher::ToolWatcher::new();
     let agent_clone_watcher = agent.clone();
-    skill_watcher.set_change_callback(move || {
+    tool_watcher.set_change_callback(move || {
         agent_clone_watcher.reload_tools();
     });
-    let _watcher_handle = skill_watcher.start();
+    let _watcher_handle = tool_watcher.start();
 
     // Start TaskScheduler
     log::info!("[Boot] Starting TaskScheduler...");

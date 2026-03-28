@@ -92,7 +92,7 @@ impl SystemCliAdapter {
         }).collect()
     }
 
-    pub fn execute(&self, tool_name: &str, args: &Value) -> Value {
+    pub async fn execute(&self, tool_name: &str, args: &Value) -> Value {
         let name = tool_name.strip_prefix("execute_cli_").unwrap_or(tool_name);
         let tool = match self.tools.get(name) {
             Some(t) => t,
@@ -112,9 +112,10 @@ impl SystemCliAdapter {
             }
         }
 
-        match std::process::Command::new(&tool.binary_path)
+        match tokio::process::Command::new(&tool.binary_path)
             .args(&cmd_args)
             .output()
+            .await
         {
             Ok(output) => {
                 json!({

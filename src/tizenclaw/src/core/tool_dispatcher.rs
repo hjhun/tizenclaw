@@ -4,7 +4,8 @@
 
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
+use tokio::process::Command;
 
 /// A registered tool declaration.
 #[derive(Clone, Debug)]
@@ -135,7 +136,7 @@ impl ToolDispatcher {
     }
 
     /// Execute a tool call.
-    pub fn execute(&self, tool_name: &str, args: &Value) -> Value {
+    pub async fn execute(&self, tool_name: &str, args: &Value) -> Value {
         let decl = match self.tools.get(tool_name) {
             Some(d) => d,
             None => return json!({"error": format!("Unknown tool: {}", tool_name)}),
@@ -165,13 +166,10 @@ impl ToolDispatcher {
             .args(&cmd_args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .spawn()
+            .output()
+            .await
         {
-            Ok(child) => {
-                let output = match child.wait_with_output() {
-                    Ok(o) => o,
-                    Err(e) => return json!({"error": format!("Process wait failed: {}", e)}),
-                };
+            Ok(output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
                 let exit_code = output.status.code().unwrap_or(-1);
@@ -183,7 +181,7 @@ impl ToolDispatcher {
                     "success": output.status.success()
                 })
             }
-            Err(e) => json!({"error": format!("Failed to spawn: {}", e)}),
+            Err(e) => json!({"error": format!("Failed to execute: {}", e)}),
         }
     }
 }

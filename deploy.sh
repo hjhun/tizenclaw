@@ -888,6 +888,7 @@ show_summary() {
   echo ""
   header "Deploy Complete!"
   ok "TizenClaw has been deployed and started successfully."
+  touch "${PROJECT_DIR}/.deploy_success"
   echo ""
   log "Useful commands:"
   log "  Logs (follow):  sdb shell journalctl -u tizenclaw -f"

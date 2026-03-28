@@ -1,0 +1,4 @@
+[alias]
+test-mock = "test --workspace --features mock-sys"
+run-mock = "run --features mock-sys"
+build-mock = "build --workspace --features mock-sys"

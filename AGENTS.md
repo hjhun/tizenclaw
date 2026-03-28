@@ -187,6 +187,11 @@ Detailed documentation about the skill...
 - Else if `manifest.json` exists → use it (legacy fallback)
 - Both can coexist; `SKILL.md` always takes priority
 
+### Workflow Manager Skill (Mandatory Enforcement)
+You MUST proactively use the `workflow_manager` skill located in `.agents/skills/workflow_manager` when transitioning between development phases, especially before committing.
+- Run `python .agents/skills/workflow_manager/workflow_manager.py --action verify_status` to automatically check if you comply with the Zero Warnings policy and Deploy requirements.
+- A physical Git pre-commit hook will block any `git commit` if this verification fails. Always run and verify this skill first.
+
 ---
 
 ## Workflow Reference List

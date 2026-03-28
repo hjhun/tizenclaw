@@ -3,9 +3,9 @@
 //! Executes commands in an isolated environment via fork/exec or
 //! Unix domain socket IPC to the tool-executor service.
 
-use std::io::{Read, Write};
-use std::os::unix::net::UnixStream;
-use std::process::Command;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::UnixStream;
+use tokio::process::Command;
 
 const TOOL_EXECUTOR_SOCKET: &str = "/run/tizenclaw-tool-executor.socket";
 
@@ -27,25 +27,21 @@ impl ContainerEngine {
     }
 
     /// Execute a skill (binary) with arguments, returning stdout.
-    pub fn execute_skill(&self, binary: &str, args: &[&str], timeout_secs: u64) -> Result<String, String> {
+    pub async fn execute_skill(&self, binary: &str, args: &[&str], timeout_secs: u64) -> Result<String, String> {
         if self.use_ipc {
-            self.execute_via_ipc(binary, args, timeout_secs)
+            self.execute_via_ipc(binary, args, timeout_secs).await
         } else {
-            self.execute_direct(binary, args, timeout_secs)
+            self.execute_direct(binary, args, timeout_secs).await
         }
     }
 
     /// Execute Python code, returning stdout.
-    pub fn execute_code(&self, code: &str) -> Result<String, String> {
-        self.execute_direct("python3", &["-c", code], 30)
+    pub async fn execute_code(&self, code: &str) -> Result<String, String> {
+        self.execute_direct("python3", &["-c", code], 30).await
     }
 
-    fn execute_direct(&self, binary: &str, args: &[&str], timeout_secs: u64) -> Result<String, String> {
-        let result = Command::new(binary)
-            .args(args)
-            .output();
-
-        match result {
+    async fn execute_direct(&self, binary: &str, args: &[&str], _timeout_secs: u64) -> Result<String, String> {
+        match Command::new(binary).args(args).output().await {
             Ok(output) => {
                 if output.status.success() {
                     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
@@ -58,15 +54,10 @@ impl ContainerEngine {
         }
     }
 
-    fn execute_via_ipc(&self, binary: &str, args: &[&str], timeout_secs: u64) -> Result<String, String> {
-        let mut stream = UnixStream::connect(TOOL_EXECUTOR_SOCKET)
+    async fn execute_via_ipc(&self, binary: &str, args: &[&str], _timeout_secs: u64) -> Result<String, String> {
+        let mut stream = UnixStream::connect(TOOL_EXECUTOR_SOCKET).await
             .map_err(|e| format!("IPC connect failed: {}", e))?;
         
-        stream
-            .set_read_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
-            .ok();
-
-        // Serialize request: binary\0arg1\0arg2\0...\n
         let mut request = binary.to_string();
         for arg in args {
             request.push('\0');
@@ -74,13 +65,11 @@ impl ContainerEngine {
         }
         request.push('\n');
 
-        stream
-            .write_all(request.as_bytes())
+        stream.write_all(request.as_bytes()).await
             .map_err(|e| format!("IPC write failed: {}", e))?;
 
         let mut response = String::new();
-        stream
-            .read_to_string(&mut response)
+        stream.read_to_string(&mut response).await
             .map_err(|e| format!("IPC read failed: {}", e))?;
 
         Ok(response)

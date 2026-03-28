@@ -4,6 +4,8 @@ pub mod agent_core;
 pub mod tool_dispatcher;
 pub mod tool_declaration_builder;
 pub mod tool_policy;
+pub mod prompt_builder;
+pub mod textual_skill_scanner;
 
 pub mod tool_indexer;
 pub mod ipc_server;
@@ -14,11 +16,7 @@ pub mod offline_fallback;
 pub mod system_context_provider;
 pub mod user_profile_store;
 // Batch 2: Skill & Plugin
-pub mod skill_manifest;
-pub mod skill_repository;
-pub mod skill_watcher;
-pub mod skill_verifier;
-pub mod skill_plugin_manager;
+pub mod tool_watcher;
 pub mod cli_plugin_manager;
 pub mod system_cli_adapter;
 pub mod capability_registry;

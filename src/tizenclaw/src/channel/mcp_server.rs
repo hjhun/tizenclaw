@@ -7,18 +7,15 @@
 //! Transport: stdio (line-delimited JSON-RPC)
 
 use serde_json::{json, Value};
-use crate::core::skill_manifest::SkillManifest;
 
 const PROTOCOL_VERSION: &str = "2024-11-05";
 const SERVER_VERSION: &str = "1.0.0";
-const SKILLS_DIR: &str = "/opt/usr/share/tizen-tools/skills";
 
 /// A tool discovered from SKILL.md or built-in.
 struct McpToolInfo {
     name: String,
     description: String,
     input_schema: Value,
-    is_skill: bool,
 }
 
 pub struct McpServer {
@@ -38,37 +35,8 @@ impl McpServer {
         server
     }
 
-    /// Scan `/opt/usr/share/tizen-tools/skills` for SKILL.md manifests
-    /// and register them as MCP tools.
     fn discover_tools(&mut self) {
         self.tools.clear();
-
-        // Scan skill manifests
-        if let Ok(entries) = std::fs::read_dir(SKILLS_DIR) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if !path.is_dir() {
-                    continue;
-                }
-
-                let dir_name = path.file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("");
-                if dir_name.starts_with('.') || dir_name == "mcp_server" {
-                    continue;
-                }
-
-                if let Some(manifest) = SkillManifest::load(&path) {
-                    log::info!("MCP: Discovered tool: {}", manifest.name);
-                    self.tools.push(McpToolInfo {
-                        name: manifest.name,
-                        description: manifest.description,
-                        input_schema: manifest.input_schema,
-                        is_skill: true,
-                    });
-                }
-            }
-        }
 
         // Add synthetic tool: ask_tizenclaw
         self.tools.push(McpToolInfo {
@@ -86,7 +54,6 @@ impl McpServer {
                 },
                 "required": ["prompt"]
             }),
-            is_skill: false,
         });
 
         log::info!("MCP: Total tools discovered: {}", self.tools.len());
@@ -216,26 +183,18 @@ impl McpServer {
 
         log::info!("MCP: Calling tool: {}", tool_name);
 
-        if !tool.is_skill {
-            // ask_tizenclaw: route through agentic loop
-            let prompt = arguments["prompt"].as_str().unwrap_or("");
-            if prompt.is_empty() {
-                return json!({
-                    "isError": true,
-                    "content": [{"type": "text", "text": "Missing 'prompt' argument"}]
-                });
-            }
-
-            let result = process_prompt("mcp_session", prompt);
+        // ask_tizenclaw: route through agentic loop
+        let prompt = arguments["prompt"].as_str().unwrap_or("");
+        if prompt.is_empty() {
             return json!({
-                "content": [{"type": "text", "text": result}]
+                "isError": true,
+                "content": [{"type": "text", "text": "Missing 'prompt' argument"}]
             });
         }
 
-        // Direct skill execution
-        let result = process_prompt("mcp_skill", &format!("[SKILL:{}] {}", tool_name, arguments));
-        json!({
+        let result = process_prompt("mcp_session", prompt);
+        return json!({
             "content": [{"type": "text", "text": result}]
-        })
+        });
     }
 }
