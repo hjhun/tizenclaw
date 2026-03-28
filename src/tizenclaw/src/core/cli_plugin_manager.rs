@@ -39,7 +39,9 @@ impl CliPluginManager {
     }
 
     fn scan_installed_plugins(&mut self) {
-        let metadata_dir = "/opt/usr/share/tizenclaw/plugins/cli";
+        let metadata_dir = std::env::var("TIZENCLAW_DATA_DIR")
+            .map(|d| format!("{}/plugins/cli", d))
+            .unwrap_or_else(|_| "/opt/usr/share/tizenclaw/plugins/cli".to_string());
         let entries = match std::fs::read_dir(metadata_dir) {
             Ok(e) => e,
             Err(_) => return,

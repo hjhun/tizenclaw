@@ -1,6 +1,7 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.12)
 
-PROJECT(tizenclaw NONE)
+PROJECT(tizenclaw)
+INCLUDE(GNUInstallDirs)
 
 ## Paths
 SET(PREFIX ${CMAKE_INSTALL_PREFIX})
@@ -10,12 +11,9 @@ SET(APP_DATA_DIR "/opt/usr/share/tizenclaw")
 ## ═══════════════════════════════════════════
 ##  Cargo/Rust Build (primary build system)
 ## ═══════════════════════════════════════════
+# OpenSSL is statically linked via vendored build (no system OpenSSL needed)
 ADD_CUSTOM_TARGET(cargo_build ALL
-  COMMAND ${CMAKE_COMMAND} -E env
-    "OPENSSL_DIR=/usr"
-    "OPENSSL_LIB_DIR=/usr/lib64"
-    "OPENSSL_INCLUDE_DIR=/usr/include"
-    cargo build --release --offline --manifest-path ${CMAKE_SOURCE_DIR}/Cargo.toml
+  COMMAND cargo build --release --offline --manifest-path ${CMAKE_SOURCE_DIR}/Cargo.toml
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
   COMMENT "Building Rust workspace with Cargo"
 )
@@ -85,10 +83,16 @@ INSTALL(FILES "${CMAKE_SOURCE_DIR}/data/rag/web.zip"
         DESTINATION "${APP_DATA_DIR}/rag")
 
 ## ═══════════════════════════════════════════
-##  Install libtizenclaw shared library & headers
+##  Install libtizenclaw.so (plugin framework)
 ## ═══════════════════════════════════════════
 INSTALL(FILES "${CMAKE_SOURCE_DIR}/target/release/libtizenclaw.so"
-        DESTINATION "${CMAKE_INSTALL_PREFIX}/lib64")
+        DESTINATION "${CMAKE_INSTALL_FULL_LIBDIR}")
+
+## ═══════════════════════════════════════════
+##  Install libtizenclaw_client.so (C API) & headers
+## ═══════════════════════════════════════════
+INSTALL(FILES "${CMAKE_SOURCE_DIR}/target/release/libtizenclaw_client.so"
+        DESTINATION "${CMAKE_INSTALL_FULL_LIBDIR}")
 
 # C header
 INSTALL(FILES "${CMAKE_SOURCE_DIR}/src/libtizenclaw/include/tizenclaw.h"
@@ -101,13 +105,13 @@ CONFIGURE_FILE(
     @ONLY
 )
 INSTALL(FILES "${CMAKE_BINARY_DIR}/tizenclaw.pc"
-        DESTINATION "${CMAKE_INSTALL_PREFIX}/lib64/pkgconfig")
+        DESTINATION "${CMAKE_INSTALL_FULL_LIBDIR}/pkgconfig")
 
 ## ═══════════════════════════════════════════
-##  Install libtizenclaw-core (plugin SDK)
+##  Install libtizenclaw_sdk.so (plugin SDK)
 ## ═══════════════════════════════════════════
-INSTALL(FILES "${CMAKE_SOURCE_DIR}/target/release/libtizenclaw_core.so"
-        DESTINATION "${CMAKE_INSTALL_PREFIX}/lib64")
+INSTALL(FILES "${CMAKE_SOURCE_DIR}/target/release/libtizenclaw_sdk.so"
+        DESTINATION "${CMAKE_INSTALL_FULL_LIBDIR}")
 
 # Plugin SDK headers
 INSTALL(FILES
@@ -117,12 +121,12 @@ INSTALL(FILES
     "${CMAKE_SOURCE_DIR}/src/libtizenclaw-core/include/tizenclaw_curl.h"
     DESTINATION "${CMAKE_INSTALL_PREFIX}/include/tizenclaw")
 
-# pkgconfig for tizenclaw-core
+# pkgconfig for tizenclaw-sdk
 CONFIGURE_FILE(
     "${CMAKE_SOURCE_DIR}/packaging/tizenclaw-core.pc.in"
-    "${CMAKE_BINARY_DIR}/tizenclaw-core.pc"
+    "${CMAKE_BINARY_DIR}/tizenclaw-sdk.pc"
     @ONLY
 )
-INSTALL(FILES "${CMAKE_BINARY_DIR}/tizenclaw-core.pc"
-        DESTINATION "${CMAKE_INSTALL_PREFIX}/lib64/pkgconfig")
+INSTALL(FILES "${CMAKE_BINARY_DIR}/tizenclaw-sdk.pc"
+        DESTINATION "${CMAKE_INSTALL_FULL_LIBDIR}/pkgconfig")
 

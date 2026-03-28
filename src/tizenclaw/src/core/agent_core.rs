@@ -7,14 +7,13 @@
 //! share `Arc<AgentCore>` without an outer Mutex.
 
 use serde_json::{json, Value};
-use std::sync::{Mutex, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use crate::infra::key_store::KeyStore;
 use crate::llm::backend::{self, LlmBackend, LlmMessage, LlmResponse};
 use crate::storage::session_store::SessionStore;
 use crate::core::tool_dispatcher::ToolDispatcher;
 
-const APP_DATA_DIR: &str = "/opt/usr/share/tizenclaw";
 const MAX_TOOL_ROUNDS: usize = 10;
 const MAX_CONTEXT_MESSAGES: usize = 20;
 
@@ -95,6 +94,7 @@ struct CircuitBreakerState {
 /// - `session_store`: Mutex (SQLite is not Sync)
 /// - `tool_dispatcher`: RwLock (reads are frequent, writes are rare)
 pub struct AgentCore {
+    platform: Arc<libtizenclaw::PlatformContext>,
     backend: tokio::sync::RwLock<Option<Box<dyn LlmBackend>>>,
     fallback_backends: tokio::sync::RwLock<Vec<Box<dyn LlmBackend>>>,
     session_store: Mutex<Option<SessionStore>>,
@@ -107,15 +107,10 @@ pub struct AgentCore {
     circuit_breakers: RwLock<std::collections::HashMap<String, CircuitBreakerState>>,
 }
 
-impl Default for AgentCore {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl AgentCore {
-    pub fn new() -> Self {
+    pub fn new(platform: Arc<libtizenclaw::PlatformContext>) -> Self {
         AgentCore {
+            platform,
             backend: tokio::sync::RwLock::new(None),
             fallback_backends: tokio::sync::RwLock::new(Vec::new()),
             session_store: Mutex::new(None),
@@ -131,18 +126,19 @@ impl AgentCore {
 
     pub async fn initialize(&self) -> bool {
         log::info!("AgentCore initializing...");
+        let paths = &self.platform.paths;
 
         // Load API keys
-        let key_path = format!("{}/config/keys.json", APP_DATA_DIR);
+        let key_path = paths.config_dir.join("keys.json");
         if let Ok(mut ks) = self.key_store.lock() {
-            ks.load(&key_path);
+            ks.load(&key_path.to_string_lossy());
         }
 
         // Load system prompt
-        let prompt_path = format!("{}/config/system_prompt.txt", APP_DATA_DIR);
+        let prompt_path = paths.config_dir.join("system_prompt.txt");
         let prompt = std::fs::read_to_string(&prompt_path).unwrap_or_else(|_| {
-            "You are TizenClaw, an AI assistant for Tizen devices. \
-             You can execute tools to help users interact with the device."
+            "You are TizenClaw, an AI assistant that can execute tools \
+             to help users interact with the system."
                 .into()
         });
         if let Ok(mut sp) = self.system_prompt.write() {
@@ -150,7 +146,7 @@ impl AgentCore {
         }
 
         // Load SOUL persona if present
-        let soul_path = format!("{}/config/SOUL.md", APP_DATA_DIR);
+        let soul_path = paths.config_dir.join("SOUL.md");
         if let Ok(soul) = std::fs::read_to_string(&soul_path) {
             log::info!("Loaded persona from SOUL.md");
             if let Ok(mut sc) = self.soul_content.write() {
@@ -159,8 +155,8 @@ impl AgentCore {
         }
 
         // Load LLM config (supports multi-backend + fallback)
-        let llm_config_path = format!("{}/config/llm_config.json", APP_DATA_DIR);
-        let config = LlmConfig::load(&llm_config_path);
+        let llm_config_path = paths.config_dir.join("llm_config.json");
+        let config = LlmConfig::load(&llm_config_path.to_string_lossy());
         let active_name = config.active_backend.clone();
         let fallback_names = config.fallback_backends.clone();
 
@@ -193,8 +189,8 @@ impl AgentCore {
         }
 
         // Initialize session store
-        let db_path = format!("{}/sessions.db", APP_DATA_DIR);
-        match SessionStore::new(&db_path) {
+        let db_path = paths.sessions_db_path();
+        match SessionStore::new(&db_path.to_string_lossy()) {
             Ok(store) => {
                 log::info!("Session store initialized");
                 if let Ok(mut ss) = self.session_store.lock() {
@@ -204,12 +200,12 @@ impl AgentCore {
             Err(e) => log::error!("Session store failed: {}", e),
         }
 
-        // Load tools from all subdirectories under /opt/usr/share/tizen-tools
+        // Load tools from all subdirectories under the tools directory
         {
             let mut td = self.tool_dispatcher.write().await;
-            td.load_tools_from_root("/opt/usr/share/tizen-tools");
+            td.load_tools_from_root(&paths.tools_dir.to_string_lossy());
         }
-        log::info!("Tools loaded");
+        log::info!("Tools loaded from {:?}", paths.tools_dir);
 
         true
     }
@@ -392,7 +388,7 @@ impl AgentCore {
             let tool_names = tools.iter().map(|t| t.name.clone()).collect();
             builder = builder.add_tool_names(tool_names);
             
-            let skills_dir = format!("{}/skills", APP_DATA_DIR);
+            let skills_dir = self.platform.paths.skills_dir.to_string_lossy().to_string();
             let textual_skills = crate::core::textual_skill_scanner::scan_textual_skills(&skills_dir);
             let formatted_skills = textual_skills.into_iter()
                 .map(|s| (s.absolute_path, s.description))
@@ -400,10 +396,12 @@ impl AgentCore {
             builder = builder.add_available_skills(formatted_skills);
             
             let model_name = self.backend_name.read().unwrap().clone();
+            let platform_name = self.platform.platform_name().to_string();
+            let data_dir = self.platform.paths.data_dir.to_string_lossy().to_string();
             builder = builder.set_runtime_context(
-                "Tizen".into(),
+                platform_name,
                 model_name,
-                APP_DATA_DIR.to_string(), // use the constant representing data dir
+                data_dir,
             );
             builder.build()
         };
@@ -501,9 +499,9 @@ impl AgentCore {
         {
             let mut td = self.tool_dispatcher.write().await;
             *td = ToolDispatcher::new();
-            td.load_tools_from_root("/opt/usr/share/tizen-tools");
+            td.load_tools_from_root(&self.platform.paths.tools_dir.to_string_lossy());
         }
-        log::info!("Tools reloaded");
+        log::info!("Tools reloaded from {:?}", self.platform.paths.tools_dir);
     }
 }
 

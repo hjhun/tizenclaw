@@ -107,7 +107,7 @@ impl SystemPromptBuilder {
         lines.push("Before replying, scan <available_skills> entries below:".into());
         lines.push("- If exactly one skill clearly applies: read its .md file at the listed location using your file reading tools (`std::fs::read` etc), then follow it.".into());
         lines.push("- If multiple could apply: choose the most specific one, then read/follow it.".into());
-        lines.push("- To create a new repeatable workflow, simply use your write/create file tools to generate a new `.md` file into the `/opt/usr/data/tizenclaw/skills/` directory!".into());
+        lines.push("- To create a new repeatable workflow, simply use your write/create file tools to generate a new `.md` file into the skills directory!".into());
         lines.push("".into());
 
         lines.push("<available_skills>".into());

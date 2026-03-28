@@ -20,8 +20,7 @@ BuildRequires:  pkgconfig(pkgmgr)
 BuildRequires:  pkgconfig(vconf)
 BuildRequires:  pkgconfig(capi-appfw-event)
 
-# OpenSSL development headers (required by Rust openssl-sys crate via ureq/native-tls)
-BuildRequires:  libopenssl3-devel
+# OpenSSL is statically linked via Rust vendored build (no system OpenSSL needed)
 
 Requires:       unzip
 
@@ -42,7 +41,8 @@ cargo test --release --offline -- --test-threads=1 || echo "WARNING: Some unit t
 cd -
 
 %install
-%make_install
+# Use cmake --install with DESTDIR to avoid re-triggering cargo build target
+DESTDIR=%{buildroot} cmake --install .
 
 # Tizen structure
 mkdir -p %{buildroot}%{_bindir}
@@ -103,7 +103,8 @@ fi
 %dir /opt/usr/share/tizenclaw/rag/
 /opt/usr/share/tizenclaw/rag/web.zip
 %{_libdir}/libtizenclaw.so
-%{_libdir}/libtizenclaw_core.so
+%{_libdir}/libtizenclaw_client.so
+%{_libdir}/libtizenclaw_sdk.so
 %dir /opt/usr/share/crash/
 %dir /opt/usr/share/crash/dump/
 
@@ -124,5 +125,5 @@ Header files and pkgconfig for building applications and plugins against TizenCl
 %{_includedir}/tizenclaw/tizenclaw_llm_backend.h
 %{_includedir}/tizenclaw/tizenclaw_curl.h
 %{_libdir}/pkgconfig/tizenclaw.pc
-%{_libdir}/pkgconfig/tizenclaw-core.pc
+%{_libdir}/pkgconfig/tizenclaw-sdk.pc
 

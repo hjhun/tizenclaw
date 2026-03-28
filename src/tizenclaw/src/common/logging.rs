@@ -1,27 +1,46 @@
-//! Logging module — wraps Tizen dlog with Rust log facade.
+//! Logging module — platform-agnostic log backend.
+//!
+//! On Tizen: dlog via the tizen platform plugin (libtizenclaw_plugin.so)
+//! On generic Linux: stderr + optional file-based logging
 //!
 //! Usage (via standard `log` crate macros):
 //!   log::info!("message {}", value);
 //!   log::error!("something failed: {}", err);
 
-use std::ffi::CString;
-use std::sync::Once;
+use std::sync::{Mutex, Once};
 
 const TAG: &str = "TIZENCLAW";
 
 static INIT: Once = Once::new();
 
-/// Initialize the dlog-based logger as the global `log` backend.
+/// Global platform logger reference — set once during init.
+static PLATFORM_LOGGER: Mutex<Option<&'static dyn libtizenclaw::PlatformLogger>> =
+    Mutex::new(None);
+
+/// Initialize the logging backend.
+///
+/// If a `PlatformLogger` is provided, use it (e.g., Tizen dlog).
+/// Otherwise, use the built-in stderr logger.
 pub fn init() {
+    init_with_logger(None);
+}
+
+/// Initialize with a specific platform logger.
+pub fn init_with_logger(logger: Option<&'static dyn libtizenclaw::PlatformLogger>) {
     INIT.call_once(|| {
-        log::set_logger(&DlogLogger).unwrap();
+        if let Some(pl) = logger {
+            if let Ok(mut guard) = PLATFORM_LOGGER.lock() {
+                *guard = Some(pl);
+            }
+        }
+        log::set_logger(&PlatformLogBridge).unwrap();
         log::set_max_level(log::LevelFilter::Debug);
     });
 }
 
-struct DlogLogger;
+struct PlatformLogBridge;
 
-impl log::Log for DlogLogger {
+impl log::Log for PlatformLogBridge {
     fn enabled(&self, _metadata: &log::Metadata) -> bool {
         true
     }
@@ -31,11 +50,11 @@ impl log::Log for DlogLogger {
             return;
         }
 
-        let prio = match record.level() {
-            log::Level::Error => tizen_sys::dlog::DLOG_ERROR,
-            log::Level::Warn => tizen_sys::dlog::DLOG_WARN,
-            log::Level::Info => tizen_sys::dlog::DLOG_INFO,
-            log::Level::Debug | log::Level::Trace => tizen_sys::dlog::DLOG_DEBUG,
+        let level = match record.level() {
+            log::Level::Error => libtizenclaw::LogLevel::Error,
+            log::Level::Warn  => libtizenclaw::LogLevel::Warn,
+            log::Level::Info  => libtizenclaw::LogLevel::Info,
+            log::Level::Debug | log::Level::Trace => libtizenclaw::LogLevel::Debug,
         };
 
         let msg = format!(
@@ -45,24 +64,31 @@ impl log::Log for DlogLogger {
             record.args()
         );
 
-        // Escape '%' to prevent format string attacks in dlog
-        let escaped = msg.replace('%', "%%");
-        if let (Ok(tag), Ok(cmsg)) = (CString::new(TAG), CString::new(escaped)) {
-            unsafe {
-                tizen_sys::dlog::dlog_print(prio, tag.as_ptr(), cmsg.as_ptr());
+        // Use platform logger if available, otherwise stderr
+        if let Ok(guard) = PLATFORM_LOGGER.lock() {
+            if let Some(pl) = *guard {
+                pl.log(level, TAG, &msg);
+                // Also write to file log if configured
+                FileLogBackend::write(&msg, level);
+                return;
             }
         }
 
-        // Also write to file log if configured
-        FileLogBackend::write(&msg, prio);
+        // Fallback: stderr
+        let prefix = match level {
+            libtizenclaw::LogLevel::Error => "E",
+            libtizenclaw::LogLevel::Warn  => "W",
+            libtizenclaw::LogLevel::Info  => "I",
+            libtizenclaw::LogLevel::Debug => "D",
+        };
+        eprintln!("[{}] [{}] {}", prefix, TAG, msg);
+        FileLogBackend::write(&msg, level);
     }
 
     fn flush(&self) {}
 }
 
 // ── Optional File log backend ──
-
-use std::sync::Mutex;
 
 static FILE_LOG: Mutex<Option<FileLogBackend>> = Mutex::new(None);
 
@@ -82,16 +108,16 @@ impl FileLogBackend {
         }
     }
 
-    fn write(msg: &str, prio: std::os::raw::c_int) {
+    fn write(msg: &str, level: libtizenclaw::LogLevel) {
         if let Ok(guard) = FILE_LOG.lock() {
             if let Some(backend) = guard.as_ref() {
-                let level = match prio {
-                    x if x == tizen_sys::dlog::DLOG_ERROR => "E",
-                    x if x == tizen_sys::dlog::DLOG_WARN => "W",
-                    x if x == tizen_sys::dlog::DLOG_INFO => "I",
-                    _ => "D",
+                let level_str = match level {
+                    libtizenclaw::LogLevel::Error => "E",
+                    libtizenclaw::LogLevel::Warn  => "W",
+                    libtizenclaw::LogLevel::Info  => "I",
+                    libtizenclaw::LogLevel::Debug => "D",
                 };
-                let line = format!("[{}] {}\n", level, msg);
+                let line = format!("[{}] {}\n", level_str, msg);
                 let _ = std::fs::OpenOptions::new()
                     .create(true)
                     .append(true)

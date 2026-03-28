@@ -11,8 +11,7 @@ use super::plugin_llm_backend::PluginLlmBackend;
 use serde_json::Value;
 
 /// Default plugin search directories.
-const PLUGIN_DIRS: &[&str] = &[
-    "/opt/usr/share/tizenclaw/plugins/llm",
+const DEFAULT_PLUGIN_DIRS: &[&str] = &[
     "/usr/lib/tizenclaw/plugins/llm",
 ];
 
@@ -20,6 +19,8 @@ const PLUGIN_DIRS: &[&str] = &[
 pub struct PluginManager {
     /// Map of plugin name → plugin .so path.
     plugin_registry: HashMap<String, PathBuf>,
+    /// Directories to scan for plugins.
+    plugin_dirs: Vec<PathBuf>,
 }
 
 impl Default for PluginManager {
@@ -32,13 +33,21 @@ impl PluginManager {
     pub fn new() -> Self {
         PluginManager {
             plugin_registry: HashMap::new(),
+            plugin_dirs: DEFAULT_PLUGIN_DIRS.iter().map(PathBuf::from).collect(),
+        }
+    }
+
+    /// Add a directory to scan for plugins.
+    pub fn add_plugin_dir(&mut self, dir: PathBuf) {
+        if !self.plugin_dirs.contains(&dir) {
+            self.plugin_dirs.push(dir);
         }
     }
 
     /// Scan plugin directories and register discovered plugins.
     pub fn scan_plugins(&mut self) {
-        for dir in PLUGIN_DIRS {
-            self.scan_directory(Path::new(dir));
+        for dir in self.plugin_dirs.clone() {
+            self.scan_directory(&dir);
         }
         if !self.plugin_registry.is_empty() {
             log::info!(

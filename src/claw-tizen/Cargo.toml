@@ -1,0 +1,16 @@
+[package]
+name = "tizenclaw-core"
+version = "1.0.0"
+edition = "2021"
+description = "TizenClaw Tizen platform plugin — builds as libtizenclaw_core.so"
+
+[lib]
+name = "tizenclaw_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+libtizenclaw = { path = "../claw-platform" }
+tizen-sys = { path = "../tizen-sys" }
+serde_json = "1"
+log = "0.4"
+libc = "0.2"

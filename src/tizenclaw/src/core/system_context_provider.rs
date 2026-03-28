@@ -75,7 +75,7 @@ impl SystemContextProvider {
         // Disk
         let statvfs = unsafe {
             let mut buf: libc::statvfs = std::mem::zeroed();
-            let path = std::ffi::CString::new("/opt/usr").unwrap();
+            let path = std::ffi::CString::new("/").unwrap();
             if libc::statvfs(path.as_ptr(), &mut buf) == 0 {
                 Some(buf)
             } else {

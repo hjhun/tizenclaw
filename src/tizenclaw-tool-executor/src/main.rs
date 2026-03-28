@@ -358,7 +358,7 @@ fn create_abstract_socket() -> std::io::Result<UnixListener> {
     addr.sun_path[1..1 + name_bytes.len()]
         .copy_from_slice(unsafe {
             std::slice::from_raw_parts(
-                name_bytes.as_ptr() as *const i8,
+                name_bytes.as_ptr() as *const libc::c_char,
                 name_bytes.len(),
             )
         });

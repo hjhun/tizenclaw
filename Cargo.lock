@@ -685,6 +685,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
 
 [[package]]
+name = "libloading"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7c4b02199fee7c5d21a5ae7d8cfa79a6ef5bb2fc834d6e9058e89c825efdc55"
+dependencies = [
+ "cfg-if",
+ "windows-link",
+]
+
+[[package]]
 name = "libsqlite3-sys"
 version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -700,12 +710,23 @@ name = "libtizenclaw"
 version = "1.0.0"
 dependencies = [
  "libc",
+ "libloading",
+ "log",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "libtizenclaw-client"
+version = "1.0.0"
+dependencies = [
+ "libc",
  "log",
  "serde_json",
 ]
 
 [[package]]
-name = "libtizenclaw-core"
+name = "libtizenclaw-sdk"
 version = "1.0.0"
 dependencies = [
  "libc",
@@ -837,6 +858,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 
 [[package]]
+name = "openssl-src"
+version = "300.5.5+3.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f1787d533e03597a7934fd0a765f0d28e94ecc5fb7789f8053b1e699a56f709"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "openssl-sys"
 version = "0.9.112"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -844,6 +874,7 @@ checksum = "57d55af3b3e226502be1526dfdba67ab0e9c96fc293004e79576b2b9edb0dbdb"
 dependencies = [
  "cc",
  "libc",
+ "openssl-src",
  "pkg-config",
  "vcpkg",
 ]
@@ -1223,14 +1254,13 @@ dependencies = [
  "axum",
  "futures-util",
  "libc",
+ "libtizenclaw",
  "log",
- "native-tls",
  "reqwest",
  "rusqlite",
  "serde",
  "serde_json",
  "tempfile",
- "tizen-sys",
  "tokio",
  "tower-http 0.5.2",
 ]

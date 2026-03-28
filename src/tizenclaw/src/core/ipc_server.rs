@@ -61,7 +61,7 @@ impl IpcServer {
             let name = b"tizenclaw.sock";
             // Abstract namespace: sun_path[0] = 0, then name
             for (i, b) in name.iter().enumerate() {
-                addr.sun_path[1 + i] = *b as i8;
+                addr.sun_path[1 + i] = *b as libc::c_char;
             }
             let addr_len = (std::mem::size_of::<libc::sa_family_t>() + 1 + name.len()) as libc::socklen_t;
 

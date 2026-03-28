@@ -27,7 +27,10 @@ use tower_http::{
     services::ServeDir,
 };
 
-const APP_DATA_DIR: &str = "/opt/usr/data/tizenclaw";
+fn get_app_data_dir() -> String {
+    std::env::var("TIZENCLAW_DATA_DIR")
+        .unwrap_or_else(|_| "/opt/usr/data/tizenclaw".to_string())
+}
 const ALLOWED_CONFIGS: &[&str] = &[
     "llm_config.json",
     "telegram_config.json",
@@ -68,12 +71,13 @@ impl WebDashboard {
         let localhost_only = config.settings.get("localhost_only")
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
+        let default_web_root = format!("{}/web", get_app_data_dir());
         let web_root = config.settings.get("web_root")
             .and_then(|v| v.as_str())
-            .unwrap_or("/opt/usr/share/tizenclaw/web")
+            .unwrap_or(&default_web_root)
             .to_string();
 
-        let config_dir = format!("{}/config", APP_DATA_DIR);
+        let config_dir = format!("{}/config", &get_app_data_dir());
         let default_hash = sha256_hex("admin");
         let pw_hash = load_admin_password(&format!("{}/admin_password.json", config_dir))
             .unwrap_or(default_hash);
@@ -277,7 +281,7 @@ fn ipc_send_prompt(session_id: &str, prompt: &str) -> Result<String, String> {
         addr.sun_family = libc::AF_UNIX as u16;
         let name = b"tizenclaw.sock";
         for (i, b) in name.iter().enumerate() {
-            addr.sun_path[1 + i] = *b as i8;
+            addr.sun_path[1 + i] = *b as libc::c_char;
         }
         let addr_len = (std::mem::size_of::<libc::sa_family_t>() + 1 + name.len()) as libc::socklen_t;
 
@@ -355,12 +359,12 @@ fn ipc_send_prompt(session_id: &str, prompt: &str) -> Result<String, String> {
 }
 
 async fn api_sessions() -> Json<Value> {
-    let sessions_dir = format!("{}/sessions", APP_DATA_DIR);
+    let sessions_dir = format!("{}/sessions", &get_app_data_dir());
     Json(Value::Array(list_md_files(&sessions_dir)))
 }
 
 async fn api_session_dates() -> Json<Value> {
-    let sessions_dir = format!("{}/sessions", APP_DATA_DIR);
+    let sessions_dir = format!("{}/sessions", &get_app_data_dir());
     Json(json!({"dates": collect_dates(&sessions_dir)}))
 }
 
@@ -368,7 +372,7 @@ async fn api_session_detail(AxumPath(id): AxumPath<String>) -> Result<Json<Value
     if id.contains("..") || id.contains('/') {
         return Err(json_error(StatusCode::BAD_REQUEST, "Invalid id"));
     }
-    let path = format!("{}/sessions/{}.md", APP_DATA_DIR, id);
+    let path = format!("{}/sessions/{}.md", &get_app_data_dir(), id);
     match std::fs::read_to_string(&path) {
         Ok(content) => Ok(Json(json!({"id": id, "content": content}))),
         Err(_) => Err(json_error(StatusCode::NOT_FOUND, "Session not found")),
@@ -376,12 +380,12 @@ async fn api_session_detail(AxumPath(id): AxumPath<String>) -> Result<Json<Value
 }
 
 async fn api_tasks() -> Json<Value> {
-    let tasks_dir = format!("{}/tasks", APP_DATA_DIR);
+    let tasks_dir = format!("{}/tasks", &get_app_data_dir());
     Json(Value::Array(list_md_files(&tasks_dir)))
 }
 
 async fn api_task_dates() -> Json<Value> {
-    let tasks_dir = format!("{}/tasks", APP_DATA_DIR);
+    let tasks_dir = format!("{}/tasks", &get_app_data_dir());
     Json(json!({"dates": collect_dates(&tasks_dir)}))
 }
 
@@ -390,7 +394,7 @@ async fn api_task_detail(AxumPath(file): AxumPath<String>) -> Result<Json<Value>
         return Err(json_error(StatusCode::BAD_REQUEST, "Invalid file"));
     }
     let fname = if file.ends_with(".md") { file.clone() } else { format!("{}.md", file) };
-    let path = format!("{}/tasks/{}", APP_DATA_DIR, fname);
+    let path = format!("{}/tasks/{}", &get_app_data_dir(), fname);
     match std::fs::read_to_string(&path) {
         Ok(content) => Ok(Json(json!({"file": fname, "content": content}))),
         Err(_) => Err(json_error(StatusCode::NOT_FOUND, "Task not found")),
@@ -405,7 +409,7 @@ async fn api_logs(Query(q): Query<LogQuery>) -> Result<Json<Value>, (StatusCode,
     if date.len() != 10 || date.as_bytes().get(4) != Some(&b'-') || date.as_bytes().get(7) != Some(&b'-') {
         return Err(json_error(StatusCode::BAD_REQUEST, "Invalid date format"));
     }
-    let log_path = format!("{}/audit/{}.md", APP_DATA_DIR, date);
+    let log_path = format!("{}/audit/{}.md", &get_app_data_dir(), date);
     let mut logs = vec![];
     if let Ok(content) = std::fs::read_to_string(&log_path) {
         logs.push(json!({"date": date, "content": content}));
@@ -414,7 +418,7 @@ async fn api_logs(Query(q): Query<LogQuery>) -> Result<Json<Value>, (StatusCode,
 }
 
 async fn api_log_dates() -> Json<Value> {
-    let audit_dir = format!("{}/audit", APP_DATA_DIR);
+    let audit_dir = format!("{}/audit", &get_app_data_dir());
     Json(json!({"dates": collect_dates(&audit_dir)}))
 }
 
@@ -490,7 +494,7 @@ async fn api_config_set(headers: HeaderMap, State(state): State<AppState>, AxumP
 
 async fn api_apps_list() -> Json<Value> {
     let mut apps = vec![];
-    if let Ok(entries) = std::fs::read_dir(format!("{}/web/apps", APP_DATA_DIR)) {
+    if let Ok(entries) = std::fs::read_dir(format!("{}/web/apps", &get_app_data_dir())) {
         for entry in entries.flatten() {
             let path = entry.path();
             if !path.is_dir() { continue; }
@@ -511,7 +515,7 @@ async fn api_apps_list() -> Json<Value> {
 
 async fn api_app_detail(AxumPath(app_id): AxumPath<String>) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     if app_id.contains("..") || app_id.contains('/') { return Err(json_error(StatusCode::BAD_REQUEST, "Invalid app_id")); }
-    let path = PathBuf::from(format!("{}/web/apps/{}", APP_DATA_DIR, app_id));
+    let path = PathBuf::from(format!("{}/web/apps/{}", &get_app_data_dir(), app_id));
     if !path.is_dir() { return Err(json_error(StatusCode::NOT_FOUND, "App not found")); }
 
     let mut app = json!({"app_id": app_id, "url": format!("/apps/{}/", app_id)});

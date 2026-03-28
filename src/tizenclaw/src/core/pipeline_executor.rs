@@ -40,7 +40,11 @@ impl PipelineExecutor {
     }
 
     pub fn load_pipelines(&mut self) {
-        let dir = "/opt/usr/share/tizenclaw/pipelines";
+        self.load_pipelines_from("");
+    }
+
+    pub fn load_pipelines_from(&mut self, dir: &str) {
+        let dir = if dir.is_empty() { "/opt/usr/share/tizenclaw/pipelines" } else { dir };
         if let Ok(content) = std::fs::read_to_string(format!("{}/pipelines.json", dir)) {
             if let Ok(config) = serde_json::from_str::<Value>(&content) {
                 if let Some(arr) = config["pipelines"].as_array() {

@@ -11,8 +11,9 @@ use super::wordpiece_tokenizer::WordPieceTokenizer;
 pub const EMBEDDING_DIM: usize = 384;
 
 /// Default path to ONNX Runtime shared library.
+/// Falls back to env-based path or standard Tizen location.
 const DEFAULT_ORT_LIB_PATH: &str =
-    "/opt/usr/share/tizenclaw/lib/libonnxruntime.so";
+    "/usr/lib/libonnxruntime.so";
 
 // ═══════════════════════════════════════════
 //  ORT C API types (minimal set for dlopen)

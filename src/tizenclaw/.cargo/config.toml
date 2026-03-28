@@ -1,4 +1,5 @@
 [alias]
-test-mock = "test --workspace --features mock-sys"
-run-mock = "run --features mock-sys"
-build-mock = "build --workspace --features mock-sys"
+# With claw-platform, no mock-sys feature needed — just build normally
+test-local = "test --workspace"
+run-local = "run -p tizenclaw"
+build-local = "build --workspace"

@@ -1,15 +1,15 @@
 [package]
-name = "libtizenclaw-core"
+name = "libtizenclaw-sdk"
 version = "1.0.0"
 edition = "2021"
 description = "TizenClaw Plugin SDK — C FFI for LLM handles, HTTP helper, and plugin interfaces"
 
 [lib]
-name = "tizenclaw_core"
+name = "tizenclaw_sdk"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 serde_json = "1"
 log = "0.4"
 libc = "0.2"
-reqwest = { version = "0.12", features = ["native-tls", "blocking"], default-features = false }
+reqwest = { version = "0.12", features = ["native-tls-vendored", "blocking"], default-features = false }

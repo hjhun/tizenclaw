@@ -44,8 +44,11 @@ impl ActionBridge {
     }
 
     pub fn sync_action_schemas(&mut self) {
-        // Scan action schema directory
-        let dir = "/opt/usr/share/tizenclaw/actions";
+        self.sync_action_schemas_from("");
+    }
+
+    pub fn sync_action_schemas_from(&mut self, dir: &str) {
+        let dir = if dir.is_empty() { "/opt/usr/share/tizenclaw/actions" } else { dir };
         let entries = match std::fs::read_dir(dir) {
             Ok(e) => e,
             Err(_) => return,

@@ -1,0 +1,161 @@
+//! Platform-resolved paths.
+//!
+//! Determines the correct directories for data, config, tools, skills,
+//! plugins, and web assets based on environment variables or defaults.
+//!
+//! Priority:
+//! 1. Environment variables (TIZENCLAW_DATA_DIR, TIZENCLAW_TOOLS_DIR, etc.)
+//! 2. Tizen standard paths (if /opt/usr/share/tizenclaw exists)
+//! 3. XDG-compliant Linux paths (~/.local/share/tizenclaw)
+
+use std::path::PathBuf;
+
+/// All resolved platform paths.
+#[derive(Debug, Clone)]
+pub struct PlatformPaths {
+    /// Main data directory (configs, sessions, etc.)
+    pub data_dir: PathBuf,
+    /// Configuration files directory
+    pub config_dir: PathBuf,
+    /// Tool scripts directory
+    pub tools_dir: PathBuf,
+    /// Textual skills directory
+    pub skills_dir: PathBuf,
+    /// Plugin .so files directory
+    pub plugins_dir: PathBuf,
+    /// Web dashboard static files
+    pub web_root: PathBuf,
+    /// Workflows directory
+    pub workflows_dir: PathBuf,
+    /// Actions directory
+    pub actions_dir: PathBuf,
+    /// Pipelines directory
+    pub pipelines_dir: PathBuf,
+    /// LLM backend plugins directory
+    pub llm_plugins_dir: PathBuf,
+    /// CLI plugins metadata directory
+    pub cli_plugins_dir: PathBuf,
+}
+
+/// Tizen standard base path.
+const TIZEN_DATA_DIR: &str = "/opt/usr/share/tizenclaw";
+const TIZEN_APP_DATA_DIR: &str = "/opt/usr/data/tizenclaw";
+const TIZEN_TOOLS_DIR: &str = "/opt/usr/share/tizen-tools";
+
+impl PlatformPaths {
+    /// Auto-detect paths based on environment and OS.
+    pub fn detect() -> Self {
+        // Check environment overrides first
+        if let Ok(data_dir) = std::env::var("TIZENCLAW_DATA_DIR") {
+            return Self::from_base(PathBuf::from(data_dir));
+        }
+
+        // Check if Tizen paths exist
+        if PathBuf::from(TIZEN_DATA_DIR).exists() || is_tizen_environment() {
+            return Self::tizen_defaults();
+        }
+
+        // Fallback: XDG-compliant Linux paths
+        Self::linux_defaults()
+    }
+
+    /// Build paths from a custom base directory.
+    pub fn from_base(base: PathBuf) -> Self {
+        let tools_dir = std::env::var("TIZENCLAW_TOOLS_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| base.join("tools"));
+
+        PlatformPaths {
+            config_dir: base.join("config"),
+            tools_dir,
+            skills_dir: base.join("skills"),
+            plugins_dir: base.join("plugins"),
+            web_root: base.join("web"),
+            workflows_dir: base.join("workflows"),
+            actions_dir: base.join("actions"),
+            pipelines_dir: base.join("pipelines"),
+            llm_plugins_dir: base.join("plugins/llm"),
+            cli_plugins_dir: base.join("plugins/cli"),
+            data_dir: base,
+        }
+    }
+
+    /// Standard Tizen paths.
+    fn tizen_defaults() -> Self {
+        let tools_dir = std::env::var("TIZENCLAW_TOOLS_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from(TIZEN_TOOLS_DIR));
+
+        PlatformPaths {
+            data_dir: PathBuf::from(TIZEN_DATA_DIR),
+            config_dir: PathBuf::from(TIZEN_DATA_DIR).join("config"),
+            tools_dir,
+            skills_dir: PathBuf::from(TIZEN_DATA_DIR).join("skills"),
+            plugins_dir: PathBuf::from(TIZEN_DATA_DIR).join("plugins"),
+            web_root: PathBuf::from(TIZEN_DATA_DIR).join("web"),
+            workflows_dir: PathBuf::from(TIZEN_DATA_DIR).join("workflows"),
+            actions_dir: PathBuf::from(TIZEN_DATA_DIR).join("actions"),
+            pipelines_dir: PathBuf::from(TIZEN_DATA_DIR).join("pipelines"),
+            llm_plugins_dir: PathBuf::from(TIZEN_DATA_DIR).join("plugins/llm"),
+            cli_plugins_dir: PathBuf::from(TIZEN_DATA_DIR).join("plugins/cli"),
+        }
+    }
+
+    /// XDG-compliant Linux paths.
+    fn linux_defaults() -> Self {
+        let xdg_data = std::env::var("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                dirs_or_home().join(".local/share")
+            });
+        let base = xdg_data.join("tizenclaw");
+        Self::from_base(base)
+    }
+
+    /// Ensure all directories exist (create if missing).
+    pub fn ensure_dirs(&self) {
+        let dirs = [
+            &self.data_dir,
+            &self.config_dir,
+            &self.tools_dir,
+            &self.skills_dir,
+            &self.plugins_dir,
+            &self.web_root,
+            &self.workflows_dir,
+        ];
+        for dir in &dirs {
+            if !dir.exists() {
+                if let Err(e) = std::fs::create_dir_all(dir) {
+                    eprintln!("Warning: failed to create dir {:?}: {}", dir, e);
+                }
+            }
+        }
+    }
+
+    /// Get the session database path.
+    pub fn sessions_db_path(&self) -> PathBuf {
+        self.data_dir.join("sessions.db")
+    }
+
+    /// Get the app data directory (for web dashboard file-based storage).
+    /// On Tizen this is /opt/usr/data/tizenclaw, elsewhere same as data_dir.
+    pub fn app_data_dir(&self) -> PathBuf {
+        if self.data_dir.starts_with("/opt/usr/share") {
+            PathBuf::from(TIZEN_APP_DATA_DIR)
+        } else {
+            self.data_dir.clone()
+        }
+    }
+}
+
+/// Check if we're running in a Tizen environment.
+fn is_tizen_environment() -> bool {
+    PathBuf::from("/etc/tizen-release").exists()
+}
+
+/// Get the user's home directory.
+fn dirs_or_home() -> PathBuf {
+    std::env::var("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/tmp"))
+}

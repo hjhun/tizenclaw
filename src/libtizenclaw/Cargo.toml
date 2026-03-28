@@ -1,11 +1,11 @@
 [package]
-name = "libtizenclaw"
+name = "libtizenclaw-client"
 version = "1.0.0"
 edition = "2021"
-description = "TizenClaw C API library — Rust internals with C FFI"
+description = "TizenClaw C API client library — Rust internals with C FFI"
 
 [lib]
-name = "tizenclaw"
+name = "tizenclaw_client"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]

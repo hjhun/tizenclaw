@@ -41,7 +41,11 @@ impl WorkflowEngine {
     }
 
     pub fn load_workflows(&mut self) {
-        let dir = "/opt/usr/share/tizenclaw/workflows";
+        self.load_workflows_from("");
+    }
+
+    pub fn load_workflows_from(&mut self, dir: &str) {
+        let dir = if dir.is_empty() { "/opt/usr/share/tizenclaw/workflows" } else { dir };
         let entries = match std::fs::read_dir(dir) {
             Ok(e) => e,
             Err(_) => return,

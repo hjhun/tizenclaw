@@ -1,12 +1,17 @@
 [workspace]
 resolver = "2"
 members = [
-    "src/tizen-sys",
+    "src/claw-platform",
     "src/tizenclaw",
     "src/tizenclaw-cli",
     "src/libtizenclaw",
     "src/libtizenclaw-core",
     "src/tizenclaw-tool-executor",
+]
+# tizen-sys and tizenclaw-core are built separately via GBS for Tizen deployment
+exclude = [
+    "src/tizen-sys",
+    "src/claw-tizen",
 ]
 
 [profile.release]

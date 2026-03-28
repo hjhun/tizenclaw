@@ -3,24 +3,16 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 
-const TOOL_DIR: &str = "/opt/usr/share/tizen-tools/";
-
 pub struct ToolWatcher {
     callback: Option<Box<dyn Fn() + Send + 'static>>,
     watch_dirs: Vec<PathBuf>,
 }
 
-impl Default for ToolWatcher {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl ToolWatcher {
-    pub fn new() -> Self {
+    pub fn new(tool_dir: String) -> Self {
         ToolWatcher {
             callback: None,
-            watch_dirs: vec![PathBuf::from(TOOL_DIR)],
+            watch_dirs: vec![PathBuf::from(tool_dir)],
         }
     }
 

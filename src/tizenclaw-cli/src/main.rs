@@ -21,7 +21,7 @@ fn connect_daemon() -> Result<i32, String> {
         addr.sun_family = libc::AF_UNIX as u16;
         let name = b"tizenclaw.sock";
         for (i, b) in name.iter().enumerate() {
-            addr.sun_path[1 + i] = *b as i8;
+            addr.sun_path[1 + i] = *b as libc::c_char;
         }
         let addr_len = (std::mem::size_of::<libc::sa_family_t>() + 1 + name.len()) as libc::socklen_t;
 
