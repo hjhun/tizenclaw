@@ -639,14 +639,13 @@ mod tests {
             }
 
             // Count via foreach
-            static mut COUNT: i32 = 0;
-            unsafe extern "C" fn counter(_msg: *mut libc::c_void, _ud: *mut libc::c_void) -> bool {
-                COUNT += 1;
+            let mut count: i32 = 0;
+            unsafe extern "C" fn counter(_msg: *mut libc::c_void, ud: *mut libc::c_void) -> bool {
+                *(ud as *mut i32) += 1;
                 true
             }
-            COUNT = 0;
-            tizenclaw_llm_messages_foreach(list, counter, std::ptr::null_mut());
-            assert_eq!(COUNT, 3);
+            tizenclaw_llm_messages_foreach(list, counter, &mut count as *mut _ as *mut libc::c_void);
+            assert_eq!(count, 3);
 
             tizenclaw_llm_messages_destroy(list);
         }
@@ -664,14 +663,13 @@ mod tests {
                 tizenclaw_llm_tools_add(list, tool);
             }
 
-            static mut TOOL_COUNT: i32 = 0;
-            unsafe extern "C" fn tcounter(_t: *mut libc::c_void, _ud: *mut libc::c_void) -> bool {
-                TOOL_COUNT += 1;
+            let mut tool_count: i32 = 0;
+            unsafe extern "C" fn tcounter(_t: *mut libc::c_void, ud: *mut libc::c_void) -> bool {
+                *(ud as *mut i32) += 1;
                 true
             }
-            TOOL_COUNT = 0;
-            tizenclaw_llm_tools_foreach(list, tcounter, std::ptr::null_mut());
-            assert_eq!(TOOL_COUNT, 2);
+            tizenclaw_llm_tools_foreach(list, tcounter, &mut tool_count as *mut _ as *mut libc::c_void);
+            assert_eq!(tool_count, 2);
 
             tizenclaw_llm_tools_destroy(list);
         }
