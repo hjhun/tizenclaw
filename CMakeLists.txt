@@ -12,10 +12,14 @@ SET(APP_DATA_DIR "/opt/usr/share/tizenclaw")
 ##  Cargo/Rust Build (primary build system)
 ## ═══════════════════════════════════════════
 # OpenSSL is statically linked via vendored build (no system OpenSSL needed)
+# Strip LTO flags from CFLAGS because rustc's linker doesn't load the GCC LTO plugin automatically,
+# which causes undefined references when linking static C libraries built by the cc crate.
+string(REGEX REPLACE "-flto[^ ]*" "" SAFE_CFLAGS "$ENV{CFLAGS}")
+
 ADD_CUSTOM_TARGET(cargo_build ALL
-  COMMAND env "CFLAGS=$ENV{CFLAGS} -Wno-error=missing-field-initializers" cargo build --release --offline --manifest-path ${CMAKE_SOURCE_DIR}/Cargo.toml
+  COMMAND env "CFLAGS=${SAFE_CFLAGS} -Wno-error=missing-field-initializers" cargo build --release --offline --manifest-path ${CMAKE_SOURCE_DIR}/Cargo.toml
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-  COMMENT "Building Rust workspace with Cargo"
+  COMMENT "Building Rust workspace with Cargo (LTO disabled for C dependencies)"
 )
 
 ## ═══════════════════════════════════════════

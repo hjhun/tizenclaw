@@ -1,7 +1,7 @@
 Name:       tizenclaw
 Summary:    TizenClaw Agent System Service App
 Version:    1.0.0
-Release:    2
+Release:    3
 Group:      System/Service
 License:    Apache-2.0
 Source0:    %{name}-%{version}.tar.gz
@@ -32,6 +32,13 @@ TizenClaw Native Agent running as a System Service (Rust Edition).
 cp %{SOURCE1001} .
 
 %build
+# GCC LTO bytecode requires the LTO linker plugin during final link. However, rustc doesn't pass the GCC linker plugin flags.
+# This causes undefined references when linking static C dependencies (e.g. SQLite, OpenSSL built by the cc crate).
+# To fix this, we strip LTO flags from the environment globally for this build.
+export CFLAGS=$(echo "$CFLAGS" | sed 's/-flto[^ ]*//g')
+export CXXFLAGS=$(echo "$CXXFLAGS" | sed 's/-flto[^ ]*//g')
+export LDFLAGS=$(echo "$LDFLAGS" | sed 's/-flto[^ ]*//g')
+
 %cmake .
 %__make %{?_smp_mflags}
 
