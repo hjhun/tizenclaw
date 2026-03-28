@@ -71,3 +71,7 @@ cli_res.txt
 journal.txt
 .plan/
 .deploy_success
+
+# Agents
+.agents/
+@AGENTS.md
