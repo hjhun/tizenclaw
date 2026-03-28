@@ -1,21 +1,21 @@
 [workspace]
 resolver = "2"
 members = [
-    "src/claw-platform",
+    "src/libtizenclaw",
     "src/tizenclaw",
     "src/tizenclaw-cli",
-    "src/libtizenclaw",
-    "src/libtizenclaw-core",
+    "src/libtizenclaw-client",
+    "src/libtizenclaw-sdk",
     "src/tizenclaw-tool-executor",
 ]
 # tizen-sys and tizenclaw-core are built separately via GBS for Tizen deployment
 exclude = [
     "src/tizen-sys",
-    "src/claw-tizen",
+    "src/tizenclaw-core",
 ]
 
 [profile.release]
 opt-level = "s"  # Optimize for size
-lto = true       # Enable Link Time Optimization
+# lto = true       # Disabled: Causes undefined references to vendored C libs in Tizen armv7l GCC ld.
 panic = "abort"  # Abort on panic for smaller binary size
-codegen-units = 1 # Better optimization
+# codegen-units = 1 # Disabled: Can interfere with cross-language linking on ARM.

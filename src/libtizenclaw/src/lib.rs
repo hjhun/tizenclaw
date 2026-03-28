@@ -1,477 +1,195 @@
-//! libtizenclaw — C FFI layer for TizenClaw Agent.
+//! claw-platform: Platform abstraction layer for TizenClaw.
 //!
-//! Exports `extern "C"` functions matching the declarations in
-//! `include/tizenclaw.h`. Each function is `#[no_mangle]` so the
-//! linker produces stable C-compatible symbols.
+//! Provides trait-based interfaces for platform-specific functionality
+//! and a dynamic plugin loader that scans directories for `.so` plugins.
 //!
-//! Thread safety: the opaque handle wraps `Arc<Mutex<TizenClaw>>`,
-//! so concurrent access from multiple C threads is safe.
+//! Architecture:
+//! - `PlatformPlugin`: Core trait every platform plugin must implement
+//! - `GenericLinuxPlatform`: Built-in fallback for standard Linux/Ubuntu
+//! - `PluginLoader`: Runtime `dlopen`-based loader scanning plugin dirs
+//! - `PlatformContext`: Singleton holding the active platform + all loaded plugins
 
-// Suppress unused warnings during C++ → Rust migration.
-// TODO: Remove once all API functions are fully wired.
-#![allow(unused)]
+pub mod generic_linux;
+pub mod loader;
+pub mod paths;
 
-pub mod api;
+use serde_json::Value;
+use std::path::PathBuf;
 
-use std::ffi::{CStr, CString};
-use std::os::raw::c_char;
-use std::sync::{Arc, Mutex};
+// ─────────────────────────────────────────
+// Core Traits
+// ─────────────────────────────────────────
 
-// ── Error codes (must match tizenclaw.h) ───────
-
-const TIZENCLAW_ERROR_NONE: i32 = 0;
-const TIZENCLAW_ERROR_INVALID_PARAMETER: i32 = -1;
-const TIZENCLAW_ERROR_OUT_OF_MEMORY: i32 = -2;
-const TIZENCLAW_ERROR_NOT_INITIALIZED: i32 = -3;
-const _TIZENCLAW_ERROR_ALREADY_INITIALIZED: i32 = -4;
-const _TIZENCLAW_ERROR_IO: i32 = -5;
-const TIZENCLAW_ERROR_LLM_FAILED: i32 = -6;
-const TIZENCLAW_ERROR_TOOL_FAILED: i32 = -7;
-const _TIZENCLAW_ERROR_NOT_SUPPORTED: i32 = -8;
-
-// ── Thread-local last error ────────────────────
-
-thread_local! {
-    static LAST_ERROR: std::cell::RefCell<Option<CString>> = const { std::cell::RefCell::new(None) };
+/// Log severity levels (platform-agnostic).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogLevel {
+    Error,
+    Warn,
+    Info,
+    Debug,
 }
 
-fn set_last_error(msg: &str) {
-    LAST_ERROR.with(|e| {
-        *e.borrow_mut() = CString::new(msg).ok();
-    });
+/// Core platform plugin trait.
+///
+/// Every platform plugin (Tizen, Ubuntu, etc.) implements this trait.
+/// The daemon loads plugins at runtime via `dlopen` and calls these methods.
+pub trait PlatformPlugin: Send + Sync {
+    /// Human-readable platform name (e.g., "Tizen", "Ubuntu", "Generic Linux").
+    fn platform_name(&self) -> &str;
+
+    /// Unique plugin identifier (e.g., "tizen", "ubuntu-desktop").
+    fn plugin_id(&self) -> &str;
+
+    /// Plugin version string.
+    fn version(&self) -> &str { "1.0.0" }
+
+    /// Priority for platform detection (higher = preferred).
+    /// When multiple plugins claim to be compatible, the highest priority wins.
+    fn priority(&self) -> u32 { 0 }
+
+    /// Check if this plugin is compatible with the current environment.
+    /// Called during plugin loading to determine which plugin to activate.
+    fn is_compatible(&self) -> bool { true }
+
+    /// Initialize the plugin. Called once after loading.
+    fn initialize(&mut self) -> bool { true }
+
+    /// Shutdown the plugin. Called once before unloading.
+    fn shutdown(&mut self) {}
 }
 
-// ── Helper: C string conversion ────────────────
-
-unsafe fn cstr_to_str<'a>(ptr: *const c_char) -> Option<&'a str> {
-    if ptr.is_null() { return None; }
-    CStr::from_ptr(ptr).to_str().ok()
+/// Platform-specific logging backend.
+pub trait PlatformLogger: Send + Sync {
+    /// Write a log message.
+    fn log(&self, level: LogLevel, tag: &str, msg: &str);
 }
 
-fn string_to_c(s: String) -> *mut c_char {
-    match CString::new(s) {
-        Ok(cs) => cs.into_raw(),
-        Err(_) => std::ptr::null_mut(),
-    }
-}
+/// Platform-specific system information provider.
+pub trait SystemInfoProvider: Send + Sync {
+    /// Get OS/platform version string.
+    fn get_os_version(&self) -> Option<String>;
 
-// ── Opaque handle ──────────────────────────────
+    /// Get full device profile as JSON.
+    fn get_device_profile(&self) -> Value;
 
-/// Internal representation of the opaque `tizenclaw_h` handle.
-struct HandleInner {
-    agent: api::TizenClaw,
-}
+    /// Get battery level (0-100), if available.
+    fn get_battery_level(&self) -> Option<u32> { None }
 
-type HandlePtr = *mut Arc<Mutex<HandleInner>>;
-
-// ═══════════════════════════════════════════
-//  Lifecycle
-// ═══════════════════════════════════════════
-
-#[no_mangle]
-pub extern "C" fn tizenclaw_create(handle: *mut *mut libc::c_void) -> i32 {
-    if handle.is_null() {
-        set_last_error("handle pointer is null");
-        return TIZENCLAW_ERROR_INVALID_PARAMETER;
-    }
-
-    let inner = HandleInner {
-        agent: api::TizenClaw::new(),
-    };
-
-    let arc = Arc::new(Mutex::new(inner));
-    let boxed = Box::new(arc);
-    let raw = Box::into_raw(boxed);
-
-    unsafe { *handle = raw as *mut libc::c_void; }
-    TIZENCLAW_ERROR_NONE
-}
-
-#[no_mangle]
-pub extern "C" fn tizenclaw_initialize(handle: *mut libc::c_void) -> i32 {
-    let ptr = handle as HandlePtr;
-    if ptr.is_null() {
-        set_last_error("handle is null");
-        return TIZENCLAW_ERROR_INVALID_PARAMETER;
-    }
-
-    let arc = unsafe { &*ptr };
-    match arc.lock() {
-        Ok(mut inner) => {
-            match inner.agent.initialize() {
-                Ok(()) => TIZENCLAW_ERROR_NONE,
-                Err(e) => {
-                    set_last_error(&e);
-                    TIZENCLAW_ERROR_NOT_INITIALIZED
-                }
-            }
-        }
-        Err(e) => {
-            set_last_error(&format!("Lock poisoned: {}", e));
-            TIZENCLAW_ERROR_NOT_INITIALIZED
-        }
+    /// Check if network is available.
+    fn is_network_available(&self) -> bool {
+        std::net::TcpStream::connect("8.8.8.8:53")
+            .map(|_| true)
+            .unwrap_or(false)
     }
 }
 
-#[no_mangle]
-pub extern "C" fn tizenclaw_destroy(handle: *mut libc::c_void) {
-    if handle.is_null() { return; }
+/// Platform-specific package manager interface.
+pub trait PackageManagerProvider: Send + Sync {
+    /// List installed packages.
+    fn list_packages(&self) -> Vec<PackageInfo>;
 
-    let ptr = handle as HandlePtr;
-    // Reconstruct the Box to reclaim ownership.
-    // Dropping the Box → drops Arc → when ref count reaches 0,
-    // drops HandleInner → drops TizenClaw (whose Drop impl calls shutdown()).
-    let _ = unsafe { Box::from_raw(ptr) };
-}
+    /// Get info about a specific package.
+    fn get_package_info(&self, pkg_id: &str) -> Option<PackageInfo>;
 
-// ═══════════════════════════════════════════
-//  Prompt Processing
-// ═══════════════════════════════════════════
-
-#[no_mangle]
-pub unsafe extern "C" fn tizenclaw_process_prompt(
-    handle: *mut libc::c_void,
-    session_id: *const c_char,
-    prompt: *const c_char,
-) -> *mut c_char {
-    let ptr = handle as HandlePtr;
-    if ptr.is_null() {
-        set_last_error("handle is null");
-        return std::ptr::null_mut();
-    }
-
-    let sid = match cstr_to_str(session_id) {
-        Some(s) => s,
-        None => {
-            set_last_error("session_id is null or invalid UTF-8");
-            return std::ptr::null_mut();
-        }
-    };
-    let p = match cstr_to_str(prompt) {
-        Some(s) => s,
-        None => {
-            set_last_error("prompt is null or invalid UTF-8");
-            return std::ptr::null_mut();
-        }
-    };
-
-    let arc = &*ptr;
-    match arc.lock() {
-        Ok(inner) => {
-            match inner.agent.process_prompt(sid, p) {
-                Ok(resp) => string_to_c(resp),
-                Err(e) => {
-                    set_last_error(&e);
-                    std::ptr::null_mut()
-                }
-            }
-        }
-        Err(e) => {
-            set_last_error(&format!("Lock poisoned: {}", e));
-            std::ptr::null_mut()
-        }
+    /// Check if a package is installed.
+    fn is_installed(&self, pkg_id: &str) -> bool {
+        self.get_package_info(pkg_id).is_some()
     }
 }
 
-/// Async callback type matching tizenclaw_response_cb in tizenclaw.h
-type ResponseCallback = unsafe extern "C" fn(*const c_char, i32, *mut libc::c_void);
+/// Platform-specific application control.
+pub trait AppControlProvider: Send + Sync {
+    /// Launch an application by ID.
+    fn launch_app(&self, app_id: &str) -> Result<(), String>;
 
-#[no_mangle]
-pub unsafe extern "C" fn tizenclaw_process_prompt_async(
-    handle: *mut libc::c_void,
-    session_id: *const c_char,
-    prompt: *const c_char,
-    callback: ResponseCallback,
-    user_data: *mut libc::c_void,
-) -> i32 {
-    let ptr = handle as HandlePtr;
-    if ptr.is_null() {
-        set_last_error("handle is null");
-        return TIZENCLAW_ERROR_INVALID_PARAMETER;
-    }
-
-    let sid = match cstr_to_str(session_id) {
-        Some(s) => s.to_string(),
-        None => {
-            set_last_error("session_id is null or invalid UTF-8");
-            return TIZENCLAW_ERROR_INVALID_PARAMETER;
-        }
-    };
-    let p = match cstr_to_str(prompt) {
-        Some(s) => s.to_string(),
-        None => {
-            set_last_error("prompt is null or invalid UTF-8");
-            return TIZENCLAW_ERROR_INVALID_PARAMETER;
-        }
-    };
-
-    let arc = (&*ptr).clone();
-    // user_data is Send-unsafe but we need it in the thread
-    let ud = user_data as usize;
-    let cb = callback;
-
-    std::thread::spawn(move || {
-        let result = match arc.lock() {
-            Ok(inner) => inner.agent.process_prompt(&sid, &p),
-            Err(e) => Err(format!("Lock poisoned: {}", e)),
-        };
-
-        let ud_ptr = ud as *mut libc::c_void;
-        match result {
-            Ok(resp) => {
-                if let Ok(cs) = CString::new(resp) {
-                    cb(cs.as_ptr(), TIZENCLAW_ERROR_NONE, ud_ptr);
-                } else {
-                    cb(std::ptr::null(), TIZENCLAW_ERROR_LLM_FAILED, ud_ptr);
-                }
-            }
-            Err(_) => {
-                cb(std::ptr::null(), TIZENCLAW_ERROR_LLM_FAILED, ud_ptr);
-            }
-        }
-    });
-
-    TIZENCLAW_ERROR_NONE
+    /// List running applications.
+    fn list_running_apps(&self) -> Vec<String> { vec![] }
 }
 
-// ═══════════════════════════════════════════
-//  Session Management
-// ═══════════════════════════════════════════
+/// Platform-specific system event monitoring.
+pub trait SystemEventProvider: Send + Sync {
+    /// Start monitoring system events.
+    fn start(&mut self) -> bool { true }
 
-#[no_mangle]
-pub unsafe extern "C" fn tizenclaw_clear_session(
-    handle: *mut libc::c_void,
-    session_id: *const c_char,
-) -> i32 {
-    let ptr = handle as HandlePtr;
-    if ptr.is_null() {
-        set_last_error("handle is null");
-        return TIZENCLAW_ERROR_INVALID_PARAMETER;
-    }
-
-    let sid = match cstr_to_str(session_id) {
-        Some(s) => s,
-        None => {
-            set_last_error("session_id is null or invalid UTF-8");
-            return TIZENCLAW_ERROR_INVALID_PARAMETER;
-        }
-    };
-
-    let arc = &*ptr;
-    match arc.lock() {
-        Ok(inner) => {
-            match inner.agent.clear_session(sid) {
-                Ok(()) => TIZENCLAW_ERROR_NONE,
-                Err(e) => {
-                    set_last_error(&e);
-                    TIZENCLAW_ERROR_NOT_INITIALIZED
-                }
-            }
-        }
-        Err(e) => {
-            set_last_error(&format!("Lock poisoned: {}", e));
-            TIZENCLAW_ERROR_NOT_INITIALIZED
-        }
-    }
+    /// Stop monitoring.
+    fn stop(&mut self) {}
 }
 
-// ═══════════════════════════════════════════
-//  Monitoring
-// ═══════════════════════════════════════════
+// ─────────────────────────────────────────
+// Data Types
+// ─────────────────────────────────────────
 
-#[no_mangle]
-pub extern "C" fn tizenclaw_get_status(handle: *mut libc::c_void) -> *mut c_char {
-    let ptr = handle as HandlePtr;
-    if ptr.is_null() {
-        set_last_error("handle is null");
-        return std::ptr::null_mut();
-    }
-
-    let arc = unsafe { &*ptr };
-    match arc.lock() {
-        Ok(inner) => {
-            match inner.agent.get_status() {
-                Ok(s) => string_to_c(s),
-                Err(e) => {
-                    set_last_error(&e);
-                    std::ptr::null_mut()
-                }
-            }
-        }
-        Err(e) => {
-            set_last_error(&format!("Lock poisoned: {}", e));
-            std::ptr::null_mut()
-        }
-    }
+/// Basic info about an installed package.
+#[derive(Debug, Clone, Default)]
+pub struct PackageInfo {
+    pub pkg_id: String,
+    pub app_id: String,
+    pub label: String,
+    pub version: String,
+    pub pkg_type: String,
+    pub installed: bool,
 }
 
-#[no_mangle]
-pub extern "C" fn tizenclaw_get_metrics(handle: *mut libc::c_void) -> *mut c_char {
-    let ptr = handle as HandlePtr;
-    if ptr.is_null() {
-        set_last_error("handle is null");
-        return std::ptr::null_mut();
-    }
+// ─────────────────────────────────────────
+// Platform Context (Singleton)
+// ─────────────────────────────────────────
 
-    let arc = unsafe { &*ptr };
-    match arc.lock() {
-        Ok(inner) => {
-            match inner.agent.get_metrics() {
-                Ok(s) => string_to_c(s),
-                Err(e) => {
-                    set_last_error(&e);
-                    std::ptr::null_mut()
-                }
-            }
-        }
-        Err(e) => {
-            set_last_error(&format!("Lock poisoned: {}", e));
-            std::ptr::null_mut()
-        }
-    }
+/// Holds the active platform configuration and all loaded plugin capabilities.
+///
+/// Created once at daemon boot via `PlatformContext::detect()`.
+pub struct PlatformContext {
+    /// Active platform plugin.
+    pub platform: Box<dyn PlatformPlugin>,
+    /// Platform logger (from active plugin or generic stderr).
+    pub logger: Box<dyn PlatformLogger>,
+    /// System info provider.
+    pub system_info: Box<dyn SystemInfoProvider>,
+    /// Package manager (optional — may be no-op).
+    pub package_manager: Box<dyn PackageManagerProvider>,
+    /// App controller (optional — may be no-op).
+    pub app_control: Box<dyn AppControlProvider>,
+    /// Platform-resolved paths.
+    pub paths: paths::PlatformPaths,
 }
 
-// ═══════════════════════════════════════════
-//  Tools & Skills
-// ═══════════════════════════════════════════
+impl PlatformContext {
+    /// Detect and load the appropriate platform.
+    ///
+    /// 1. Scan plugin directories for `.so` files
+    /// 2. Load each plugin, check `is_compatible()`
+    /// 3. Select the highest-priority compatible plugin
+    /// 4. Fall back to `GenericLinuxPlatform` if no plugin matches
+    pub fn detect() -> Self {
+        // Determine paths first (used to find plugin directories)
+        let platform_paths = paths::PlatformPaths::detect();
 
-#[no_mangle]
-pub extern "C" fn tizenclaw_get_tools(handle: *mut libc::c_void) -> *mut c_char {
-    let ptr = handle as HandlePtr;
-    if ptr.is_null() {
-        set_last_error("handle is null");
-        return std::ptr::null_mut();
-    }
+        // Try loading platform plugins from the plugins directory
+        let plugin_dirs = vec![
+            platform_paths.plugins_dir.clone(),
+            // Also check standard system paths
+            PathBuf::from("/usr/lib/tizenclaw/plugins"),
+            PathBuf::from("/usr/local/lib/tizenclaw/plugins"),
+        ];
 
-    let arc = unsafe { &*ptr };
-    match arc.lock() {
-        Ok(inner) => {
-            match inner.agent.get_tools() {
-                Ok(s) => string_to_c(s),
-                Err(e) => {
-                    set_last_error(&e);
-                    std::ptr::null_mut()
-                }
-            }
+        if let Some(ctx) = loader::try_load_platform_plugins(&plugin_dirs, &platform_paths) {
+            return ctx;
         }
-        Err(e) => {
-            set_last_error(&format!("Lock poisoned: {}", e));
-            std::ptr::null_mut()
-        }
-    }
-}
 
-#[no_mangle]
-pub unsafe extern "C" fn tizenclaw_execute_tool(
-    handle: *mut libc::c_void,
-    tool_name: *const c_char,
-    args_json: *const c_char,
-) -> *mut c_char {
-    let ptr = handle as HandlePtr;
-    if ptr.is_null() {
-        set_last_error("handle is null");
-        return std::ptr::null_mut();
-    }
-
-    let name = match cstr_to_str(tool_name) {
-        Some(s) => s,
-        None => {
-            set_last_error("tool_name is null or invalid UTF-8");
-            return std::ptr::null_mut();
-        }
-    };
-    let args = match cstr_to_str(args_json) {
-        Some(s) => s,
-        None => {
-            set_last_error("args_json is null or invalid UTF-8");
-            return std::ptr::null_mut();
-        }
-    };
-
-    let arc = &*ptr;
-    match arc.lock() {
-        Ok(inner) => {
-            match inner.agent.execute_tool(name, args) {
-                Ok(s) => string_to_c(s),
-                Err(e) => {
-                    set_last_error(&e);
-                    std::ptr::null_mut()
-                }
-            }
-        }
-        Err(e) => {
-            set_last_error(&format!("Lock poisoned: {}", e));
-            std::ptr::null_mut()
+        // Fallback: use built-in Generic Linux platform
+        log::info!("No platform plugin found, using Generic Linux fallback");
+        let generic = generic_linux::GenericLinuxPlatform::new();
+        PlatformContext {
+            logger: Box::new(generic_linux::StderrLogger),
+            system_info: Box::new(generic_linux::LinuxSystemInfo),
+            package_manager: Box::new(generic_linux::GenericPackageManager),
+            app_control: Box::new(generic_linux::GenericAppControl),
+            platform: Box::new(generic),
+            paths: platform_paths,
         }
     }
-}
 
-#[no_mangle]
-pub extern "C" fn tizenclaw_reload_skills(handle: *mut libc::c_void) -> i32 {
-    let ptr = handle as HandlePtr;
-    if ptr.is_null() {
-        set_last_error("handle is null");
-        return TIZENCLAW_ERROR_INVALID_PARAMETER;
+    /// Get the platform name.
+    pub fn platform_name(&self) -> &str {
+        self.platform.platform_name()
     }
-
-    let arc = unsafe { &*ptr };
-    match arc.lock() {
-        Ok(mut inner) => {
-            match inner.agent.reload_skills() {
-                Ok(()) => TIZENCLAW_ERROR_NONE,
-                Err(e) => {
-                    set_last_error(&e);
-                    TIZENCLAW_ERROR_TOOL_FAILED
-                }
-            }
-        }
-        Err(e) => {
-            set_last_error(&format!("Lock poisoned: {}", e));
-            TIZENCLAW_ERROR_TOOL_FAILED
-        }
-    }
-}
-
-// ═══════════════════════════════════════════
-//  Web Dashboard
-// ═══════════════════════════════════════════
-
-#[no_mangle]
-pub extern "C" fn tizenclaw_start_dashboard(
-    _handle: *mut libc::c_void,
-    _port: u16,
-) -> i32 {
-    // Dashboard is currently managed by the daemon's main binary.
-    // This API is a placeholder for standalone library usage.
-    set_last_error("Dashboard control via library not yet implemented — use daemon");
-    TIZENCLAW_ERROR_NONE
-}
-
-#[no_mangle]
-pub extern "C" fn tizenclaw_stop_dashboard(
-    _handle: *mut libc::c_void,
-) -> i32 {
-    TIZENCLAW_ERROR_NONE
-}
-
-// ═══════════════════════════════════════════
-//  Utility
-// ═══════════════════════════════════════════
-
-#[no_mangle]
-pub unsafe extern "C" fn tizenclaw_free_string(ptr: *mut c_char) {
-    if !ptr.is_null() {
-        // Reconstruct CString so it drops properly
-        drop(CString::from_raw(ptr));
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn tizenclaw_last_error() -> *const c_char {
-    LAST_ERROR.with(|e| {
-        match &*e.borrow() {
-            Some(cs) => cs.as_ptr(),
-            None => std::ptr::null(),
-        }
-    })
 }
