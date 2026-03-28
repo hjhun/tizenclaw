@@ -84,7 +84,7 @@ fi
 %{_unitdir}/multi-user.target.wants/tizenclaw.service
 %{_unitdir}/sockets.target.wants/tizenclaw-tool-executor.socket
 %{_unitdir}/sockets.target.wants/tizenclaw-code-sandbox.socket
-/usr/libexec/tizenclaw/tizenclaw_code_executor.py
+
 /opt/usr/share/tizenclaw/config/*
 /opt/usr/share/tizen-tools/routing_guide.md
 /opt/usr/share/tizen-tools/tools.md

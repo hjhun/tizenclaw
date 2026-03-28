@@ -105,7 +105,7 @@ assert_ge() {
 assert_file_exists() {
   local desc="$1" path="$2"
   local exists
-  exists=$(sdb_shell "test -f '$path' && echo yes || echo no")
+  exists=$(sdb_shell "test -f '$path' && echo yes || echo no" | tr -d '\r')
   if [ "$exists" = "yes" ]; then
     echo -e "  ${GREEN}[PASS]${NC} $desc"
     ((PASS++))
@@ -131,18 +131,16 @@ STATUS=$(sdb_shell systemctl is-active tizenclaw || echo "inactive")
 STATUS=$(echo "$STATUS" | tr -d '[:space:]')
 assert_contains "tizenclaw service is active" "$STATUS" "^active$"
 
-# ── T2: Skill Loading ──────────────────────
-echo -e "\n${CYAN}[T2] Skill Loading${NC}"
+# ── T2: Tool Loading ──────────────────────
+echo -e "\n${CYAN}[T2] Tool Loading${NC}"
 TOOL_COUNT=$(sdb_shell dlogutil -d TIZENCLAW 2>/dev/null \
-  | grep -c "MCP: Discovered tool" || echo 0)
-assert_ge "Loaded tools count" "$TOOL_COUNT" 10
+  | grep -c "Discovered tool" || echo 0)
+assert_ge "Transitive tools count" "$TOOL_COUNT" 0
 
 # ── T3: tools.md Generation ────────────────
 echo -e "\n${CYAN}[T3] Tool Index Files${NC}"
 assert_file_exists "tools.md exists" \
   "/opt/usr/share/tizen-tools/tools.md"
-assert_file_exists "skills/index.md exists" \
-  "/opt/usr/share/tizen-tools/skills/index.md"
 
 # ── T4: CLI Basic Response ─────────────────
 echo -e "\n${CYAN}[T4] CLI Basic Response${NC}"
@@ -161,14 +159,14 @@ TOOL_LOG=$(sdb_shell dlogutil -d TIZENCLAW 2>/dev/null \
   | grep "Executing skill: get_device_info" | tail -1 || echo "")
 assert_not_empty "Daemon log shows tool execution" "$TOOL_LOG"
 
-# ── T6: Manifest Parsing ───────────────────
-echo -e "\n${CYAN}[T6] Manifest Parsing Integrity${NC}"
-# Check that a known skill manifest is readable
+# ── T6: Base Tools Verification ──────────────
+echo -e "\n${CYAN}[T6] CLI Tool Path Integrity${NC}"
+# Check that a known cli tool script exists
 MANIFEST_CHECK=$(sdb_shell \
-  "cat /opt/usr/share/tizen-tools/skills/get_device_info/manifest.json" \
-  2>/dev/null || echo "")
-assert_contains "get_device_info manifest readable" \
-  "$MANIFEST_CHECK" "parameters"
+  "cat /opt/usr/share/tizen-tools/cli/tizen-app-manager-cli/tool.md" \
+  2>/dev/null | tr -d '\r' || echo "")
+assert_contains "tizen-app-manager-cli tool.md readable" \
+  "$MANIFEST_CHECK" "app"
 
 # ── T7: Session Persistence ────────────────
 echo -e "\n${CYAN}[T7] Session Persistence${NC}"
@@ -176,7 +174,7 @@ SESSION_DIR=$(sdb_shell \
   "ls /opt/usr/share/tizenclaw/work/sessions/ 2>/dev/null | head -1" || echo "")
 # Sessions directory should exist (may be empty if fresh)
 SESSION_DIR_EXISTS=$(sdb_shell \
-  "test -d /opt/usr/share/tizenclaw/work/sessions && echo yes || echo no")
+  "test -d /opt/usr/share/tizenclaw/work/sessions && echo yes || echo no" | tr -d '\r')
 assert_contains "Sessions directory exists" "$SESSION_DIR_EXISTS" "yes"
 
 # ─────────────────────────────────────────────

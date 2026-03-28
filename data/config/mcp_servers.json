@@ -1,12 +1,8 @@
 {
   "mcpServers": {
-    "weather": {
-      "command": "python3",
-      "args": ["-m", "mcp_server_weather", "--city", "Seoul"]
-    },
     "sqlite": {
-      "command": "python3",
-      "args": ["-m", "mcp_server_sqlite", "--db-path", "/tmp/sqlite.db"]
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sqlite", "/tmp/sqlite.db"]
     }
   }
 }

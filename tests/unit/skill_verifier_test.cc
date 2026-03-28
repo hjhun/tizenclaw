@@ -56,18 +56,18 @@ class SkillVerifierTest : public ::testing::Test {
 };
 
 TEST_F(SkillVerifierTest, IsValidRuntime) {
-  EXPECT_TRUE(SkillVerifier::IsValidRuntime("python"));
+  EXPECT_TRUE(SkillVerifier::IsValidRuntime("bash"));
   EXPECT_TRUE(SkillVerifier::IsValidRuntime("node"));
   EXPECT_TRUE(SkillVerifier::IsValidRuntime("native"));
   EXPECT_FALSE(SkillVerifier::IsValidRuntime("ruby"));
   EXPECT_FALSE(SkillVerifier::IsValidRuntime(""));
 }
 
-TEST_F(SkillVerifierTest, ValidPythonManifestPasses) {
+TEST_F(SkillVerifierTest, ValidBashManifestPasses) {
   WriteManifest({
       {"name", "test_skill"},
       {"description", "A test skill"},
-      {"runtime", "python"},
+      {"runtime", "bash"},
       {"parameters", {{"type", "object"},
                       {"properties", nlohmann::json::object()},
                       {"required", nlohmann::json::array()}}}
@@ -182,7 +182,7 @@ TEST_F(SkillVerifierTest, MissingEntryPointFails) {
   WriteManifest({
       {"name", "test_skill"},
       {"description", "Missing script"},
-      {"runtime", "python"},
+      {"runtime", "bash"},
       {"parameters", {{"type", "object"},
                       {"properties", nlohmann::json::object()},
                       {"required", nlohmann::json::array()}}}
@@ -259,8 +259,8 @@ TEST_F(SkillVerifierTest, DisableAndEnableSkill) {
 TEST_F(SkillVerifierTest, LanguageWarningForNonNative) {
   WriteManifest({
       {"name", "test_skill"},
-      {"description", "Language on python"},
-      {"runtime", "python"},
+      {"description", "Language on bash"},
+      {"runtime", "bash"},
       {"language", "cpp"},
       {"parameters", {{"type", "object"},
                       {"properties", nlohmann::json::object()},

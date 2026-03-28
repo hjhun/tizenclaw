@@ -1,7 +1,7 @@
 //! tizenclaw-tool-executor — Sandboxed tool execution daemon.
 //!
 //! Listens on an abstract namespace Unix domain socket and executes
-//! tool scripts on the host Linux. Python code is run via subprocess.
+//! tool scripts on the host Linux. Shell code is run via subprocess.
 //!
 //! Protocol: 4-byte big-endian length prefix + UTF-8 JSON body
 //! Security: SO_PEERCRED validates peer is tizenclaw or tizenclaw-cli.
@@ -61,7 +61,7 @@ fn handle_execute_code(code: &str, timeout: u64) -> Value {
         return json!({"status": "error", "output": "No code provided"});
     }
 
-    let result = Command::new("python3")
+    let result = Command::new("sh")
         .args(["-c", code])
         .output();
 
@@ -131,28 +131,8 @@ fn handle_execute_cli(tool_name: &str, arguments: &str, timeout: u64) -> Value {
     }
 }
 
-fn handle_install_package(pkg_type: &str, name: &str) -> Value {
-    if name.is_empty() {
-        return json!({"status": "error", "output": "No package name"});
-    }
-
-    let cmd = match pkg_type {
-        "pip" => format!("pip3 install --user {} 2>&1", name),
-        _ => return json!({"status": "error", "output": format!("Unknown package type: {}", pkg_type)}),
-    };
-
-    match Command::new("sh").args(["-c", &cmd]).output() {
-        Ok(output) => {
-            let out_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            let exit_code = output.status.code().unwrap_or(-1);
-            json!({
-                "status": if exit_code == 0 { "ok" } else { "error" },
-                "output": out_str,
-                "exit_code": exit_code,
-            })
-        }
-        Err(e) => json!({"status": "error", "output": format!("Failed: {}", e)}),
-    }
+fn handle_install_package(pkg_type: &str, _name: &str) -> Value {
+    json!({"status": "error", "output": format!("Package installation not supported in pure-shell mode: {}", pkg_type)})
 }
 
 fn handle_tool(tool: &str, args_str: &str) -> Value {

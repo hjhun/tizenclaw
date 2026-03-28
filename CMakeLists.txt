@@ -13,7 +13,7 @@ SET(APP_DATA_DIR "/opt/usr/share/tizenclaw")
 ## ═══════════════════════════════════════════
 # OpenSSL is statically linked via vendored build (no system OpenSSL needed)
 ADD_CUSTOM_TARGET(cargo_build ALL
-  COMMAND cargo build --release --offline --manifest-path ${CMAKE_SOURCE_DIR}/Cargo.toml
+  COMMAND env "CFLAGS=$ENV{CFLAGS} -Wno-error=missing-field-initializers" cargo build --release --offline --manifest-path ${CMAKE_SOURCE_DIR}/Cargo.toml
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
   COMMENT "Building Rust workspace with Cargo"
 )
@@ -70,9 +70,7 @@ INSTALL(DIRECTORY "${CMAKE_SOURCE_DIR}/tools/cli/"
 # System CLI tools — create empty dir
 INSTALL(DIRECTORY DESTINATION "/opt/usr/share/tizen-tools/system_cli")
 
-# Code executor
-INSTALL(PROGRAMS "${CMAKE_SOURCE_DIR}/scripts/tizenclaw_code_executor.py"
-        DESTINATION "/usr/libexec/tizenclaw")
+# Code executor removed (now pure shell)
 
 # MCP tunnel script
 INSTALL(PROGRAMS "${CMAKE_SOURCE_DIR}/scripts/start_mcp_tunnel.sh"

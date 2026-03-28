@@ -11,11 +11,11 @@ impl ToolDeclarationBuilder {
         // execute_code
         tools.push(LlmToolDecl {
             name: "execute_code".into(),
-            description: "Execute arbitrary Python code on the Tizen device. The code MUST print a JSON result to stdout as the last line.".into(),
+            description: "Execute arbitrary Shell/Bash code on the Tizen device. The code MUST print a JSON result to stdout as the last line.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
-                    "code": {"type": "string", "description": "Python code to execute on the Tizen device"}
+                    "code": {"type": "string", "description": "Shell code to execute on the Tizen device"}
                 },
                 "required": ["code"]
             }),

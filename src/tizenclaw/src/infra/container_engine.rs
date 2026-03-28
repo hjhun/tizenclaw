@@ -35,9 +35,9 @@ impl ContainerEngine {
         }
     }
 
-    /// Execute Python code, returning stdout.
+    /// Execute Shell code, returning stdout.
     pub async fn execute_code(&self, code: &str) -> Result<String, String> {
-        self.execute_direct("python3", &["-c", code], 30).await
+        self.execute_direct("sh", &["-c", code], 30).await
     }
 
     async fn execute_direct(&self, binary: &str, args: &[&str], _timeout_secs: u64) -> Result<String, String> {
