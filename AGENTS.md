@@ -26,7 +26,7 @@ This document defines the core development process (Plan → Design → Develop 
 
 ## 3. Develop
 - Modify source code and add/modify unit tests based on the design approach.
-- **CRITICAL BRANCH POLICY**: Development must be conducted on the `devel` branch, and related changes must be pushed only to the `devel` branch unless explicitly commanded otherwise by the user. If development proceeds on a branch whose name starts with `devel` (e.g., `devel-feature`), changes must only be pushed to that specific branch. Do not create new branches or push to `main` without explicit permission.
+- **CRITICAL BRANCH POLICY**: Development must be conducted on the `develRust` branch, and related changes must be pushed only to the `develRust` branch unless explicitly commanded otherwise by the user. If development proceeds on a branch whose name starts with `devel` (e.g., `devel-feature`), changes must only be pushed to that specific branch. Do not create new branches or push to `main` without explicit permission.
 - **WORKFLOW DOC POLICY**: Workflow documents (.md) must only be created or modified after the corresponding feature has been fully verified (build, deploy, and runtime validation) on an actual device. Writing workflow documents for unverified features is prohibited. When adding a new workflow, you must also update the workflow README.
 
 ## 4. Build & Deploy
