@@ -105,9 +105,9 @@ impl SystemPromptBuilder {
         lines.push("## Memory & Skills Reference".into());
         lines.push("Before answering anything about prior work, check past memories using available repository tools if any.".into());
         lines.push("Before replying, scan <available_skills> entries below:".into());
-        lines.push("- If exactly one skill clearly applies: read its .md file at the listed location using your file reading tools (`std::fs::read` etc), then follow it.".into());
+        lines.push("- If exactly one skill clearly applies: read its .md file using the `read_skill` tool, then follow it.".into());
         lines.push("- If multiple could apply: choose the most specific one, then read/follow it.".into());
-        lines.push("- To create a new repeatable workflow, simply use your write/create file tools to generate a new `.md` file into the skills directory!".into());
+        lines.push("- To create a new repeatable workflow, simply use your `create_skill` tool to save a new textual skill!".into());
         lines.push("".into());
 
         lines.push("<available_skills>".into());

@@ -250,6 +250,32 @@ impl ToolDeclarationBuilder {
             }),
         });
 
+        // create_skill / read_skill
+        tools.push(LlmToolDecl {
+            name: "create_skill".into(),
+            description: "Create a reusable textual skill (workflow instructions) that the agent will intrinsically learn and recall in future sessions.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Skill identifier (e.g. 'fetch_time', 'analyze_logs')"},
+                    "description": {"type": "string", "description": "Short description of what the skill accomplishes"},
+                    "content": {"type": "string", "description": "Full Markdown content for the skill, including instructions and steps."}
+                },
+                "required": ["name", "description", "content"]
+            }),
+        });
+        tools.push(LlmToolDecl {
+            name: "read_skill".into(),
+            description: "Read the exact markdown content of a previously created textual skill.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Skill identifier to read"}
+                },
+                "required": ["name"]
+            }),
+        });
+
         // get_agent_status / list_agents
         tools.push(LlmToolDecl {
             name: "get_agent_status".into(),
