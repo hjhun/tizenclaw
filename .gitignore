@@ -56,6 +56,17 @@ __pycache__/
 data/devel/
 dlog_dump.txt
 
+# Build logs & warnings
+build_log*.txt
+build_warnings_summary.txt
+
+# Agent temp files
+.agent_files.txt
+TASKS.md
+progress.txt
+docs/tasks/progress.txt
+PRD.md
+
 # Plans (local only)
 plan/
 
