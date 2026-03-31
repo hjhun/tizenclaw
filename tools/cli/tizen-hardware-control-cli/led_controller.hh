@@ -27,7 +27,7 @@ class LedController {
   LedController() = default;
   ~LedController() = default;
 
-  std::string Control(const std::string& action, int brightness);
+  std::string Control(const std::string& action);
 };
 
 }  // namespace cli

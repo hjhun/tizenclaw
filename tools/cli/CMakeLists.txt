@@ -1,4 +1,3 @@
-ADD_SUBDIRECTORY(tizen-aurum-cli)
 ADD_SUBDIRECTORY(tizen-control-display-cli)
 ADD_SUBDIRECTORY(tizen-device-info-cli)
 ADD_SUBDIRECTORY(tizen-hardware-control-cli)

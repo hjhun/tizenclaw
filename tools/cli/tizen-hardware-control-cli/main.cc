@@ -30,7 +30,7 @@ constexpr const char kUsage[] = R"(Usage:
 
 Subcommands:
   haptic    Vibrate device [--duration <ms>]
-  led       LED control --action on|off [--brightness N]
+  led       LED control --action on|off
   power     Power lock --action lock|unlock --resource display|cpu
   feedback  Play feedback --pattern <NAME>
 )";
@@ -59,15 +59,12 @@ int main(int argc, char* argv[]) {
     std::cout << c.Vibrate(dur) << std::endl;
   } else if (cmd == "led") {
     std::string action = "on";
-    int brightness = -1;
     for (int i = 2; i < argc - 1; ++i) {
       if (std::string(argv[i]) == "--action")
         action = argv[i + 1];
-      if (std::string(argv[i]) == "--brightness")
-        brightness = std::atoi(argv[i + 1]);
     }
     tizenclaw::cli::LedController c;
-    std::cout << c.Control(action, brightness) << std::endl;
+    std::cout << c.Control(action) << std::endl;
   } else if (cmd == "power") {
     std::string action = "lock";
     std::string resource = "display";

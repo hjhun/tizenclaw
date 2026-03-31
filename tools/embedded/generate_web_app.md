@@ -90,21 +90,8 @@ When creating dashboards or monitoring apps that display live device data (batte
     5000  // refresh every 5000ms (5 seconds)
   );
 
-  // Auto-refresh display info every 3 seconds
-  const stopDisplay = TizenClaw.autoRefresh(
-    'execute_cli',
-    {tool_name: 'tizen-display-cli', arguments: 'get'},
-    function(result, err) {
-      if (err) return;
-      document.getElementById('brightness').textContent = result.brightness;
-      document.getElementById('screen-state').textContent = result.state;
-    },
-    3000
-  );
-
   // To stop refreshing (e.g. when navigating away):
   // stopBattery();
-  // stopDisplay();
 </script>
 ```
 

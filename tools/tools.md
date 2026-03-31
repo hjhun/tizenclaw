@@ -12,7 +12,6 @@ CLI tools are pre-built native executables installed under
 
 Available CLI tools:
 - **tizen-app-manager-cli** — App Management (list, launch, terminate, packages, recent apps)
-- **tizen-aurum-cli** — UI Automation (screen inspect, element find, input simulation, event watch)
 - **tizen-control-display-cli** — Display brightness control
 - **tizen-device-info-cli** — Device information (battery, CPU, memory, storage, thermal, display, settings)
 - **tizen-file-manager-cli** — File system operations (read, write, copy, move, remove, list, mkdir, download)

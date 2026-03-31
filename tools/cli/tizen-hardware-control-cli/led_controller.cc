@@ -24,8 +24,7 @@
 namespace tizenclaw {
 namespace cli {
 
-std::string LedController::Control(
-    const std::string& action, int brightness) {
+std::string LedController::Control(const std::string& action) {
   int max_b = 0;
   if (device_flash_get_max_brightness(&max_b) != 0)
     return "{\"error\": \"Failed to get max brightness\"}";
@@ -39,18 +38,11 @@ std::string LedController::Control(
            "\"message\": \"LED turned off\"}";
   }
 
-  int b = (brightness < 0)
-              ? max_b
-              : std::max(0, std::min(brightness, max_b));
-
-  if (device_flash_set_brightness(b) != 0)
-    return "{\"error\": \"Failed to set brightness\"}";
+  if (device_flash_set_brightness(max_b) != 0)
+    return "{\"error\": \"Failed to set LED\"}";
 
   return "{\"status\": \"success\", "
-         "\"action\": \"on\", "
-         "\"brightness\": " + std::to_string(b) +
-         ", \"max_brightness\": " +
-         std::to_string(max_b) + "}";
+         "\"action\": \"on\"}";
 }
 
 }  // namespace cli

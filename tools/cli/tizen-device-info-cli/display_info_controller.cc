@@ -36,13 +36,8 @@ std::string DisplayInfoController::GetDisplayInfo() const {
   std::string result = "{\"num_displays\": " + std::to_string(num) +
     ", \"state\": \"" + st + "\", \"displays\": [";
   for (int i = 0; i < num; ++i) {
-    int b = 0, mb = 0;
-    device_display_get_brightness(i, &b);
-    device_display_get_max_brightness(i, &mb);
     if (i > 0) result += ", ";
-    result += "{\"index\": " + std::to_string(i) +
-      ", \"brightness\": " + std::to_string(b) +
-      ", \"max_brightness\": " + std::to_string(mb) + "}";
+    result += "{\"index\": " + std::to_string(i) + "}";
   }
   result += "]}";
   return result;
