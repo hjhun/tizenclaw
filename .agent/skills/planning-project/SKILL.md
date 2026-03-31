@@ -40,6 +40,17 @@ Establish the conceptual boundaries of the runtime modules:
 
 End your phase with finalized requirements and report completion so the next department (`b. Design`) can model the memory specifications.
 
+## ✅ Supervisor Handoff
+
+Before yielding to the Supervisor for validation, confirm:
+1. All checklist items above are marked `[x]`
+2. Artifacts are saved in `.dev_note/01-planning/` with `<number>-<topic>.md` naming
+3. `.dev_note/DASHBOARD.md` is updated with Planning stage status
+4. Execution mode classification is complete for every planned AI capability
+
+> [!IMPORTANT]
+> Declare stage completion explicitly. The Supervisor Agent will validate your outputs before the cycle proceeds to Design.
+
 ## 🔗 Reference Workflows
 For detailed AI module planning procedures, refer to:
 - **Planning Stage Workflow**: [reference/planning.md](reference/planning.md)

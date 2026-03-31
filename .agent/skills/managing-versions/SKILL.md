@@ -82,6 +82,19 @@ Execution trigger: `git commit -F .dev_note/commit_msg.txt`
 - Standard Gerrit pushes (`refs/for/branch`) are completely disabled.
 - To push your finalized changes, execute specifically: `git push origin develRust`.
 
+## ✅ Supervisor Handoff
+
+Before yielding to the Supervisor for final validation, confirm:
+1. All checklist items above are marked `[x]`
+2. Artifacts are saved in `.dev_note/07-commit-and-push/` with `<number>-<topic>.md` naming
+3. `.dev_note/DASHBOARD.md` is updated with Commit & Push stage status
+4. `commit_msg.txt` was used for the commit (no `-m` flag)
+5. Commit message follows Gerrit format (title ≤50 chars, `Why:`/`What:` blocks)
+6. Workspace was cleaned via `cleanup_workspace.sh`
+
+> [!IMPORTANT]
+> Declare stage completion explicitly. The Supervisor Agent will perform the final cycle validation. Upon PASS, the development cycle is complete.
+
 ## 🔗 Reference Workflows
 - **Tizen Workflow Standard Rules**: [reference/commit_push.md](reference/commit_push.md)
 

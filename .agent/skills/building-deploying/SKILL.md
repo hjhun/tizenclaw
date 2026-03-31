@@ -49,6 +49,19 @@ Execute cross-architecture validation via `./deploy.sh -a armv7l --skip-build` (
 - Push and update the generated GBS Output daemon RPM using `sdb push` and an asynchronous `rpm -Uvh --force` configuration within the deploy scripts.
 - Confirm the `tizenclaw` system service daemon restarts correctly on the background via `sdb shell systemctl status tizenclaw` or polling early runtime behaviors. Upon surviving the initial allocation routines, transfer evaluation to the Test Code Review agent.
 
+## ✅ Supervisor Handoff
+
+Before yielding to the Supervisor for validation, confirm:
+1. All checklist items above are marked `[x]`
+2. Artifacts are saved in `.dev_note/05-build-and-deploy/` with `<number>-<topic>.md` naming
+3. `.dev_note/DASHBOARD.md` is updated with Build & Deploy stage status
+4. Both x86_64 AND armv7l builds were executed via `./deploy.sh`
+5. No local `cargo build` was used
+6. Deployment to target was confirmed
+
+> [!IMPORTANT]
+> Declare stage completion explicitly. The Supervisor Agent will validate your outputs before the cycle proceeds to Test & Review.
+
 ## 🔗 Reference Workflows
 - **Autonomous Setup and Deployment Guideline**: [reference/build_deploy.md](reference/build_deploy.md)
 

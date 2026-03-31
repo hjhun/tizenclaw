@@ -40,6 +40,18 @@ Development Progress (TDD Cycle):
 - [ ] Step 4: GBS Build (x86_64 + armv7l) and daemon behavior scenario tests (Refactor)
 ```
 
+## ✅ Supervisor Handoff
+
+Before yielding to the Supervisor for validation, confirm:
+1. All checklist items above are marked `[x]`
+2. Artifacts are saved in `.dev_note/04-development/` with `<number>-<topic>.md` naming
+3. `.dev_note/DASHBOARD.md` is updated with Development stage status
+4. No local `cargo build/test` was executed during this stage
+5. TDD cycle was followed: failing tests written first (Red), then implementation (Green), then refactor
+
+> [!IMPORTANT]
+> Declare stage completion explicitly. The Supervisor Agent will validate your outputs before the cycle proceeds to Build & Deploy.
+
 ## 🔗 Reference Workflows
 Refer to the common autonomous workflows below:
 - **Development Stage Workflow**: [reference/development.md](reference/development.md)

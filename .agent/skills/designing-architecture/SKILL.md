@@ -42,6 +42,18 @@ Review the cognitive loops and module dependencies drafted by the Planner in `do
 ### Step 4: Finalizing Architecture Artifacts
 Conclude by authoring definitive Rust definitions (data structures, generic constraints, subsystem communication graphs) mapping directly to `Cargo.toml` crates like `tizenclaw-core`. Deliver these to the Developer.
 
+## ✅ Supervisor Handoff
+
+Before yielding to the Supervisor for validation, confirm:
+1. All checklist items above are marked `[x]`
+2. Artifacts are saved in `.dev_note/03-design/` with `<number>-<topic>.md` naming
+3. `.dev_note/DASHBOARD.md` is updated with Design stage status
+4. FFI boundaries are explicitly defined with `Send+Sync` specifications
+5. `libloading` dynamic loading strategy is documented
+
+> [!IMPORTANT]
+> Declare stage completion explicitly. The Supervisor Agent will validate your outputs before the cycle proceeds to Development.
+
 ## 🔗 Reference Workflows
 - **Agent Design Optimization Workflow**: [reference/design.md](reference/design.md)
 

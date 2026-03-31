@@ -26,7 +26,8 @@ All development tasks for the Autonomous Agent proceed **sequentially** through 
 No stages can be skipped, and the completion conditions of each stage must be met before moving onto the next.
 
 ```
-1. Planning → 2. Design → 3. Development → 4. Build/Deploy → 5. Test/Review → 6. Commit
+1. Planning → [Supervisor] → 2. Design → [Supervisor] → 3. Development → [Supervisor] →
+4. Build/Deploy → [Supervisor] → 5. Test/Review → [Supervisor] → 6. Commit → [Supervisor]
 ```
 
 > [!IMPORTANT]
@@ -93,10 +94,32 @@ Follow the background limits and sequential execution commands in the environmen
 
 ---
 
-## Supervisor
+## Supervisor (Stage-Gate Validator)
 
-The Supervisor rigorously audits agent stage handovers to maintain elite system-level performance standards.
+The Supervisor is the **active stage-gate validator** that is invoked **after every stage completion** in the development cycle.
+No stage transition occurs without the Supervisor's explicit PASS verdict.
+
 - **Skill Usage**: [`skills/supervising-workflow/SKILL.md`](skills/supervising-workflow/SKILL.md)
+- **Artifact**: Audit records are saved in `.dev_note/08-supervisor/`
+
+### Updated Cycle Diagram (with Supervisor Gates)
+
+```
+1. Planning → [Supervisor Gate] → 2. Design → [Supervisor Gate] → 3. Development → [Supervisor Gate] →
+4. Build/Deploy → [Supervisor Gate] → 5. Test/Review → [Supervisor Gate] → 6. Commit → [Supervisor Gate]
+```
+
+### Rollback Protocol
+
+When the Supervisor detects a violation (e.g., missing artifacts, skipped architecture build, local `cargo` usage, inline `-m` commit):
+
+1. The Supervisor writes a **Violation Report** (`violation-report-<stage>-<attempt>.md`) to `.dev_note/08-supervisor/` documenting which SKILL.md rule was broken.
+2. Control is returned to the **violating stage's agent** with the violation report as corrective guidance.
+3. The stage agent re-reads its SKILL.md, applies the corrective action, and re-executes.
+4. The Supervisor re-validates upon stage completion.
+
+> [!CAUTION]
+> **Retry Limit**: A maximum of **3 retry attempts** per stage gate is allowed. If the violation persists after 3 attempts, the cycle is halted and escalated to the user for manual intervention.
 
 ---
 

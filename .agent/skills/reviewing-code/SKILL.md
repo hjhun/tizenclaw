@@ -41,6 +41,18 @@ Verify the daemon responds to the asynchronous logic branches defined originally
 - **PASS**: Declare zero defects regarding the state machine logic or resource footprint. Hand the project cleanly to the `managing-versions` department.
 - **FAIL**: Expose the memory fault or test failure plainly, forcing a regression back to `c(developing)` / `b(designing)`. Abort iterations naturally if the regression cycles hit 5 repetitions to prevent system lockups.
 
+## ✅ Supervisor Handoff
+
+Before yielding to the Supervisor for validation, confirm:
+1. All checklist items above are marked `[x]`
+2. Artifacts are saved in `.dev_note/06-test-and-code-review/` with `<number>-<topic>.md` naming
+3. `.dev_note/DASHBOARD.md` is updated with Test & Review stage status
+4. Runtime logs from the device were captured and embedded as evidence
+5. A PASS/FAIL verdict was issued with concrete log proofs (not just assertions)
+
+> [!IMPORTANT]
+> Declare stage completion explicitly. The Supervisor Agent will validate your outputs before the cycle proceeds to Commit & Push.
+
 ## 🔗 Reference Workflows
 - **Autonomous QA Guideline**: [reference/test_review.md](reference/test_review.md)
 
