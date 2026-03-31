@@ -62,8 +62,6 @@ DRY_RUN=false
 DEBUG_MODE=false
 WITH_NGROK=false
 WITH_CRUN=false
-RUN_TESTS=false
-RUN_FULL_TESTS=false
 WITH_ASSETS=false
 WITH_BRIDGE=false
 RAG_PROJECT_DIR=""
@@ -119,116 +117,7 @@ load_repo_config() {
   fi
 }
 
-# ─────────────────────────────────────────────
-# Ensure python3 is installed on device
-# ─────────────────────────────────────────────
-ensure_python3_on_device() {
-  if [ "${DRY_RUN}" = true ]; then
-    log "[DRY-RUN] Check/install python3 on device"
-    return 0
-  fi
 
-  # Check if python3 already exists
-  local has_python
-  has_python=$(sdb_shell "ls /usr/bin/python3 2>/dev/null" | tr -d '\r\n' || true)
-  if [ -n "${has_python}" ] && [[ "${has_python}" == *"/python3"* ]]; then
-    ok "python3 already installed on device: ${has_python}"
-    return 0
-  fi
-
-  log "python3 not found on device, installing..."
-
-  if [ -z "${REPO_BASE}" ]; then
-    warn "No base repo URL configured in ${REPO_CONFIG}. Cannot install python3."
-    warn "Please set base repo URL in repo_config.ini"
-    return 1
-  fi
-
-  # Determine arch-specific repo suffix
-  local repo_arch
-  case "${ARCH}" in
-    x86_64)  repo_arch="x86_64" ;;
-    aarch64) repo_arch="aarch64" ;;
-    armv7l)  repo_arch="armv7l" ;;
-    *)       repo_arch="${ARCH}" ;;
-  esac
-
-  local base_url="${REPO_BASE}${repo_arch}/"
-  local tmp_dir="/tmp/tizenclaw_python3_rpms"
-  mkdir -p "${tmp_dir}"
-
-  # Discover available RPM filenames from the repo index
-  log "Fetching RPM index from ${base_url}..."
-  local index_html
-  index_html=$(curl -sL "${base_url}" 2>/dev/null || true)
-  if [ -z "${index_html}" ]; then
-    warn "Failed to fetch repo index from ${base_url}"
-    return 1
-  fi
-
-  # Find python3-base and libpython3 RPM names
-  local python3_base_rpm
-  local libpython3_rpm
-  python3_base_rpm=$(echo "${index_html}" | grep -oE "python3-base-[0-9][^\"]*\.rpm" | sort -V | tail -1 || true)
-  libpython3_rpm=$(echo "${index_html}" | grep -oE "libpython3[_0-9]*-[0-9][^\"]*\.rpm" | sort -V | tail -1 || true)
-
-  if [ -z "${python3_base_rpm}" ]; then
-    warn "python3-base RPM not found in repo index"
-    return 1
-  fi
-
-  local rpms_to_install=()
-
-  # Download python3-base
-  log "Downloading ${python3_base_rpm}..."
-  if curl -sL -o "${tmp_dir}/${python3_base_rpm}" "${base_url}${python3_base_rpm}"; then
-    ok "Downloaded: ${python3_base_rpm}"
-    rpms_to_install+=("${tmp_dir}/${python3_base_rpm}")
-  else
-    warn "Failed to download ${python3_base_rpm}"
-    return 1
-  fi
-
-  # Download libpython3 (if found)
-  if [ -n "${libpython3_rpm}" ]; then
-    log "Downloading ${libpython3_rpm}..."
-    if curl -sL -o "${tmp_dir}/${libpython3_rpm}" "${base_url}${libpython3_rpm}"; then
-      ok "Downloaded: ${libpython3_rpm}"
-      rpms_to_install+=("${tmp_dir}/${libpython3_rpm}")
-    else
-      warn "Failed to download ${libpython3_rpm}, continuing without it"
-    fi
-  fi
-
-  # Push RPMs to device and install
-  for rpm_file in "${rpms_to_install[@]}"; do
-    local rpm_name
-    rpm_name=$(basename "${rpm_file}")
-    log "Pushing ${rpm_name} to device..."
-    run sdb_cmd push "${rpm_file}" "/tmp/"
-    ok "Pushed: ${rpm_name}"
-  done
-
-  # Install all pushed RPMs
-  local device_rpms=""
-  for rpm_file in "${rpms_to_install[@]}"; do
-    device_rpms="${device_rpms} /tmp/$(basename "${rpm_file}")"
-  done
-
-  log "Installing python3 RPMs on device..."
-  sdb_shell "rpm -Uvh --force --nodeps ${device_rpms} 2>&1" || true
-
-  # Clean up host temp files
-  rm -rf "${tmp_dir}"
-
-  # Verify
-  has_python=$(sdb_shell "ls /usr/bin/python3 2>/dev/null" | tr -d '\r\n' || true)
-  if [ -n "${has_python}" ] && [[ "${has_python}" == *"/python3"* ]]; then
-    ok "python3 installed successfully: ${has_python}"
-  else
-    warn "python3 installation may have failed. Tool executor will use fork/exec fallback."
-  fi
-}
 
 # ─────────────────────────────────────────────
 # Auto-detect device architecture via sdb
@@ -292,8 +181,7 @@ ${CYAN}Options:${NC}
   -i, --incremental     Use --incremental and --skip-srcrpm for fast iterative build
   -s, --skip-build      Skip GBS build, deploy existing RPM
   -S, --skip-deploy     Skip device deployment, build only
-  -t, --test            Run E2E smoke tests after deployment
-  -T, --full-test       Run all automated test suites after deployment
+
       --with-assets     Also build and deploy tizenclaw-assets
       --with-bridge     Install TizenClawBridge WGT on the device
       --with-crun       Build crun and enable container execution mode
@@ -307,8 +195,7 @@ ${CYAN}Examples:${NC}
   $(basename "$0") -n                  # Quick rebuild + deploy + run
   $(basename "$0") -i -n               # Fastest iterative rebuild + deploy + run
   $(basename "$0") -s                  # Deploy existing RPM + run
-  $(basename "$0") -t                  # Build + deploy + run E2E tests
-  $(basename "$0") -T                  # Build + deploy + run full verifications
+
   $(basename "$0") --with-assets       # Build + deploy including tizenclaw-assets
   $(basename "$0") --with-bridge       # Deploy and install TizenClawBridge WGT
   $(basename "$0") -w                  # Deploy and install ngrok binary
@@ -330,8 +217,7 @@ parse_args() {
       -i|--incremental) INCREMENTAL=true; shift ;;
       -s|--skip-build) SKIP_BUILD=true; shift ;;
       -S|--skip-deploy) SKIP_DEPLOY=true; shift ;;
-      -t|--test)      RUN_TESTS=true; shift ;;
-      -T|--full-test) RUN_FULL_TESTS=true; shift ;;
+
       --with-assets)   WITH_ASSETS=true; shift ;;
       --with-bridge)   WITH_BRIDGE=true; shift ;;
       --with-crun)     WITH_CRUN=true; shift ;;
@@ -818,76 +704,7 @@ do_restart_and_run() {
   fi
 }
 
-# ─────────────────────────────────────────────
-# Step 5 (optional): E2E Smoke Test
-# ─────────────────────────────────────────────
-do_e2e_tests() {
-  if [ "${RUN_TESTS}" = false ]; then
-    return 0
-  fi
 
-  header "Step 5/5: E2E Smoke Test"
-
-  local test_script="${PROJECT_DIR}/tests/e2e/test_smoke.sh"
-  if [ ! -f "${test_script}" ]; then
-    warn "E2E test script not found: ${test_script}"
-    return 1
-  fi
-
-  local test_args=()
-  if [ -n "${DEVICE_SERIAL}" ]; then
-    test_args+=("-d" "${DEVICE_SERIAL}")
-  fi
-
-  log "Running: ${test_script} ${test_args[*]:-}"
-
-  if [ "${DRY_RUN}" = true ]; then
-    echo -e "  ${YELLOW}[DRY-RUN]${NC} bash ${test_script} ${test_args[*]:-}"
-    return 0
-  fi
-
-  if bash "${test_script}" "${test_args[@]+"${test_args[@]}"}"; then
-    ok "E2E smoke tests passed!"
-  else
-    fail "E2E smoke tests failed. See output above."
-  fi
-}
-
-# ─────────────────────────────────────────────
-# Step 6 (optional): Full Verification Test
-# ─────────────────────────────────────────────
-do_full_tests() {
-  if [ "${RUN_FULL_TESTS}" = false ]; then
-    return 0
-  fi
-
-  header "Step 6: Full Verification Test Suite"
-
-  local test_script="${PROJECT_DIR}/tests/verification/run_all.sh"
-  if [ ! -f "${test_script}" ]; then
-    warn "Full test script not found: ${test_script}"
-    return 1
-  fi
-
-  local test_args=()
-  if [ -n "${DEVICE_SERIAL}" ]; then
-    test_args+=("-d" "${DEVICE_SERIAL}")
-  fi
-
-  log "Running: ${test_script} ${test_args[*]:-}"
-
-  if [ "${DRY_RUN}" = true ]; then
-    echo -e "  ${YELLOW}[DRY-RUN]${NC} bash ${test_script} ${test_args[*]:-}"
-    return 0
-  fi
-
-  # Increase default timeout or provide args if needed
-  if bash "${test_script}" "${test_args[@]+"${test_args[@]}"}"; then
-    ok "Full verification tests passed!"
-  else
-    fail "Full verification tests failed. See output above."
-  fi
-}
 
 # ─────────────────────────────────────────────
 # Summary
@@ -919,10 +736,7 @@ main() {
   do_build_rag
   find_rpm
   do_deploy
-  ensure_python3_on_device
   do_restart_and_run
-  do_e2e_tests
-  do_full_tests
   show_summary
 }
 
