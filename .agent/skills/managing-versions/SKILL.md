@@ -39,7 +39,7 @@ To avoid transferring massive intermediate objects required by Rust compilation 
 > **Extraneous files generated during the daemon evaluation loops MUST NEVER be indexed.** Ensure only actual `src/...` trait additions, tests, or Cargo parameters are integrated.
 
 ### Step 2: Strict Tizen Gerrit History Encoding (Commit Format)
-**[CRITICAL INSTRUCTION]**: Generate your formal commit inside a segregated temporary structure. **Using `git commit -m "..."` via raw CLI interrupts macro validations and is forbidden**. Construct `.dev_note/commit_msg.txt` mirroring the explicit block below natively, executing it fully via `git commit -F .dev_note/commit_msg.txt`.
+**[CRITICAL INSTRUCTION]**: Generate your formal commit inside a segregated temporary structure. **Using `git commit -m "..."` via raw CLI interrupts macro validations and is forbidden**. Construct `.tmp/commit_msg.txt` mirroring the explicit block below natively, executing it fully via `git commit -F .tmp/commit_msg.txt`.
 
 > [!CAUTION]
 > **Definitive Violations:**
@@ -61,7 +61,7 @@ What:
 - **Title Example**: `Implement dbus autonomous listening background module`, NOT `feat: implement async dbus loops`.
 - **Structural Keywords**: Keep `Why:` and `What:` formatting headers completely unaltered natively.
 
-**✅ Elite execution written to `.dev_note/commit_msg.txt`:**
+**✅ Elite execution written to `.tmp/commit_msg.txt`:**
 ```text
 Embed dynamic asynchronous device capability observer
 
@@ -75,7 +75,7 @@ What:
 - Enable missing standard interface Fallbacks within traits
 - Link device profile dynamic symbol integrations flawlessly
 ```
-Execution trigger: `git commit -F .dev_note/commit_msg.txt`
+Execution trigger: `git commit -F .tmp/commit_msg.txt`
 
 ### Step 3: Application of Remote GitHub Directives
 - Our project is actively developed on the `develRust` branch under GitHub, not Gerrit.

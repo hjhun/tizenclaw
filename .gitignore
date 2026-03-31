@@ -81,7 +81,6 @@ tools/skills_backup/
 cli_res.txt
 journal.txt
 .plan/
-.deploy_success
 
 # Agents (Now tracked in repo)
 # .agent/

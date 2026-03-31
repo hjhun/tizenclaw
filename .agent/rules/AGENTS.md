@@ -80,7 +80,7 @@ No stages can be skipped, and the completion conditions of each stage must be me
 - **Skill Usage**: [`skills/managing-versions/SKILL.md`](skills/managing-versions/SKILL.md)
 
 > [!WARNING]
-> **Commit Rule**: Using `git commit -m "..."` is forbidden. Write the message inside `.dev_note/commit_msg.txt` first and execute `git commit -F .dev_note/commit_msg.txt`.
+> **Commit Rule**: Using `git commit -m "..."` is forbidden. Write the message inside `.tmp/commit_msg.txt` first and execute `git commit -F .tmp/commit_msg.txt`.
 
 ---
 

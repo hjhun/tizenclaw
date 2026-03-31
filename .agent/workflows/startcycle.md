@@ -97,7 +97,7 @@ Refer to the `skills/supervising-workflow/SKILL.md` skill to validate Test & Rev
 ### 7. Commit & Push
 Refer to the `skills/managing-versions/SKILL.md` skill to prepare the codebase.
 - **Clean up unnecessary files before committing**: Remove `target/` remnants, `*.rpm` caches, and temp swap files.
-- Command Git via `git commit -F .dev_note/commit_msg.txt` strictly following Gerrit style protocols.
+- Command Git via `git commit -F .tmp/commit_msg.txt` strictly following Gerrit style protocols.
 - Save the deliverables in `.dev_note/07-commit-and-push/`.
 - Update `.dev_note/DASHBOARD.md`.
 
