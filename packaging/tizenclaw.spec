@@ -22,6 +22,14 @@ BuildRequires:  pkgconfig(capi-appfw-event)
 
 # CLI Tools native libs
 # libcurl missing in x86 gb repository, excluded.
+BuildRequires:  pkgconfig(capi-network-connection)
+BuildRequires:  pkgconfig(capi-network-wifi)
+BuildRequires:  pkgconfig(capi-network-wifi-manager)
+BuildRequires:  pkgconfig(capi-network-bluetooth)
+BuildRequires:  pkgconfig(capi-system-info)
+BuildRequires:  pkgconfig(capi-appfw-alarm)
+BuildRequires:  pkgconfig(capi-appfw-app-control)
+BuildRequires:  pkgconfig(notification)
 
 # OpenSSL is statically linked via Rust vendored build (no system OpenSSL needed)
 
