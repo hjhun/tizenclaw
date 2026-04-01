@@ -10,18 +10,11 @@ use super::backend::{self, LlmBackend};
 use super::plugin_llm_backend::PluginLlmBackend;
 use serde_json::Value;
 
-/// Default plugin search directories.
-const DEFAULT_PLUGIN_DIRS: &[&str] = &[
-    "/usr/lib/tizenclaw/plugins/llm",
-];
-
 /// Manages LLM backend creation with plugin support.
 pub struct PluginManager {
     plugin_registry: HashMap<String, PathBuf>,
     /// Map of plugin name -> default JSON configuration parsed from plugin_llm_config.json.
     plugin_configs: HashMap<String, Value>,
-    /// Directories to scan for plugins.
-    plugin_dirs: Vec<PathBuf>,
 }
 
 impl Default for PluginManager {
@@ -35,22 +28,11 @@ impl PluginManager {
         PluginManager {
             plugin_registry: HashMap::new(),
             plugin_configs: HashMap::new(),
-            plugin_dirs: DEFAULT_PLUGIN_DIRS.iter().map(PathBuf::from).collect(),
-        }
-    }
-
-    /// Add a directory to scan for plugins.
-    pub fn add_plugin_dir(&mut self, dir: PathBuf) {
-        if !self.plugin_dirs.contains(&dir) {
-            self.plugin_dirs.push(dir);
         }
     }
 
     /// Scan plugin directories and register discovered plugins via local dirs and pkgmgr.
     pub fn scan_plugins(&mut self, pm: Option<&dyn libtizenclaw_core::framework::PackageManagerProvider>) {
-        for dir in self.plugin_dirs.clone() {
-            self.scan_directory(&dir);
-        }
 
         if let Some(pkgmgr) = pm {
             let pkgs = pkgmgr.get_packages_by_metadata_key("http://tizen.org/metadata/tizenclaw/llm-backend");
@@ -91,34 +73,6 @@ impl PluginManager {
                 self.plugin_registry.len(),
                 self.plugin_registry.keys().collect::<Vec<_>>()
             );
-        }
-    }
-
-    /// Scan a specific directory for `.so` plugin files.
-    pub fn scan_directory(&mut self, dir: &Path) {
-        let entries = match std::fs::read_dir(dir) {
-            Ok(e) => e,
-            Err(_) => return,
-        };
-
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("so") {
-                let name = path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("")
-                    .strip_prefix("lib")
-                    .unwrap_or_else(|| {
-                        path.file_stem().and_then(|s| s.to_str()).unwrap_or("")
-                    })
-                    .to_string();
-
-                if !name.is_empty() {
-                    log::debug!("PluginManager: found plugin '{}' at {:?}", name, path);
-                    self.plugin_registry.insert(name, path);
-                }
-            }
         }
     }
 
