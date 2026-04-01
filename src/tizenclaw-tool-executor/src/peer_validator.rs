@@ -1,7 +1,7 @@
 //! Peer validation via SO_PEERCRED on Unix domain sockets.
 
 use std::os::unix::io::AsRawFd;
-use std::os::unix::net::UnixStream;
+use tokio::net::UnixStream;
 
 /// Validate that the peer process is one of the allowed program names.
 ///

@@ -208,26 +208,12 @@ impl ToolDispatcher {
 
         log::info!("Executing tool '{}': {} {:?}", tool_name, decl.binary_path, cmd_args);
 
-        match Command::new(&decl.binary_path)
-            .args(&cmd_args)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await
-        {
-            Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                let exit_code = output.status.code().unwrap_or(-1);
+        let engine = crate::infra::container_engine::ContainerEngine::new();
+        let args_ref: Vec<&str> = cmd_args.iter().map(|s| s.as_str()).collect();
 
-                json!({
-                    "exit_code": exit_code,
-                    "stdout": stdout,
-                    "stderr": stderr,
-                    "success": output.status.success()
-                })
-            }
-            Err(e) => json!({"error": format!("Failed to execute: {}", e)}),
+        match engine.execute_oneshot(&decl.binary_path, &args_ref).await {
+            Ok(val) => val,
+            Err(e) => json!({"error": format!("Failed to execute via IPC: {}", e)}),
         }
     }
 }

@@ -1,17 +1,17 @@
-//! Container engine — sandbox for tool execution.
+//! Container engine — IPC client for TizenClaw Tool Executor.
 //!
-//! Executes commands in an isolated environment via fork/exec or
-//! Unix domain socket IPC to the tool-executor service.
+//! Supports oneshot, streaming, and interactive modes via 
+//! abstract namespace Unix domain socket and length-prefixed JSON protocol.
 
+use serde_json::{json, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
-use tokio::process::Command;
+use tokio::sync::mpsc;
 
-const TOOL_EXECUTOR_SOCKET: &str = "/run/tizenclaw-tool-executor.socket";
+const SOCKET_NAME: &str = "tizenclaw-tool-executor.sock";
+const MAX_PAYLOAD: usize = 10 * 1024 * 1024;
 
-pub struct ContainerEngine {
-    use_ipc: bool,
-}
+pub struct ContainerEngine;
 
 impl Default for ContainerEngine {
     fn default() -> Self {
@@ -21,57 +21,151 @@ impl Default for ContainerEngine {
 
 impl ContainerEngine {
     pub fn new() -> Self {
-        // Use IPC if the tool executor socket exists
-        let use_ipc = std::path::Path::new(TOOL_EXECUTOR_SOCKET).exists();
-        ContainerEngine { use_ipc }
+        Self
     }
 
-    /// Execute a skill (binary) with arguments, returning stdout.
-    pub async fn execute_skill(&self, binary: &str, args: &[&str], timeout_secs: u64) -> Result<String, String> {
-        if self.use_ipc {
-            self.execute_via_ipc(binary, args, timeout_secs).await
-        } else {
-            self.execute_direct(binary, args, timeout_secs).await
+    async fn connect_ipc() -> Result<UnixStream, String> {
+        let fd = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_STREAM, 0) };
+        if fd < 0 {
+            return Err("Failed to create socket".into());
         }
+
+        let mut addr: libc::sockaddr_un = unsafe { std::mem::zeroed() };
+        addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
+        let bytes = SOCKET_NAME.as_bytes();
+        addr.sun_path[1..1 + bytes.len()].copy_from_slice(unsafe {
+            std::slice::from_raw_parts(bytes.as_ptr() as _, bytes.len())
+        });
+
+        let len = (std::mem::size_of::<libc::sa_family_t>() + 1 + bytes.len()) as libc::socklen_t;
+        let ret = unsafe { libc::connect(fd, &addr as *const _ as _, len) };
+        if ret < 0 {
+            unsafe { libc::close(fd); }
+            // Let the caller fallback to direct execution or fail.
+            return Err("Failed to connect to tizenclaw-tool-executor".into());
+        }
+
+        let opts = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+        unsafe { libc::fcntl(fd, libc::F_SETFL, opts | libc::O_NONBLOCK); }
+
+        use std::os::unix::io::FromRawFd;
+        let std_stream = unsafe { std::os::unix::net::UnixStream::from_raw_fd(fd) };
+        UnixStream::from_std(std_stream).map_err(|e| format!("Tokio wrap failed: {}", e))
     }
 
-    /// Execute Shell code, returning stdout.
-    pub async fn execute_code(&self, code: &str) -> Result<String, String> {
-        self.execute_direct("sh", &["-c", code], 30).await
+    async fn send_payload(stream: &mut UnixStream, val: &Value) -> Result<(), String> {
+        let payload = val.to_string();
+        let len = (payload.len() as u32).to_be_bytes();
+        stream.write_all(&len).await.map_err(|e| format!("Write len failed: {}", e))?;
+        stream.write_all(payload.as_bytes()).await.map_err(|e| format!("Write payload failed: {}", e))?;
+        Ok(())
     }
 
-    async fn execute_direct(&self, binary: &str, args: &[&str], _timeout_secs: u64) -> Result<String, String> {
-        match Command::new(binary).args(args).output().await {
-            Ok(output) => {
-                if output.status.success() {
-                    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-                } else {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    Err(format!("Exit code {}: {}", output.status.code().unwrap_or(-1), stderr))
+    async fn recv_payload(stream: &mut UnixStream) -> Result<Value, String> {
+        let mut len_buf = [0u8; 4];
+        stream.read_exact(&mut len_buf).await.map_err(|e| format!("Read len failed: {}", e))?;
+        let len = u32::from_be_bytes(len_buf) as usize;
+        if len > MAX_PAYLOAD {
+            return Err("Payload too large".into());
+        }
+        let mut buf = vec![0u8; len];
+        stream.read_exact(&mut buf).await.map_err(|e| format!("Read payload failed: {}", e))?;
+        serde_json::from_slice(&buf).map_err(|e| format!("JSON parse failed: {}", e))
+    }
+
+    /// Backwards compatible execute endpoint for oneshot requests inside ToolDispatcher.
+    pub async fn execute_oneshot(&self, binary: &str, args: &[&str]) -> Result<Value, String> {
+        let mut stream = match Self::connect_ipc().await {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!("IPC fallback to direct spawned command due to: {}", e);
+                return self.execute_direct(binary, args).await;
+            }
+        };
+
+        let req = json!({
+            "command": "execute",
+            "tool_name": binary,
+            "args": args,
+            "mode": "oneshot"
+        });
+
+        Self::send_payload(&mut stream, &req).await?;
+
+        let mut stdout = String::new();
+        let mut stderr = String::new();
+        let mut exit_code = -1;
+
+        loop {
+            let resp = match Self::recv_payload(&mut stream).await {
+                Ok(v) => v,
+                Err(e) => return Err(e),
+            };
+
+            if let Some(status) = resp["status"].as_str() {
+                if status == "error" {
+                    return Err(resp["message"].as_str().unwrap_or("Unknown executor error").to_string());
                 }
             }
-            Err(e) => Err(format!("Failed to execute {}: {}", binary, e)),
+
+            match resp["event"].as_str() {
+                Some("stdout") => stdout.push_str(resp["data"].as_str().unwrap_or("")),
+                Some("stderr") => stderr.push_str(resp["data"].as_str().unwrap_or("")),
+                Some("exit") => {
+                    exit_code = resp["code"].as_i64().unwrap_or(-1) as i32;
+                    break;
+                }
+                _ => {}
+            }
         }
+
+        Ok(json!({
+            "exit_code": exit_code,
+            "stdout": stdout,
+            "stderr": stderr,
+            "success": exit_code == 0
+        }))
     }
 
-    async fn execute_via_ipc(&self, binary: &str, args: &[&str], _timeout_secs: u64) -> Result<String, String> {
-        let mut stream = UnixStream::connect(TOOL_EXECUTOR_SOCKET).await
-            .map_err(|e| format!("IPC connect failed: {}", e))?;
-        
-        let mut request = binary.to_string();
-        for arg in args {
-            request.push('\0');
-            request.push_str(arg);
+    /// Stream executor output dynamically
+    pub async fn execute_streaming(&self, binary: &str, args: &[&str]) -> Result<mpsc::Receiver<Value>, String> {
+        let mut stream = Self::connect_ipc().await?;
+        let req = json!({
+            "command": "execute",
+            "tool_name": binary,
+            "args": args,
+            "mode": "streaming"
+        });
+        Self::send_payload(&mut stream, &req).await?;
+
+        let (tx, rx) = mpsc::channel(100);
+        tokio::spawn(async move {
+            loop {
+                match Self::recv_payload(&mut stream).await {
+                    Ok(v) => {
+                        let is_exit = v["event"].as_str() == Some("exit");
+                        let _ = tx.send(v).await;
+                        if is_exit { break; }
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+        Ok(rx)
+    }
+
+    /// Fallback direct mode in case executor daemon isn't running or crashes
+    async fn execute_direct(&self, binary: &str, args: &[&str]) -> Result<Value, String> {
+        match tokio::process::Command::new(binary).args(args).output().await {
+            Ok(output) => {
+                Ok(json!({
+                    "exit_code": output.status.code().unwrap_or(-1),
+                    "stdout": String::from_utf8_lossy(&output.stdout).to_string(),
+                    "stderr": String::from_utf8_lossy(&output.stderr).to_string(),
+                    "success": output.status.success()
+                }))
+            }
+            Err(e) => Err(format!("Direct execute failed: {}", e)),
         }
-        request.push('\n');
-
-        stream.write_all(request.as_bytes()).await
-            .map_err(|e| format!("IPC write failed: {}", e))?;
-
-        let mut response = String::new();
-        stream.read_to_string(&mut response).await
-            .map_err(|e| format!("IPC read failed: {}", e))?;
-
-        Ok(response)
     }
 }

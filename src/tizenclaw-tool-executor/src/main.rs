@@ -1,253 +1,242 @@
-//! tizenclaw-tool-executor — Sandboxed tool execution daemon.
+//! tizenclaw-tool-executor — Asynchronous tool execution daemon.
 //!
 //! Listens on an abstract namespace Unix domain socket and executes
-//! tool scripts on the host Linux. Shell code is run via subprocess.
+//! tool scripts on the host Linux.
+//! Supports oneshot, streaming, and interactive modes via multiplexed JSON.
 //!
 //! Protocol: 4-byte big-endian length prefix + UTF-8 JSON body
-//! Security: SO_PEERCRED validates peer is tizenclaw or tizenclaw-cli.
 
 mod peer_validator;
 
-use std::io::{Read, Write};
-use std::os::unix::net::{UnixListener, UnixStream};
-use std::process::Command;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-
 use serde_json::{json, Value};
+use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{UnixListener, UnixStream};
+use tokio::process::Command;
+use tokio::sync::Mutex;
+use std::process::Stdio;
 
 const SOCKET_NAME: &str = "tizenclaw-tool-executor.sock";
 const MAX_PAYLOAD: usize = 10 * 1024 * 1024;
-const CODE_EXEC_TIMEOUT: u64 = 15;
 
 // ═══════════════════════════════════════════
 //  Socket I/O helpers
 // ═══════════════════════════════════════════
 
-fn recv_exact(stream: &mut UnixStream, buf: &mut [u8]) -> bool {
-    let mut total = 0;
-    while total < buf.len() {
-        match stream.read(&mut buf[total..]) {
-            Ok(0) => return false,
-            Ok(n) => total += n,
-            Err(_) => return false,
-        }
-    }
-    true
-}
-
-fn send_response(stream: &mut UnixStream, resp: &Value) -> bool {
+async fn send_response(stream: &mut UnixStream, resp: &Value) -> bool {
     let payload = resp.to_string();
     let len = (payload.len() as u32).to_be_bytes();
-    if stream.write_all(&len).is_err() {
+    if stream.write_all(&len).await.is_err() {
         return false;
     }
-    stream.write_all(payload.as_bytes()).is_ok()
+    stream.write_all(payload.as_bytes()).await.is_ok()
+}
+
+async fn recv_payload(stream: &mut UnixStream) -> Option<Vec<u8>> {
+    let mut len_buf = [0u8; 4];
+    if stream.read_exact(&mut len_buf).await.is_err() {
+        return None;
+    }
+    let payload_len = u32::from_be_bytes(len_buf) as usize;
+    if payload_len > MAX_PAYLOAD {
+        log::error!("Payload too large: {}", payload_len);
+        return None;
+    }
+    let mut buf = vec![0u8; payload_len];
+    if stream.read_exact(&mut buf).await.is_err() {
+        return None;
+    }
+    Some(buf)
 }
 
 // ═══════════════════════════════════════════
-//  Command Handlers
+//  Handler
 // ═══════════════════════════════════════════
 
-fn handle_diag() -> Value {
-    json!({
-        "status": "ok",
-        "output": format!("tool-executor alive, pid={}", std::process::id())
-    })
-}
-
-fn handle_execute_code(code: &str, timeout: u64) -> Value {
-    if code.is_empty() {
-        return json!({"status": "error", "output": "No code provided"});
-    }
-
-    let result = Command::new("sh")
-        .args(["-c", code])
-        .output();
-
-    match result {
-        Ok(output) => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let exit_code = output.status.code().unwrap_or(-1);
-            let combined = if stderr.is_empty() {
-                stdout.trim().to_string()
-            } else {
-                format!("{}\n{}", stdout.trim(), stderr.trim())
-            };
-            json!({
-                "status": if exit_code == 0 { "ok" } else { "error" },
-                "output": combined,
-                "exit_code": exit_code,
-                "timeout": timeout,
-            })
-        }
-        Err(e) => json!({"status": "error", "output": format!("Failed to execute: {}", e)}),
-    }
-}
-
-fn handle_execute_cli(tool_name: &str, arguments: &str, timeout: u64) -> Value {
-    if tool_name.is_empty() {
-        return json!({"status": "error", "output": "No tool_name"});
-    }
-
-    let bin_path = if tool_name.starts_with('/') {
-        tool_name.to_string()
-    } else {
-        format!("/usr/bin/{}", tool_name)
-    };
-
-    if !std::path::Path::new(&bin_path).exists() {
-        return json!({"status": "error", "output": format!("CLI binary not found: {}", bin_path)});
-    }
-
-    let cmd_str = format!("{} {} 2>&1", bin_path, arguments);
-    let result = Command::new("sh")
-        .args(["-c", &cmd_str])
-        .output();
-
-    match result {
-        Ok(output) => {
-            let out_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            let exit_code = output.status.code().unwrap_or(-1);
-
-            // Try to parse output as JSON
-            let result_json = match serde_json::from_str::<Value>(&out_str) {
-                Ok(mut v) => {
-                    v["exit_code"] = json!(exit_code);
-                    v
-                }
-                Err(_) => json!({
-                    "tool": tool_name,
-                    "output": out_str,
-                    "exit_code": exit_code,
-                    "timeout": timeout,
-                }),
-            };
-
-            json!({"status": "ok", "output": result_json.to_string()})
-        }
-        Err(e) => json!({"status": "error", "output": format!("popen failed: {}", e)}),
-    }
-}
-
-fn handle_install_package(pkg_type: &str, _name: &str) -> Value {
-    json!({"status": "error", "output": format!("Package installation not supported in pure-shell mode: {}", pkg_type)})
-}
-
-fn handle_tool(tool: &str, args_str: &str) -> Value {
-    if tool.is_empty() {
-        return json!({"status": "error", "output": "No tool specified"});
-    }
-
-    // Look for tool script in skills directory
-    let skills_dir = "/opt/usr/share/tizen-tools/skills";
-    let script_path = format!("{}/{}/run.sh", skills_dir, tool);
-
-    if !std::path::Path::new(&script_path).exists() {
-        return json!({
-            "status": "error",
-            "output": format!("Tool script not found: {}", script_path)
-        });
-    }
-
-    let cmd = format!("bash {} '{}' 2>&1", script_path, args_str);
-    match Command::new("sh").args(["-c", &cmd]).output() {
-        Ok(output) => {
-            let out_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            let exit_code = output.status.code().unwrap_or(-1);
-            json!({
-                "status": if exit_code == 0 { "ok" } else { "error" },
-                "output": out_str,
-                "exit_code": exit_code,
-            })
-        }
-        Err(e) => json!({"status": "error", "output": format!("Tool exec failed: {}", e)}),
-    }
-}
-
-// ═══════════════════════════════════════════
-//  Client handler
-// ═══════════════════════════════════════════
-
-fn handle_client(mut stream: UnixStream) {
+async fn handle_client(mut stream: UnixStream) {
     log::debug!("New client connection");
 
     if !peer_validator::validate(&stream, &["tizenclaw", "tizenclaw-cli"]) {
         log::warn!("Rejecting unauthenticated peer");
-        let resp = json!({"status": "error", "output": "Permission denied: caller not authorized"});
-        let _ = send_response(&mut stream, &resp);
+        let resp = json!({"status": "error", "message": "Permission denied: caller not authorized"});
+        let _ = send_response(&mut stream, &resp).await;
         return;
     }
 
-    loop {
-        let mut len_buf = [0u8; 4];
-        if !recv_exact(&mut stream, &mut len_buf) {
-            break;
+    // Read initial execution command
+    let payload = match recv_payload(&mut stream).await {
+        Some(p) => p,
+        None => return,
+    };
+
+    let req: Value = match serde_json::from_slice(&payload) {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = send_response(&mut stream, &json!({"status": "error", "message": format!("Bad JSON: {}", e)})).await;
+            return;
         }
+    };
 
-        let payload_len = u32::from_be_bytes(len_buf) as usize;
-        if payload_len > MAX_PAYLOAD {
-            log::error!("Payload too large: {}", payload_len);
-            let _ = send_response(&mut stream, &json!({"status": "error", "output": "Payload too large"}));
-            break;
-        }
+    let command = req["command"].as_str().unwrap_or("");
+    if command != "execute" {
+        let _ = send_response(&mut stream, &json!({"status": "error", "message": "Expected 'execute' command as first payload"})).await;
+        return;
+    }
 
-        let mut buf = vec![0u8; payload_len];
-        if !recv_exact(&mut stream, &mut buf) {
-            break;
-        }
+    let tool_name = req["tool_name"].as_str().unwrap_or("");
+    let mode = req["mode"].as_str().unwrap_or("oneshot"); // oneshot, streaming, interactive
+    let mut args: Vec<String> = vec![];
 
-        let req: Value = match serde_json::from_slice(&buf) {
-            Ok(v) => v,
-            Err(e) => {
-                let _ = send_response(&mut stream, &json!({"status": "error", "output": format!("Bad JSON: {}", e)}));
-                continue;
+    if let Some(arr) = req["args"].as_array() {
+        for a in arr {
+            if let Some(s) = a.as_str() {
+                args.push(s.to_string());
             }
-        };
-
-        let command = req["command"].as_str().unwrap_or("");
-        log::info!("Command: {}", command);
-
-        let resp = match command {
-            "diag" => handle_diag(),
-            "execute_code" => {
-                let code = req["code"].as_str().unwrap_or("");
-                let timeout = req["timeout"].as_u64().unwrap_or(CODE_EXEC_TIMEOUT);
-                handle_execute_code(code, timeout)
-            }
-            "execute_cli" => {
-                let tool_name = req["tool_name"].as_str().unwrap_or("");
-                let arguments = req["arguments"].as_str().unwrap_or("");
-                let timeout = req["timeout"].as_u64().unwrap_or(10);
-                handle_execute_cli(tool_name, arguments, timeout)
-            }
-            "install_package" => {
-                let pkg_type = req["type"].as_str().unwrap_or("pip");
-                let name = req["name"].as_str().unwrap_or("");
-                handle_install_package(pkg_type, name)
-            }
-            _ => {
-                // Default: tool execution
-                let tool = req["tool"].as_str().unwrap_or("");
-                let args = req["args"].as_str().unwrap_or("{}");
-                handle_tool(tool, args)
-            }
-        };
-
-        if !send_response(&mut stream, &resp) {
-            break;
         }
     }
 
-    log::debug!("Client disconnected");
+    if tool_name.is_empty() {
+        let _ = send_response(&mut stream, &json!({"status": "error", "message": "No tool_name provided"})).await;
+        return;
+    }
+
+    // Resolve binary path
+    let bin_path = if tool_name.starts_with('/') {
+        tool_name.to_string()
+    } else {
+        let cli_path = format!("/opt/usr/share/tizen-tools/cli/{}", tool_name);
+        if std::path::Path::new(&cli_path).exists() {
+            cli_path
+        } else {
+            format!("/usr/bin/{}", tool_name)
+        }
+    };
+
+    if !std::path::Path::new(&bin_path).exists() {
+        let _ = send_response(&mut stream, &json!({"status": "error", "message": format!("CLI binary not found: {}", bin_path)})).await;
+        return;
+    }
+
+    log::info!("Executing [{}]: {} {:?}", mode, bin_path, args);
+
+    let mut child = match Command::new(&bin_path)
+        .args(&args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = send_response(&mut stream, &json!({"status": "error", "message": format!("Spawn failed: {}", e)})).await;
+            return;
+        }
+    };
+
+    let mut stdout = child.stdout.take().expect("Failed to grab stdout");
+    let mut stderr = child.stderr.take().expect("Failed to grab stderr");
+    let mut stdin_opt = child.stdin.take();
+
+    let (mut rx, mut tx) = stream.into_split();
+    let tx_mutex = Arc::new(Mutex::new(tx));
+    
+    let stdout_tx = tx_mutex.clone();
+    let stdout_task = tokio::spawn(async move {
+        let mut buf = [0u8; 4096];
+        loop {
+            match stdout.read(&mut buf).await {
+                Ok(0) => break, // EOF
+                Ok(n) => {
+                    let chunk = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let resp = json!({"event": "stdout", "data": chunk});
+                    let mut lock = stdout_tx.lock().await;
+                    let payload = resp.to_string();
+                    let len = (payload.len() as u32).to_be_bytes();
+                    let _ = lock.write_all(&len).await;
+                    let _ = lock.write_all(payload.as_bytes()).await;
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let stderr_tx = tx_mutex.clone();
+    let stderr_task = tokio::spawn(async move {
+        let mut buf = [0u8; 4096];
+        loop {
+            match stderr.read(&mut buf).await {
+                Ok(0) => break, // EOF
+                Ok(n) => {
+                    let chunk = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let resp = json!({"event": "stderr", "data": chunk});
+                    let mut lock = stderr_tx.lock().await;
+                    let payload = resp.to_string();
+                    let len = (payload.len() as u32).to_be_bytes();
+                    let _ = lock.write_all(&len).await;
+                    let _ = lock.write_all(payload.as_bytes()).await;
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let stdin_task = {
+        if mode == "interactive" {
+            if let Some(mut stdin) = stdin_opt {
+                tokio::spawn(async move {
+                    loop {
+                        let mut len_buf = [0u8; 4];
+                        if rx.read_exact(&mut len_buf).await.is_err() { break; }
+                        let payload_len = u32::from_be_bytes(len_buf) as usize;
+                        if payload_len > MAX_PAYLOAD { break; }
+                        let mut buf = vec![0u8; payload_len];
+                        if rx.read_exact(&mut buf).await.is_err() { break; }
+                        
+                        if let Ok(req) = serde_json::from_slice::<Value>(&buf) {
+                            if req["command"] == "stdin" {
+                                if let Some(data) = req["data"].as_str() {
+                                    if stdin.write_all(data.as_bytes()).await.is_err() {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                })
+            } else { tokio::spawn(async {}) }
+        } else { tokio::spawn(async {}) }
+    };
+
+    let exit_status = match child.wait().await {
+        Ok(status) => status,
+        Err(e) => {
+            log::error!("Failed to wait on child: {}", e);
+            return;
+        }
+    };
+    
+    let _ = tokio::join!(stdout_task, stderr_task, stdin_task);
+    
+    let resp = json!({
+        "event": "exit",
+        "code": exit_status.code().unwrap_or(-1)
+    });
+    
+    let mut lock = tx_mutex.lock().await;
+    let payload = resp.to_string();
+    let len = (payload.len() as u32).to_be_bytes();
+    let _ = lock.write_all(&len).await;
+    let _ = lock.write_all(payload.as_bytes()).await;
+
+    log::debug!("Client session completed");
 }
 
 // ═══════════════════════════════════════════
 //  Main
 // ═══════════════════════════════════════════
 
-fn main() {
+#[tokio::main]
+async fn main() {
     // Simple conditionally dual logger
     struct PlatformLogger;
     impl log::Log for PlatformLogger {
@@ -281,15 +270,7 @@ fn main() {
     let _ = log::set_logger(&LOGGER);
     log::set_max_level(log::LevelFilter::Info);
 
-    log::info!(
-        "tizenclaw-tool-executor starting (pid={})",
-        std::process::id()
-    );
-
-    // Handle signals
-    let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
-    ctrlc_handler(r);
+    log::info!("tizenclaw-tool-executor starting (pid={})", std::process::id());
 
     // Check systemd socket activation
     let listener = match systemd_socket() {
@@ -299,18 +280,10 @@ fn main() {
 
     log::info!("Listening on abstract socket: @{}", SOCKET_NAME);
 
-    // Set non-blocking for shutdown polling
-    listener
-        .set_nonblocking(true)
-        .expect("Failed to set non-blocking");
-
-    while running.load(Ordering::SeqCst) {
-        match listener.accept() {
+    loop {
+        match listener.accept().await {
             Ok((stream, _)) => {
-                std::thread::spawn(move || handle_client(stream));
-            }
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                std::thread::sleep(std::time::Duration::from_millis(200));
+                tokio::spawn(handle_client(stream));
             }
             Err(e) => {
                 log::error!("accept() failed: {}", e);
@@ -327,15 +300,17 @@ fn main() {
 // ═══════════════════════════════════════════
 
 fn systemd_socket() -> Option<UnixListener> {
+    use std::os::unix::io::FromRawFd;
     let listen_fds = std::env::var("LISTEN_FDS").ok()?;
     let listen_pid = std::env::var("LISTEN_PID").ok()?;
     let pid: u32 = listen_pid.parse().ok()?;
     let fds: i32 = listen_fds.parse().ok()?;
 
     if pid == std::process::id() && fds >= 1 {
-        use std::os::unix::io::FromRawFd;
         log::info!("Using systemd socket activation (fd=3)");
-        Some(unsafe { UnixListener::from_raw_fd(3) })
+        let std_listener = unsafe { std::os::unix::net::UnixListener::from_raw_fd(3) };
+        std_listener.set_nonblocking(true).ok()?;
+        UnixListener::from_std(std_listener).ok()
     } else {
         None
     }
@@ -379,25 +354,9 @@ fn create_abstract_socket() -> std::io::Result<UnixListener> {
         return Err(std::io::Error::last_os_error());
     }
 
-    Ok(unsafe { UnixListener::from_raw_fd(fd) })
-}
+    let opts = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    unsafe { libc::fcntl(fd, libc::F_SETFL, opts | libc::O_NONBLOCK); }
 
-fn ctrlc_handler(running: Arc<AtomicBool>) {
-    unsafe {
-        libc::signal(libc::SIGPIPE, libc::SIG_IGN);
-    }
-    // Simple SIGTERM/SIGINT handler via thread
-    std::thread::spawn(move || {
-        let mut sigset: libc::sigset_t = unsafe { std::mem::zeroed() };
-        unsafe {
-            libc::sigemptyset(&mut sigset);
-            libc::sigaddset(&mut sigset, libc::SIGTERM);
-            libc::sigaddset(&mut sigset, libc::SIGINT);
-            libc::pthread_sigmask(libc::SIG_BLOCK, &sigset, std::ptr::null_mut());
-
-            let mut sig = 0;
-            libc::sigwait(&sigset, &mut sig);
-        }
-        running.store(false, Ordering::SeqCst);
-    });
+    let std_listener = unsafe { std::os::unix::net::UnixListener::from_raw_fd(fd) };
+    UnixListener::from_std(std_listener)
 }

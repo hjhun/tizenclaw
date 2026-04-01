@@ -112,20 +112,12 @@ impl SystemCliAdapter {
             }
         }
 
-        match tokio::process::Command::new(&tool.binary_path)
-            .args(&cmd_args)
-            .output()
-            .await
-        {
-            Ok(output) => {
-                json!({
-                    "exit_code": output.status.code().unwrap_or(-1),
-                    "stdout": String::from_utf8_lossy(&output.stdout).to_string(),
-                    "stderr": String::from_utf8_lossy(&output.stderr).to_string(),
-                    "success": output.status.success()
-                })
-            }
-            Err(e) => json!({"error": format!("Failed to execute: {}", e)}),
+        let engine = crate::infra::container_engine::ContainerEngine::new();
+        let args_ref: Vec<&str> = cmd_args.iter().map(|s| s.as_str()).collect();
+
+        match engine.execute_oneshot(&tool.binary_path, &args_ref).await {
+            Ok(val) => val,
+            Err(e) => json!({"error": format!("Failed to execute via IPC: {}", e)}),
         }
     }
 }
