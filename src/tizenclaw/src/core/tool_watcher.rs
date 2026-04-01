@@ -39,12 +39,19 @@ impl ToolWatcher {
             let mut interval = tokio::time::interval(Duration::from_secs(3));
             let mut last_modified_times: std::collections::HashMap<PathBuf, std::time::SystemTime> = std::collections::HashMap::new();
 
-            fn scan_dir_recursive(dir: &Path, max_depth: usize, current_depth: usize, last_modified_times: &mut std::collections::HashMap<PathBuf, std::time::SystemTime>) -> bool {
+            fn scan_dir_recursive(
+                dir: &Path,
+                max_depth: usize,
+                current_depth: usize,
+                last_modified_times: &mut std::collections::HashMap<PathBuf, std::time::SystemTime>,
+                current_seen: &mut std::collections::HashSet<PathBuf>,
+            ) -> bool {
                 if current_depth > max_depth { return false; }
                 let mut changed = false;
                 if let Ok(entries) = std::fs::read_dir(dir) {
                     for entry in entries.flatten() {
                         let path = entry.path();
+                        current_seen.insert(path.clone());
                         if let Ok(metadata) = entry.metadata() {
                             if let Ok(modified) = metadata.modified() {
                                 match last_modified_times.get(&path) {
@@ -61,7 +68,7 @@ impl ToolWatcher {
                             }
                             // Recurse into subdirectories
                             if metadata.is_dir() {
-                                if scan_dir_recursive(&path, max_depth, current_depth + 1, last_modified_times) {
+                                if scan_dir_recursive(&path, max_depth, current_depth + 1, last_modified_times, current_seen) {
                                     changed = true;
                                 }
                             }
@@ -73,18 +80,29 @@ impl ToolWatcher {
 
             // Populate initial state
             for dir in &watch_dirs {
-                scan_dir_recursive(dir, 3, 0, &mut last_modified_times);
+                let mut current_seen = std::collections::HashSet::new();
+                scan_dir_recursive(dir, 3, 0, &mut last_modified_times, &mut current_seen);
             }
 
             loop {
                 interval.tick().await;
 
                 let mut changed = false;
+                let mut current_seen = std::collections::HashSet::new();
 
                 // Recursive polling check: Any change in modified time or new files?
                 for dir in &watch_dirs {
-                    if scan_dir_recursive(dir, 3, 0, &mut last_modified_times) {
+                    if scan_dir_recursive(dir, 3, 0, &mut last_modified_times, &mut current_seen) {
                         changed = true;
+                    }
+                }
+
+                // Detect deleted files
+                let prev_keys: Vec<PathBuf> = last_modified_times.keys().cloned().collect();
+                for k in prev_keys {
+                    if !current_seen.contains(&k) {
+                        changed = true;
+                        last_modified_times.remove(&k);
                     }
                 }
 

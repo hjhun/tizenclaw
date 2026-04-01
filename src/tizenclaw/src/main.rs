@@ -72,7 +72,12 @@ async fn main() {
     );
     let agent_clone_watcher = agent.clone();
     tool_watcher.set_change_callback(move || {
-        agent_clone_watcher.reload_tools();
+        let agent = agent_clone_watcher.clone();
+        tokio::spawn(async move {
+            agent.reload_tools().await;
+            // Trigger automatic regeneration of tools.md and index.md using system context
+            agent.run_startup_indexing().await;
+        });
     });
     let _watcher_handle = tool_watcher.start();
 
