@@ -161,10 +161,10 @@ impl PackageManagerProvider for TizenPackageManager {
                 let mut c_pkgid: *mut std::os::raw::c_char = std::ptr::null_mut();
                 if pkgmgrinfo_pkginfo_get_pkgid(handle, &mut c_pkgid) == PMINFO_R_OK && !c_pkgid.is_null() {
                     let s = std::ffi::CStr::from_ptr(c_pkgid).to_string_lossy().into_owned();
+                    log::warn!("Pkgmgr filter matched plugin: {}", s);
                     (*vec_ptr).push(s);
-                    libc::free(c_pkgid as *mut _);
                 }
-                0
+                0 // Return 0 (true/success in some Tizen APIs) to naturally traverse multiple plugins
             }
 
             pkgmgrinfo_pkginfo_metadata_filter_foreach(
@@ -188,9 +188,13 @@ impl PackageManagerProvider for TizenPackageManager {
             use crate::tizen_sys::pkgmgr_info::*;
             let mut pkginfo: pkgmgrinfo_pkginfo_h = std::ptr::null_mut();
             let c_pkgid = std::ffi::CString::new(pkg_id).unwrap();
+            let uid = libc::getuid() as std::os::raw::c_int;
             
-            if pkgmgrinfo_pkginfo_get_pkginfo(c_pkgid.as_ptr(), &mut pkginfo) != PMINFO_R_OK || pkginfo.is_null() {
-                return None;
+            if pkgmgrinfo_pkginfo_get_usr_pkginfo(c_pkgid.as_ptr(), uid, &mut pkginfo) != PMINFO_R_OK || pkginfo.is_null() {
+                // Fallback to system package info if user-specific info fails
+                if pkgmgrinfo_pkginfo_get_pkginfo(c_pkgid.as_ptr(), &mut pkginfo) != PMINFO_R_OK || pkginfo.is_null() {
+                    return None;
+                }
             }
 
             let mut c_val: *mut std::os::raw::c_char = std::ptr::null_mut();
@@ -199,7 +203,6 @@ impl PackageManagerProvider for TizenPackageManager {
 
             if pkgmgrinfo_pkginfo_get_metadata_value(pkginfo, c_key.as_ptr(), &mut c_val) == PMINFO_R_OK && !c_val.is_null() {
                 result = Some(std::ffi::CStr::from_ptr(c_val).to_string_lossy().into_owned());
-                libc::free(c_val as *mut _);
             }
 
             pkgmgrinfo_pkginfo_destroy_pkginfo(pkginfo);
@@ -212,9 +215,13 @@ impl PackageManagerProvider for TizenPackageManager {
             use crate::tizen_sys::pkgmgr_info::*;
             let mut pkginfo: pkgmgrinfo_pkginfo_h = std::ptr::null_mut();
             let c_pkgid = std::ffi::CString::new(pkg_id).unwrap();
+            let uid = libc::getuid() as std::os::raw::c_int;
 
-            if pkgmgrinfo_pkginfo_get_pkginfo(c_pkgid.as_ptr(), &mut pkginfo) != PMINFO_R_OK || pkginfo.is_null() {
-                return None;
+            if pkgmgrinfo_pkginfo_get_usr_pkginfo(c_pkgid.as_ptr(), uid, &mut pkginfo) != PMINFO_R_OK || pkginfo.is_null() {
+                // Fallback to system package info if user-specific info fails
+                if pkgmgrinfo_pkginfo_get_pkginfo(c_pkgid.as_ptr(), &mut pkginfo) != PMINFO_R_OK || pkginfo.is_null() {
+                    return None;
+                }
             }
 
             let mut c_val: *mut std::os::raw::c_char = std::ptr::null_mut();
@@ -222,7 +229,6 @@ impl PackageManagerProvider for TizenPackageManager {
 
             if pkgmgrinfo_pkginfo_get_root_path(pkginfo, &mut c_val) == PMINFO_R_OK && !c_val.is_null() {
                 result = Some(std::ffi::CStr::from_ptr(c_val).to_string_lossy().into_owned());
-                libc::free(c_val as *mut _);
             }
 
             pkgmgrinfo_pkginfo_destroy_pkginfo(pkginfo);
