@@ -39,17 +39,41 @@ impl ToolWatcher {
             let mut interval = tokio::time::interval(Duration::from_secs(3));
             let mut last_modified_times: std::collections::HashMap<PathBuf, std::time::SystemTime> = std::collections::HashMap::new();
 
-            // Populate initial state
-            for dir in &watch_dirs {
+            fn scan_dir_recursive(dir: &Path, max_depth: usize, current_depth: usize, last_modified_times: &mut std::collections::HashMap<PathBuf, std::time::SystemTime>) -> bool {
+                if current_depth > max_depth { return false; }
+                let mut changed = false;
                 if let Ok(entries) = std::fs::read_dir(dir) {
                     for entry in entries.flatten() {
+                        let path = entry.path();
                         if let Ok(metadata) = entry.metadata() {
                             if let Ok(modified) = metadata.modified() {
-                                last_modified_times.insert(entry.path(), modified);
+                                match last_modified_times.get(&path) {
+                                    Some(&last_mod) if modified > last_mod => {
+                                        changed = true;
+                                        last_modified_times.insert(path.clone(), modified);
+                                    }
+                                    None => {
+                                        changed = true;
+                                        last_modified_times.insert(path.clone(), modified);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            // Recurse into subdirectories
+                            if metadata.is_dir() {
+                                if scan_dir_recursive(&path, max_depth, current_depth + 1, last_modified_times) {
+                                    changed = true;
+                                }
                             }
                         }
                     }
                 }
+                changed
+            }
+
+            // Populate initial state
+            for dir in &watch_dirs {
+                scan_dir_recursive(dir, 3, 0, &mut last_modified_times);
             }
 
             loop {
@@ -57,28 +81,10 @@ impl ToolWatcher {
 
                 let mut changed = false;
 
-                // Simple polling check: Any change in modified time or new files?
+                // Recursive polling check: Any change in modified time or new files?
                 for dir in &watch_dirs {
-                    if let Ok(entries) = std::fs::read_dir(dir) {
-                        for entry in entries.flatten() {
-                            let path = entry.path();
-                            if let Ok(metadata) = entry.metadata() {
-                                if let Ok(modified) = metadata.modified() {
-                                    match last_modified_times.get(&path) {
-                                        Some(&last_mod) if modified > last_mod => {
-                                            changed = true;
-                                            last_modified_times.insert(path, modified);
-                                        }
-                                        None => {
-                                            // New file detected
-                                            changed = true;
-                                            last_modified_times.insert(path, modified);
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                            }
-                        }
+                    if scan_dir_recursive(dir, 3, 0, &mut last_modified_times) {
+                        changed = true;
                     }
                 }
 

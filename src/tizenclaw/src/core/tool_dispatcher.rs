@@ -83,7 +83,7 @@ impl ToolDispatcher {
     }
 
     fn parse_tool_md(content: &str, tool_dir: &std::path::Path) -> Option<ToolDecl> {
-        // Parse simple YAML-like frontmatter from tool.md
+        // Parse simple YAML-like frontmatter or markdown headers from tool.md
         let lines: Vec<&str> = content.lines().collect();
         let mut name = String::new();
         let mut description = String::new();
@@ -100,17 +100,63 @@ impl ToolDispatcher {
                 binary = line[7..].trim().trim_matches('"').to_string();
             } else if line.starts_with("timeout:") {
                 timeout = line[8..].trim().parse().unwrap_or(30);
+            } else if line.starts_with("# ") && name.is_empty() {
+                // Fallback to markdown header logic
+                name = line[2..].trim().to_string();
+            } else if (line.starts_with("**Description**: ") || line.starts_with("Description: ")) && description.is_empty() {
+                let prefix_len = if line.starts_with("**Description**:") { 16 } else { 12 };
+                let rest = line[prefix_len..].trim();
+                let clean_rest = rest.trim_start_matches(':').trim();
+                description = clean_rest.to_string();
             }
         }
 
         if name.is_empty() {
             name = tool_dir.file_name()?.to_str()?.to_string();
         }
+
+        let original_name = name.clone();
+
+        // Sanitize name for OpenAI function calling rules (^[a-zA-Z0-9_-]+$)
+        let clean_name: String = name.chars()
+            .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .collect();
+        name = clean_name.trim_matches('_').to_string();
+        
+        if name.is_empty() {
+            name = "unknown_tool".into();
+        }
         if binary.is_empty() {
-            // Default: look for a binary with the tool name
-            let default_bin = format!("/usr/bin/{}", name);
-            if std::path::Path::new(&default_bin).exists() {
-                binary = default_bin;
+            // Priority 1: Check if binary exists inside tool's own directory
+            let local_bin = tool_dir.join(&original_name);
+            if local_bin.exists() {
+                binary = local_bin.to_string_lossy().to_string();
+            } else {
+                // Priority 2: Check Tizen specific CLI path
+                let tizen_bin = format!("/opt/usr/share/tizen-tools/cli/{}", original_name);
+                if std::path::Path::new(&tizen_bin).exists() {
+                    binary = tizen_bin;
+                } else {
+                    // Priority 3: Check system bin
+                    let default_bin = format!("/usr/bin/{}", original_name);
+                    if std::path::Path::new(&default_bin).exists() {
+                        binary = default_bin;
+                    } else {
+                        // Fallback to tool dir name
+                        let dir_name = tool_dir.file_name().unwrap_or_default().to_string_lossy().to_string();
+                        let dir_bin = format!("/usr/bin/{}", dir_name);
+                        let tizen_dir_bin = format!("/opt/usr/share/tizen-tools/cli/{}", dir_name);
+                        
+                        if std::path::Path::new(&tizen_dir_bin).exists() {
+                            binary = tizen_dir_bin;
+                        } else if std::path::Path::new(&dir_bin).exists() {
+                            binary = dir_bin;
+                        } else {
+                            // Fallback to local path string anyway
+                            binary = local_bin.to_string_lossy().to_string();
+                        }
+                    }
+                }
             }
         }
 

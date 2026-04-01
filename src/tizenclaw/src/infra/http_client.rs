@@ -157,7 +157,13 @@ pub async fn http_post(
             }
             Ok(resp) => return resp,
             Err(e) => {
-                log::warn!("HTTP POST failed: {} ({}/{})", e, attempt + 1, max_retries);
+                let err_str = format!("HTTP POST failed: {} ({}/{})\n", e, attempt + 1, max_retries);
+                log::warn!("{}", err_str.trim());
+                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/http_err.log") {
+                    use std::io::Write;
+                    let _ = f.write_all(err_str.as_bytes());
+                }
+                
                 if attempt == max_retries {
                     return HttpResponse {
                         status_code: 0,
@@ -230,12 +236,21 @@ async fn do_post(url: &str, headers: &[(&str, &str)], body: &str, _timeout_secs:
         Ok(resp) => {
             let status = resp.status();
             match resp.text().await {
-                Ok(body_str) => Ok(HttpResponse {
-                    status_code: status.as_u16(),
-                    body: body_str,
-                    success: status.is_success(),
-                    error: if status.is_success() { String::new() } else { format!("HTTP {}", status.as_u16()) },
-                }),
+                Ok(body_str) => {
+                    if !status.is_success() {
+                        let err_str = format!("HTTP {} from {}:\n{}\n", status.as_u16(), url, body_str);
+                        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/http_err.log") {
+                            use std::io::Write;
+                            let _ = f.write_all(err_str.as_bytes());
+                        }
+                    }
+                    Ok(HttpResponse {
+                        status_code: status.as_u16(),
+                        body: body_str,
+                        success: status.is_success(),
+                        error: if status.is_success() { String::new() } else { format!("HTTP {}", status.as_u16()) },
+                    })
+                },
                 Err(e) => Err(format!("Failed to read body: {}", e)),
             }
         }

@@ -33,6 +33,11 @@ async fn main() {
     let platform = libtizenclaw::PlatformContext::detect();
     platform.paths.ensure_dirs();
 
+    // Fix OpenSSL vendored TLS handshake on Tizen by explicitly exporting the System CA bundle
+    if std::path::Path::new("/etc/ssl/ca-bundle.pem").exists() {
+        std::env::set_var("SSL_CERT_FILE", "/etc/ssl/ca-bundle.pem");
+    }
+
     // ── Phase 2: Initialize logging (platform-aware) ──
     // The platform logger is loaded dynamically from the platform context
     common::logging::init_with_logger(Some(platform.logger.clone()));
