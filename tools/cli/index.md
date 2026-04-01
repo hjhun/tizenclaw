@@ -12,7 +12,7 @@ CLI tools for the TizenClaw agent. All tools are installed under
 | [tizen-device-info-cli](#tizen-device-info-cli) | Device Info | Battery, CPU, memory, storage, thermal, display, settings |
 | [tizen-file-manager-cli](#tizen-file-manager-cli) | File System | Read, write, copy, move, remove, list, mkdir, download |
 | [tizen-hardware-control-cli](#tizen-hardware-control-cli) | Hardware | Haptic vibration, LED flash, power lock, feedback |
-| [tizen-media-cli](#tizen-media-cli) | Media | Query media DB, extract metadata, MIME type lookup |
+
 | [tizen-network-info-cli](#tizen-network-info-cli) | Network | Wi-Fi, Bluetooth, network status, scan, data usage |
 | [tizen-notification-cli](#tizen-notification-cli) | Notification | Send notifications, schedule alarms |
 | [tizen-sensor-cli](#tizen-sensor-cli) | Sensor | Read accelerometer, gyroscope, light, proximity, etc. |
@@ -84,15 +84,7 @@ Control device hardware: vibration, LED, power locks, feedback patterns.
 | `power --action lock\|unlock --resource display\|cpu` | Lock/unlock power state |
 | `feedback --pattern <NAME>` | Play feedback pattern (TAP, MESSAGE, WAKEUP, etc.) |
 
-## tizen-media-cli
-Query media content database, extract file metadata, MIME type lookup.
 
-| Command | Description |
-|---------|-------------|
-| `content [--type image\|video\|sound\|music\|all] [--max N]` | List media files from content DB |
-| `metadata --path <file>` | Extract metadata (duration, bitrate, artist, title, etc.) |
-| `mime --path <file>` | Get MIME type for a file |
-| `mime-ext --mime <type>` | Get file extensions for a MIME type |
 
 ## tizen-network-info-cli
 Query network, Wi-Fi, Bluetooth status and scan devices.

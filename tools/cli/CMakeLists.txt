@@ -10,7 +10,7 @@ set(TARGET_TIZEN_SENSOR_CLI tizen-sensor-cli)
 set(TARGET_TIZEN_WEB_SEARCH_CLI tizen-web-search-cli)
 set(TARGET_TIZEN_FILE_MANAGER_CLI tizen-file-manager-cli)
 set(TARGET_TIZEN_VCONF_CLI tizen-vconf-cli)
-set(TARGET_TIZEN_MEDIA_CLI tizen-media-cli)
+
 
 ### Dependencies ###
 find_package(PkgConfig REQUIRED)
@@ -33,8 +33,7 @@ pkg_check_modules(CAPI_SYSTEM_RUNTIME_INFO_DEPS REQUIRED capi-system-runtime-inf
 pkg_check_modules(CAPI_SYSTEM_SETTINGS_DEPS REQUIRED capi-system-system-settings)
 pkg_check_modules(STORAGE_DEPS REQUIRED storage)
 pkg_check_modules(FEEDBACK_DEPS REQUIRED feedback)
-pkg_check_modules(CAPI_CONTENT_MEDIA_CONTENT_DEPS REQUIRED capi-content-media-content)
-pkg_check_modules(CAPI_MEDIA_METADATA_EXTRACTOR_DEPS REQUIRED capi-media-metadata-extractor)
+
 pkg_check_modules(CAPI_CONTENT_MIME_TYPE_DEPS REQUIRED capi-content-mime-type)
 pkg_check_modules(CAPI_SYSTEM_SENSOR_DEPS REQUIRED capi-system-sensor)
 pkg_check_modules(CAPI_MEDIA_SOUND_MANAGER_DEPS REQUIRED capi-media-sound-manager)
@@ -48,7 +47,7 @@ ADD_SUBDIRECTORY(tizen-vconf-cli)
 ADD_SUBDIRECTORY(tizen-app-manager-cli)
 ADD_SUBDIRECTORY(tizen-device-info-cli)
 ADD_SUBDIRECTORY(tizen-hardware-control-cli)
-ADD_SUBDIRECTORY(tizen-media-cli)
+
 ADD_SUBDIRECTORY(tizen-sensor-cli)
 ADD_SUBDIRECTORY(tizen-sound-cli)
 ADD_SUBDIRECTORY(tizen-web-search-cli)

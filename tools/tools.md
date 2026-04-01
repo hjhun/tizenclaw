@@ -20,7 +20,7 @@ Available CLI tools:
 - **`tizen-device-info-cli`**: Device Info (battery, CPU, memory, storage, thermal, display, settings)
 - **`tizen-file-manager-cli`**: File System (read, write, append, copy, move, remove, list, mkdir, stat, download)
 - **`tizen-hardware-control-cli`**: Hardware (haptic vibration, camera flash LED, power lock, feedback)
-- **`tizen-media-cli`**: Media (query media DB, extract metadata, MIME type lookup)
+
 - **`tizen-network-info-cli`**: Network (Wi-Fi, Bluetooth, network status, scan, data usage)
 - **`tizen-notification-cli`**: Notification (send notifications, schedule alarms)
 - **`tizen-sensor-cli`**: Sensor (accelerometer, gyroscope, light, proximity, pressure, magnetic, orientation)

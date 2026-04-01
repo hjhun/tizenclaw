@@ -1,0 +1,1111 @@
+[0;36m[DEPLOY][0m Auto-detecting device architecture via sdb...
+[0;32m[  OK  ][0m Detected device architecture: x86_64 (cpu_arch: x86_64)
+[0;32m[  OK  ][0m Repo base    : https://download.tizen.org/snapshots/TIZEN/Tizen/Tizen-Base/reference/repos/standard/packages/
+[0;32m[  OK  ][0m Repo platform: https://download.tizen.org/snapshots/TIZEN/Tizen/Tizen-Unified/reference/repos/emulator/packages/
+
+[1m══════════════════════════════════════════[0m
+[1m  Pre-flight Checks[0m
+[1m══════════════════════════════════════════[0m
+[0;32m[  OK  ][0m sdb found: /home/hjhun/tizen-studio/tools/sdb
+[0;36m[DEPLOY][0m Architecture : x86_64
+[0;36m[DEPLOY][0m Project dir  : /home/hjhun/samba/github/tizenclaw
+[0;36m[DEPLOY][0m Skip build   : true
+[0;36m[DEPLOY][0m Incremental  : false
+[0;36m[DEPLOY][0m No-init      : false
+[0;36m[DEPLOY][0m Dry-run      : false
+[0;36m[DEPLOY][0m Skipping build (--skip-build)
+
+[1m══════════════════════════════════════════[0m
+[1m  Step 2/4: Locating RPM[0m
+[1m══════════════════════════════════════════[0m
+[0;36m[DEPLOY][0m Searching in: /home/hjhun/GBS-ROOT/local/repos/tizen/x86_64/RPMS
+[0;32m[  OK  ][0m Found: tizenclaw-1.0.0-3.x86_64.rpm (8.3M)
+
+[1m══════════════════════════════════════════[0m
+[1m  Step 3/4: Deploy to Device[0m
+[1m══════════════════════════════════════════[0m
+[0;36m[DEPLOY][0m Checking device connectivity...
+[0;32m[  OK  ][0m Device connected
+  emulator-26101      	device    	tc-0327-1
+[0;36m[DEPLOY][0m Acquiring root access...
+[0;32m[  OK  ][0m Root access granted
+[0;36m[DEPLOY][0m Remounting root filesystem as read-write...
+[0;32m[  OK  ][0m Filesystem remounted (rw)
+[0;36m[DEPLOY][0m Pushing tizenclaw-1.0.0-3.x86_64.rpm to device:/tmp/
+WARNING: Your data are to be sent over an unencrypted connection and could be read by others.
+pushed   tizenclaw-1.0.0-3.x86_64.rpm	  0%	      0KB	    0KB/spushed   tizenclaw-1.0.0-3.x86_64.rpm	 40%	   3456KB	 1647KB/spushed   tizenclaw-1.0.0-3.x86_64.rpm	 54%	   4608KB	 1151KB/spushed   tizenclaw-1.0.0-3.x86_64.rpm	 65%	   5568KB	  959KB/spushed   tizenclaw-1.0.0-3.x86_64.rpm	 76%	   6528KB	  959KB/spushed   tizenclaw-1.0.0-3.x86_64.rpm	 85%	   7296KB	  767KB/spushed   tizenclaw-1.0.0-3.x86_64.rpm	 97%	   8256KB	  959KB/spushed   tizenclaw-1.0.0-3.x86_64.rpm	100%	   8494KB	  959KB/s
+1 file(s) pushed. 0 file(s) skipped.
+/home/hjhun/GBS-ROOT/local/repos/tizen/x86_64/RPMS/tizenclaw-1.0.0-3.x86_64.rpm   810KB/s (8697907 bytes in 10.478s)
+[0;32m[  OK  ][0m RPM transferred: tizenclaw-1.0.0-3.x86_64.rpm
+[0;36m[DEPLOY][0m Installing tizenclaw-1.0.0-3.x86_64.rpm...
+Preparing...                                                            (100%)#                                 (100%)##                                (100%)###                               (100%)####                              (100%)#####                             (100%)######                            (100%)#######                           (100%)########                          (100%)#########                         (100%)##########                        (100%)###########                       (100%)############                      (100%)#############                     (100%)##############                    (100%)###############                   (100%)################                  (100%)#################                 (100%)##################                (100%)###################               (100%)####################              (100%)#####################             (100%)######################            (100%)#######################           (100%)########################          (100%)#########################         (100%)##########################        (100%)###########################       (100%)############################      (100%)#############################     (100%)##############################    (100%)###############################   (100%)################################  (100%)################################# (100%)################################# [100%]
+No manifest in this package. Creating default one
+Updating / installing...
+   1:tizenclaw-1.0.0-3                                                  (  2%)#                                 (  5%)##                                (  7%)###                               ( 10%)####                              ( 13%)#####                             ( 16%)######                            ( 19%)#######                           ( 22%)########                          ( 25%)#########                         ( 28%)##########                        ( 31%)###########                       ( 34%)############                      ( 37%)#############                     ( 40%)##############                    ( 43%)###############                   ( 46%)################                  ( 49%)#################                 ( 52%)##################                ( 54%)###################               ( 57%)####################              ( 60%)#####################             ( 63%)######################            ( 66%)#######################           ( 69%)########################          ( 72%)#########################         ( 75%)##########################        ( 78%)###########################       ( 81%)############################      ( 84%)#############################     ( 87%)##############################    ( 90%)###############################   ( 93%)################################  ( 96%)################################# ( 99%)################################# [100%]
+No manifest in this package. Creating default one
+[0;32m[  OK  ][0m RPM installed: tizenclaw-1.0.0-3.x86_64.rpm
+[0;36m[DEPLOY][0m Cleaning up /tmp/tizenclaw-1.0.0-3.x86_64.rpm...
+[0;32m[  OK  ][0m All RPMs processed
+[0;36m[DEPLOY][0m Extracting RAG web docs...
+RAG_OK
+[0;32m[  OK  ][0m RAG web docs extracted
+[0;36m[DEPLOY][0m Installing Web Dashboard frontend...
+WARNING: Your data are to be sent over an unencrypted connection and could be read by others.
+pushed                         app.js	  0%	      0KB	    0KB/spushed                         app.js	100%	     38KB	    0KB/s
+1 file(s) pushed. 0 file(s) skipped.
+/home/hjhun/samba/github/tizenclaw/data/web/app.js   592KB/s (39491 bytes in 0.065s)
+WARNING: Your data are to be sent over an unencrypted connection and could be read by others.
+pushed                     index.html	  0%	      0 B	    0KB/spushed                     index.html	100%	   9423 B	    0KB/s
+1 file(s) pushed. 0 file(s) skipped.
+/home/hjhun/samba/github/tizenclaw/data/web/index.html   147KB/s (9423 bytes in 0.062s)
+WARNING: Your data are to be sent over an unencrypted connection and could be read by others.
+pushed                      style.css	  0%	      0KB	    0KB/spushed                      style.css	100%	     16KB	    0KB/s
+1 file(s) pushed. 0 file(s) skipped.
+/home/hjhun/samba/github/tizenclaw/data/web/style.css   294KB/s (16712 bytes in 0.055s)
+WARNING: Your data are to be sent over an unencrypted connection and could be read by others.
+pushed                  tizenclaw.jpg	  0%	      0KB	    0KB/spushed                  tizenclaw.jpg	100%	    411KB	    0KB/s
+1 file(s) pushed. 0 file(s) skipped.
+/home/hjhun/samba/github/tizenclaw/data/web/img/tizenclaw.jpg   1501KB/s (421333 bytes in 0.274s)
+WARNING: Your data are to be sent over an unencrypted connection and could be read by others.
+pushed               tizenclaw-sdk.js	  0%	      0 B	    0KB/spushed               tizenclaw-sdk.js	100%	   5519 B	    0KB/s
+1 file(s) pushed. 0 file(s) skipped.
+/home/hjhun/samba/github/tizenclaw/data/web/sdk/tizenclaw-sdk.js   100KB/s (5519 bytes in 0.053s)
+[0;32m[  OK  ][0m Web Dashboard frontend installed to /opt/usr/data/tizenclaw/web
+[0;32m[  OK  ][0m python3 already installed on device: /usr/bin/python3
+
+[1m══════════════════════════════════════════[0m
+[1m  Step 4/4: Restart & Run TizenClaw[0m
+[1m══════════════════════════════════════════[0m
+[0;36m[DEPLOY][0m Reloading systemd daemon...
+[0;32m[  OK  ][0m Daemon reloaded
+[0;36m[DEPLOY][0m Enabling socket units...
+[0;32m[  OK  ][0m Socket units enabled
+[0;36m[DEPLOY][0m Restarting tizenclaw-tool-executor socket...
+[0;32m[  OK  ][0m Tool executor socket restarted
+[0;36m[DEPLOY][0m Restarting tizenclaw-code-sandbox socket...
+[0;32m[  OK  ][0m Code sandbox socket restarted
+Warning: Stopping tizenclaw-tool-executor.service, but it can still be activated by:
+  tizenclaw-tool-executor.socket
+Warning: Stopping tizenclaw-code-sandbox.service, but it can still be activated by:
+  tizenclaw-code-sandbox.socket
+[0;36m[DEPLOY][0m Restarting tizenclaw service...
+[0;32m[  OK  ][0m Service restarted
+[0;36m[DEPLOY][0m Checking service status...
+
+[0;1;32m●[0m tizenclaw.service - TizenClaw Agent System Service
+     Loaded: loaded (]8;;file://localhost/usr/lib/systemd/system/tizenclaw.service/usr/lib/systemd/system/tizenclaw.service]8;;; disabled; vendor preset: enabled)
+     Active: [0;1;32mactive (running)[0m since Sun 2026-03-29 21:31:06 KST; 2s ago
+   Main PID: 6322 (tizenclaw)
+     Memory: 1.2M
+     CGroup: /system.slice/tizenclaw.service
+             └─6322 /usr/bin/tizenclaw
+
+Mar 29 21:31:06 localhost systemd[1]: tizenclaw.service: Succeeded.
+Mar 29 21:31:06 localhost systemd[1]: Stopped TizenClaw Agent System Service.
+Mar 29 21:31:06 localhost systemd[1]: Started TizenClaw Agent System Service.
+
+[0;1;32m●[0m tizenclaw-tool-executor.socket - TizenClaw Tool Executor Socket
+     Loaded: loaded (]8;;file://localhost/usr/lib/systemd/system/tizenclaw-tool-executor.socket/usr/lib/systemd/system/tizenclaw-tool-executor.socket]8;;; enabled; vendor preset: enabled)
+     Active: [0;1;32mactive (listening)[0m since Sun 2026-03-29 21:31:04 KST; 4s ago
+   Triggers: ● tizenclaw-tool-executor.service
+     Listen: @tizenclaw-tool-executor.sock (Stream)
+     CGroup: /system.slice/tizenclaw-tool-executor.socket
+
+Mar 29 21:31:04 localhost systemd[1]: tizenclaw-tool-executor.socket: Succeeded.
+Mar 29 21:31:04 localhost systemd[1]: Closed TizenClaw Tool Executor Socket.
+Mar 29 21:31:04 localhost systemd[1]: Stopping TizenClaw Tool Executor Socket.
+Mar 29 21:31:04 localhost systemd[1]: Listening on TizenClaw Tool Executor …ket.
+Hint: Some lines were ellipsized, use -l to show in full.
+
+[0;1;32m●[0m tizenclaw-code-sandbox.socket - TizenClaw Code Sandbox Socket
+     Loaded: loaded (]8;;file://localhost/usr/lib/systemd/system/tizenclaw-code-sandbox.socket/usr/lib/systemd/system/tizenclaw-code-sandbox.socket]8;;; enabled; vendor preset: enabled)
+     Active: [0;1;32mactive (listening)[0m since Sun 2026-03-29 21:31:04 KST; 4s ago
+   Triggers: ● tizenclaw-code-sandbox.service
+     Listen: @tizenclaw-code-sandbox.sock (Stream)
+     CGroup: /system.slice/tizenclaw-code-sandbox.socket
+
+Mar 29 21:31:04 localhost systemd[1]: tizenclaw-code-sandbox.socket: Succeeded.
+Mar 29 21:31:04 localhost systemd[1]: Closed TizenClaw Code Sandbox Socket.
+Mar 29 21:31:04 localhost systemd[1]: Stopping TizenClaw Code Sandbox Socket.
+Mar 29 21:31:04 localhost systemd[1]: Listening on TizenClaw Code Sandbox S…ket.
+Hint: Some lines were ellipsized, use -l to show in full.
+
+[0;36m[DEPLOY][0m Recent journal logs:
+
+-- Logs begin at Sun 2026-03-29 19:16:46 KST, end at Sun 2026-03-29 21:31:06 KST. --
+Mar 29 19:16:47 localhost systemd[1]: Stopping TizenClaw Agent System Service...
+Mar 29 19:16:48 localhost systemd[1]: tizenclaw.service: Succeeded.
+Mar 29 19:16:48 localhost systemd[1]: Stopped TizenClaw Agent System Service.
+Mar 29 19:16:48 localhost systemd[1]: Started TizenClaw Agent System Service.
+[0;1;39m-- Reboot --[0m
+Mar 29 20:00:43 localhost systemd[1]: Started TizenClaw Agent System Service.
+[0;1;39m-- Reboot --[0m
+Mar 29 21:23:17 localhost systemd[1]: Started TizenClaw Agent System Service.
+Mar 29 21:30:11 localhost systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mtizenclaw.service: Failed to set 'memory.limit_in_bytes' attribute on '/system.slice/tizenclaw.service' to '-1': Invalid argument[0m
+Mar 29 21:30:11 localhost systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mtizenclaw.service: Failed to set 'memory.limit_in_bytes' attribute on '/system.slice/tizenclaw.service' to '-1': Invalid argument[0m
+Mar 29 21:30:11 localhost systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mtizenclaw.service: Failed to set 'memory.limit_in_bytes' attribute on '/system.slice/tizenclaw.service' to '-1': Invalid argument[0m
+Mar 29 21:30:12 localhost systemd[1]: Stopping TizenClaw Agent System Service...
+Mar 29 21:30:14 localhost systemd[1]: tizenclaw.service: Succeeded.
+Mar 29 21:30:14 localhost systemd[1]: Stopped TizenClaw Agent System Service.
+Mar 29 21:30:14 localhost systemd[1]: Started TizenClaw Agent System Service.
+Mar 29 21:31:04 localhost systemd[1]: Stopping TizenClaw Agent System Service...
+Mar 29 21:31:06 localhost systemd[1]: tizenclaw.service: Succeeded.
+Mar 29 21:31:06 localhost systemd[1]: Stopped TizenClaw Agent System Service.
+Mar 29 21:31:06 localhost systemd[1]: Started TizenClaw Agent System Service.
+
+[1m══════════════════════════════════════════[0m
+[1m  Step 6: Full Verification Test Suite[0m
+[1m══════════════════════════════════════════[0m
+[0;36m[DEPLOY][0m Running: /home/hjhun/samba/github/tizenclaw/tests/verification/run_all.sh 
+
+[1m══════════════════════════════════════════[0m
+[1m  TizenClaw Full Verification Suite[0m
+[1m══════════════════════════════════════════[0m
+
+[1m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+[1m  Running Suite: device_checks (Device Binary Checks)[0m
+[1m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+
+[0;36m── Suite: Device Binary Checks[0m
+  [0;31m[FAIL][0m /usr/bin/tizenclaw missing
+  [0;31m[FAIL][0m /usr/bin/tizenclaw-cli missing
+  [0;31m[FAIL][0m /usr/bin/tizenclaw-tool-executor missing
+  [0;31m[FAIL][0m /usr/lib64/libtizenclaw.so missing
+  [0;31m[FAIL][0m /usr/lib64/libtizenclaw_core.so missing
+  [0;32m[PASS][0m tizenclaw.service active
+  [0;32m[PASS][0m tool-executor.socket active
+  [0;31mDevice checks: 2 passed, 5 failed[0m
+
+[1m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+[1m  Running Suite: e2e_smoke (E2E Smoke & Base MCP Tests)[0m
+[1m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+
+[1m══════════════════════════════════════════[0m
+[1m  TizenClaw MCP Protocol Test[0m
+[1m══════════════════════════════════════════[0m
+
+[0;36m[M1] initialize[0m
+  [0;32m[PASS][0m JSON-RPC version is 2.0
+  [0;32m[PASS][0m Response ID matches request
+  [0;31m[FAIL][0m protocolVersion present
+       jq expr: [0;33m.result.protocolVersion[0m
+       json: {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test-runner","version":"1.0"}}}
+  [0;31m[FAIL][0m serverInfo.name present
+       jq expr: [0;33m.result.serverInfo.name[0m
+       json: {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test-runner","version":"1.0"}}}
+  [0;31m[FAIL][0m capabilities.tools present
+       jq expr: [0;33m.result.capabilities.tools[0m
+       json: {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test-runner","version":"1.0"}}}
+
+[0;36m[M2] tools/list[0m
+  [0;31m[FAIL][0m tools array exists
+       jq expr: [0;33m.result.tools | type == "array"[0m
+       json: {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+  [0;31m[FAIL][0m tools array is non-empty
+       jq expr: [0;33m.result.tools | length > 0[0m
+       json: {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+  [0;31m[FAIL][0m ask_tizenclaw tool exists
+       jq expr: [0;33m.result.tools[] | select(.name == "ask_tizenclaw")[0m
+       json: {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+  [0;31m[FAIL][0m each tool has name field
+       jq expr: [0;33m[.result.tools[] | has("name")] | all[0m
+       json: {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+  [0;31m[FAIL][0m each tool has description field
+       jq expr: [0;33m[.result.tools[] | has("description")] | all[0m
+       json: {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+  [0;31m[FAIL][0m each tool has inputSchema field
+       jq expr: [0;33m[.result.tools[] | has("inputSchema")] | all[0m
+       json: {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+
+[0;36m[M3] Unknown Method → Error[0m
+  [0;31m[FAIL][0m Error response returned
+       jq expr: [0;33m.error[0m
+       json: {"jsonrpc":"2.0","id":3,"method":"unknown/method","params":{}}
+  [0;31m[FAIL][0m Error code is -32601 (Method not found)
+       jq expr: [0;33m.error.code == -32601[0m
+       json: {"jsonrpc":"2.0","id":3,"method":"unknown/method","params":{}}
+
+[0;36m[M4] tools/call with nonexistent tool[0m
+  [0;31m[FAIL][0m isError flag is true
+       jq expr: [0;33m.result.isError == true[0m
+       json: {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"nonexistent_tool","arguments":{}}}
+  [0;31m[FAIL][0m Error content returned
+       jq expr: [0;33m.result.content[0].text | contains("not found")[0m
+       json: {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"nonexistent_tool","arguments":{}}}
+
+[0;36m[M5] Notification (no id)[0m
+  [0;33m[WARN][0m Notification returned: {"jsonrpc":"2.0","method":"notifications/initialized","params":{}}
+  [0;32m[PASS][0m (non-critical — notification handling varies)
+
+[0;36m[M6] Malformed JSON Input[0m
+  [0;31m[FAIL][0m Parse error returned
+       jq expr: [0;33m.error.code == -32700[0m
+       json: this is not json
+
+[1m══════════════════════════════════════════[0m
+  [0;31m[1mFAILED[0m: 3 passed, 14 failed
+[1m══════════════════════════════════════════[0m
+
+
+[1m══════════════════════════════════════════[0m
+[1m  TizenClaw E2E Smoke Test[0m
+[1m══════════════════════════════════════════[0m
+
+[0;36m[T1] Service Status[0m
+  [0;32m[PASS][0m tizenclaw service is active
+
+[0;36m[T2] Tool Loading[0m
+  [0;31m[FAIL][0m Transitive tools count (0
+0 < 0)
+
+[0;36m[T3] Tool Index Files[0m
+  [0;32m[PASS][0m tools.md exists
+
+[0;36m[T4] CLI Basic Response[0m
+  [0;32m[PASS][0m CLI returns non-empty response
+
+[0;36m[T5] Tool Invocation (get_device_info)[0m
+  [0;32m[PASS][0m Tool invocation returns result
+  [0;31m[FAIL][0m Daemon log shows tool execution (empty output)
+
+[0;36m[T6] CLI Tool Path Integrity[0m
+  [0;32m[PASS][0m tizen-app-manager-cli tool.md readable
+
+[0;36m[T7] Session Persistence[0m
+  [0;31m[FAIL][0m Sessions directory exists
+       expected pattern: [0;33myes[0m
+       actual (first 200 chars): no
+
+[1m══════════════════════════════════════════[0m
+  [0;31m[1mFAILED[0m: 5 passed, 3 failed
+[1m══════════════════════════════════════════[0m
+
+[0;33mRecent daemon logs:[0m
+
+
+[1m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+[1m  Running Suite: service (Daemon Health & Infrastructure)[0m
+[1m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+[2mPre-flight checks...[0m
+[2mPre-flight OK[0m
+
+[1m══════════════════════════════════════════════════════[0m
+[1m  Service: Web Dashboard API[0m
+[1m══════════════════════════════════════════════════════[0m
+
+
+[0;36m[D1][0m Root endpoint (GET /)
+  [0;32m[PASS][0m Root returns content
+  [0;32m[PASS][0m Has HTML content
+
+[0;36m[D2][0m Health endpoint
+  [0;32m[PASS][0m Health endpoint found at /api/status (200)
+  [0;32m[PASS][0m Health body non-empty
+
+[0;36m[D3][0m Chat API endpoint
+  [0;33m[SKIP][0m Chat API [2m(no chat endpoint found (tried /api/chat, /api/prompt, /chat))[0m
+
+[0;36m[D4][0m Static assets
+  [0;32m[PASS][0m Static asset accessible: /index.html
+
+[0;36m[D5][0m 404 for non-existent path
+  [0;32m[PASS][0m Returns 404 for unknown path
+
+[0;36m[D6][0m CORS headers
+  [0;32m[PASS][0m CORS headers present
+
+[0;36m[D7][0m Response time under 2s
+  [0;32m[PASS][0m Response time: 0.005671s (< 2s)
+
+[0;36m[D8][0m Rapid requests stability
+  [0;32m[PASS][0m Service stable after rapid requests
+
+[1m══════════════════════════════════════════════════════[0m
+  [0;32m[1mALL PASSED[0m: 9 passed
+  [0;33m1 skipped[0m
+  [2mTotal: 10 | Duration: 1s[0m
+[1m══════════════════════════════════════════════════════[0m
+
+[2mPre-flight checks...[0m
+[2mPre-flight OK[0m
+
+[1m══════════════════════════════════════════════════════[0m
+[1m  Service Health & Infrastructure[0m
+[1m══════════════════════════════════════════════════════[0m
+
+
+[0;36m[S1][0m Service Status
+  [0;32m[PASS][0m tizenclaw service is active
+
+[0;36m[S2][0m Service Details
+  [0;32m[PASS][0m Service is loaded
+  [0;32m[PASS][0m Service has no crash
+
+[0;36m[S3][0m Binary Installation
+  [0;32m[PASS][0m tizenclaw daemon binary
+  [0;32m[PASS][0m tizenclaw-cli binary
+  [0;32m[PASS][0m tizenclaw-tool-executor binary
+
+[0;36m[S4][0m IPC Socket
+  [0;32m[PASS][0m IPC socket found (alternate location)
+
+[0;36m[S5][0m Tool Directory Structure
+  [0;32m[PASS][0m CLI tools directory
+  [0;32m[PASS][0m Embedded tools directory
+  [0;32m[PASS][0m CLI tools installed (>= 10) (14 >= 10)
+
+[0;36m[S6][0m Daemon Log Health
+  [0;31m[FAIL][0m Daemon produces log output
+       [2moutput was empty[0m
+  [0;32m[PASS][0m No CRITICAL errors in recent logs
+
+[0;36m[S7][0m Tool Discovery
+  [0;33m[SKIP][0m Tool discovery [2m(log rotated)[0m
+
+[0;36m[S8][0m Data Directories
+  [0;32m[PASS][0m Base data directory
+  [0;32m[PASS][0m Sessions directory: none
+
+[0;36m[S9][0m Service Restart
+  [0;33m[SKIP][0m Service restart [2m(timeout (LLM init slow))[0m
+
+[0;36m[S10][0m Web Dashboard
+  [0;32m[PASS][0m Dashboard is accessible (HTTP 200)
+
+[1m══════════════════════════════════════════════════════[0m
+  [0;31m[1mFAILED[0m: 14 passed, [0;31m1 failed[0m
+  [0;33m2 skipped[0m
+  [2mTotal: 17 | Duration: 4s[0m
+[1m══════════════════════════════════════════════════════[0m
+
+
+[1m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+[1m  Running Suite: cli_tools (CLI Tool Validation)[0m
+[1m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+[2mPre-flight checks...[0m
+[2mPre-flight OK[0m
+
+[1m══════════════════════════════════════════════════════[0m
+[1m  CLI: tizen-app-manager-cli[0m
+[1m══════════════════════════════════════════════════════[0m
+
+
+[0;36m[A1][0m list — installed apps
+  [0;31m[FAIL][0m Output is valid JSON
+       [2minvalid JSON: APP ID                         LABEL
+------------------------------ --------------------
+attach-panel-camera            CameraUG
+attach-panel-document          Document
+attach-panel-gallery       [0m
+  [0;31m[FAIL][0m Has apps array
+       [2mjq expression false: .apps | type == "array"[0m
+       [2mjson: APP ID                         LABEL
+------------------------------ --------------------
+attach-panel-camera            CameraUG
+attach-panel-document          Document
+attach-panel-gallery           Gallery
+attach-panel-voicerecorder     VoiceRecorderUG
+ise-default                    Tizen ke[0m
+  [0;31m[FAIL][0m At least 1 app installed
+       [2mjq expression false: .apps | length > 0[0m
+       [2mjson: APP ID                         LABEL
+------------------------------ --------------------
+attach-panel-camera            CameraUG
+attach-panel-document          Document
+attach-panel-gallery           Gallery
+attach-panel-voicerecorder     VoiceRecorderUG
+ise-default                    Tizen ke[0m
+  [0;31m[FAIL][0m App has app_id field
+       [2mjq expression false: .apps[0].app_id[0m
+       [2mjson: APP ID                         LABEL
+------------------------------ --------------------
+attach-panel-camera            CameraUG
+attach-panel-document          Document
+attach-panel-gallery           Gallery
+attach-panel-voicerecorder     VoiceRecorderUG
+ise-default                    Tizen ke[0m
+  [0;31m[FAIL][0m App has label field
+       [2mjq expression false: .apps[0].label[0m
+       [2mjson: APP ID                         LABEL
+------------------------------ --------------------
+attach-panel-camera            CameraUG
+attach-panel-document          Document
+attach-panel-gallery           Gallery
+attach-panel-voicerecorder     VoiceRecorderUG
+ise-default                    Tizen ke[0m
+
+[0;36m[A2][0m list-all — all apps
+  [0;31m[FAIL][0m Output is valid JSON
+       [2minvalid JSON: Unknown command: list-all
+Tizen Application Manager CLI
+Usage:
+  tizen-app-manager-cli <COMMAND> [OPTIONS]
+
+Commands:
+  info <app_id>       Get detailed information of a specific app
+  list    [0m
+  [0;31m[FAIL][0m Has apps array
+       [2mjq expression false: .apps | type == "array"[0m
+       [2mjson: Unknown command: list-all
+Tizen Application Manager CLI
+Usage:
+  tizen-app-manager-cli <COMMAND> [OPTIONS]
+
+Commands:
+  info <app_id>       Get detailed information of a specific app
+  list                List all installed applications
+  list-running        List all currently running applic[0m
+  [0;31m[FAIL][0m list-all >= list
+       [2mexpected >= 1, got: 0[0m
+
+[0;36m[A3][0m running — running apps
+  [0;31m[FAIL][0m Output is valid JSON
+       [2minvalid JSON: Unknown command: running
+Tizen Application Manager CLI
+Usage:
+  tizen-app-manager-cli <COMMAND> [OPTIONS]
+
+Commands:
+  info <app_id>       Get detailed information of a specific app
+  list     [0m
+
+[0;36m[A4][0m running-all
+  [0;31m[FAIL][0m Output is valid JSON
+       [2minvalid JSON: Unknown command: running-all
+Tizen Application Manager CLI
+Usage:
+  tizen-app-manager-cli <COMMAND> [OPTIONS]
+
+Commands:
+  info <app_id>       Get detailed information of a specific app
+  list [0m
+
+[0;36m[A5][0m recent — recent apps
+  [0;31m[FAIL][0m Output is valid JSON
+       [2minvalid JSON: Unknown command: recent
+Tizen Application Manager CLI
+Usage:
+  tizen-app-manager-cli <COMMAND> [OPTIONS]
+
+Commands:
+  info <app_id>       Get detailed information of a specific app
+  list      [0m
+
+[0;36m[A6][0m recent-detail — app detail
+  [0;33m[SKIP][0m recent-detail [2m(no recent apps available)[0m
+
+[0;36m[A7][0m package-info — query package
+  [0;33m[SKIP][0m package-info [2m(no package ID available)[0m
+
+[0;36m[A8][0m launch & terminate lifecycle
+  [0;33m[SKIP][0m launch & terminate [2m(no app_id available (jq required))[0m
+
+[0;36m[A9][0m launch with operation parameter
+  [0;33m[SKIP][0m launch with operation [2m(no app_id available)[0m
+
+[0;36m[A10][0m Error handling — invalid app
+  [0;31m[FAIL][0m Error output is valid JSON
+       [2minvalid JSON: Unknown command: launch
+Tizen Application Manager CLI
+Usage:
+  tizen-app-manager-cli <COMMAND> [OPTIONS]
+
+Commands:
+  info <app_id>       Get detailed information of a specific app
+  list      [0m
+
+[1m══════════════════════════════════════════════════════[0m
+  [0;31m[1mFAILED[0m: 0 passed, [0;31m12 failed[0m
+  [0;33m4 skipped[0m
+  [2mTotal: 16 | Duration: 1s[0m
+[1m══════════════════════════════════════════════════════[0m
+
+[2mPre-flight checks...[0m
+[2mPre-flight OK[0m
+
+[1m══════════════════════════════════════════════════════[0m
+[1m  CLI: tizen-aurum-cli[0m
+[1m══════════════════════════════════════════════════════[0m
+
+  [0;33m[WARN][0m Tool binary not found, skipping suite
+  [0;33m[SKIP][0m Tool binary exists [2m(not installed)[0m
+
+[1m══════════════════════════════════════════════════════[0m
+  [0;32m[1mALL PASSED[0m: 0 passed
+  [0;33m1 skipped[0m
+  [2mTotal: 1 | Duration: 0s[0m
+[1m══════════════════════════════════════════════════════[0m
+
+[2mPre-flight checks...[0m
+[2mPre-flight OK[0m
+
+[1m══════════════════════════════════════════════════════[0m
+[1m  CLI: tizen-device-info-cli[0m
+[1m══════════════════════════════════════════════════════[0m
+
+
+[0;36m[D1][0m battery
+  [0;31m[FAIL][0m Valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-device-info-cli/tizen-device-info-cli: Permission denied[0m
+  [0;31m[FAIL][0m Has percent field
+       [2mjq expression false: .percent != null[0m
+       [2mjson: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-device-info-cli/tizen-device-info-cli: Permission denied[0m
+  [0;31m[FAIL][0m Has charging field
+       [2mjq expression false: .is_charging != null or .charging != null[0m
+       [2mjson: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-device-info-cli/tizen-device-info-cli: Permission denied[0m
+
+[0;36m[D2][0m system-info
+  [0;31m[FAIL][0m Valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-device-info-cli/tizen-device-info-cli: Permission denied[0m
+  [0;31m[FAIL][0m Has model field
+       [2mjq expression false: .model_name != null or .model != null[0m
+       [2mjson: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-device-info-cli/tizen-device-info-cli: Permission denied[0m
+  [0;31m[FAIL][0m Has platform_version
+       [2mjq expression false: .platform_version != null[0m
+       [2mjson: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-device-info-cli/tizen-device-info-cli: Permission denied[0m
+
+[0;36m[D3][0m runtime — CPU/memory
+  [0;31m[FAIL][0m Valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-device-info-cli/tizen-device-info-cli: Permission denied[0m
+
+[0;36m[D4][0m storage
+  [0;31m[FAIL][0m Valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-device-info-cli/tizen-device-info-cli: Permission denied[0m
+
+[0;36m[D5][0m thermal
+  [0;31m[FAIL][0m Valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-device-info-cli/tizen-device-info-cli: Permission denied[0m
+
+[0;36m[D6][0m display
+  [0;31m[FAIL][0m Valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-device-info-cli/tizen-device-info-cli: Permission denied[0m
+
+[0;36m[D7][0m settings
+  [0;31m[FAIL][0m Valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-device-info-cli/tizen-device-info-cli: Permission denied[0m
+  [0;33m[SKIP][0m locale field [2m(not present in output)[0m
+
+[1m══════════════════════════════════════════════════════[0m
+  [0;31m[1mFAILED[0m: 0 passed, [0;31m11 failed[0m
+  [0;33m1 skipped[0m
+  [2mTotal: 12 | Duration: 0s[0m
+[1m══════════════════════════════════════════════════════[0m
+
+[2mPre-flight checks...[0m
+[2mPre-flight OK[0m
+
+[1m══════════════════════════════════════════════════════[0m
+[1m  CLI: tizen-control-display-cli[0m
+[1m══════════════════════════════════════════════════════[0m
+
+
+[0;36m[B1][0m display info
+  [0;31m[FAIL][0m Valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-control-display-cli/tizen-control-display-cli: Permission denied[0m
+  [0;31m[FAIL][0m Has brightness field
+       [2mjq expression false: .brightness != null or .current != null or .current_brightness != null[0m
+       [2mjson: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-control-display-cli/tizen-control-display-cli: Permission denied[0m
+  [0;31m[FAIL][0m Has max brightness
+       [2mjq expression false: .max_brightness != null or .max != null[0m
+       [2mjson: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-control-display-cli/tizen-control-display-cli: Permission denied[0m
+
+[0;36m[B2][0m set brightness
+  [0;31m[FAIL][0m Set response valid
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-control-display-cli/tizen-control-display-cli: Permission denied[0m
+
+[1m══════════════════════════════════════════════════════[0m
+  [0;31m[1mFAILED[0m: 0 passed, [0;31m4 failed[0m
+  [2mTotal: 4 | Duration: 0s[0m
+[1m══════════════════════════════════════════════════════[0m
+
+[2mPre-flight checks...[0m
+[2mPre-flight OK[0m
+
+[1m══════════════════════════════════════════════════════[0m
+[1m  CLI: tizen-file-manager-cli[0m
+[1m══════════════════════════════════════════════════════[0m
+
+
+[0;36m[F1][0m mkdir — create test directory
+  [0;31m[FAIL][0m mkdir output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+  [0;31m[FAIL][0m Test directory created
+       [2mdirectory not found: /tmp/e2e_file_test_202638[0m
+
+[0;36m[F2][0m mkdir — nested directory
+  [0;31m[FAIL][0m mkdir nested output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+  [0;31m[FAIL][0m Nested directory created
+       [2mdirectory not found: /tmp/e2e_file_test_202638/subdir[0m
+
+[0;36m[F3][0m write — create file
+  [0;31m[FAIL][0m write output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+  [0;31m[FAIL][0m File created
+       [2mfile not found: /tmp/e2e_file_test_202638/test_file.txt[0m
+
+[0;36m[F4][0m read — file contents
+  [0;31m[FAIL][0m read output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+  [0;31m[FAIL][0m Content matches
+       [2mexpected pattern: Hello, TizenClaw E2E![0m
+       [2mactual (200 chars): /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+
+[0;36m[F5][0m stat — file metadata
+  [0;31m[FAIL][0m stat output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+  [0;31m[FAIL][0m Has size field
+       [2mjq expression false: .size[0m
+       [2mjson: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+  [0;31m[FAIL][0m Has type field
+       [2mjq expression false: .type[0m
+       [2mjson: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+
+[0;36m[F6][0m stat — directory metadata
+  [0;31m[FAIL][0m stat dir output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+  [0;31m[FAIL][0m Type is directory
+       [2mjq expression false: .type == "directory"[0m
+       [2mjson: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+
+[0;36m[F7][0m list — directory contents
+  [0;31m[FAIL][0m list output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+  [0;31m[FAIL][0m Has entries array
+       [2mjq expression false: .entries | type == "array"[0m
+       [2mjson: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+  [0;31m[FAIL][0m At least 2 entries
+       [2mexpected >= 2, got: 0[0m
+
+[0;36m[F8][0m append — add content
+  [0;31m[FAIL][0m append output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+  [0;31m[FAIL][0m Contains original
+       [2mexpected pattern: Hello, TizenClaw E2E![0m
+       [2mactual (200 chars): /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+  [0;31m[FAIL][0m Contains appended
+       [2mexpected pattern: Appended data[0m
+       [2mactual (200 chars): /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+
+[0;36m[F9][0m copy — duplicate file
+  [0;31m[FAIL][0m copy output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+  [0;31m[FAIL][0m Copied file exists
+       [2mfile not found: /tmp/e2e_file_test_202638/test_copy.txt[0m
+  [0;31m[FAIL][0m Copied content matches
+       [2mexpected pattern: Hello, TizenClaw E2E![0m
+       [2mactual (200 chars): /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+
+[0;36m[F10][0m move — rename file
+  [0;31m[FAIL][0m move output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+  [0;31m[FAIL][0m Moved file exists
+       [2mfile not found: /tmp/e2e_file_test_202638/test_moved.txt[0m
+  [0;32m[PASS][0m Original removed after move
+
+[0;36m[F11][0m write — file in subdirectory
+  [0;31m[FAIL][0m write nested output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+  [0;31m[FAIL][0m Nested file created
+       [2mfile not found: /tmp/e2e_file_test_202638/subdir/nested_file.txt[0m
+
+[0;36m[F12][0m download — file from URL
+  [0;31m[FAIL][0m download output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+  [0;33m[SKIP][0m download file check [2m(may require network)[0m
+
+[0;36m[F13][0m write — special characters
+  [0;31m[FAIL][0m special chars write is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+
+[0;36m[F14][0m remove — single file
+  [0;31m[FAIL][0m remove output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+  [0;32m[PASS][0m File removed
+
+[0;36m[F15][0m Error — read non-existent file
+  [0;32m[PASS][0m Error output returned
+  [0;31m[FAIL][0m Error message present
+       [2mexpected pattern: error\|Error\|not found\|No such\|Cannot[0m
+       [2mactual (200 chars): /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli: Permission denied[0m
+
+[1m══════════════════════════════════════════════════════[0m
+  [0;31m[1mFAILED[0m: 3 passed, [0;31m30 failed[0m
+  [0;33m1 skipped[0m
+  [2mTotal: 34 | Duration: 1s[0m
+[1m══════════════════════════════════════════════════════[0m
+
+[2mPre-flight checks...[0m
+[2mPre-flight OK[0m
+
+[1m══════════════════════════════════════════════════════[0m
+[1m  CLI: tizen-hardware-control-cli[0m
+[1m══════════════════════════════════════════════════════[0m
+
+
+[0;36m[HW1][0m haptic — default 500ms vibration
+  [0;31m[FAIL][0m haptic output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/tizen-hardware-control-cli: Permission denied[0m
+
+[0;36m[HW2][0m haptic — 200ms duration
+  [0;31m[FAIL][0m haptic 200ms output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/tizen-hardware-control-cli: Permission denied[0m
+
+[0;36m[HW3][0m feedback — TAP pattern
+  [0;31m[FAIL][0m feedback TAP output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/tizen-hardware-control-cli: Permission denied[0m
+
+[0;36m[HW4][0m feedback — MESSAGE pattern
+  [0;31m[FAIL][0m feedback MESSAGE output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/tizen-hardware-control-cli: Permission denied[0m
+
+[0;36m[HW5][0m feedback — WAKEUP pattern
+  [0;31m[FAIL][0m feedback WAKEUP output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/tizen-hardware-control-cli: Permission denied[0m
+
+[0;36m[HW6][0m led — turn on
+  [0;31m[FAIL][0m led on output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/tizen-hardware-control-cli: Permission denied[0m
+
+[0;36m[HW7][0m led — turn off
+  [0;31m[FAIL][0m led off output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/tizen-hardware-control-cli: Permission denied[0m
+
+[0;36m[HW8][0m led — with brightness
+  [0;31m[FAIL][0m led brightness output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/tizen-hardware-control-cli: Permission denied[0m
+
+[0;36m[HW9][0m power — lock display
+  [0;31m[FAIL][0m power lock display output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/tizen-hardware-control-cli: Permission denied[0m
+
+[0;36m[HW10][0m power — unlock display
+  [0;31m[FAIL][0m power unlock display output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/tizen-hardware-control-cli: Permission denied[0m
+
+[0;36m[HW11][0m power — lock & unlock CPU
+  [0;31m[FAIL][0m power lock CPU output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/tizen-hardware-control-cli: Permission denied[0m
+
+[1m══════════════════════════════════════════════════════[0m
+  [0;31m[1mFAILED[0m: 0 passed, [0;31m11 failed[0m
+  [2mTotal: 11 | Duration: 1s[0m
+[1m══════════════════════════════════════════════════════[0m
+
+[2mPre-flight checks...[0m
+[2mPre-flight OK[0m
+
+[1m══════════════════════════════════════════════════════[0m
+[1m  CLI: tizen-media-cli[0m
+[1m══════════════════════════════════════════════════════[0m
+
+  [0;33m[WARN][0m Tool binary not found, skipping suite
+  [0;33m[SKIP][0m Tool binary exists [2m(not installed)[0m
+
+[1m══════════════════════════════════════════════════════[0m
+  [0;32m[1mALL PASSED[0m: 0 passed
+  [0;33m1 skipped[0m
+  [2mTotal: 1 | Duration: 0s[0m
+[1m══════════════════════════════════════════════════════[0m
+
+[2mPre-flight checks...[0m
+[2mPre-flight OK[0m
+
+[1m══════════════════════════════════════════════════════[0m
+[1m  CLI: tizen-network-info-cli[0m
+[1m══════════════════════════════════════════════════════[0m
+
+
+[0;36m[N1][0m network — connection info
+  [0;31m[FAIL][0m Output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-network-info-cli/tizen-network-info-cli: Permission denied[0m
+  [0;31m[FAIL][0m Has connection_type
+       [2mjq expression false: .connection_type[0m
+       [2mjson: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-network-info-cli/tizen-network-info-cli: Permission denied[0m
+
+[0;36m[N2][0m wifi — status
+  [0;31m[FAIL][0m Output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-network-info-cli/tizen-network-info-cli: Permission denied[0m
+
+[0;36m[N3][0m wifi-scan — scan results
+  [0;31m[FAIL][0m wifi-scan output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-network-info-cli/tizen-network-info-cli: Permission denied[0m
+
+[0;36m[N4][0m bluetooth — adapter info
+  [0;31m[FAIL][0m Output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-network-info-cli/tizen-network-info-cli: Permission denied[0m
+
+[0;36m[N5][0m bt-scan — paired devices
+  [0;31m[FAIL][0m bt-scan output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-network-info-cli/tizen-network-info-cli: Permission denied[0m
+
+[0;36m[N6][0m data-usage — statistics
+  [0;31m[FAIL][0m Output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-network-info-cli/tizen-network-info-cli: Permission denied[0m
+
+[1m══════════════════════════════════════════════════════[0m
+  [0;31m[1mFAILED[0m: 0 passed, [0;31m7 failed[0m
+  [2mTotal: 7 | Duration: 0s[0m
+[1m══════════════════════════════════════════════════════[0m
+
+[2mPre-flight checks...[0m
+[2mPre-flight OK[0m
+
+[1m══════════════════════════════════════════════════════[0m
+[1m  CLI: tizen-notification-cli[0m
+[1m══════════════════════════════════════════════════════[0m
+
+
+[0;36m[NT1][0m notify — basic notification
+  [0;31m[FAIL][0m Output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-notification-cli/tizen-notification-cli: Permission denied[0m
+  [0;32m[PASS][0m No error
+
+[0;36m[NT2][0m notify — Korean text
+  [0;31m[FAIL][0m Output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-notification-cli/tizen-notification-cli: Permission denied[0m
+
+[0;36m[NT3][0m notify — long body text
+  [0;31m[FAIL][0m Output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-notification-cli/tizen-notification-cli: Permission denied[0m
+
+[0;36m[NT4][0m alarm — schedule alarm
+  [0;33m[SKIP][0m alarm [2m(no app-id available (jq required))[0m
+
+[1m══════════════════════════════════════════════════════[0m
+  [0;31m[1mFAILED[0m: 1 passed, [0;31m3 failed[0m
+  [0;33m1 skipped[0m
+  [2mTotal: 5 | Duration: 1s[0m
+[1m══════════════════════════════════════════════════════[0m
+
+[2mPre-flight checks...[0m
+[2mPre-flight OK[0m
+
+[1m══════════════════════════════════════════════════════[0m
+[1m  CLI: tizen-sensor-cli[0m
+[1m══════════════════════════════════════════════════════[0m
+
+
+[0;36m[SN1][0m accelerometer sensor
+  [0;31m[FAIL][0m accelerometer output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-sensor-cli/tizen-sensor-cli: Permission denied[0m
+
+[0;36m[SN2][0m gravity sensor
+  [0;31m[FAIL][0m gravity output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-sensor-cli/tizen-sensor-cli: Permission denied[0m
+
+[0;36m[SN3][0m gyroscope sensor
+  [0;31m[FAIL][0m gyroscope output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-sensor-cli/tizen-sensor-cli: Permission denied[0m
+
+[0;36m[SN4][0m light sensor
+  [0;31m[FAIL][0m light output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-sensor-cli/tizen-sensor-cli: Permission denied[0m
+
+[0;36m[SN5][0m proximity sensor
+  [0;31m[FAIL][0m proximity output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-sensor-cli/tizen-sensor-cli: Permission denied[0m
+
+[0;36m[SN6][0m pressure sensor
+  [0;31m[FAIL][0m pressure output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-sensor-cli/tizen-sensor-cli: Permission denied[0m
+
+[0;36m[SN7][0m magnetic sensor
+  [0;31m[FAIL][0m magnetic output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-sensor-cli/tizen-sensor-cli: Permission denied[0m
+
+[0;36m[SN8][0m orientation sensor
+  [0;31m[FAIL][0m orientation output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-sensor-cli/tizen-sensor-cli: Permission denied[0m
+
+[0;36m[SN9][0m Invalid sensor type
+  [0;31m[FAIL][0m Error output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-sensor-cli/tizen-sensor-cli: Permission denied[0m
+  [0;31m[FAIL][0m Error reported
+       [2mexpected pattern: error\|Error\|not supported\|unknown\|invalid[0m
+       [2mactual (200 chars): /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-sensor-cli/tizen-sensor-cli: Permission denied[0m
+
+[1m══════════════════════════════════════════════════════[0m
+  [0;31m[1mFAILED[0m: 0 passed, [0;31m10 failed[0m
+  [2mTotal: 10 | Duration: 0s[0m
+[1m══════════════════════════════════════════════════════[0m
+
+[2mPre-flight checks...[0m
+[2mPre-flight OK[0m
+
+[1m══════════════════════════════════════════════════════[0m
+[1m  CLI: tizen-sound-cli[0m
+[1m══════════════════════════════════════════════════════[0m
+
+
+[0;36m[SO1][0m volume get — all levels
+  [0;31m[FAIL][0m Output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-sound-cli/tizen-sound-cli: Permission denied[0m
+
+[0;36m[SO2][0m devices — audio devices
+  [0;31m[FAIL][0m Output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-sound-cli/tizen-sound-cli: Permission denied[0m
+
+[0;36m[SO3][0m volume set — change media level
+  [0;31m[FAIL][0m Set output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-sound-cli/tizen-sound-cli: Permission denied[0m
+  [0;31m[FAIL][0m Media volume changed to 3
+       [2mexpected: 3[0m
+       [2mactual: -1[0m
+
+[0;36m[SO4][0m volume restore
+  [0;32m[PASS][0m Volume restore command sent
+
+[0;36m[SO5][0m volume set — notification type
+  [0;31m[FAIL][0m Notification volume set is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-sound-cli/tizen-sound-cli: Permission denied[0m
+
+[0;36m[SO6][0m volume set — ringtone type
+  [0;31m[FAIL][0m Ringtone volume set is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-sound-cli/tizen-sound-cli: Permission denied[0m
+
+[0;36m[SO7][0m tone — play tone
+  [0;31m[FAIL][0m Tone output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-sound-cli/tizen-sound-cli: Permission denied[0m
+
+[1m══════════════════════════════════════════════════════[0m
+  [0;31m[1mFAILED[0m: 1 passed, [0;31m7 failed[0m
+  [2mTotal: 8 | Duration: 1s[0m
+[1m══════════════════════════════════════════════════════[0m
+
+[2mPre-flight checks...[0m
+[2mPre-flight OK[0m
+
+[1m══════════════════════════════════════════════════════[0m
+[1m  CLI: tizen-vconf-cli[0m
+[1m══════════════════════════════════════════════════════[0m
+
+
+[0;36m[V1][0m get — device name
+  [0;32m[PASS][0m Device name returned
+  [0;32m[PASS][0m Device name returned (plain text)
+
+[0;36m[V2][0m get — language setting
+  [0;32m[PASS][0m Language returned
+
+[0;36m[V3][0m get — timezone
+  [0;32m[PASS][0m Timezone returned
+
+[0;36m[V4][0m get — sound enabled
+  [0;32m[PASS][0m Sound setting returned
+
+[0;36m[V5][0m set & get — round-trip test
+  [0;33m[SKIP][0m set & get [2m(set operation not permitted)[0m
+
+[0;36m[V6][0m get — multiple system keys
+  [0;32m[PASS][0m At least 2 system keys readable (3/3)
+
+[0;36m[V7][0m watch — streaming (2s timeout)
+  [0;32m[PASS][0m Watch completed without crash
+
+[1m══════════════════════════════════════════════════════[0m
+  [0;32m[1mALL PASSED[0m: 7 passed
+  [0;33m1 skipped[0m
+  [2mTotal: 8 | Duration: 0s[0m
+[1m══════════════════════════════════════════════════════[0m
+
+[2mPre-flight checks...[0m
+[2mPre-flight OK[0m
+
+[1m══════════════════════════════════════════════════════[0m
+[1m  CLI: tizen-web-search-cli[0m
+[1m══════════════════════════════════════════════════════[0m
+
+
+[0;36m[WS1][0m Search — default engine
+  [0;31m[FAIL][0m Output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-web-search-cli/tizen-web-search-cli: Permission denied[0m
+  [0;31m[FAIL][0m Has search structure
+       [2mexpected pattern: engine\|query\|results[0m
+       [2mactual (200 chars): /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-web-search-cli/tizen-web-search-cli: Permission denied[0m
+
+[0;36m[WS2][0m Search — naver engine
+  [0;31m[FAIL][0m Output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-web-search-cli/tizen-web-search-cli: Permission denied[0m
+
+[0;36m[WS3][0m Search — google engine
+  [0;31m[FAIL][0m Output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-web-search-cli/tizen-web-search-cli: Permission denied[0m
+
+[0;36m[WS4][0m Search — brave engine
+  [0;31m[FAIL][0m Output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-web-search-cli/tizen-web-search-cli: Permission denied[0m
+
+[0;36m[WS5][0m Search — gemini engine
+  [0;31m[FAIL][0m Output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-web-search-cli/tizen-web-search-cli: Permission denied[0m
+
+[0;36m[WS6][0m Search — Korean query
+  [0;31m[FAIL][0m Korean query output is valid JSON
+       [2minvalid JSON: /bin/sh: /opt/usr/share/tizen-tools/cli/tizen-web-search-cli/tizen-web-search-cli: Permission denied[0m
+
+[1m══════════════════════════════════════════════════════[0m
+  [0;31m[1mFAILED[0m: 0 passed, [0;31m7 failed[0m
+  [2mTotal: 7 | Duration: 0s[0m
+[1m══════════════════════════════════════════════════════[0m
+
+
+[1m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+[1m  Running Suite: embedded_tools (Embedded Tool Operations)[0m
+[1m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+[2mPre-flight checks...[0m
+[2mPre-flight OK[0m
+
+[1m══════════════════════════════════════════════════════[0m
+[1m  Embedded Tools: Code Execution[0m
+[1m══════════════════════════════════════════════════════[0m
+
+
+[0;36m[C1][0m Simple Bash — arithmetic
+  [0;32m[PASS][0m Code execution returns output
+
+[0;36m[C2][0m System info via Bash
+  [0;32m[PASS][0m System info returned
+
+[0;36m[C3][0m Bash error handling
+  [0;32m[PASS][0m Error response returned
+
+[0;36m[C4][0m Multi-line Bash code
+  [0;32m[PASS][0m Multi-line code returns output
+
+[0;36m[C5][0m File I/O via Shell
+  [0;32m[PASS][0m File I/O code returns output
+
+[0;36m[C6][0m Standard library imports
+  [0;32m[PASS][0m Standard library imports work
+
+[0;36m[C7][0m Large output handling
+  [0;32m[PASS][0m Large output returned
+
+[1m══════════════════════════════════════════════════════[0m
+  [0;32m[1mALL PASSED[0m: 7 passed
+  [2mTotal: 7 | Duration: 218s[0m
+[1m══════════════════════════════════════════════════════[0m
+
+[2mPre-flight checks...[0m
+[2mPre-flight OK[0m
+
+[1m══════════════════════════════════════════════════════[0m
+[1m  Embedded Tools: Pipeline Full Lifecycle[0m
+[1m══════════════════════════════════════════════════════[0m
+
+
+[0;36m[P1][0m List pipelines (baseline)
+  [0;32m[PASS][0m list_pipelines returns output
+
+[0;36m[P2][0m Create tool-only pipeline
+  [0;32m[PASS][0m create_pipeline returns output
+
+[0;36m[P3][0m Run tool-only pipeline
+  [0;32m[PASS][0m run_pipeline returns output
+  [0;33m[SKIP][0m Pipeline execution log [2m(log may have rotated)[0m
+
+[0;36m[P4][0m Create multi-step pipeline
+  [0;32m[PASS][0m multi-step pipeline created
+
+[0;36m[P5][0m Run multi-step pipeline (step chaining)

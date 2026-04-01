@@ -1,0 +1,1413 @@
+[0;36m[DEPLOY][0m Using explicit architecture: x86_64
+[0;32m[  OK  ][0m Repo base    : https://download.tizen.org/snapshots/TIZEN/Tizen/Tizen-Base/reference/repos/standard/packages/
+[0;32m[  OK  ][0m Repo platform: https://download.tizen.org/snapshots/TIZEN/Tizen/Tizen-Unified/reference/repos/emulator/packages/
+
+[1m══════════════════════════════════════════[0m
+[1m  Pre-flight Checks[0m
+[1m══════════════════════════════════════════[0m
+[0;32m[  OK  ][0m gbs found
+[0;32m[  OK  ][0m sdb found: /home/hjhun/tizen-studio/tools/sdb
+[0;36m[DEPLOY][0m Architecture : x86_64
+[0;36m[DEPLOY][0m Project dir  : /home/hjhun/samba/github/tizenclaw
+[0;36m[DEPLOY][0m Skip build   : false
+[0;36m[DEPLOY][0m Incremental  : false
+[0;36m[DEPLOY][0m No-init      : false
+[0;36m[DEPLOY][0m Dry-run      : false
+
+[1m══════════════════════════════════════════[0m
+[1m  Step 1/4: GBS Build[0m
+[1m══════════════════════════════════════════[0m
+[0;36m[DEPLOY][0m Building WITHOUT crun (default native debug mode)
+[0;36m[DEPLOY][0m Running: gbs build -A x86_64 --include-all
+info: generate repositories ...
+warning: No local package repository for arch x86_64
+info: build conf has been downloaded at:
+      /var/tmp/hjhun-gbs/tizen.conf
+[32minfo: [0mstart building packages from: /home/hjhun/samba/github/tizenclaw (git)
+2026-03-29 21:27 +0900
+gbs 2.0.6
+[32minfo: [0mprepare sources...
+[32minfo: [0mstart export source from: /home/hjhun/samba/github/tizenclaw ...
+info: the following uncommitted changes would be included:
+   .dev_note/DASHBOARD.md
+   .gitignore
+   deploy.sh
+   tests/README.md
+   tests/verification/run_all.sh
+   tests/verification/service/test_service.sh
+   tests/scripts/test_e2e.sh
+   tests/scripts/test_live.sh
+   tests/unit/CMakeLists.txt
+   tests/unit/a2a_handler_test.cc
+   tests/unit/action_bridge_test.cc
+   tests/unit/agent_core_session_test.cc
+   tests/unit/agent_core_test.cc
+   tests/unit/agent_factory_test.cc
+   tests/unit/agent_role_test.cc
+   tests/unit/audit_logger_test.cc
+   tests/unit/autonomous_trigger_test.cc
+   tests/unit/capability_registry_test.cc
+   tests/unit/channel_factory_test.cc
+   tests/unit/channel_test.cc
+   tests/unit/container_engine_test.cc
+   tests/unit/embedding_store_test.cc
+   tests/unit/event_bus_test.cc
+   tests/unit/fleet_agent_test.cc
+   tests/unit/health_monitor_test.cc
+   tests/unit/http_client_test.cc
+   tests/unit/key_store_test.cc
+   tests/unit/llm_backend_test.cc
+   tests/unit/main.cc
+   tests/unit/mcp_server_test.cc
+   tests/unit/memory_store_test.cc
+   tests/unit/mock/mock_llm_backend.hh
+   tests/unit/offline_fallback_test.cc
+   tests/unit/ota_updater_test.cc
+   tests/unit/perception_engine_test.cc
+   tests/unit/pipeline_executor_test.cc
+   tests/unit/safety_guard_test.cc
+   tests/unit/session_store_test.cc
+   tests/unit/skill_manifest_test.cc
+   tests/unit/skill_plugin_manager_test.cc
+   tests/unit/skill_repository_test.cc
+   tests/unit/skill_verifier_test.cc
+   tests/unit/skill_watcher_test.cc
+   tests/unit/slack_discord_channel_test.cc
+   tests/unit/system_cli_adapter_test.cc
+   tests/unit/task_scheduler_test.cc
+   tests/unit/telegram_client_test.cc
+   tests/unit/tizenclaw-unittests[1]_include.cmake
+   tests/unit/tool_dispatcher_test.cc
+   tests/unit/tool_indexer_test.cc
+   tests/unit/tool_policy_test.cc
+   tests/unit/tool_router_test.cc
+   tests/unit/user_profile_store_test.cc
+   tests/unit/voice_channel_test.cc
+   tests/unit/web_dashboard_test.cc
+   tests/unit/webhook_channel_test.cc
+   tests/unit/workflow_engine_test.cc
+   tizenclaw-sdk.pc
+   tizenclaw.pc
+info: Creating (native) source archive tizenclaw-1.0.0.tar.gz from '86734b23482ccc819674b857d86420c27f8d9ccc'
+info: package files have been exported to:
+     /home/hjhun/GBS-ROOT/local/sources/tizen/tizenclaw-1.0.0-3
+[32minfo: [0mretrieving repo metadata...
+[32minfo: [0mparsing package data...
+[32minfo: [0mbuilding repo metadata ...
+[32minfo: [0mresolving skipped packages ...
+[32minfo: [0mpackage dependency resolving ...
+[32minfo: [0mthere is no circle in 1 packages
+[32minfo: [0m*** [1/1] building tizenclaw-1.0.0-3 x86_64 tizen (worker: 0) ***
+logging output to /home/hjhun/GBS-ROOT/local/BUILD-ROOTS/scratch.x86_64.0/.build.log...
+[    0s] on X86_64, no limit mem size
+[    0s] Using BUILD_ROOT=/home/hjhun/GBS-ROOT/local/BUILD-ROOTS/scratch.x86_64.0
+[    0s] Using BUILD_ARCH=x86_64:i686:i586:i486:i386:noarch
+[    0s] 
+[    0s] 
+[    0s] MiniPC started "build tizenclaw.spec" at Sun Mar 29 12:27:35 UTC 2026.
+[    0s] 
+[    0s] 
+[    0s] processing recipe /home/hjhun/GBS-ROOT/local/sources/tizen/tizenclaw-1.0.0-3/tizenclaw.spec ...
+[    0s] init_buildsystem --configdir /usr/lib/build/configs --cachedir /home/hjhun/GBS-ROOT/local/cache --repository /home/hjhun/GBS-ROOT/local/repos/tizen/x86_64/RPMS --repository https://download.tizen.org/snapshots/TIZEN/Tizen/Tizen-Base/reference/repos/standard/packages/ --repository https://download.tizen.org/snapshots/TIZEN/Tizen/Tizen-Unified/reference/repos/standard/packages/ /home/hjhun/GBS-ROOT/local/sources/tizen/tizenclaw-1.0.0-3/tizenclaw.spec ...
+[    0s] expanding package dependencies...
+[    1s] copying qemu
+[    1s] 
+[    1s] calculating packages to download...
+[    4s] reordering...cycle: gio-branding-upstream -> libgio
+[    4s]   breaking dependency libgio -> gio-branding-upstream
+[    4s] cycle: pkgmgr-info -> pkgmgr-info-parser
+[    4s]   breaking dependency pkgmgr-info -> pkgmgr-info-parser
+[    4s] cycle: glibc-devel -> libxcrypt-devel
+[    4s]   breaking dependency libxcrypt-devel -> glibc-devel
+[    4s] cycle: libsoftokn3 -> nss
+[    4s]   breaking dependency nss -> libsoftokn3
+[    4s] reordering done
+[    4s] [1/207] keeping capi-system-resource-isu-1.0.0-0
+[    4s] [2/207] keeping default-ac-domains-0.2-1.1
+[    4s] [3/207] keeping dlog-config-persistent-logs-9.0.2-1
+[    4s] [4/207] keeping libmagic-data-5.46-1.49
+[    4s] [5/207] keeping pcre2-syntax-10.47-1.10
+[    4s] [6/207] keeping python3-pyparsing-3.3.1-1.6
+[    4s] [7/207] keeping python3-six-1.17.0-1.1
+[    4s] [8/207] keeping rust-std-static-1.90.0-1
+[    4s] [9/207] keeping setup-0.9-1.22
+[    4s] [10/207] keeping filesystem-3.1-2.1
+[    4s] [11/207] keeping python3-packaging-25.0-1.8
+[    4s] [12/207] keeping glibc-2.40-7.5
+[    4s] [13/207] keeping bash-3.2.57-1.1
+[    4s] [14/207] keeping capi-base-common-0.4.82-1
+[    4s] [15/207] keeping cpio-2.8-2.1
+[    4s] [16/207] keeping diffutils-3.10-1.2
+[    4s] [17/207] keeping findutils-4.3.8-1.53
+[    4s] [18/207] keeping gdbm-1.8.3-1.59
+[    4s] [19/207] keeping hostname-3.23-1.1
+[    4s] [20/207] keeping iniparser-4.2.6-1.1
+[    4s] [21/207] keeping libatomic-14.2.0-3.29
+[    4s] [22/207] keeping libattr-2.5.1-1.54
+[    4s] [23/207] keeping libblkid-2.41.2-1.35
+[    4s] [24/207] keeping libbz2-1.0.8-2.21
+[    4s] [25/207] keeping libcap-2.73-2.18
+[    4s] [26/207] keeping libexpat-2.7.3-1.49
+[    4s] [27/207] keeping libffi-3.4.7-1.56
+[    4s] [28/207] keeping libfreebl3-3.109-1.33
+[    4s] [29/207] keeping libgcc-14.2.0-3.29
+[    4s] [30/207] keeping libgomp-14.2.0-3.29
+[    4s] [31/207] keeping libitm-14.2.0-3.29
+[    4s] [32/207] keeping libjson-0.18-0
+[    4s] [33/207] keeping libltdl-2.5.4-2.22
+[    4s] [34/207] keeping liblua-5.1.5-1.49
+[    4s] [35/207] keeping liblzma-5.8.1-4.13
+[    4s] [36/207] keeping libopenssl3-3.0.18-1.55
+[    4s] [37/207] keeping libpcre-8.45-1.53
+[    4s] [38/207] keeping libpopt-1.16-1.49
+[    4s] [39/207] keeping libpython3_141_0-3.14.2-2.4
+[    4s] [40/207] keeping libquadmath-14.2.0-3.29
+[    4s] [41/207] keeping libsmack-1.3.1-1.49
+[    4s] [42/207] keeping libsmartcols-2.41.2-1.35
+[    4s] [43/207] keeping libsqlite-3.51.0-1.35
+[    4s] [44/207] keeping libunwind-1.6.2-1.23
+[    4s] [45/207] keeping libuuid-2.41.2-1.35
+[    4s] [46/207] keeping libxcrypt-4.4.36-1.58
+[    4s] [47/207] keeping libxml2-2.15.1-1.6
+[    4s] [48/207] keeping libzstd1-1.5.7-1.35
+[    4s] [49/207] keeping m4-1.4.20-1.1
+[    4s] [50/207] keeping net-tools-2.0_20121208git-1.48
+[    4s] [51/207] keeping nspr-4.36-1.28
+[    4s] [52/207] keeping patch-2.8-1.30
+[    4s] [53/207] keeping pkg-config-0.29.2-2.21
+[    4s] [54/207] keeping sed-4.1c-4.4
+[    4s] [55/207] keeping update-alternatives-1.22.21-1.1
+[    4s] [56/207] keeping which-2.17-2.1
+[    4s] [57/207] keeping xdgmime-0.0.17-1.1
+[    4s] [58/207] keeping zlib-1.3.1-1.57
+[    4s] [59/207] keeping pcre2-10.47-1.10
+[    4s] [60/207] keeping pcre2-utf16-10.47-1.10
+[    4s] [61/207] keeping pcre2-utf32-10.47-1.10
+[    4s] [62/207] keeping build-compare-2023.06.18-1.23
+[    4s] [63/207] keeping hal-rootstrap-checker-1.0.0-3.1
+[    4s] [64/207] keeping vconf-internal-keys-devel-0.0.195-0
+[    4s] [65/207] keeping binutils-libs-2.43-1.56
+[    4s] [66/207] keeping capi-base-common-devel-0.4.82-1
+[    4s] [67/207] keeping coreutils-6.9-15.6
+[    4s] [68/207] keeping cpp-14.2.0-3.29
+[    4s] [69/207] keeping gawk-3.1.5-2.1
+[    4s] [70/207] keeping gcc-c++-14.2.0-3.29
+[    4s] [71/207] keeping grep-2.5.2-2.20
+[    4s] [72/207] keeping libacl-2.3.2-1.54
+[    4s] [73/207] keeping libblkid-devel-2.41.2-1.35
+[    4s] [74/207] keeping libcap-tools-2.73-2.18
+[    4s] [75/207] keeping libelf-0.189-1.56
+[    4s] [76/207] keeping libffi-devel-3.4.7-1.56
+[    4s] [77/207] keeping libgfortran-14.2.0-3.29
+[    4s] [78/207] keeping libglib-2.80.5-0
+[    4s] [79/207] keeping liblastlog2-2.41.2-1.35
+[    4s] [80/207] keeping libmount-2.41.2-1.35
+[    4s] [81/207] keeping libstdc++-14.2.0-3.29
+[    5s] [82/207] keeping libxml2-tools-2.15.1-1.6
+[    5s] [83/207] keeping make-4.4.1-1.51
+[    5s] [84/207] keeping minizip-1.3.1-1.57
+[    5s] [85/207] keeping nss-certs-3.109-1.33
+[    5s] [86/207] keeping rust-std-shared-1.90.0-1
+[    5s] [87/207] keeping smack-1.3.1-1.49
+[    5s] [88/207] keeping sqlite-3.51.0-1.35
+[    5s] [89/207] keeping xz-devel-5.8.1-4.13
+[    5s] [90/207] keeping bzip2-1.0.8-2.21
+[    5s] [91/207] keeping libfdisk-2.41.2-1.35
+[    5s] [92/207] keeping libmagic-5.46-1.49
+[    5s] [93/207] keeping rust-devel-1.90.0-1
+[    5s] [94/207] keeping shadow-utils-4.1.4.2-7.23
+[    5s] [95/207] keeping xz-5.8.1-4.13
+[    5s] [96/207] keeping perl-5.42.0-1.25
+[    5s] [97/207] keeping libkmod-34.2-1.1
+[    5s] [98/207] keeping pcre2-devel-10.47-1.10
+[    5s] [99/207] keeping build-mkbaselibs-20120927-1.1
+[    5s] [100/207] keeping libstdc++-devel-14.2.0-3.29
+[    5s] [101/207] keeping linux-glibc-devel-6.6-1.59
+[    5s] [102/207] keeping acl-2.3.2-1.54
+[    5s] [103/207] keeping file-5.46-1.49
+[    5s] [104/207] keeping libgmodule-2.80.5-0
+[    5s] [105/207] keeping libgthread-2.80.5-0
+[    5s] [106/207] keeping tar-1.17-1.1
+[    5s] [107/207] keeping terminfo-base-full-6.6-2.5
+[    5s] [108/207] keeping autoconf-2.71-1.59
+[    5s] [109/207] keeping glibc-locale-2.40-7.5
+[    5s] [110/207] keeping gzip-1.3.12-1.49
+[    5s] [111/207] keeping libcc1-14.2.0-3.29
+[    5s] [112/207] keeping libgobject-2.80.5-0
+[    5s] [113/207] keeping libmount-devel-2.41.2-1.35
+[    5s] [114/207] keeping openssl3-3.0.18-1.55
+[    5s] [115/207] keeping tizen-dlog-0.18.14-0
+[    5s] [116/207] keeping tizen-platform-config-5.0-1
+[    5s] [117/207] keeping binutils-2.43-1.56
+[    5s] [118/207] keeping libicu-78.1-1.21
+[    5s] [119/207] keeping pam-1.1.6-2.25
+[    5s] [120/207] keeping tzdata-2025b-1.1
+[    5s] [121/207] keeping dlog-9.0.2-1
+[    5s] [122/207] keeping libdw-0.189-1.56
+[    5s] [123/207] keeping cynara-db-migration-0.24.1-1
+[    5s] [124/207] keeping ttrace-1.1.0-1
+[    5s] [125/207] keeping libarchive-3.8.1-1.55
+[    5s] [126/207] keeping rust-1.90.0-1
+[    5s] [127/207] keeping shared-mime-info-1.7-0
+[    5s] [128/207] keeping dlog-logger-9.0.2-1
+[    5s] [129/207] keeping libpsl-0.21.0-1.2
+[    5s] [130/207] keeping libtzplatform-config-5.0-1
+[    5s] [131/207] keeping automake-1.16.5-1.56
+[    5s] [132/207] keeping libasm-0.189-1.56
+[    5s] [133/207] keeping cargo-1.90.0-1
+[    5s] [134/207] keeping libncurses5-6.6-2.5
+[    5s] [135/207] keeping libncurses6-6.6-2.5
+[    5s] [136/207] keeping build-20120927-1.1
+[    5s] [137/207] keeping libgirepository2-2.80.5-0
+[    5s] [138/207] keeping libsystemd-244-0
+[    5s] [139/207] keeping gcc-14.2.0-3.29
+[    5s] [140/207] keeping rpm-4.14.1.1-2.38
+[    5s] [141/207] keeping libncurses-6.6-2.5
+[    5s] [142/207] keeping less-685-1.2
+[    5s] [143/207] keeping libpsl-devel-0.21.0-1.2
+[    5s] [144/207] keeping libreadline-5.2-3.13
+[    5s] [145/207] keeping libdlog-9.0.2-1
+[    5s] [146/207] keeping libtool-2.5.4-2.22
+[    5s] [147/207] keeping ncurses-devel-6.6-2.5
+[    5s] [148/207] keeping elfutils-0.189-1.56
+[    5s] [149/207] keeping cmake-3.31.2-1.53
+[    5s] [150/207] keeping readline-devel-5.2-3.13
+[    5s] [151/207] keeping capi-system-resource-1.0.0-0
+[    5s] [152/207] keeping libdlog-devel-9.0.2-1
+[    5s] [153/207] keeping parcel-0.18.14-0
+[    5s] [154/207] keeping libcynara-commons-0.24.1-1
+[    5s] [155/207] keeping python3-base-3.14.2-2.4
+[    5s] [156/207] keeping util-linux-2.41.2-1.35
+[    5s] [157/207] keeping systemd-244-0
+[    5s] [158/207] keeping python3-3.14.2-2.5
+[    5s] [159/207] keeping libcynara-uid-0.24.1-1
+[    5s] [160/207] keeping libcynara-session-0.24.1-1
+[    5s] [161/207] keeping util-linux-su-2.41.2-1.35
+[    5s] [162/207] keeping libcynara-creds-commons-0.24.1-1
+[    5s] [163/207] keeping libcynara-client-0.24.1-1
+[    5s] [164/207] keeping tizen-core-0.4.0-0
+[    5s] [165/207] keeping security-config-1.0-1
+[    5s] [166/207] keeping python3-setuptools-80.9.0-1.5
+[    5s] [167/207] keeping tizen-core-devel-0.4.0-0
+[    5s] [168/207] keeping ca-certificates-0.0.4-0
+[    5s] [169/207] keeping libcynara-uid-creds-0.24.1-1
+[    5s] [170/207] keeping capi-system-info-0.5.2-1
+[    5s] [171/207] keeping libcynara-creds-pid-0.24.1-1
+[    5s] [172/207] keeping libcynara-creds-socket-0.24.1-1
+[    5s] [173/207] keeping pkgmgr-0.22.7-0
+[    5s] [174/207] keeping pkgmgr-devel-0.22.7-0
+[    5s] [175/207] keeping pkgmgr-types-devel-0.22.7-0
+[    5s] [176/207] keeping libxcrypt-devel-4.4.36-1.58
+[    5s] [177/207] keeping nss-3.109-1.33
+[    5s] [178/207] keeping libgio-2.80.5-0
+[    5s] [179/207] keeping gio-branding-upstream-2.80.5-0
+[    5s] [180/207] keeping glibc-devel-2.40-7.5
+[    5s] [181/207] keeping libjson-glib-1.8.0-0
+[    5s] [182/207] keeping libsessiond-10.6.16-1
+[    5s] [183/207] keeping libsoftokn3-3.109-1.33
+[    5s] [184/207] keeping glib-networking-2.72.alpha-0
+[    5s] [185/207] keeping glib2-tools-2.80.5-0
+[    5s] [186/207] keeping libsyscommon-5.0.0-0
+[    5s] [187/207] keeping zlib-devel-1.3.1-1.57
+[    5s] [188/207] keeping sqlite-devel-3.51.0-1.35
+[    5s] [189/207] keeping bundle-0.18.14-0
+[    5s] [190/207] keeping libsoup-2.72.0-1
+[    5s] [191/207] keeping buxton2-1.9.12-0
+[    5s] [192/207] keeping rpm-build-4.14.1.1-2.38
+[    5s] [193/207] keeping vconf-compat-1.9.12-0
+[    5s] [194/207] keeping libxml2-devel-2.15.1-1.6
+[    5s] [195/207] keeping glib2-devel-2.80.5-0
+[    5s] [196/207] keeping vconf-compat-devel-1.9.12-0
+[    5s] [197/207] keeping libsoup-devel-2.72.0-1
+[    5s] [198/207] keeping libstorage-1.0.0-0
+[    5s] [199/207] keeping pkgmgr-info-0.36.2-1
+[    5s] [200/207] keeping pkgmgr-info-parser-0.36.2-1
+[    5s] [201/207] keeping aul-0.82.0-1
+[    5s] [202/207] keeping rpc-port-1.21.12-0
+[    5s] [203/207] keeping eventsystem-0.1.52-1
+[    5s] [204/207] keeping pkgmgr-client-0.22.7-0
+[    5s] [205/207] keeping pkgmgr-client-devel-0.22.7-0
+[    5s] [206/207] keeping capi-appfw-event-0.6.22-0
+[    5s] [207/207] keeping capi-appfw-event-devel-0.6.22-0
+[    5s] removing nis flags from /home/hjhun/GBS-ROOT/local/BUILD-ROOTS/scratch.x86_64.0/etc/nsswitch.conf...
+[    5s] now finalizing build dir...
+[    5s] -----------------------------------------------------------------
+[    5s] ----- building tizenclaw.spec (user abuild)
+[    5s] -----------------------------------------------------------------
+[    5s] -----------------------------------------------------------------
+[    5s] + exec rpmbuild --define '_srcdefattr (-,root,root)' --nosignature --target=x86_64 --define '_build_create_debug 1' -ba /home/abuild/rpmbuild/SOURCES/tizenclaw.spec
+[    5s] warning: Macro expanded in comment on line 83: %{name}.manifest
+[    5s] 
+[    5s] Building target platforms: x86_64
+[    5s] Building for target x86_64
+[    5s] Executing(%prep): /bin/sh -e /var/tmp/rpm-tmp.gCSu5l
+[    5s] + umask 022
+[    5s] + cd /home/abuild/rpmbuild/BUILD
+[    5s] + cd /home/abuild/rpmbuild/BUILD
+[    5s] + rm -rf tizenclaw-1.0.0
+[    5s] + /bin/gzip -dc /home/abuild/rpmbuild/SOURCES/tizenclaw-1.0.0.tar.gz
+[    5s] + /bin/tar -xof -
+[    7s] + STATUS=0
+[    7s] + '[' 0 -ne 0 ']'
+[    7s] + cd tizenclaw-1.0.0
+[    7s] + /bin/chmod -Rf a+rX,u+w,g-w,o-w .
+[    7s] + cp /home/abuild/rpmbuild/SOURCES/tizenclaw.manifest .
+[    7s] + exit 0
+[    7s] Executing(%build): /bin/sh -e /var/tmp/rpm-tmp.wPZFE2
+[    7s] + umask 022
+[    7s] + cd /home/abuild/rpmbuild/BUILD
+[    7s] + CFLAGS='-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed -feliminate-unused-debug-types --param=ssp-buffer-size=4 -fdiagnostics-color=never -m64 -march=nehalem -msse4.2 -mfpmath=sse -fasynchronous-unwind-tables -fno-omit-frame-pointer -g'
+[    7s] + export CFLAGS
+[    7s] + CXXFLAGS='-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed -feliminate-unused-debug-types --param=ssp-buffer-size=4 -fdiagnostics-color=never -m64 -march=nehalem -msse4.2 -mfpmath=sse -fasynchronous-unwind-tables -fno-omit-frame-pointer -g'
+[    7s] + export CXXFLAGS
+[    7s] + LDFLAGS=
+[    7s] + export LDFLAGS
+[    7s] + cd tizenclaw-1.0.0
+[    7s] + ref=/usr/lib/rpm
+[    7s] + mints=0
+[    7s] + case $(uname -m) in
+[    7s] ++ uname -m
+[    7s] + for s in guess sub
+[    7s] ++ find -maxdepth 8 -name config.guess
+[    7s] + for s in guess sub
+[    7s] ++ find -maxdepth 8 -name config.sub
+[    7s] ++ echo '-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed -feliminate-unused-debug-types --param=ssp-buffer-size=4 -fdiagnostics-color=never -m64 -march=nehalem -msse4.2 -mfpmath=sse -fasynchronous-unwind-tables -fno-omit-frame-pointer -g'
+[    7s] ++ sed 's/-flto[^ ]*//g'
+[    7s] + export 'CFLAGS=-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed -feliminate-unused-debug-types --param=ssp-buffer-size=4 -fdiagnostics-color=never -m64 -march=nehalem -msse4.2 -mfpmath=sse -fasynchronous-unwind-tables -fno-omit-frame-pointer -g'
+[    7s] + CFLAGS='-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed -feliminate-unused-debug-types --param=ssp-buffer-size=4 -fdiagnostics-color=never -m64 -march=nehalem -msse4.2 -mfpmath=sse -fasynchronous-unwind-tables -fno-omit-frame-pointer -g'
+[    7s] ++ echo '-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed -feliminate-unused-debug-types --param=ssp-buffer-size=4 -fdiagnostics-color=never -m64 -march=nehalem -msse4.2 -mfpmath=sse -fasynchronous-unwind-tables -fno-omit-frame-pointer -g'
+[    7s] ++ sed 's/-flto[^ ]*//g'
+[    7s] + export 'CXXFLAGS=-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed -feliminate-unused-debug-types --param=ssp-buffer-size=4 -fdiagnostics-color=never -m64 -march=nehalem -msse4.2 -mfpmath=sse -fasynchronous-unwind-tables -fno-omit-frame-pointer -g'
+[    7s] + CXXFLAGS='-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed -feliminate-unused-debug-types --param=ssp-buffer-size=4 -fdiagnostics-color=never -m64 -march=nehalem -msse4.2 -mfpmath=sse -fasynchronous-unwind-tables -fno-omit-frame-pointer -g'
+[    7s] ++ echo ''
+[    7s] ++ sed 's/-flto[^ ]*//g'
+[    7s] + export LDFLAGS=
+[    7s] + LDFLAGS=
+[    7s] + export 'CFLAGS=-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed -feliminate-unused-debug-types --param=ssp-buffer-size=4 -fdiagnostics-color=never -m64 -march=nehalem -msse4.2 -mfpmath=sse -fasynchronous-unwind-tables -fno-omit-frame-pointer -g -Wno-error=missing-field-initializers -Wno-error'
+[    7s] + CFLAGS='-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed -feliminate-unused-debug-types --param=ssp-buffer-size=4 -fdiagnostics-color=never -m64 -march=nehalem -msse4.2 -mfpmath=sse -fasynchronous-unwind-tables -fno-omit-frame-pointer -g -Wno-error=missing-field-initializers -Wno-error'
+[    7s] + CFLAGS='-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed -feliminate-unused-debug-types --param=ssp-buffer-size=4 -fdiagnostics-color=never -m64 -march=nehalem -msse4.2 -mfpmath=sse -fasynchronous-unwind-tables -fno-omit-frame-pointer -g -Wno-error=missing-field-initializers -Wno-error'
+[    7s] + export CFLAGS
+[    7s] + CXXFLAGS='-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed -feliminate-unused-debug-types --param=ssp-buffer-size=4 -fdiagnostics-color=never -m64 -march=nehalem -msse4.2 -mfpmath=sse -fasynchronous-unwind-tables -fno-omit-frame-pointer -g'
+[    7s] + export CXXFLAGS
+[    7s] + FFLAGS='-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed -feliminate-unused-debug-types --param=ssp-buffer-size=4 -fdiagnostics-color=never -m64 -march=nehalem -msse4.2 -mfpmath=sse -fasynchronous-unwind-tables -fno-omit-frame-pointer -g'
+[    7s] + export FFLAGS
+[    7s] + /usr/bin/cmake -DCMAKE_VERBOSE_MAKEFILE=ON -DCMAKE_INSTALL_PREFIX:PATH=/usr -DCMAKE_INSTALL_LIBDIR:PATH=/usr/lib64 -DINCLUDE_INSTALL_DIR:PATH=/usr/include -DLIB_INSTALL_DIR:PATH=/usr/lib64 -DSYSCONF_INSTALL_DIR:PATH=/etc -DSHARE_INSTALL_PREFIX:PATH=/usr/share -DLIB_SUFFIX=64 -DCMAKE_SKIP_RPATH:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON .
+[    7s] -- The C compiler identification is GNU 14.2.0
+[    7s] -- The CXX compiler identification is GNU 14.2.0
+[    7s] -- Detecting C compiler ABI info
+[    7s] -- Detecting C compiler ABI info - done
+[    8s] -- Check for working C compiler: /bin/cc - skipped
+[    8s] -- Detecting C compile features
+[    8s] -- Detecting C compile features - done
+[    8s] -- Detecting CXX compiler ABI info
+[    8s] -- Detecting CXX compiler ABI info - done
+[    8s] -- Check for working CXX compiler: /bin/c++ - skipped
+[    8s] -- Detecting CXX compile features
+[    8s] -- Detecting CXX compile features - done
+[    8s] -- Configuring done (0.2s)
+[    8s] -- Generating done (0.0s)
+[    8s] CMake Warning:
+[    8s]   Manually-specified variables were not used by the project:
+[    8s] 
+[    8s]     BUILD_SHARED_LIBS
+[    8s]     CMAKE_SKIP_RPATH
+[    8s]     INCLUDE_INSTALL_DIR
+[    8s]     LIB_INSTALL_DIR
+[    8s]     LIB_SUFFIX
+[    8s]     SHARE_INSTALL_PREFIX
+[    8s]     SYSCONF_INSTALL_DIR
+[    8s] 
+[    8s] 
+[    8s] -- Build files have been written to: /home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0
+[    8s] + /bin/make -j16
+[    8s] /usr/bin/cmake -S/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0 -B/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0 --check-build-system CMakeFiles/Makefile.cmake 0
+[    8s] /usr/bin/cmake -E cmake_progress_start /home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/CMakeFiles /home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0//CMakeFiles/progress.marks
+[    8s] /bin/make  -f CMakeFiles/Makefile2 all
+[    8s] make[1]: Entering directory '/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0'
+[    8s] /bin/make  -f CMakeFiles/cargo_build.dir/build.make CMakeFiles/cargo_build.dir/depend
+[    8s] make[2]: Entering directory '/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0'
+[    8s] cd /home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0 && /usr/bin/cmake -E cmake_depends "Unix Makefiles" /home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0 /home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0 /home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0 /home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0 /home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/CMakeFiles/cargo_build.dir/DependInfo.cmake "--color="
+[    8s] make[2]: Leaving directory '/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0'
+[    8s] /bin/make  -f CMakeFiles/cargo_build.dir/build.make CMakeFiles/cargo_build.dir/build
+[    8s] make[2]: Entering directory '/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0'
+[    8s] [100%] Building Rust workspace with Cargo (LTO disabled for C dependencies)
+[    8s] env CFLAGS=-O2\ -fno-inline-functions\ -g2\ -gdwarf-4\ -pipe\ -Wall\ -Wp,-D_FORTIFY_SOURCE=2\ -fexceptions\ -fstack-protector-strong\ -Wformat-security\ -fmessage-length=0\ -frecord-gcc-switches\ -Wl,-z,relro,--as-needed\ -feliminate-unused-debug-types\ --param=ssp-buffer-size=4\ -fdiagnostics-color=never\ -m64\ -march=nehalem\ -msse4.2\ -mfpmath=sse\ -fasynchronous-unwind-tables\ -fno-omit-frame-pointer\ -g\ -Wno-error=missing-field-initializers\ -Wno-error\ -Wno-error=missing-field-initializers cargo build --release --offline --manifest-path /home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/Cargo.toml
+[    8s]    Compiling proc-macro2 v1.0.106
+[    8s]    Compiling unicode-ident v1.0.24
+[    8s]    Compiling quote v1.0.45
+[    8s]    Compiling libc v0.2.183
+[    8s]    Compiling cfg-if v1.0.4
+[    8s]    Compiling itoa v1.0.18
+[    8s]    Compiling once_cell v1.21.4
+[    8s]    Compiling memchr v2.8.0
+[    8s]    Compiling pin-project-lite v0.2.17
+[    8s]    Compiling find-msvc-tools v0.1.9
+[    8s]    Compiling shlex v1.3.0
+[    8s]    Compiling bytes v1.11.1
+[    8s]    Compiling log v0.4.29
+[    8s]    Compiling pkg-config v0.3.32
+[    8s]    Compiling futures-core v0.3.32
+[    8s]    Compiling vcpkg v0.2.15
+[    8s]    Compiling stable_deref_trait v1.2.1
+[    8s]    Compiling serde_core v1.0.228
+[    8s]    Compiling futures-sink v0.3.32
+[    8s]    Compiling smallvec v1.15.1
+[    8s]    Compiling zmij v1.0.21
+[    8s]    Compiling cc v1.2.57
+[    8s]    Compiling serde v1.0.228
+[    8s]    Compiling futures-task v0.3.32
+[    8s]    Compiling futures-io v0.3.32
+[    8s]    Compiling serde_json v1.0.149
+[    8s]    Compiling slab v0.4.12
+[    8s]    Compiling tracing-core v0.1.36
+[    8s]    Compiling writeable v0.6.2
+[    9s]    Compiling tower-service v0.3.3
+[    9s]    Compiling bitflags v2.11.0
+[    9s]    Compiling litemap v0.8.1
+[    9s]    Compiling percent-encoding v2.3.2
+[    9s]    Compiling crc32fast v1.5.0
+[    9s]    Compiling http v1.4.0
+[    9s]    Compiling httparse v1.10.1
+[    9s]    Compiling icu_normalizer_data v2.1.1
+[    9s]    Compiling icu_properties_data v2.1.2
+[    9s]    Compiling tower-layer v0.3.3
+[    9s]    Compiling try-lock v0.2.5
+[    9s]    Compiling foreign-types-shared v0.1.1
+[    9s]    Compiling simd-adler32 v0.3.9
+[    9s]    Compiling openssl v0.10.76
+[    9s]    Compiling httpdate v1.0.3
+[    9s]    Compiling adler2 v2.0.1
+[    9s]    Compiling miniz_oxide v0.8.9
+[    9s]    Compiling foreign-types v0.3.2
+[    9s]    Compiling tracing v0.1.44
+[    9s]    Compiling want v0.3.1
+[    9s]    Compiling futures-channel v0.3.32
+[   10s]    Compiling sync_wrapper v1.0.2
+[   10s]    Compiling version_check v0.9.5
+[   10s]    Compiling syn v2.0.117
+[   10s]    Compiling native-tls v0.2.18
+[   10s]    Compiling pin-utils v0.1.0
+[   10s]    Compiling zerocopy v0.8.47
+[   10s]    Compiling atomic-waker v1.1.2
+[   10s]    Compiling form_urlencoded v1.2.2
+[   10s]    Compiling compression-core v0.4.31
+[   10s]    Compiling openssl-src v300.5.5+3.5.5
+[   10s]    Compiling errno v0.3.14
+[   10s]    Compiling mio v1.2.0
+[   11s]    Compiling socket2 v0.6.3
+[   11s]    Compiling signal-hook-registry v1.4.8
+[   11s]    Compiling ahash v0.8.12
+[   11s]    Compiling ipnet v2.12.0
+[   11s]    Compiling base64 v0.22.1
+[   11s]    Compiling openssl-probe v0.2.1
+[   11s]    Compiling http-body v1.0.1
+[   11s]    Compiling flate2 v1.1.9
+[   11s]    Compiling libloading v0.8.9
+[   12s]    Compiling mime v0.3.17
+[   12s]    Compiling utf8_iter v1.0.4
+[   12s]    Compiling http-body-util v0.1.3
+[   12s]    Compiling unicase v2.9.0
+[   12s]    Compiling rustversion v1.0.22
+[   12s]    Compiling ryu v1.0.23
+[   12s]    Compiling compression-codecs v0.4.37
+[   12s]    Compiling mime_guess v2.0.5
+[   12s]    Compiling zeroize v1.8.2
+[   12s]    Compiling openssl-sys v0.9.112
+[   12s]    Compiling libsqlite3-sys v0.28.0
+[   12s]    Compiling iri-string v0.7.11
+[   12s]    Compiling tizen-sys v1.0.0 (/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/src/tizen-sys)
+[   12s]    Compiling rustls-pki-types v1.14.0
+[   13s]    Compiling matchit v0.7.3
+[   13s]    Compiling http-range-header v0.4.2
+[   13s]    Compiling fallible-streaming-iterator v0.1.9
+[   13s]    Compiling fallible-iterator v0.3.0
+[   13s]    Compiling serde_path_to_error v0.1.20
+[   15s]    Compiling libtizenclaw-client v1.0.0 (/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/src/libtizenclaw-client)
+[   15s]    Compiling synstructure v0.13.2
+[   15s]    Compiling zerofrom-derive v0.1.6
+[   15s]    Compiling yoke-derive v0.8.1
+[   15s]    Compiling tokio-macros v2.6.1
+[   15s]    Compiling zerovec-derive v0.11.2
+[   15s]    Compiling displaydoc v0.2.5
+[   15s]    Compiling futures-macro v0.3.32
+[   15s]    Compiling serde_derive v1.0.228
+[   15s]    Compiling openssl-macros v0.1.1
+[   15s]    Compiling async-trait v0.1.89
+[   15s]    Compiling axum-macros v0.4.2
+[   15s]    Compiling hashbrown v0.14.5
+[   16s]    Compiling tokio v1.50.0
+[   16s]    Compiling hashlink v0.9.1
+[   16s]    Compiling futures-util v0.3.32
+[   16s]    Compiling zerofrom v0.1.6
+[   16s]    Compiling yoke v0.8.1
+[   16s]    Compiling zerovec v0.11.5
+[   16s]    Compiling zerotrie v0.2.3
+[   17s]    Compiling tinystr v0.8.2
+[   17s]    Compiling potential_utf v0.1.4
+[   17s]    Compiling icu_collections v2.1.1
+[   17s]    Compiling icu_locale_core v2.1.1
+[   17s]    Compiling icu_provider v2.1.1
+[   18s]    Compiling icu_properties v2.1.2
+[   18s]    Compiling icu_normalizer v2.1.1
+[   18s]    Compiling serde_urlencoded v0.7.1
+[   18s]    Compiling libtizenclaw v1.0.0 (/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/src/libtizenclaw)
+[   18s]    Compiling tizenclaw-cli v1.0.0 (/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/src/tizenclaw-cli)
+[   18s]    Compiling tizenclaw-tool-executor v1.0.0 (/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/src/tizenclaw-tool-executor)
+[   18s]    Compiling axum-core v0.4.5
+[   18s]    Compiling idna_adapter v1.2.1
+[   19s]    Compiling idna v1.1.0
+[   19s]    Compiling url v2.5.8
+[   19s]    Compiling tizenclaw-core v1.0.0 (/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/src/tizenclaw-core)
+[   19s] warning: constant `TAG` is never used
+[   19s]  --> src/tizenclaw-core/src/logging.rs:8:7
+[   19s]   |
+[   19s] 8 | const TAG: &str = "TIZENCLAW";
+[   19s]   |       ^^^
+[   19s]   |
+[   19s]   = note: `#[warn(dead_code)]` on by default
+[   19s] 
+[   19s] warning: struct `DlogLogger` is never constructed
+[   19s]   --> src/tizenclaw-core/src/logging.rs:11:12
+[   19s]    |
+[   19s] 11 | pub struct DlogLogger;
+[   19s]    |            ^^^^^^^^^^
+[   19s] 
+[   19s] warning: struct `TizenPlatform` is never constructed
+[   19s]   --> src/tizenclaw-core/src/adapters.rs:17:12
+[   19s]    |
+[   19s] 17 | pub struct TizenPlatform;
+[   19s]    |            ^^^^^^^^^^^^^
+[   19s] 
+[   19s] warning: struct `TizenSystemInfo` is never constructed
+[   19s]   --> src/tizenclaw-core/src/adapters.rs:50:12
+[   19s]    |
+[   19s] 50 | pub struct TizenSystemInfo;
+[   19s]    |            ^^^^^^^^^^^^^^^
+[   19s] 
+[   19s] warning: struct `TizenPackageManager` is never constructed
+[   19s]    --> src/tizenclaw-core/src/adapters.rs:113:12
+[   19s]     |
+[   19s] 113 | pub struct TizenPackageManager;
+[   19s]     |            ^^^^^^^^^^^^^^^^^^^
+[   19s] 
+[   19s] warning: function `parse_tizen_pkg_list` is never used
+[   19s]    --> src/tizenclaw-core/src/adapters.rs:148:4
+[   19s]     |
+[   19s] 148 | fn parse_tizen_pkg_list(output: &str) -> Vec<PackageInfo> {
+[   19s]     |    ^^^^^^^^^^^^^^^^^^^^
+[   19s] 
+[   19s] warning: function `parse_tizen_pkg_info` is never used
+[   19s]    --> src/tizenclaw-core/src/adapters.rs:165:4
+[   19s]     |
+[   19s] 165 | fn parse_tizen_pkg_info(output: &str, pkg_id: &str) -> PackageInfo {
+[   19s]     |    ^^^^^^^^^^^^^^^^^^^^
+[   19s] 
+[   19s] warning: struct `TizenAppControl` is never constructed
+[   19s]    --> src/tizenclaw-core/src/adapters.rs:192:12
+[   19s]     |
+[   19s] 192 | pub struct TizenAppControl;
+[   19s]     |            ^^^^^^^^^^^^^^^
+[   19s] 
+[   19s] warning: `tizenclaw-core` (lib) generated 8 warnings
+[   20s]    Compiling hyper v1.8.1
+[   20s]    Compiling tokio-util v0.7.18
+[   20s]    Compiling tower v0.5.3
+[   20s]    Compiling async-compression v0.4.41
+[   20s]    Compiling tower-http v0.5.2
+[   21s]    Compiling tower-http v0.6.8
+[   22s]    Compiling hyper-util v0.1.20
+[   24s]    Compiling axum v0.7.9
+[   55s]    Compiling tokio-native-tls v0.3.1
+[   55s]    Compiling hyper-tls v0.6.0
+[   55s]    Compiling reqwest v0.12.28
+[   57s]    Compiling libtizenclaw-sdk v1.0.0 (/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/src/libtizenclaw-sdk)
+[   76s]    Compiling rusqlite v0.31.0
+[   78s]    Compiling tizenclaw v1.0.0 (/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/src/tizenclaw)
+[   82s]     Finished `release` profile [optimized] target(s) in 1m 11s
+[   82s] make[2]: Leaving directory '/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0'
+[   82s] [100%] Built target cargo_build
+[   82s] make[1]: Leaving directory '/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0'
+[   82s] /usr/bin/cmake -E cmake_progress_start /home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/CMakeFiles 0
+[   82s] + cd /home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0
+[   82s] + cargo test --release --offline -- --test-threads=1
+[   82s]    Compiling cfg-if v1.0.4
+[   82s]    Compiling itoa v1.0.18
+[   82s]    Compiling memchr v2.8.0
+[   82s]    Compiling log v0.4.29
+[   82s]    Compiling once_cell v1.21.4
+[   82s]    Compiling libc v0.2.183
+[   82s]    Compiling pin-project-lite v0.2.17
+[   82s]    Compiling bytes v1.11.1
+[   82s]    Compiling serde_core v1.0.228
+[   82s]    Compiling zerofrom v0.1.6
+[   82s]    Compiling futures-core v0.3.32
+[   82s]    Compiling stable_deref_trait v1.2.1
+[   82s]    Compiling zmij v1.0.21
+[   82s]    Compiling futures-sink v0.3.32
+[   82s]    Compiling yoke v0.8.1
+[   82s]    Compiling smallvec v1.15.1
+[   82s]    Compiling bitflags v2.11.0
+[   83s]    Compiling zerovec v0.11.5
+[   83s]    Compiling tracing-core v0.1.36
+[   83s]    Compiling futures-io v0.3.32
+[   83s]    Compiling futures-task v0.3.32
+[   83s]    Compiling http v1.4.0
+[   83s]    Compiling slab v0.4.12
+[   83s]    Compiling futures-util v0.3.32
+[   83s]    Compiling tinystr v0.8.2
+[   83s]    Compiling tracing v0.1.44
+[   83s]    Compiling openssl-sys v0.9.112
+[   83s]    Compiling errno v0.3.14
+[   83s]    Compiling socket2 v0.6.3
+[   83s]    Compiling signal-hook-registry v1.4.8
+[   83s]    Compiling mio v1.2.0
+[   83s]    Compiling http-body v1.0.1
+[   84s]    Compiling litemap v0.8.1
+[   84s]    Compiling tokio v1.50.0
+[   84s]    Compiling percent-encoding v2.3.2
+[   84s]    Compiling writeable v0.6.2
+[   84s]    Compiling tower-service v0.3.3
+[   84s]    Compiling serde_json v1.0.149
+[   84s]    Compiling serde v1.0.228
+[   84s]    Compiling icu_locale_core v2.1.1
+[   84s]    Compiling potential_utf v0.1.4
+[   84s]    Compiling zerotrie v0.2.3
+[   84s]    Compiling icu_collections v2.1.1
+[   84s]    Compiling http-body-util v0.1.3
+[   84s]    Compiling httpdate v1.0.3
+[   85s]    Compiling simd-adler32 v0.3.9
+[   85s]    Compiling icu_provider v2.1.1
+[   85s]    Compiling foreign-types-shared v0.1.1
+[   85s]    Compiling try-lock v0.2.5
+[   85s]    Compiling adler2 v2.0.1
+[   85s]    Compiling tower-layer v0.3.3
+[   85s]    Compiling miniz_oxide v0.8.9
+[   85s]    Compiling want v0.3.1
+[   85s]    Compiling foreign-types v0.3.2
+[   85s]    Compiling httparse v1.10.1
+[   85s]    Compiling icu_normalizer_data v2.1.1
+[   85s]    Compiling crc32fast v1.5.0
+[   85s]    Compiling icu_properties_data v2.1.2
+[   86s]    Compiling futures-channel v0.3.32
+[   86s]    Compiling sync_wrapper v1.0.2
+[   86s]    Compiling libloading v0.8.9
+[   86s]    Compiling atomic-waker v1.1.2
+[   86s]    Compiling pin-utils v0.1.0
+[   86s]    Compiling icu_properties v2.1.2
+[   86s]    Compiling flate2 v1.1.9
+[   86s]    Compiling icu_normalizer v2.1.1
+[   86s]    Compiling form_urlencoded v1.2.2
+[   86s]    Compiling ipnet v2.12.0
+[   86s]    Compiling openssl-probe v0.2.1
+[   86s]    Compiling base64 v0.22.1
+[   86s]    Compiling compression-core v0.4.31
+[   86s]    Compiling idna_adapter v1.2.1
+[   86s]    Compiling compression-codecs v0.4.37
+[   86s]    Compiling utf8_iter v1.0.4
+[   87s]    Compiling ryu v1.0.23
+[   87s]    Compiling idna v1.1.0
+[   87s]    Compiling serde_urlencoded v0.7.1
+[   87s]    Compiling zeroize v1.8.2
+[   87s]    Compiling iri-string v0.7.11
+[   87s]    Compiling rustls-pki-types v1.14.0
+[   87s]    Compiling url v2.5.8
+[   87s]    Compiling zerocopy v0.8.47
+[   87s]    Compiling mime v0.3.17
+[   87s]    Compiling rustix v1.1.4
+[   88s]    Compiling getrandom v0.4.2
+[   88s]    Compiling libsqlite3-sys v0.28.0
+[   88s]    Compiling tizen-sys v1.0.0 (/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/src/tizen-sys)
+[   88s]    Compiling hyper v1.8.1
+[   88s]    Compiling tower v0.5.3
+[   89s]    Compiling tokio-util v0.7.18
+[   89s]    Compiling async-compression v0.4.41
+[   89s]    Compiling hyper-util v0.1.20
+[   89s]    Compiling tower-http v0.6.8
+[   89s]    Compiling libtizenclaw v1.0.0 (/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/src/libtizenclaw)
+[   90s]    Compiling linux-raw-sys v0.12.1
+[   90s]    Compiling ahash v0.8.12
+[   90s]    Compiling hashbrown v0.14.5
+[   90s]    Compiling unicase v2.9.0
+[   91s]    Compiling mime_guess v2.0.5
+[   91s]    Compiling hashlink v0.9.1
+[   91s]    Compiling axum-core v0.4.5
+[   91s]    Compiling serde_path_to_error v0.1.20
+[   91s]    Compiling http-range-header v0.4.2
+[   92s]    Compiling fallible-streaming-iterator v0.1.9
+[   92s]    Compiling matchit v0.7.3
+[   92s]    Compiling fastrand v2.3.0
+[   92s]    Compiling fallible-iterator v0.3.0
+[   92s]    Compiling tower-http v0.5.2
+[   92s]    Compiling libtizenclaw-client v1.0.0 (/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/src/libtizenclaw-client)
+[   92s]    Compiling tizenclaw-core v1.0.0 (/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/src/tizenclaw-core)
+[   92s] warning: constant `TAG` is never used
+[   92s]  --> src/tizenclaw-core/src/logging.rs:8:7
+[   92s]   |
+[   92s] 8 | const TAG: &str = "TIZENCLAW";
+[   92s]   |       ^^^
+[   92s]   |
+[   92s]   = note: `#[warn(dead_code)]` on by default
+[   92s] 
+[   92s] warning: struct `DlogLogger` is never constructed
+[   92s]   --> src/tizenclaw-core/src/logging.rs:11:12
+[   92s]    |
+[   92s] 11 | pub struct DlogLogger;
+[   92s]    |            ^^^^^^^^^^
+[   92s] 
+[   92s] warning: struct `TizenPlatform` is never constructed
+[   92s]   --> src/tizenclaw-core/src/adapters.rs:17:12
+[   92s]    |
+[   92s] 17 | pub struct TizenPlatform;
+[   92s]    |            ^^^^^^^^^^^^^
+[   92s] 
+[   92s] warning: struct `TizenSystemInfo` is never constructed
+[   92s]   --> src/tizenclaw-core/src/adapters.rs:50:12
+[   92s]    |
+[   92s] 50 | pub struct TizenSystemInfo;
+[   92s]    |            ^^^^^^^^^^^^^^^
+[   92s] 
+[   92s] warning: struct `TizenPackageManager` is never constructed
+[   92s]    --> src/tizenclaw-core/src/adapters.rs:113:12
+[   92s]     |
+[   92s] 113 | pub struct TizenPackageManager;
+[   92s]     |            ^^^^^^^^^^^^^^^^^^^
+[   92s] 
+[   92s] warning: function `parse_tizen_pkg_list` is never used
+[   92s]    --> src/tizenclaw-core/src/adapters.rs:148:4
+[   92s]     |
+[   92s] 148 | fn parse_tizen_pkg_list(output: &str) -> Vec<PackageInfo> {
+[   92s]     |    ^^^^^^^^^^^^^^^^^^^^
+[   92s] 
+[   92s] warning: function `parse_tizen_pkg_info` is never used
+[   92s]    --> src/tizenclaw-core/src/adapters.rs:165:4
+[   92s]     |
+[   92s] 165 | fn parse_tizen_pkg_info(output: &str, pkg_id: &str) -> PackageInfo {
+[   92s]     |    ^^^^^^^^^^^^^^^^^^^^
+[   92s] 
+[   92s] warning: struct `TizenAppControl` is never constructed
+[   92s]    --> src/tizenclaw-core/src/adapters.rs:192:12
+[   92s]     |
+[   92s] 192 | pub struct TizenAppControl;
+[   92s]     |            ^^^^^^^^^^^^^^^
+[   92s] 
+[   92s] warning: `tizenclaw-core` (lib test) generated 8 warnings
+[   92s]    Compiling tempfile v3.27.0
+[   93s]    Compiling axum v0.7.9
+[   93s]    Compiling tizenclaw-cli v1.0.0 (/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/src/tizenclaw-cli)
+[   93s]    Compiling tizenclaw-tool-executor v1.0.0 (/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/src/tizenclaw-tool-executor)
+[  126s]    Compiling openssl v0.10.76
+[  126s]    Compiling native-tls v0.2.18
+[  129s]    Compiling tokio-native-tls v0.3.1
+[  129s]    Compiling hyper-tls v0.6.0
+[  129s]    Compiling reqwest v0.12.28
+[  131s]    Compiling libtizenclaw-sdk v1.0.0 (/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/src/libtizenclaw-sdk)
+[  142s]    Compiling rusqlite v0.31.0
+[  142s]    Compiling tizenclaw v1.0.0 (/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/src/tizenclaw)
+[  145s]     Finished `release` profile [optimized] target(s) in 1m 01s
+[  145s]      Running unittests src/lib.rs (target/release/deps/tizenclaw-e39bb59d7f26110c)
+[  145s] 
+[  145s] running 0 tests
+[  145s] 
+[  145s] test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+[  145s] 
+[  145s]      Running unittests src/lib.rs (target/release/deps/tizenclaw_client-b5eecd12416c51a6)
+[  145s] 
+[  145s] running 0 tests
+[  145s] 
+[  145s] test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+[  145s] 
+[  145s]      Running unittests src/lib.rs (target/release/deps/tizenclaw_sdk-798485aae185f057)
+[  145s] 
+[  145s] running 11 tests
+[  145s] test llm_types::tests::test_message_create_set_role_text ... ok
+[  145s] test llm_types::tests::test_messages_list_add_foreach ... ok
+[  145s] test llm_types::tests::test_response_default_success_is_false ... ok
+[  145s] test llm_types::tests::test_response_error_message ... ok
+[  145s] test llm_types::tests::test_response_success_tokens ... ok
+[  145s] test llm_types::tests::test_tool_call_create_destroy ... ok
+[  145s] test llm_types::tests::test_tool_call_null_returns_einval ... ok
+[  145s] test llm_types::tests::test_tool_call_set_get_args_json ... ok
+[  145s] test llm_types::tests::test_tool_call_set_get_name ... ok
+[  145s] test llm_types::tests::test_tool_create_set_get ... ok
+[  145s] test llm_types::tests::test_tools_list_add_foreach ... ok
+[  145s] 
+[  145s] test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+[  145s] 
+[  145s]      Running unittests src/lib.rs (target/release/deps/tizen_sys-b6f82f8ecafdc0e7)
+[  145s] 
+[  145s] running 0 tests
+[  145s] 
+[  145s] test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+[  145s] 
+[  145s]      Running unittests src/main.rs (target/release/deps/tizenclaw-f87e69a1c4c622dc)
+[  145s] 
+[  145s] running 95 tests
+[  145s] test core::agent_role::tests::test_add_dynamic_role ... ok
+[  145s] test core::agent_role::tests::test_empty_registry ... ok
+[  145s] test core::agent_role::tests::test_get_nonexistent_role ... ok
+[  145s] test core::agent_role::tests::test_get_role_names ... ok
+[  145s] test core::agent_role::tests::test_remove_dynamic_role ... ok
+[  145s] test core::agent_role::tests::test_role_fields ... ok
+[  145s] test core::autonomous_trigger::tests::test_add_and_check_event ... ok
+[  145s] test core::autonomous_trigger::tests::test_check_event_no_match ... ok
+[  145s] test core::autonomous_trigger::tests::test_disabled_rule_not_matched ... ok
+[  145s] test core::autonomous_trigger::tests::test_list_rules ... ok
+[  145s] test core::autonomous_trigger::tests::test_multiple_rules_same_event ... ok
+[  145s] test core::autonomous_trigger::tests::test_remove_rule ... ok
+[  145s] test core::capability_registry::tests::test_enable_disable ... ok
+[  145s] test core::capability_registry::tests::test_enable_nonexistent ... ok
+[  145s] test core::capability_registry::tests::test_get_enabled ... ok
+[  145s] test core::capability_registry::tests::test_is_available ... ok
+[  145s] test core::capability_registry::tests::test_register_and_get_all ... ok
+[  145s] test core::capability_registry::tests::test_unregister ... ok
+[  145s] test core::event_bus::tests::test_event_bus_create ... ok
+[  146s] test core::event_bus::tests::test_publish_and_dispatch ... ok
+[  146s] test core::event_bus::tests::test_queue_overflow_drops_oldest ... ok
+[  146s] test core::event_bus::tests::test_subscribe_all_receives_all_events ... ok
+[  146s] test core::event_bus::tests::test_subscribe_returns_unique_ids ... ok
+[  146s] test core::event_bus::tests::test_unsubscribe ... ok
+[  146s] test core::pipeline_executor::tests::test_create_pipeline ... ok
+[  146s] test core::pipeline_executor::tests::test_delete_pipeline ... ok
+[  146s] test core::pipeline_executor::tests::test_execute_missing_pipeline ... ok
+[  146s] test core::pipeline_executor::tests::test_execute_pipeline ... ok
+[  146s] test core::pipeline_executor::tests::test_list_pipelines ... ok
+[  146s] test core::pipeline_executor::tests::test_parse_pipeline_from_json ... ok
+[  146s] test core::prompt_builder::tests::test_default_prompt_builder ... ok
+[  146s] test core::prompt_builder::tests::test_runtime_context ... ok
+[  146s] test core::prompt_builder::tests::test_soul_injection ... ok
+[  146s] test core::prompt_builder::tests::test_tool_and_skill_injection ... ok
+[  146s] test core::safety_guard::tests::test_blocked_tool ... ok
+[  146s] test core::safety_guard::tests::test_clean_args_pass ... ok
+[  146s] test core::safety_guard::tests::test_clean_prompt_passes ... ok
+[  146s] test core::safety_guard::tests::test_default_blocked_args ... ok
+[  146s] test core::safety_guard::tests::test_irreversible_allowed_when_configured ... ok
+[  146s] test core::safety_guard::tests::test_irreversible_blocked_by_default ... ok
+[  146s] test core::safety_guard::tests::test_prompt_injection_detected ... ok
+[  146s] test core::safety_guard::tests::test_side_effect_from_str ... ok
+[  146s] test core::task_scheduler::tests::test_add_task ... ok
+[  146s] test core::task_scheduler::tests::test_empty_scheduler ... ok
+[  146s] test core::task_scheduler::tests::test_remove_nonexistent_task ... ok
+[  146s] test core::task_scheduler::tests::test_remove_task ... ok
+[  146s] test core::task_scheduler::tests::test_task_fields ... ok
+[  146s] test core::textual_skill_scanner::tests::test_fallback_description ... ok
+[  146s] test core::textual_skill_scanner::tests::test_ignores_loose_markdown_files ... ok
+[  146s] test core::textual_skill_scanner::tests::test_scan_textual_skills_valid ... ok
+[  146s] test core::tool_declaration_builder::tests::test_build_from_system_cli ... ok
+[  146s] test core::tool_declaration_builder::tests::test_builtin_tools_count ... ok
+[  146s] test core::tool_declaration_builder::tests::test_builtin_tools_has_execute_code ... ok
+[  146s] test core::tool_declaration_builder::tests::test_builtin_tools_has_required_names ... ok
+[  146s] test core::tool_declaration_builder::tests::test_builtin_tools_parameters_are_objects ... ok
+[  146s] test core::tool_declaration_builder::tests::test_execute_code_has_required_code_param ... ok
+[  146s] test core::tool_policy::tests::test_blocked_skill ... ok
+[  146s] test core::tool_policy::tests::test_check_policy_allows_first_call ... ok
+[  146s] test core::tool_policy::tests::test_check_policy_blocks_repeated ... ok
+[  146s] test core::tool_policy::tests::test_default_max_iterations ... ok
+[  146s] test core::tool_policy::tests::test_default_risk_level ... ok
+[  146s] test core::tool_policy::tests::test_different_args_not_blocked ... ok
+[  146s] test core::tool_policy::tests::test_idle_detection_different_output ... ok
+[  146s] test core::tool_policy::tests::test_idle_detection_same_output ... ok
+[  146s] test core::tool_policy::tests::test_reset_session ... ok
+[  146s] test core::tool_policy::tests::test_risk_level_as_str ... ok
+[  146s] test core::tool_policy::tests::test_risk_level_from_str ... ok
+[  146s] test core::tool_policy::tests::test_separate_sessions ... ok
+[  146s] test core::wordpiece_tokenizer::tests::test_basic_tokenize_empty ... ok
+[  146s] test core::wordpiece_tokenizer::tests::test_basic_tokenize_punctuation ... ok
+[  146s] test core::wordpiece_tokenizer::tests::test_basic_tokenize_whitespace ... ok
+[  146s] test core::wordpiece_tokenizer::tests::test_new_tokenizer_not_loaded ... ok
+[  146s] test core::wordpiece_tokenizer::tests::test_normalize_text_lowercase ... ok
+[  146s] test core::wordpiece_tokenizer::tests::test_normalize_text_preserves_nonascii ... ok
+[  146s] test core::wordpiece_tokenizer::tests::test_tokenize_output_structure ... ok
+[  146s] test core::wordpiece_tokenizer::tests::test_tokenize_padding ... ok
+[  146s] test core::wordpiece_tokenizer::tests::test_tokenize_truncation ... ok
+[  146s] test core::wordpiece_tokenizer::tests::test_tokenize_unknown_word ... ok
+[  146s] test core::wordpiece_tokenizer::tests::test_tokenizer_with_vocab_is_loaded ... ok
+[  146s] test core::workflow_engine::tests::test_create_workflow ... ok
+[  146s] test core::workflow_engine::tests::test_delete_workflow ... ok
+[  146s] test core::workflow_engine::tests::test_execute_missing_workflow ... ok
+[  146s] test core::workflow_engine::tests::test_execute_workflow ... ok
+[  146s] test core::workflow_engine::tests::test_interpolate ... ok
+[  146s] test core::workflow_engine::tests::test_list_workflows ... ok
+[  146s] test core::workflow_engine::tests::test_parse_workflow_md ... ok
+[  146s] test core::workflow_engine::tests::test_parse_workflow_md_missing_name ... ok
+[  146s] test storage::session_store::tests::test_add_and_get_messages ... ok
+[  146s] test storage::session_store::tests::test_create_store ... ok
+[  146s] test storage::session_store::tests::test_empty_session_messages ... ok
+[  146s] test storage::session_store::tests::test_empty_session_usage ... ok
+[  146s] test storage::session_store::tests::test_ensure_session ... ok
+[  146s] test storage::session_store::tests::test_message_limit ... ok
+[  146s] test storage::session_store::tests::test_message_ordering ... ok
+[  146s] test storage::session_store::tests::test_record_and_load_usage ... ok
+[  146s] 
+[  146s] test result: ok. 95 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
+[  146s] 
+[  146s]      Running unittests src/main.rs (target/release/deps/tizenclaw_cli-b2421fac4a01c1e4)
+[  146s] 
+[  146s] running 0 tests
+[  146s] 
+[  146s] test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+[  146s] 
+[  146s]      Running unittests src/lib.rs (target/release/deps/tizenclaw_core-ff405fa6fc7f6977)
+[  146s] 
+[  146s] running 0 tests
+[  146s] 
+[  146s] test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+[  146s] 
+[  146s]      Running unittests src/main.rs (target/release/deps/tizenclaw_tool_executor-11d3e45533e7b9d5)
+[  146s] 
+[  146s] running 0 tests
+[  146s] 
+[  146s] test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+[  146s] 
+[  146s]    Doc-tests tizenclaw
+[  146s] 
+[  146s] running 0 tests
+[  146s] 
+[  146s] test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+[  146s] 
+[  146s]    Doc-tests tizenclaw_client
+[  146s] 
+[  146s] running 1 test
+[  146s] test src/libtizenclaw-client/src/api.rs - api::TizenClaw (line 69) - compile ... ok
+[  146s] 
+[  146s] test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+[  146s] 
+[  146s]    Doc-tests tizenclaw_sdk
+[  146s] 
+[  146s] running 0 tests
+[  146s] 
+[  146s] test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+[  146s] 
+[  146s]    Doc-tests tizen_sys
+[  146s] 
+[  146s] running 0 tests
+[  146s] 
+[  146s] test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+[  146s] 
+[  146s] + cd -
+[  146s] /home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0
+[  146s] + exit 0
+[  146s] Executing(%install): /bin/sh -e /var/tmp/rpm-tmp.K1RNJw
+[  146s] + umask 022
+[  146s] + cd /home/abuild/rpmbuild/BUILD
+[  146s] + /bin/rm -rf /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64
+[  146s] + /bin/mkdir -p /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64
+[  146s] + cd tizenclaw-1.0.0
+[  146s] + DESTDIR=/home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64
+[  146s] + cmake --install .
+[  146s] -- Install configuration: ""
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/bin/tizenclaw
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/bin/tizenclaw-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/bin/tizenclaw-tool-executor
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizenclaw/config/tunnel_config.json
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/lib/systemd/system/tizenclaw.service
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/lib/systemd/system/tizenclaw-tool-executor.service
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/lib/systemd/system/tizenclaw-tool-executor.socket
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/lib/systemd/system/tizenclaw-code-sandbox.service
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/lib/systemd/system/tizenclaw-code-sandbox.socket
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizenclaw/web
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizenclaw/web/style.css
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizenclaw/web/app.js
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizenclaw/web/index.html
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizenclaw/web/img
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizenclaw/web/img/tizenclaw.jpg
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizenclaw/web/sdk
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizenclaw/web/sdk/tizenclaw-sdk.js
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/routing_guide.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/tools.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/embedded
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/embedded/generate_web_app.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/embedded/list_workflows.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/embedded/delete_pipeline.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/embedded/search_knowledge.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/embedded/create_workflow.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/embedded/execute_code.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/embedded/ingest_document.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/embedded/create_task.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/embedded/delete_workflow.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/embedded/list_tasks.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/embedded/run_supervisor.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/embedded/run_pipeline.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/embedded/create_session.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/embedded/list_pipelines.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/embedded/run_workflow.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/embedded/cancel_task.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/embedded/create_pipeline.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-aurum-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-aurum-cli/aurum_watcher.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-aurum-cli/tool.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-aurum-cli/aurum_watcher.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-aurum-cli/aurum_cli.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-aurum-cli/aurum_grpc_client.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-aurum-cli/aurum.proto
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-aurum-cli/aurum_grpc_client.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-sensor-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-sensor-cli/main.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-sensor-cli/tool.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-sensor-cli/tizen-sensor-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-sensor-cli/sensor_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-sensor-cli/sensor_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-web-search-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-web-search-cli/main.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-web-search-cli/http_client.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-web-search-cli/tool.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-web-search-cli/search_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-web-search-cli/tizen-web-search-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-web-search-cli/search_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-web-search-cli/http_client.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-device-info-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-device-info-cli/system_settings_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-device-info-cli/main.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-device-info-cli/battery_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-device-info-cli/tool.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-device-info-cli/battery_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-device-info-cli/storage_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-device-info-cli/thermal_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-device-info-cli/system_info_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-device-info-cli/display_info_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-device-info-cli/system_settings_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-device-info-cli/tizen-device-info-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-device-info-cli/display_info_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-device-info-cli/storage_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-device-info-cli/system_info_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-device-info-cli/runtime_info_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-device-info-cli/thermal_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-device-info-cli/runtime_info_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-media-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-media-cli/metadata_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-media-cli/main.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-media-cli/mime_type_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-media-cli/tool.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-media-cli/metadata_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-media-cli/media_content_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-media-cli/mime_type_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-media-cli/media_content_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/index.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-file-manager-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/main.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tool.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/file_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/tizen-file-manager-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-file-manager-cli/file_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-control-display-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-control-display-cli/main.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-control-display-cli/tool.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-control-display-cli/tizen-control-display-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-control-display-cli/display_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-control-display-cli/display_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-app-manager-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-app-manager-cli/list_apps_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-app-manager-cli/running_apps_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-app-manager-cli/main.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-app-manager-cli/recent_apps_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-app-manager-cli/tool.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-app-manager-cli/app_control_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-app-manager-cli/terminate_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-app-manager-cli/running_apps_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-app-manager-cli/terminate_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-app-manager-cli/package_info_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-app-manager-cli/list_apps_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-app-manager-cli/recent_apps_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-app-manager-cli/package_info_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-app-manager-cli/app_control_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/main.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/feedback_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/haptic_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/tool.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/led_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/feedback_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/power_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/led_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/power_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/haptic_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-hardware-control-cli/tizen-hardware-control-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-sound-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-sound-cli/main.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-sound-cli/tool.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-sound-cli/volume_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-sound-cli/tone_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-sound-cli/volume_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-sound-cli/sound_device_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-sound-cli/tone_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-sound-cli/tizen-sound-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-sound-cli/sound_device_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-network-info-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-network-info-cli/main.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-network-info-cli/tool.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-network-info-cli/data_usage_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-network-info-cli/wifi_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-network-info-cli/bluetooth_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-network-info-cli/bluetooth_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-network-info-cli/network_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-network-info-cli/network_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-network-info-cli/wifi_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-network-info-cli/data_usage_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-network-info-cli/tizen-network-info-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-notification-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-notification-cli/main.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-notification-cli/alarm_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-notification-cli/alarm_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-notification-cli/tool.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-notification-cli/notification_controller.hh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-notification-cli/tizen-notification-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-notification-cli/notification_controller.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-vconf-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-vconf-cli/main.cc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-vconf-cli/tool.md
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli/tizen-vconf-cli/tizen-vconf-cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/system_cli
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/bin/start_mcp_tunnel.sh
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizenclaw/rag/web.zip
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/lib64/libtizenclaw.so
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/lib64/libtizenclaw_client.so
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/include/tizenclaw/tizenclaw.h
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/lib64/pkgconfig/tizenclaw.pc
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/lib64/libtizenclaw_sdk.so
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/include/tizenclaw/tizenclaw_error.h
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/include/tizenclaw/tizenclaw_channel.h
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/include/tizenclaw/tizenclaw_llm_backend.h
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/include/tizenclaw/tizenclaw_curl.h
+[  146s] -- Installing: /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/lib64/pkgconfig/tizenclaw-sdk.pc
+[  146s] + mkdir -p /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/bin
+[  146s] + mkdir -p /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/lib/systemd/system
+[  146s] + mkdir -p /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/lib/systemd/system/multi-user.target.wants
+[  146s] + mkdir -p /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/lib/systemd/system/sockets.target.wants
+[  146s] + mkdir -p /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizenclaw/config
+[  146s] + mkdir -p /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizenclaw/rag
+[  146s] + mkdir -p /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/embedded
+[  146s] + mkdir -p /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/cli
+[  146s] + mkdir -p /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizen-tools/actions
+[  146s] + mkdir -p /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizenclaw/sandbox/packages/pip
+[  146s] + mkdir -p /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/tizenclaw/sandbox/packages/npm
+[  146s] + mkdir -p /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/opt/usr/share/crash/dump
+[  146s] + ln -sf ../tizenclaw.service /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/lib/systemd/system/multi-user.target.wants/tizenclaw.service
+[  146s] + ln -sf ../tizenclaw-tool-executor.socket /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/lib/systemd/system/sockets.target.wants/tizenclaw-tool-executor.socket
+[  146s] + ln -sf ../tizenclaw-code-sandbox.socket /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64/usr/lib/systemd/system/sockets.target.wants/tizenclaw-code-sandbox.socket
+[  146s] + /usr/lib/rpm/find-debuginfo.sh -j16 --build-id-seed 1.0.0-3 --unique-debug-src-base tizenclaw-1.0.0-3.x86_64 -S debugsourcefiles.list /home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0
+[  146s] WARNING: /usr/bin/tizenclaw is already stripped!
+[  146s] WARNING: /usr/bin/tizenclaw-cli is already stripped!
+[  146s] WARNING: /usr/bin/tizenclaw-tool-executor is already stripped!
+[  146s] WARNING: /usr/lib64/libtizenclaw.so is already stripped!
+[  146s] WARNING: /usr/lib64/libtizenclaw_client.so is already stripped!
+[  146s] WARNING: /usr/lib64/libtizenclaw_sdk.so is already stripped!
+[  146s] + cp /usr/lib/rpm/debug.manifest /home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/tizenclaw-debuginfo.manifest
+[  146s] + cp /usr/lib/rpm/debug.manifest /home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/tizenclaw-debugsource.manifest
+[  146s] + /usr/lib/rpm/check-buildroot
+[  146s] + /usr/lib/rpm//brp-compress
+[  146s] + /usr/lib/rpm/brp-strip-static-archive /bin/strip
+[  146s] + /usr/lib/rpm/brp-python-hardlink
+[  146s] + /usr/lib/rpm/tizen/find-docs.sh /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64
+[  146s] + /usr/lib/rpm/tizen/find-isufiles.sh /home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/isu.list
+[  146s] ~/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64 ~/rpmbuild/BUILD/tizenclaw-1.0.0
+[  146s] ~/rpmbuild/BUILD/tizenclaw-1.0.0
+[  146s] + /etc/hal/rootstrap/hal-rootstrap-checker.sh /home/abuild/rpmbuild/SOURCES /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64 x86_64
+[  146s] warning: Macro expanded in comment on line 83: %{name}.manifest
+[  146s] 
+[  146s] warning: Macro expanded in comment on line 83: %{name}.manifest
+[  146s] 
+[  146s] Package: tizenclaw, Group: System/Service
+[  146s] # NOTICE: Config hal-rootstrap-checker.yaml skipped                                      #
+[  146s] ##########################################################################################
+[  146s] # SUCCESS: hal-rootstrap-checker done                                                    #
+[  146s] ##########################################################################################
+[  147s] Processing files: tizenclaw-1.0.0-3.x86_64
+[  147s] Provides: libtizenclaw.so()(64bit) libtizenclaw_client.so()(64bit) libtizenclaw_sdk.so()(64bit) tizenclaw = 1.0.0-3 tizenclaw(x86-64) = 1.0.0-3
+[  147s] Requires(interp): /bin/sh
+[  147s] Requires(rpmlib): rpmlib(CompressedFileNames) <= 3.0.4-1 rpmlib(FileDigests) <= 4.6.0-1 rpmlib(PayloadFilesHavePrefix) <= 4.0-1
+[  147s] Requires(post): /bin/sh
+[  147s] Requires: /bin/bash ld-linux-x86-64.so.2()(64bit) ld-linux-x86-64.so.2(GLIBC_2.3)(64bit) libc.so.6()(64bit) libc.so.6(GLIBC_2.10)(64bit) libc.so.6(GLIBC_2.14)(64bit) libc.so.6(GLIBC_2.15)(64bit) libc.so.6(GLIBC_2.16)(64bit) libc.so.6(GLIBC_2.17)(64bit) libc.so.6(GLIBC_2.18)(64bit) libc.so.6(GLIBC_2.2.5)(64bit) libc.so.6(GLIBC_2.25)(64bit) libc.so.6(GLIBC_2.27)(64bit) libc.so.6(GLIBC_2.28)(64bit) libc.so.6(GLIBC_2.29)(64bit) libc.so.6(GLIBC_2.3)(64bit) libc.so.6(GLIBC_2.3.2)(64bit) libc.so.6(GLIBC_2.3.4)(64bit) libc.so.6(GLIBC_2.32)(64bit) libc.so.6(GLIBC_2.33)(64bit) libc.so.6(GLIBC_2.34)(64bit) libc.so.6(GLIBC_2.38)(64bit) libc.so.6(GLIBC_2.39)(64bit) libc.so.6(GLIBC_2.4)(64bit) libc.so.6(GLIBC_2.5)(64bit) libc.so.6(GLIBC_2.7)(64bit) libc.so.6(GLIBC_2.9)(64bit) libgcc_s.so.1()(64bit) libgcc_s.so.1(GCC_3.0)(64bit) libgcc_s.so.1(GCC_3.3)(64bit) libgcc_s.so.1(GCC_4.2.0)(64bit) libm.so.6()(64bit) libm.so.6(GLIBC_2.29)(64bit)
+[  147s] Processing files: tizenclaw-debugsource-1.0.0-3.x86_64
+[  147s] warning: Empty %files file /home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/debugsourcefiles.list
+[  147s] Aptk: PG1hbmlmZXN0PgogPHJlcXVlc3Q+CiAgICA8ZG9tYWluIG5hbWU9Il8iLz4KIDwv
+[  147s] cmVxdWVzdD4KPC9tYW5pZmVzdD4K
+[  147s] 
+[  147s] Processing files: tizenclaw-devel-1.0.0-3.x86_64
+[  147s] Provides: pkgconfig(tizenclaw) = 1.0.0 pkgconfig(tizenclaw-sdk) = 1.0.0 tizenclaw-devel = 1.0.0-3 tizenclaw-devel(x86-64) = 1.0.0-3
+[  147s] Requires(rpmlib): rpmlib(CompressedFileNames) <= 3.0.4-1 rpmlib(FileDigests) <= 4.6.0-1 rpmlib(PayloadFilesHavePrefix) <= 4.0-1
+[  147s] Requires: /usr/bin/pkg-config
+[  147s] Checking for unpackaged file(s): /usr/lib/rpm/check-files /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64
+[  149s] Wrote: /home/abuild/rpmbuild/SRPMS/tizenclaw-1.0.0-3.src.rpm
+[  155s] Wrote: /home/abuild/rpmbuild/RPMS/x86_64/tizenclaw-1.0.0-3.x86_64.rpm
+[  155s] Wrote: /home/abuild/rpmbuild/RPMS/x86_64/tizenclaw-debugsource-1.0.0-3.x86_64.rpm
+[  155s] Wrote: /home/abuild/rpmbuild/RPMS/x86_64/tizenclaw-devel-1.0.0-3.x86_64.rpm
+[  155s] Executing(%clean): /bin/sh -e /var/tmp/rpm-tmp.CnYA2z
+[  155s] + umask 022
+[  155s] + cd /home/abuild/rpmbuild/BUILD
+[  155s] + /bin/rm -rf /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64
+[  155s] + cd tizenclaw-1.0.0
+[  155s] + /bin/rm -rf /home/abuild/rpmbuild/BUILDROOT/tizenclaw-1.0.0-3.x86_64
+[  155s] + exit 0
+[  155s] ... checking for files with abuild user/group
+[  155s] 
+[  155s] MiniPC finished "build tizenclaw.spec" at Sun Mar 29 12:30:10 UTC 2026.
+[  155s] 
+[32minfo: [0mfinished building tizenclaw
+[32minfo: [0mupdating local repo
+[32minfo: [0m*** Build Status Summary ***
+=== Total succeeded built packages: (1) ===
+[32minfo: [0mgenerated html format report:
+     /home/hjhun/GBS-ROOT/local/repos/tizen/x86_64/index.html
+[32minfo: [0mgenerated RPM packages can be found from local repo:
+     /home/hjhun/GBS-ROOT/local/repos/tizen/x86_64/RPMS
+[32minfo: [0mgenerated source RPM packages can be found from local repo:
+     /home/hjhun/GBS-ROOT/local/repos/tizen/x86_64/SRPMS
+[32minfo: [0mbuild logs can be found in:
+     /home/hjhun/GBS-ROOT/local/repos/tizen/x86_64/logs
+[32minfo: [0mbuild roots located in:
+     /home/hjhun/GBS-ROOT/local/BUILD-ROOTS/scratch.x86_64.*
+info: Done
+[0;32m[  OK  ][0m GBS build succeeded
+[0;32m[  OK  ][0m RPMS directory: /home/hjhun/GBS-ROOT/local/repos/tizen/x86_64/RPMS
+
+[1m══════════════════════════════════════════[0m
+[1m  Step 2/4: Locating RPM[0m
+[1m══════════════════════════════════════════[0m
+[0;36m[DEPLOY][0m Searching in: /home/hjhun/GBS-ROOT/local/repos/tizen/x86_64/RPMS
+[0;32m[  OK  ][0m Found: tizenclaw-1.0.0-3.x86_64.rpm (8.3M)
+
+[1m══════════════════════════════════════════[0m
+[1m  Step 3/4: Deploy to Device[0m
+[1m══════════════════════════════════════════[0m
+[0;36m[DEPLOY][0m Checking device connectivity...
+[0;32m[  OK  ][0m Device connected
+  emulator-26101      	device    	tc-0327-1
+[0;36m[DEPLOY][0m Acquiring root access...
+Switched to 'root' account mode
+[0;32m[  OK  ][0m Root access granted
+[0;36m[DEPLOY][0m Remounting root filesystem as read-write...
+[0;32m[  OK  ][0m Filesystem remounted (rw)
+[0;36m[DEPLOY][0m Pushing tizenclaw-1.0.0-3.x86_64.rpm to device:/tmp/
+WARNING: Your data are to be sent over an unencrypted connection and could be read by others.
+pushed   tizenclaw-1.0.0-3.x86_64.rpm	  0%	      0KB	    0KB/spushed   tizenclaw-1.0.0-3.x86_64.rpm	 43%	   3712KB	 3711KB/spushed   tizenclaw-1.0.0-3.x86_64.rpm	 54%	   4608KB	  895KB/spushed   tizenclaw-1.0.0-3.x86_64.rpm	 65%	   5568KB	  959KB/spushed   tizenclaw-1.0.0-3.x86_64.rpm	 76%	   6528KB	  959KB/spushed   tizenclaw-1.0.0-3.x86_64.rpm	 85%	   7296KB	  767KB/spushed   tizenclaw-1.0.0-3.x86_64.rpm	 97%	   8256KB	  959KB/spushed   tizenclaw-1.0.0-3.x86_64.rpm	100%	   8494KB	  959KB/s
+1 file(s) pushed. 0 file(s) skipped.
+/home/hjhun/GBS-ROOT/local/repos/tizen/x86_64/RPMS/tizenclaw-1.0.0-3.x86_64.rpm   905KB/s (8697907 bytes in 9.383s)
+[0;32m[  OK  ][0m RPM transferred: tizenclaw-1.0.0-3.x86_64.rpm
+[0;36m[DEPLOY][0m Installing tizenclaw-1.0.0-3.x86_64.rpm...
+Preparing...                                                            (100%)#                                 (100%)##                                (100%)###                               (100%)####                              (100%)#####                             (100%)######                            (100%)#######                           (100%)########                          (100%)#########                         (100%)##########                        (100%)###########                       (100%)############                      (100%)#############                     (100%)##############                    (100%)###############                   (100%)################                  (100%)#################                 (100%)##################                (100%)###################               (100%)####################              (100%)#####################             (100%)######################            (100%)#######################           (100%)########################          (100%)#########################         (100%)##########################        (100%)###########################       (100%)############################      (100%)#############################     (100%)##############################    (100%)###############################   (100%)################################  (100%)################################# (100%)################################# [100%]
+No manifest in this package. Creating default one
+Updating / installing...
+   1:tizenclaw-1.0.0-3                                                  (  2%)#                                 (  5%)##                                (  7%)###                               ( 10%)####                              ( 13%)#####                             ( 16%)######                            ( 19%)#######                           ( 22%)########                          ( 25%)#########                         ( 28%)##########                        ( 31%)###########                       ( 34%)############                      ( 37%)#############                     ( 40%)##############                    ( 43%)###############                   ( 46%)################                  ( 49%)#################                 ( 52%)##################                ( 54%)###################               ( 57%)####################              ( 60%)#####################             ( 63%)######################            ( 66%)#######################           ( 69%)########################          ( 72%)#########################         ( 75%)##########################        ( 78%)###########################       ( 81%)############################      ( 84%)#############################     ( 87%)##############################    ( 90%)###############################   ( 93%)################################  ( 96%)################################# ( 99%)################################# [100%]
+No manifest in this package. Creating default one
+[0;32m[  OK  ][0m RPM installed: tizenclaw-1.0.0-3.x86_64.rpm
+[0;36m[DEPLOY][0m Cleaning up /tmp/tizenclaw-1.0.0-3.x86_64.rpm...
+[0;32m[  OK  ][0m All RPMs processed
+[0;36m[DEPLOY][0m Extracting RAG web docs...
+RAG_OK
+[0;32m[  OK  ][0m RAG web docs extracted
+[0;36m[DEPLOY][0m Installing Web Dashboard frontend...
+WARNING: Your data are to be sent over an unencrypted connection and could be read by others.
+pushed                         app.js	  0%	      0KB	    0KB/spushed                         app.js	100%	     38KB	    0KB/s
+1 file(s) pushed. 0 file(s) skipped.
+/home/hjhun/samba/github/tizenclaw/data/web/app.js   678KB/s (39491 bytes in 0.056s)
+WARNING: Your data are to be sent over an unencrypted connection and could be read by others.
+pushed                     index.html	  0%	      0 B	    0KB/spushed                     index.html	100%	   9423 B	    0KB/s
+1 file(s) pushed. 0 file(s) skipped.
+/home/hjhun/samba/github/tizenclaw/data/web/index.html   158KB/s (9423 bytes in 0.058s)
+WARNING: Your data are to be sent over an unencrypted connection and could be read by others.
+pushed                      style.css	  0%	      0KB	    0KB/spushed                      style.css	100%	     16KB	    0KB/s
+1 file(s) pushed. 0 file(s) skipped.
+/home/hjhun/samba/github/tizenclaw/data/web/style.css   305KB/s (16712 bytes in 0.053s)
+WARNING: Your data are to be sent over an unencrypted connection and could be read by others.
+pushed                  tizenclaw.jpg	  0%	      0KB	    0KB/spushed                  tizenclaw.jpg	100%	    411KB	    0KB/s
+1 file(s) pushed. 0 file(s) skipped.
+/home/hjhun/samba/github/tizenclaw/data/web/img/tizenclaw.jpg   885KB/s (421333 bytes in 0.464s)
+WARNING: Your data are to be sent over an unencrypted connection and could be read by others.
+pushed               tizenclaw-sdk.js	  0%	      0 B	    0KB/spushed               tizenclaw-sdk.js	100%	   5519 B	    0KB/s
+1 file(s) pushed. 0 file(s) skipped.
+/home/hjhun/samba/github/tizenclaw/data/web/sdk/tizenclaw-sdk.js   111KB/s (5519 bytes in 0.048s)
+[0;32m[  OK  ][0m Web Dashboard frontend installed to /opt/usr/data/tizenclaw/web
+[0;32m[  OK  ][0m python3 already installed on device: /usr/bin/python3
+
+[1m══════════════════════════════════════════[0m
+[1m  Step 4/4: Restart & Run TizenClaw[0m
+[1m══════════════════════════════════════════[0m
+[0;36m[DEPLOY][0m Reloading systemd daemon...
+[0;32m[  OK  ][0m Daemon reloaded
+[0;36m[DEPLOY][0m Enabling socket units...
+[0;32m[  OK  ][0m Socket units enabled
+[0;36m[DEPLOY][0m Restarting tizenclaw-tool-executor socket...
+[0;32m[  OK  ][0m Tool executor socket restarted
+[0;36m[DEPLOY][0m Restarting tizenclaw-code-sandbox socket...
+[0;32m[  OK  ][0m Code sandbox socket restarted
+Warning: Stopping tizenclaw-tool-executor.service, but it can still be activated by:
+  tizenclaw-tool-executor.socket
+Warning: Stopping tizenclaw-code-sandbox.service, but it can still be activated by:
+  tizenclaw-code-sandbox.socket
+[0;36m[DEPLOY][0m Restarting tizenclaw service...
+[0;32m[  OK  ][0m Service restarted
+[0;36m[DEPLOY][0m Checking service status...
+
+[0;1;32m●[0m tizenclaw.service - TizenClaw Agent System Service
+     Loaded: loaded (]8;;file://localhost/usr/lib/systemd/system/tizenclaw.service/usr/lib/systemd/system/tizenclaw.service]8;;; disabled; vendor preset: enabled)
+     Active: [0;1;32mactive (running)[0m since Sun 2026-03-29 21:30:14 KST; 2s ago
+   Main PID: 5860 (tizenclaw)
+     Memory: 1.2M
+     CGroup: /system.slice/tizenclaw.service
+             └─5860 /usr/bin/tizenclaw
+
+Mar 29 21:30:14 localhost systemd[1]: tizenclaw.service: Succeeded.
+Mar 29 21:30:14 localhost systemd[1]: Stopped TizenClaw Agent System Service.
+Mar 29 21:30:14 localhost systemd[1]: Started TizenClaw Agent System Service.
+
+[0;1;32m●[0m tizenclaw-tool-executor.socket - TizenClaw Tool Executor Socket
+     Loaded: loaded (]8;;file://localhost/usr/lib/systemd/system/tizenclaw-tool-executor.socket/usr/lib/systemd/system/tizenclaw-tool-executor.socket]8;;; enabled; vendor preset: enabled)
+     Active: [0;1;32mactive (listening)[0m since Sun 2026-03-29 21:30:11 KST; 4s ago
+   Triggers: ● tizenclaw-tool-executor.service
+     Listen: @tizenclaw-tool-executor.sock (Stream)
+     CGroup: /system.slice/tizenclaw-tool-executor.socket
+
+Mar 29 21:30:11 localhost systemd[1]: tizenclaw-tool-executor.socket: Succeeded.
+Mar 29 21:30:11 localhost systemd[1]: Closed TizenClaw Tool Executor Socket.
+Mar 29 21:30:11 localhost systemd[1]: Stopping TizenClaw Tool Executor Socket.
+Mar 29 21:30:11 localhost systemd[1]: Listening on TizenClaw Tool Executor …ket.
+Hint: Some lines were ellipsized, use -l to show in full.
+
+[0;1;32m●[0m tizenclaw-code-sandbox.socket - TizenClaw Code Sandbox Socket
+     Loaded: loaded (]8;;file://localhost/usr/lib/systemd/system/tizenclaw-code-sandbox.socket/usr/lib/systemd/system/tizenclaw-code-sandbox.socket]8;;; enabled; vendor preset: enabled)
+     Active: [0;1;32mactive (listening)[0m since Sun 2026-03-29 21:30:11 KST; 4s ago
+   Triggers: ● tizenclaw-code-sandbox.service
+     Listen: @tizenclaw-code-sandbox.sock (Stream)
+     CGroup: /system.slice/tizenclaw-code-sandbox.socket
+
+Mar 29 21:30:11 localhost systemd[1]: tizenclaw-code-sandbox.socket: Succeeded.
+Mar 29 21:30:11 localhost systemd[1]: Closed TizenClaw Code Sandbox Socket.
+Mar 29 21:30:11 localhost systemd[1]: Stopping TizenClaw Code Sandbox Socket.
+Mar 29 21:30:11 localhost systemd[1]: Listening on TizenClaw Code Sandbox S…ket.
+Hint: Some lines were ellipsized, use -l to show in full.
+
+[0;36m[DEPLOY][0m Recent journal logs:
+
+-- Logs begin at Sun 2026-03-29 17:14:04 KST, end at Sun 2026-03-29 21:30:14 KST. --
+Mar 29 17:14:05 localhost systemd[1]: Stopping TizenClaw Agent System Service...
+Mar 29 17:14:07 localhost systemd[1]: tizenclaw.service: Succeeded.
+Mar 29 17:14:07 localhost systemd[1]: Stopped TizenClaw Agent System Service.
+Mar 29 17:14:07 localhost systemd[1]: Started TizenClaw Agent System Service.
+Mar 29 19:16:47 localhost systemd[1]: Stopping TizenClaw Agent System Service...
+Mar 29 19:16:48 localhost systemd[1]: tizenclaw.service: Succeeded.
+Mar 29 19:16:48 localhost systemd[1]: Stopped TizenClaw Agent System Service.
+Mar 29 19:16:48 localhost systemd[1]: Started TizenClaw Agent System Service.
+[0;1;39m-- Reboot --[0m
+Mar 29 20:00:43 localhost systemd[1]: Started TizenClaw Agent System Service.
+[0;1;39m-- Reboot --[0m
+Mar 29 21:23:17 localhost systemd[1]: Started TizenClaw Agent System Service.
+Mar 29 21:30:11 localhost systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mtizenclaw.service: Failed to set 'memory.limit_in_bytes' attribute on '/system.slice/tizenclaw.service' to '-1': Invalid argument[0m
+Mar 29 21:30:11 localhost systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mtizenclaw.service: Failed to set 'memory.limit_in_bytes' attribute on '/system.slice/tizenclaw.service' to '-1': Invalid argument[0m
+Mar 29 21:30:11 localhost systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mtizenclaw.service: Failed to set 'memory.limit_in_bytes' attribute on '/system.slice/tizenclaw.service' to '-1': Invalid argument[0m
+Mar 29 21:30:12 localhost systemd[1]: Stopping TizenClaw Agent System Service...
+Mar 29 21:30:14 localhost systemd[1]: tizenclaw.service: Succeeded.
+Mar 29 21:30:14 localhost systemd[1]: Stopped TizenClaw Agent System Service.
+Mar 29 21:30:14 localhost systemd[1]: Started TizenClaw Agent System Service.
+
+
+[1m══════════════════════════════════════════[0m
+[1m  Deploy Complete![0m
+[1m══════════════════════════════════════════[0m
+[0;32m[  OK  ][0m TizenClaw has been deployed and started successfully.
+
+[0;36m[DEPLOY][0m Useful commands:
+[0;36m[DEPLOY][0m   Logs (follow):  sdb shell journalctl -u tizenclaw -f
+[0;36m[DEPLOY][0m   Status:         sdb shell systemctl status tizenclaw -l
+[0;36m[DEPLOY][0m   Stop:           sdb shell systemctl stop tizenclaw
+[0;36m[DEPLOY][0m   Restart:        sdb shell systemctl restart tizenclaw
+

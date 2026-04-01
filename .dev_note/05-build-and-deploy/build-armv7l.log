@@ -1,0 +1,468 @@
+[0;36m[DEPLOY][0m Using explicit architecture: armv7l
+[0;32m[  OK  ][0m Repo base    : https://download.tizen.org/snapshots/TIZEN/Tizen/Tizen-Base/reference/repos/standard/packages/
+[0;32m[  OK  ][0m Repo platform: https://download.tizen.org/snapshots/TIZEN/Tizen/Tizen-Unified/reference/repos/emulator/packages/
+
+[1m══════════════════════════════════════════[0m
+[1m  Pre-flight Checks[0m
+[1m══════════════════════════════════════════[0m
+[0;32m[  OK  ][0m gbs found
+[0;32m[  OK  ][0m sdb found: /home/hjhun/tizen-studio/tools/sdb
+[0;36m[DEPLOY][0m Architecture : armv7l
+[0;36m[DEPLOY][0m Project dir  : /home/hjhun/samba/github/tizenclaw
+[0;36m[DEPLOY][0m Skip build   : false
+[0;36m[DEPLOY][0m Incremental  : false
+[0;36m[DEPLOY][0m No-init      : false
+[0;36m[DEPLOY][0m Dry-run      : false
+
+[1m══════════════════════════════════════════[0m
+[1m  Step 1/4: GBS Build[0m
+[1m══════════════════════════════════════════[0m
+[0;36m[DEPLOY][0m Building WITHOUT crun (default native debug mode)
+[0;36m[DEPLOY][0m Running: gbs build -A armv7l --include-all
+info: generate repositories ...
+warning: No local package repository for arch armv7l
+info: build conf has been downloaded at:
+      /var/tmp/hjhun-gbs/tizen.conf
+[32minfo: [0mstart building packages from: /home/hjhun/samba/github/tizenclaw (git)
+2026-03-29 21:26 +0900
+gbs 2.0.6
+[32minfo: [0mprepare sources...
+[32minfo: [0mstart export source from: /home/hjhun/samba/github/tizenclaw ...
+info: the following uncommitted changes would be included:
+   .dev_note/DASHBOARD.md
+   .gitignore
+   deploy.sh
+   tests/README.md
+   tests/verification/run_all.sh
+   tests/verification/service/test_service.sh
+   tests/scripts/test_e2e.sh
+   tests/scripts/test_live.sh
+   tests/unit/CMakeLists.txt
+   tests/unit/a2a_handler_test.cc
+   tests/unit/action_bridge_test.cc
+   tests/unit/agent_core_session_test.cc
+   tests/unit/agent_core_test.cc
+   tests/unit/agent_factory_test.cc
+   tests/unit/agent_role_test.cc
+   tests/unit/audit_logger_test.cc
+   tests/unit/autonomous_trigger_test.cc
+   tests/unit/capability_registry_test.cc
+   tests/unit/channel_factory_test.cc
+   tests/unit/channel_test.cc
+   tests/unit/container_engine_test.cc
+   tests/unit/embedding_store_test.cc
+   tests/unit/event_bus_test.cc
+   tests/unit/fleet_agent_test.cc
+   tests/unit/health_monitor_test.cc
+   tests/unit/http_client_test.cc
+   tests/unit/key_store_test.cc
+   tests/unit/llm_backend_test.cc
+   tests/unit/main.cc
+   tests/unit/mcp_server_test.cc
+   tests/unit/memory_store_test.cc
+   tests/unit/mock/mock_llm_backend.hh
+   tests/unit/offline_fallback_test.cc
+   tests/unit/ota_updater_test.cc
+   tests/unit/perception_engine_test.cc
+   tests/unit/pipeline_executor_test.cc
+   tests/unit/safety_guard_test.cc
+   tests/unit/session_store_test.cc
+   tests/unit/skill_manifest_test.cc
+   tests/unit/skill_plugin_manager_test.cc
+   tests/unit/skill_repository_test.cc
+   tests/unit/skill_verifier_test.cc
+   tests/unit/skill_watcher_test.cc
+   tests/unit/slack_discord_channel_test.cc
+   tests/unit/system_cli_adapter_test.cc
+   tests/unit/task_scheduler_test.cc
+   tests/unit/telegram_client_test.cc
+   tests/unit/tizenclaw-unittests[1]_include.cmake
+   tests/unit/tool_dispatcher_test.cc
+   tests/unit/tool_indexer_test.cc
+   tests/unit/tool_policy_test.cc
+   tests/unit/tool_router_test.cc
+   tests/unit/user_profile_store_test.cc
+   tests/unit/voice_channel_test.cc
+   tests/unit/web_dashboard_test.cc
+   tests/unit/webhook_channel_test.cc
+   tests/unit/workflow_engine_test.cc
+   tizenclaw-sdk.pc
+   tizenclaw.pc
+info: Creating (native) source archive tizenclaw-1.0.0.tar.gz from '86734b23482ccc819674b857d86420c27f8d9ccc'
+info: package files have been exported to:
+     /home/hjhun/GBS-ROOT/local/sources/tizen/tizenclaw-1.0.0-3
+[32minfo: [0mretrieving repo metadata...
+[32minfo: [0mparsing package data...
+[32minfo: [0mbuilding repo metadata ...
+[32minfo: [0mresolving skipped packages ...
+[32minfo: [0mpackage dependency resolving ...
+[32minfo: [0mthere is no circle in 1 packages
+[32minfo: [0m*** [1/1] building tizenclaw-1.0.0-3 armv7l tizen (worker: 0) ***
+logging output to /home/hjhun/GBS-ROOT/local/BUILD-ROOTS/scratch.armv7l.0/.build.log...
+[    0s] on X86_64, no limit mem size
+[    0s] Using BUILD_ROOT=/home/hjhun/GBS-ROOT/local/BUILD-ROOTS/scratch.armv7l.0
+[    0s] Using BUILD_ARCH=armv7l:armv7el:armv6l:armv5tejl:armv5tel:armv5l:armv4tl:armv4l:armv3l:noarch
+[    0s] 
+[    0s] 
+[    0s] MiniPC started "build tizenclaw.spec" at Sun Mar 29 12:27:07 UTC 2026.
+[    0s] 
+[    0s] 
+[    0s] processing recipe /home/hjhun/GBS-ROOT/local/sources/tizen/tizenclaw-1.0.0-3/tizenclaw.spec ...
+[    0s] init_buildsystem --configdir /usr/lib/build/configs --cachedir /home/hjhun/GBS-ROOT/local/cache --repository /home/hjhun/GBS-ROOT/local/repos/tizen/armv7l/RPMS --repository https://download.tizen.org/snapshots/TIZEN/Tizen/Tizen-Base/reference/repos/standard/packages/ --repository https://download.tizen.org/snapshots/TIZEN/Tizen/Tizen-Unified/reference/repos/standard/packages/ /home/hjhun/GBS-ROOT/local/sources/tizen/tizenclaw-1.0.0-3/tizenclaw.spec ...
+[    1s] initializing /home/hjhun/GBS-ROOT/local/BUILD-ROOTS/scratch.armv7l.0/.srcfiles.cache ...
+[    1s] /usr/lib/build/createdirdeps --oldfile /home/hjhun/GBS-ROOT/local/BUILD-ROOTS/scratch.armv7l.0/.srcfiles.cache /home/hjhun/GBS-ROOT/local/repos/tizen/armv7l/RPMS
+[    1s] /usr/lib/build/createrepomddeps --cachedir=/home/hjhun/GBS-ROOT/local/cache https://download.tizen.org/snapshots/TIZEN/Tizen/Tizen-Base/reference/repos/standard/packages/
+[    1s] /usr/lib/build/createrepomddeps --cachedir=/home/hjhun/GBS-ROOT/local/cache https://download.tizen.org/snapshots/TIZEN/Tizen/Tizen-Unified/reference/repos/standard/packages/
+[    2s] expanding package dependencies...
+[    3s] copying qemu
+[    3s] 
+[    3s] registering binfmt handlers for cross build
+[    3s] calculating packages to download...
+[    6s] reordering...cycle: gio-branding-upstream -> libgio
+[    6s]   breaking dependency libgio -> gio-branding-upstream
+[    6s] cycle: pkgmgr-info -> pkgmgr-info-parser
+[    6s]   breaking dependency pkgmgr-info -> pkgmgr-info-parser
+[    6s] cycle: glibc-devel -> libxcrypt-devel
+[    6s]   breaking dependency libxcrypt-devel -> glibc-devel
+[    6s] cycle: libsoftokn3 -> nss
+[    6s]   breaking dependency nss -> libsoftokn3
+[    6s] reordering done
+[    7s] [1/208] keeping capi-system-resource-isu-1.0.0-0
+[    7s] [2/208] keeping default-ac-domains-0.2-1.1
+[    7s] [3/208] keeping dlog-config-persistent-logs-9.0.2-1
+[    7s] [4/208] keeping libmagic-data-5.46-1.36
+[    7s] [5/208] keeping pcre2-syntax-10.47-1.9
+[    7s] [6/208] keeping python3-pyparsing-3.3.1-1.6
+[    7s] [7/208] keeping python3-six-1.17.0-1.1
+[    7s] [8/208] keeping rust-std-static-1.90.0-1
+[    7s] [9/208] keeping setup-0.9-1.22
+[    7s] [10/208] keeping filesystem-3.1-2.1
+[    7s] [11/208] keeping python3-packaging-25.0-1.8
+[    7s] [12/208] keeping glibc-2.40-7.5
+[    7s] [13/208] keeping libatomic-14.2.0-3.27
+[    7s] [14/208] keeping libgcc-14.2.0-3.27
+[    7s] [15/208] keeping bash-3.2.57-1.2
+[    7s] [16/208] keeping capi-base-common-0.4.82-1
+[    7s] [17/208] keeping cpio-2.8-2.1
+[    7s] [18/208] keeping diffutils-3.10-1.3
+[    7s] [19/208] keeping findutils-4.3.8-1.42
+[    7s] [20/208] keeping gdbm-1.8.3-1.56
+[    7s] [21/208] keeping hostname-3.23-1.2
+[    7s] [22/208] keeping iniparser-4.2.6-1.1
+[    7s] [23/208] keeping libattr-2.5.1-1.45
+[    7s] [24/208] keeping libblkid-2.41.2-1.26
+[    7s] [25/208] keeping libbz2-1.0.8-2.19
+[    7s] [26/208] keeping libcap-2.73-2.18
+[    7s] [27/208] keeping libexpat-2.7.3-1.48
+[    7s] [28/208] keeping libffi-3.4.7-1.53
+[    7s] [29/208] keeping libfreebl3-3.109-1.32
+[    7s] [30/208] keeping libgfortran-14.2.0-3.27
+[    7s] [31/208] keeping libgomp-14.2.0-3.27
+[    7s] [32/208] keeping libitm-14.2.0-3.27
+[    7s] [33/208] keeping libjson-0.18-0
+[    7s] [34/208] keeping libltdl-2.5.4-2.20
+[    7s] [35/208] keeping liblua-5.1.5-1.39
+[    7s] [36/208] keeping liblzma-5.8.1-4.13
+[    7s] [37/208] keeping libopenssl3-3.0.18-1.43
+[    7s] [38/208] keeping libpcre-8.45-1.41
+[    7s] [39/208] keeping libpopt-1.16-1.39
+[    7s] [40/208] keeping libpython3_141_0-3.14.2-2.4
+[    7s] [41/208] keeping libsmack-1.3.1-1.38
+[    7s] [42/208] keeping libsmartcols-2.41.2-1.26
+[    7s] [43/208] keeping libsqlite-3.51.0-1.35
+[    7s] [44/208] keeping libstdc++-14.2.0-3.27
+[    7s] [45/208] keeping libunwind-1.6.2-1.18
+[    7s] [46/208] keeping libuuid-2.41.2-1.26
+[    7s] [47/208] keeping libxcrypt-4.4.36-1.55
+[    7s] [48/208] keeping libxml2-2.15.1-1.5
+[    7s] [49/208] keeping libzstd1-1.5.7-1.29
+[    7s] [50/208] keeping m4-1.4.20-1.2
+[    7s] [51/208] keeping net-tools-2.0_20121208git-1.39
+[    7s] [52/208] keeping nspr-4.36-1.27
+[    7s] [53/208] keeping patch-2.8-1.24
+[    7s] [54/208] keeping pkg-config-0.29.2-2.18
+[    7s] [55/208] keeping rust-std-shared-1.90.0-1
+[    7s] [56/208] keeping sed-4.1c-4.4
+[    7s] [57/208] keeping update-alternatives-1.22.21-1.2
+[    7s] [58/208] keeping which-2.17-2.1
+[    7s] [59/208] keeping xdgmime-0.0.17-1.2
+[    7s] [60/208] keeping zlib-1.3.1-1.53
+[    7s] [61/208] keeping pcre2-10.47-1.9
+[    7s] [62/208] keeping pcre2-utf16-10.47-1.9
+[    7s] [63/208] keeping pcre2-utf32-10.47-1.9
+[    7s] [64/208] keeping rust-devel-1.90.0-1
+[    7s] [65/208] keeping build-compare-2023.06.18-1.23
+[    7s] [66/208] keeping hal-rootstrap-checker-1.0.0-3.1
+[    7s] [67/208] keeping libstdc++-devel-14.2.0-3.27
+[    7s] [68/208] keeping qemu-linux-user-x86_64-cross-9.2.3.1-4.4
+[    7s] [69/208] keeping vconf-internal-keys-devel-0.0.195-0
+[    7s] [70/208] keeping capi-base-common-devel-0.4.82-1
+[    7s] [71/208] keeping cpp-14.2.0-3.27
+[    7s] [72/208] keeping gcc-c++-14.2.0-3.27
+[    7s] [73/208] keeping libblkid-devel-2.41.2-1.26
+[    7s] [74/208] keeping libffi-devel-3.4.7-1.53
+[    7s] [75/208] keeping xz-devel-5.8.1-4.13
+[    7s] [76/208] keeping binutils-libs-2.43-1.54
+[    7s] [77/208] keeping coreutils-6.9-15.6
+[    7s] [78/208] keeping gawk-3.1.5-2.1
+[    7s] [79/208] keeping grep-2.5.2-2.15
+[    7s] [80/208] keeping libacl-2.3.2-1.42
+[    7s] [81/208] keeping libcap-tools-2.73-2.18
+[    7s] [82/208] keeping libcc1-14.2.0-3.27
+[    7s] [83/208] keeping libelf-0.189-1.53
+[    7s] [84/208] keeping libglib-2.80.5-0
+[    7s] [85/208] keeping liblastlog2-2.41.2-1.26
+[    7s] [86/208] keeping libmount-2.41.2-1.26
+[    7s] [87/208] keeping libxml2-tools-2.15.1-1.5
+[    7s] [88/208] keeping make-4.4.1-1.39
+[    7s] [89/208] keeping minizip-1.3.1-1.53
+[    7s] [90/208] keeping nss-certs-3.109-1.32
+[    7s] [91/208] keeping smack-1.3.1-1.38
+[    7s] [92/208] keeping sqlite-3.51.0-1.35
+[    7s] [93/208] keeping tizen-dlog-0.18.14-0
+[    7s] [94/208] keeping bzip2-1.0.8-2.19
+[    7s] [95/208] keeping dlog-9.0.2-1
+[    7s] [96/208] keeping libfdisk-2.41.2-1.26
+[    7s] [97/208] keeping libicu-78.1-1.21
+[    7s] [98/208] keeping libmagic-5.46-1.36
+[    7s] [99/208] keeping shadow-utils-4.1.4.2-7.23
+[    7s] [100/208] keeping xz-5.8.1-4.13
+[    7s] [101/208] keeping libkmod-34.2-1.1
+[    7s] [102/208] keeping pcre2-devel-10.47-1.9
+[    7s] [103/208] keeping perl-5.42.0-1.22
+[    7s] [104/208] keeping cynara-db-migration-0.24.1-1
+[    7s] [105/208] keeping ttrace-1.1.0-1
+[    7s] [106/208] keeping rust-1.90.0-1
+[    7s] [107/208] keeping build-mkbaselibs-20120927-1.1
+[    7s] [108/208] keeping linux-glibc-devel-6.6-1.56
+[    7s] [109/208] keeping dlog-logger-9.0.2-1
+[    7s] [110/208] keeping terminfo-base-full-6.6-2.5
+[    7s] [111/208] keeping acl-2.3.2-1.42
+[    7s] [112/208] keeping autoconf-2.71-1.59
+[    7s] [113/208] keeping file-5.46-1.36
+[    7s] [114/208] keeping glibc-locale-2.40-7.5
+[    7s] [115/208] keeping libgmodule-2.80.5-0
+[    7s] [116/208] keeping libgthread-2.80.5-0
+[    7s] [117/208] keeping libmount-devel-2.41.2-1.26
+[    7s] [118/208] keeping libpsl-0.21.0-1.3
+[    7s] [119/208] keeping tar-1.17-1.2
+[    7s] [120/208] keeping tizen-platform-config-5.0-1
+[    7s] [121/208] keeping binutils-2.43-1.54
+[    7s] [122/208] keeping gzip-1.3.12-1.38
+[    7s] [123/208] keeping libgobject-2.80.5-0
+[    7s] [124/208] keeping openssl3-3.0.18-1.43
+[    7s] [125/208] keeping cargo-1.90.0-1
+[    7s] [126/208] keeping pam-1.1.6-2.19
+[    7s] [127/208] keeping tzdata-2025b-1.2
+[    7s] [128/208] keeping libdw-0.189-1.53
+[    7s] [129/208] keeping gcc-14.2.0-3.27
+[    7s] [130/208] keeping libarchive-3.8.1-1.51
+[    7s] [131/208] keeping shared-mime-info-1.7-0
+[    7s] [132/208] keeping libpsl-devel-0.21.0-1.3
+[    7s] [133/208] keeping qemu-accel-x86_64-armv7l-0.4-1.25
+[    7s] [134/208] keeping automake-1.16.5-1.56
+[    7s] [135/208] keeping libtzplatform-config-5.0-1
+[    7s] [136/208] keeping libasm-0.189-1.53
+[    7s] [137/208] keeping libncurses5-6.6-2.5
+[    7s] [138/208] keeping libncurses6-6.6-2.5
+[    7s] [139/208] keeping build-20120927-1.1
+[    7s] [140/208] keeping libsystemd-244-0
+[    7s] [141/208] keeping libdlog-9.0.2-1
+[    7s] [142/208] keeping libgirepository2-2.80.5-0
+[    7s] [143/208] keeping rpm-4.14.1.1-2.37
+[    7s] [144/208] keeping libncurses-6.6-2.5
+[    7s] [145/208] keeping less-685-1.2
+[    7s] [146/208] keeping libdlog-devel-9.0.2-1
+[    7s] [147/208] keeping libreadline-5.2-3.12
+[    7s] [148/208] keeping capi-system-resource-1.0.0-0
+[    7s] [149/208] keeping libtool-2.5.4-2.20
+[    7s] [150/208] keeping ncurses-devel-6.6-2.5
+[    7s] [151/208] keeping parcel-0.18.14-0
+[    7s] [152/208] keeping elfutils-0.189-1.53
+[    7s] [153/208] keeping cmake-3.31.2-1.49
+[    7s] [154/208] keeping libcynara-commons-0.24.1-1
+[    7s] [155/208] keeping systemd-244-0
+[    7s] [156/208] keeping libcynara-uid-0.24.1-1
+[    7s] [157/208] keeping readline-devel-5.2-3.12
+[    7s] [158/208] keeping libcynara-session-0.24.1-1
+[    7s] [159/208] keeping libcynara-creds-commons-0.24.1-1
+[    7s] [160/208] keeping libcynara-client-0.24.1-1
+[    7s] [161/208] keeping tizen-core-0.4.0-0
+[    7s] [162/208] keeping python3-base-3.14.2-2.4
+[    7s] [163/208] keeping util-linux-2.41.2-1.26
+[    7s] [164/208] keeping python3-3.14.2-2.4
+[    7s] [165/208] keeping tizen-core-devel-0.4.0-0
+[    7s] [166/208] keeping util-linux-su-2.41.2-1.26
+[    7s] [167/208] keeping libcynara-uid-creds-0.24.1-1
+[    7s] [168/208] keeping security-config-1.0-1
+[    7s] [169/208] keeping python3-setuptools-80.9.0-1.5
+[    7s] [170/208] keeping ca-certificates-0.0.4-0
+[    7s] [171/208] keeping libcynara-creds-pid-0.24.1-1
+[    7s] [172/208] keeping libcynara-creds-socket-0.24.1-1
+[    7s] [173/208] keeping capi-system-info-0.5.2-1
+[    7s] [174/208] keeping pkgmgr-0.22.7-0
+[    7s] [175/208] keeping pkgmgr-devel-0.22.7-0
+[    7s] [176/208] keeping pkgmgr-types-devel-0.22.7-0
+[    7s] [177/208] keeping libxcrypt-devel-4.4.36-1.55
+[    7s] [178/208] keeping nss-3.109-1.32
+[    7s] [179/208] keeping libgio-2.80.5-0
+[    7s] [180/208] keeping gio-branding-upstream-2.80.5-0
+[    7s] [181/208] keeping glibc-devel-2.40-7.5
+[    7s] [182/208] keeping libjson-glib-1.8.0-0
+[    7s] [183/208] keeping libsessiond-10.6.16-1
+[    7s] [184/208] keeping libsoftokn3-3.109-1.32
+[    7s] [185/208] keeping glib-networking-2.72.alpha-0
+[    7s] [186/208] keeping libsyscommon-5.0.0-0
+[    7s] [187/208] keeping glib2-tools-2.80.5-0
+[    7s] [188/208] keeping zlib-devel-1.3.1-1.53
+[    7s] [189/208] keeping sqlite-devel-3.51.0-1.35
+[    7s] [190/208] keeping bundle-0.18.14-0
+[    7s] [191/208] keeping libsoup-2.72.0-1
+[    7s] [192/208] keeping buxton2-1.9.12-0
+[    7s] [193/208] keeping rpm-build-4.14.1.1-2.37
+[    7s] [194/208] keeping libxml2-devel-2.15.1-1.5
+[    7s] [195/208] keeping vconf-compat-1.9.12-0
+[    7s] [196/208] keeping glib2-devel-2.80.5-0
+[    7s] [197/208] keeping vconf-compat-devel-1.9.12-0
+[    7s] [198/208] keeping libsoup-devel-2.72.0-1
+[    7s] [199/208] keeping libstorage-1.0.0-0
+[    7s] [200/208] keeping pkgmgr-info-0.36.2-1
+[    7s] [201/208] keeping pkgmgr-info-parser-0.36.2-1
+[    7s] [202/208] keeping aul-0.82.0-1
+[    7s] [203/208] keeping rpc-port-1.21.12-0
+[    7s] [204/208] keeping eventsystem-0.1.52-1
+[    7s] [205/208] keeping pkgmgr-client-0.22.7-0
+[    7s] [206/208] keeping pkgmgr-client-devel-0.22.7-0
+[    7s] [207/208] keeping capi-appfw-event-0.6.22-0
+[    7s] [208/208] keeping capi-appfw-event-devel-0.6.22-0
+[    7s] removing nis flags from /home/hjhun/GBS-ROOT/local/BUILD-ROOTS/scratch.armv7l.0/etc/nsswitch.conf...
+[    7s] now finalizing build dir...
+[    8s] -----------------------------------------------------------------
+[    8s] ----- building tizenclaw.spec (user abuild)
+[    8s] -----------------------------------------------------------------
+[    8s] -----------------------------------------------------------------
+[    8s] + exec rpmbuild --define '_srcdefattr (-,root,root)' --nosignature --target=armv7l-tizen-linux --define '_build_create_debug 1' -ba /home/abuild/rpmbuild/SOURCES/tizenclaw.spec
+[    8s] warning: Macro expanded in comment on line 83: %{name}.manifest
+[    8s] 
+[    8s] Building target platforms: armv7l-tizen-linux
+[    8s] Building for target armv7l-tizen-linux
+[    8s] Executing(%prep): /bin/sh -e /var/tmp/rpm-tmp.VSPPSy
+[    8s] + umask 022
+[    8s] + cd /home/abuild/rpmbuild/BUILD
+[    8s] + cd /home/abuild/rpmbuild/BUILD
+[    8s] + rm -rf tizenclaw-1.0.0
+[    8s] + /bin/gzip -dc /home/abuild/rpmbuild/SOURCES/tizenclaw-1.0.0.tar.gz
+[    8s] + /bin/tar -xof -
+[   12s] + STATUS=0
+[   12s] + '[' 0 -ne 0 ']'
+[   12s] + cd tizenclaw-1.0.0
+[   12s] + /bin/chmod -Rf a+rX,u+w,g-w,o-w .
+[   12s] + cp /home/abuild/rpmbuild/SOURCES/tizenclaw.manifest .
+[   12s] + exit 0
+[   12s] Executing(%build): /bin/sh -e /var/tmp/rpm-tmp.Rvnosz
+[   12s] + umask 022
+[   12s] + cd /home/abuild/rpmbuild/BUILD
+[   12s] + CFLAGS='-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed --param=ssp-buffer-size=4 -march=armv7-a -mtune=cortex-a8 -mlittle-endian -mfpu=neon -mfloat-abi=softfp -mthumb -Wp,-D__SOFTFP__ -Wl,-O1 -Wl,--hash-style=gnu -Wa,-mimplicit-it=thumb -D_FILE_OFFSET_BITS=64 -g'
+[   12s] + export CFLAGS
+[   12s] + CXXFLAGS='-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed --param=ssp-buffer-size=4 -march=armv7-a -mtune=cortex-a8 -mlittle-endian -mfpu=neon -mfloat-abi=softfp -mthumb -Wp,-D__SOFTFP__ -Wl,-O1 -Wl,--hash-style=gnu -Wa,-mimplicit-it=thumb -D_FILE_OFFSET_BITS=64 -g'
+[   12s] + export CXXFLAGS
+[   12s] + LDFLAGS=
+[   12s] + export LDFLAGS
+[   12s] + cd tizenclaw-1.0.0
+[   12s] + ref=/usr/lib/rpm
+[   12s] + mints=0
+[   12s] + case $(uname -m) in
+[   12s] ++ uname -m
+[   12s] + for s in guess sub
+[   12s] ++ find -maxdepth 8 -name config.guess
+[   12s] + for s in guess sub
+[   12s] ++ find -maxdepth 8 -name config.sub
+[   12s] ++ echo '-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed --param=ssp-buffer-size=4 -march=armv7-a -mtune=cortex-a8 -mlittle-endian -mfpu=neon -mfloat-abi=softfp -mthumb -Wp,-D__SOFTFP__ -Wl,-O1 -Wl,--hash-style=gnu -Wa,-mimplicit-it=thumb -D_FILE_OFFSET_BITS=64 -g'
+[   12s] ++ sed 's/-flto[^ ]*//g'
+[   12s] + export 'CFLAGS=-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed --param=ssp-buffer-size=4 -march=armv7-a -mtune=cortex-a8 -mlittle-endian -mfpu=neon -mfloat-abi=softfp -mthumb -Wp,-D__SOFTFP__ -Wl,-O1 -Wl,--hash-style=gnu -Wa,-mimplicit-it=thumb -D_FILE_OFFSET_BITS=64 -g'
+[   12s] + CFLAGS='-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed --param=ssp-buffer-size=4 -march=armv7-a -mtune=cortex-a8 -mlittle-endian -mfpu=neon -mfloat-abi=softfp -mthumb -Wp,-D__SOFTFP__ -Wl,-O1 -Wl,--hash-style=gnu -Wa,-mimplicit-it=thumb -D_FILE_OFFSET_BITS=64 -g'
+[   12s] ++ sed 's/-flto[^ ]*//g'
+[   12s] ++ echo '-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed --param=ssp-buffer-size=4 -march=armv7-a -mtune=cortex-a8 -mlittle-endian -mfpu=neon -mfloat-abi=softfp -mthumb -Wp,-D__SOFTFP__ -Wl,-O1 -Wl,--hash-style=gnu -Wa,-mimplicit-it=thumb -D_FILE_OFFSET_BITS=64 -g'
+[   12s] + export 'CXXFLAGS=-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed --param=ssp-buffer-size=4 -march=armv7-a -mtune=cortex-a8 -mlittle-endian -mfpu=neon -mfloat-abi=softfp -mthumb -Wp,-D__SOFTFP__ -Wl,-O1 -Wl,--hash-style=gnu -Wa,-mimplicit-it=thumb -D_FILE_OFFSET_BITS=64 -g'
+[   12s] + CXXFLAGS='-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed --param=ssp-buffer-size=4 -march=armv7-a -mtune=cortex-a8 -mlittle-endian -mfpu=neon -mfloat-abi=softfp -mthumb -Wp,-D__SOFTFP__ -Wl,-O1 -Wl,--hash-style=gnu -Wa,-mimplicit-it=thumb -D_FILE_OFFSET_BITS=64 -g'
+[   12s] ++ echo ''
+[   12s] ++ sed 's/-flto[^ ]*//g'
+[   12s] + export LDFLAGS=
+[   12s] + LDFLAGS=
+[   12s] + export 'CFLAGS=-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed --param=ssp-buffer-size=4 -march=armv7-a -mtune=cortex-a8 -mlittle-endian -mfpu=neon -mfloat-abi=softfp -mthumb -Wp,-D__SOFTFP__ -Wl,-O1 -Wl,--hash-style=gnu -Wa,-mimplicit-it=thumb -D_FILE_OFFSET_BITS=64 -g -Wno-error=missing-field-initializers -Wno-error'
+[   12s] + CFLAGS='-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed --param=ssp-buffer-size=4 -march=armv7-a -mtune=cortex-a8 -mlittle-endian -mfpu=neon -mfloat-abi=softfp -mthumb -Wp,-D__SOFTFP__ -Wl,-O1 -Wl,--hash-style=gnu -Wa,-mimplicit-it=thumb -D_FILE_OFFSET_BITS=64 -g -Wno-error=missing-field-initializers -Wno-error'
+[   12s] + CFLAGS='-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed --param=ssp-buffer-size=4 -march=armv7-a -mtune=cortex-a8 -mlittle-endian -mfpu=neon -mfloat-abi=softfp -mthumb -Wp,-D__SOFTFP__ -Wl,-O1 -Wl,--hash-style=gnu -Wa,-mimplicit-it=thumb -D_FILE_OFFSET_BITS=64 -g -Wno-error=missing-field-initializers -Wno-error'
+[   12s] + export CFLAGS
+[   12s] + CXXFLAGS='-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed --param=ssp-buffer-size=4 -march=armv7-a -mtune=cortex-a8 -mlittle-endian -mfpu=neon -mfloat-abi=softfp -mthumb -Wp,-D__SOFTFP__ -Wl,-O1 -Wl,--hash-style=gnu -Wa,-mimplicit-it=thumb -D_FILE_OFFSET_BITS=64 -g'
+[   12s] + export CXXFLAGS
+[   12s] + FFLAGS='-O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed --param=ssp-buffer-size=4 -march=armv7-a -mtune=cortex-a8 -mlittle-endian -mfpu=neon -mfloat-abi=softfp -mthumb -Wp,-D__SOFTFP__ -Wl,-O1 -Wl,--hash-style=gnu -Wa,-mimplicit-it=thumb -D_FILE_OFFSET_BITS=64 -g'
+[   12s] + export FFLAGS
+[   12s] + /usr/bin/cmake -DCMAKE_VERBOSE_MAKEFILE=ON -DCMAKE_INSTALL_PREFIX:PATH=/usr -DCMAKE_INSTALL_LIBDIR:PATH=/usr/lib -DINCLUDE_INSTALL_DIR:PATH=/usr/include -DLIB_INSTALL_DIR:PATH=/usr/lib -DSYSCONF_INSTALL_DIR:PATH=/etc -DSHARE_INSTALL_PREFIX:PATH=/usr/share -DCMAKE_SKIP_RPATH:BOOL=ON -DBUILD_SHARED_LIBS:BOOL=ON .
+[   14s] -- The C compiler identification is GNU 14.2.0
+[   15s] -- The CXX compiler identification is GNU 14.2.0
+[   15s] -- Detecting C compiler ABI info
+[   16s] -- Detecting C compiler ABI info - failed
+[   16s] -- Check for working C compiler: /bin/cc
+[   17s] -- Check for working C compiler: /bin/cc - broken
+[   17s] CMake Error at /usr/share/cmake/Modules/CMakeTestCCompiler.cmake:67 (message):
+[   17s]   The C compiler
+[   17s] 
+[   17s]     "/bin/cc"
+[   17s] 
+[   17s]   is not able to compile a simple test program.
+[   17s] 
+[   17s]   It fails with the following output:
+[   17s] 
+[   17s]     Change Dir: '/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/CMakeFiles/CMakeScratch/TryCompile-ubeTYc'
+[   17s]     
+[   17s]     Run Build Command(s): /usr/bin/cmake -E env VERBOSE=1 /bin/gmake -f Makefile cmTC_70202/fast
+[   17s]     /bin/gmake  -f CMakeFiles/cmTC_70202.dir/build.make CMakeFiles/cmTC_70202.dir/build
+[   17s]     gmake[1]: Entering directory '/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/CMakeFiles/CMakeScratch/TryCompile-ubeTYc'
+[   17s]     Building C object CMakeFiles/cmTC_70202.dir/testCCompiler.c.o
+[   17s]     /bin/cc   -O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed --param=ssp-buffer-size=4 -march=armv7-a -mtune=cortex-a8 -mlittle-endian -mfpu=neon -mfloat-abi=softfp -mthumb -Wp,-D__SOFTFP__ -Wl,-O1 -Wl,--hash-style=gnu -Wa,-mimplicit-it=thumb -D_FILE_OFFSET_BITS=64 -g -Wno-error=missing-field-initializers -Wno-error  -o CMakeFiles/cmTC_70202.dir/testCCompiler.c.o -c /home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/CMakeFiles/CMakeScratch/TryCompile-ubeTYc/testCCompiler.c
+[   17s]     Linking C executable cmTC_70202
+[   17s]     /usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_70202.dir/link.txt --verbose=1
+[   17s]     /usr/lib/gcc/armv7l-tizen-linux-gnueabi/14.2.0/../../../../armv7l-tizen-linux-gnueabi/bin/ld: /usr/lib/gcc/armv7l-tizen-linux-gnueabi/14.2.0/liblto_plugin.so: error loading plugin: /usr/lib/gcc/armv7l-tizen-linux-gnueabi/14.2.0/liblto_plugin.so: wrong ELF class: ELFCLASS64
+[   17s]     collect2: error: ld returned 1 exit status
+[   17s]     /bin/cc -O2 -fno-inline-functions -g2 -gdwarf-4 -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong -Wformat-security -fmessage-length=0 -frecord-gcc-switches -Wl,-z,relro,--as-needed --param=ssp-buffer-size=4 -march=armv7-a -mtune=cortex-a8 -mlittle-endian -mfpu=neon -mfloat-abi=softfp -mthumb -Wp,-D__SOFTFP__ -Wl,-O1 -Wl,--hash-style=gnu -Wa,-mimplicit-it=thumb -D_FILE_OFFSET_BITS=64 -g -Wno-error=missing-field-initializers -Wno-error  CMakeFiles/cmTC_70202.dir/testCCompiler.c.o -o cmTC_70202
+[   17s]     gmake[1]: *** [CMakeFiles/cmTC_70202.dir/build.make:102: cmTC_70202] Error 1
+[   17s]     gmake[1]: Leaving directory '/home/abuild/rpmbuild/BUILD/tizenclaw-1.0.0/CMakeFiles/CMakeScratch/TryCompile-ubeTYc'
+[   17s]     gmake: *** [Makefile:133: cmTC_70202/fast] Error 2
+[   17s]     
+[   17s]     
+[   17s] 
+[   17s]   
+[   17s] 
+[   17s]   CMake will not be able to correctly generate this project.
+[   17s] Call Stack (most recent call first):
+[   17s]   CMakeLists.txt:3 (PROJECT)
+[   17s] 
+[   17s] 
+[   17s] -- Configuring incomplete, errors occurred!
+[   17s] error: Bad exit status from /var/tmp/rpm-tmp.Rvnosz (%build)
+[   17s] 
+[   17s] 
+[   17s] RPM build errors:
+[   17s]     Macro expanded in comment on line 83: %{name}.manifest
+[   17s] 
+[   17s]     Bad exit status from /var/tmp/rpm-tmp.Rvnosz (%build)
+[   17s] 
+[   17s] MiniPC failed "build tizenclaw.spec" at Sun Mar 29 12:27:24 UTC 2026.
+[   17s] 
+[33mwarning: [0mbuild failed, Leaving the logs in /home/hjhun/GBS-ROOT/local/repos/tizen/armv7l/logs/fail/tizenclaw-1.0.0-3/log.txt
+[32minfo: [0m*** Build Status Summary ***
+=== the following packages failed to build due to rpmbuild issue (1) ===
+tizenclaw: /home/hjhun/GBS-ROOT/local/repos/tizen/armv7l/logs/fail/tizenclaw-1.0.0-3/log.txt
+=== Total succeeded built packages: (0) ===
+[32minfo: [0mgenerated html format report:
+     /home/hjhun/GBS-ROOT/local/repos/tizen/armv7l/index.html
+[32minfo: [0mgenerated RPM packages can be found from local repo:
+     /home/hjhun/GBS-ROOT/local/repos/tizen/armv7l/RPMS
+[32minfo: [0mgenerated source RPM packages can be found from local repo:
+     /home/hjhun/GBS-ROOT/local/repos/tizen/armv7l/SRPMS
+[32minfo: [0mbuild logs can be found in:
+     /home/hjhun/GBS-ROOT/local/repos/tizen/armv7l/logs
+[32minfo: [0mbuild roots located in:
+     /home/hjhun/GBS-ROOT/local/BUILD-ROOTS/scratch.armv7l.*
+error: <gbs>some packages failed to be built
+[0;31m[ FAIL ][0m GBS build failed. Check the build log: /tmp/gbs_build_output.log

@@ -1,0 +1,3 @@
+- 테스트 인프라 무효화 항목 삭제 (tests/unit, tests/scripts)
+- run_all.sh 재구현을 통해 전체 검증 모음 연동
+- test_service.sh 버그 정정 완료
