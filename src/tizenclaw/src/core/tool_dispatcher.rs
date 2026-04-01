@@ -103,13 +103,15 @@ impl ToolDispatcher {
             } else if line.starts_with("# ") && name.is_empty() {
                 // Fallback to markdown header logic
                 name = line[2..].trim().to_string();
-            } else if (line.starts_with("**Description**: ") || line.starts_with("Description: ")) && description.is_empty() {
-                let prefix_len = if line.starts_with("**Description**:") { 16 } else { 12 };
-                let rest = line[prefix_len..].trim();
-                let clean_rest = rest.trim_start_matches(':').trim();
-                description = clean_rest.to_string();
             }
         }
+        
+        let full_desc = content.trim();
+        description = if full_desc.len() > 1536 {
+            full_desc[0..1536].to_string()
+        } else {
+            full_desc.to_string()
+        };
 
         if name.is_empty() {
             name = tool_dir.file_name()?.to_str()?.to_string();
@@ -195,7 +197,33 @@ impl ToolDispatcher {
         // Build argument list from JSON
         let mut cmd_args: Vec<String> = vec![];
         if let Some(args_str) = args.get("args").and_then(|v| v.as_str()) {
-            cmd_args = args_str.split_whitespace().map(|s| s.to_string()).collect();
+            let mut current = String::new();
+            let mut in_quotes = false;
+            let mut quote_char = '\0';
+            for c in args_str.chars() {
+                if in_quotes {
+                    if c == quote_char {
+                        in_quotes = false;
+                    } else {
+                        current.push(c);
+                    }
+                } else {
+                    if c == ' ' || c == '\t' || c == '\n' {
+                        if !current.is_empty() {
+                            cmd_args.push(current.clone());
+                            current.clear();
+                        }
+                    } else if c == '"' || c == '\'' {
+                        in_quotes = true;
+                        quote_char = c;
+                    } else {
+                        current.push(c);
+                    }
+                }
+            }
+            if !current.is_empty() {
+                cmd_args.push(current);
+            }
         } else if let Some(obj) = args.as_object() {
             for (k, v) in obj {
                 cmd_args.push(format!("--{}", k));
