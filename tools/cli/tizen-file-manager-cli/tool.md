@@ -15,3 +15,9 @@
 | `download` | Download file from URL | `--url --dest` |
 ## Output
 All output is JSON.
+
+## LLM Agent Instructions
+**CRITICAL**: You MUST use the exact subcommand as the first positional argument, followed by the required path arguments.
+Example: `list --path /tmp`
+Example: `read --path /tmp/file.txt`
+DO NOT forget the `--path` option!

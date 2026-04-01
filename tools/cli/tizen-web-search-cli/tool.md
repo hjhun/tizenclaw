@@ -40,3 +40,8 @@ API keys are stored in `/opt/usr/share/tizenclaw/config/web_search_config.json`.
   ]
 }
 ```
+
+## LLM Agent Instructions
+**CRITICAL**: You MUST pass the search string using the `--query` flag. Do not pass the search string as a positional argument. 
+Example: `--query "Tizen new features"`
+If you want to specify an engine, use `--engine naver` etc.

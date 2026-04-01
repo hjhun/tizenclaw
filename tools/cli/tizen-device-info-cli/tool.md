@@ -28,3 +28,8 @@ tizen-device-info-cli settings
 
 ## Output
 All output is JSON.
+
+## LLM Agent Instructions
+**CRITICAL**: You MUST invoke this tool with exactly ONE subcommand as a positional argument. DO NOT prefix subcommands with `--` or `-`. DO NOT pass JSON arrays.
+Example: Command is EXACTLY `battery`
+Example: Command is EXACTLY `system-info`

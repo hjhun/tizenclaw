@@ -9,3 +9,8 @@
 | `bluetooth` | BT adapter state, name, address |
 | `bt-scan` | List bonded/paired Bluetooth devices (name, address, connected) |
 | `data-usage` | Wi-Fi/cellular data statistics |
+
+## LLM Agent Instructions
+**CRITICAL**: You MUST provide exactly ONE subcommand as a positional argument. DO NOT pass subcommands as options or prefix them.
+Example: `network`
+Example: `wifi-scan`
