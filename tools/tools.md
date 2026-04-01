@@ -29,13 +29,12 @@ See [embedded/index.md](embedded/index.md) for built-in embedded tools.
 
 ## Skills
 
-Skills are Python-based tools executed inside a secure OCI container sandbox.
-The `skills/index.md` file is auto-generated at runtime based on installed skill manifests.
+Skills are Python/Bash-based scripts executed inside a secure OCI container sandbox.
+The Agent manages Skills via the `/opt/usr/share/tizen-tools/skills/` directory.
 
-## Custom Skills
+We strictly adhere to the **Anthropic Model Context Protocol (MCP)** and Tool Use standards. All tools and skills manifest as correctly structured JSON parameters ingested by the agent's LLM Backend.
 
-Custom skills are user-defined or AI-generated Python scripts added at runtime.
-The `custom_skills/index.md` file is auto-generated when custom skills are installed.
+The `skills/index.md` file (and this file) are auto-generated or dynamically injected at runtime when the `ToolWatcher` detects structural changes in the RW tool directories. This guarantees real-time synchronization between the filesystem and the LLM systemic prompt.
 
 ## System CLI Tools
 

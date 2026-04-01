@@ -58,14 +58,32 @@ impl ActionBridge {
             if path.extension().map(|e| e == "json").unwrap_or(false) {
                 if let Ok(content) = std::fs::read_to_string(&path) {
                     if let Ok(schema) = serde_json::from_str::<Value>(&content) {
-                        let id = schema["action_id"].as_str().unwrap_or("").to_string();
+                        let id = schema["action_id"].as_str()
+                            .or_else(|| schema["id"].as_str())
+                            .or_else(|| schema["name"].as_str())
+                            .unwrap_or("").to_string();
                         if !id.is_empty() {
+                            let display_name = schema["display_name"].as_str()
+                                .or_else(|| schema["name"].as_str())
+                                .or_else(|| schema["title"].as_str())
+                                .unwrap_or("").to_string();
+                            let mut description = schema["description"].as_str().unwrap_or("").to_string();
+                            if description.is_empty() {
+                                description = display_name.clone();
+                            }
+                            
                             self.actions.insert(id.clone(), ActionSchema {
                                 action_id: id,
-                                display_name: schema["display_name"].as_str().unwrap_or("").to_string(),
-                                description: schema["description"].as_str().unwrap_or("").to_string(),
-                                parameters: schema.get("parameters").cloned().unwrap_or(Value::Null),
-                                app_id: schema["app_id"].as_str().unwrap_or("").to_string(),
+                                display_name,
+                                description,
+                                parameters: schema.get("parameters")
+                                    .or_else(|| schema.get("params"))
+                                    .or_else(|| schema.get("schema"))
+                                    .cloned().unwrap_or(Value::Null),
+                                app_id: schema["app_id"].as_str()
+                                    .or_else(|| schema["package_id"].as_str())
+                                    .or_else(|| schema["package"].as_str())
+                                    .unwrap_or("").to_string(),
                             });
                         }
                     }

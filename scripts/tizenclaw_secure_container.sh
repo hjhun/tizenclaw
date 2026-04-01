@@ -274,9 +274,7 @@ run_without_container() {
            "$R/usr" "$R/etc" "$R/opt/etc" \
            "$R/host_lib" "$R/host_usr_lib" "$R/host_usr_lib64" \
            "$R/run" "$R/data" "$R/opt/usr" \
-           "$R/tools/custom_skills" \
-           "${APP_DATA_DIR}/data" \
-           "/opt/usr/share/tizen-tools/custom_skills"
+           "${APP_DATA_DIR}/data"
 
   # Build the mount + chroot command as a single string for unshare
   local CMD="mount --make-rprivate / || true"
@@ -322,8 +320,7 @@ run_without_container() {
     CMD="$CMD; mount --rbind /opt/usr/share/crash \"$R/opt/usr/share/crash\" || true"
   fi
 
-  # Custom skills (rw)
-  CMD="$CMD; mount --rbind \"/opt/usr/share/tizen-tools/custom_skills\" \"$R/tools/custom_skills\" || true"
+
 
   # CLI tools (ro)
   mkdir -p "$R/opt/usr/share/tizen-tools/cli"
