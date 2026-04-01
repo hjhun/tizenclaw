@@ -68,7 +68,11 @@ INSTALL(FILES
 INSTALL(DIRECTORY "${CMAKE_SOURCE_DIR}/tools/embedded/"
         DESTINATION "/opt/usr/share/tizen-tools/embedded")
 
-# CLI tool scripts removed (per user request)
+# CLI tool scripts (Enabled)
+enable_language(C CXX)
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
+include(ApplyPkgConfig)
+ADD_SUBDIRECTORY(tools/cli)
 
 # System CLI tools — create empty dir
 INSTALL(DIRECTORY DESTINATION "/opt/usr/share/tizen-tools/system_cli")

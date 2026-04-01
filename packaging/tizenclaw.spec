@@ -20,6 +20,9 @@ BuildRequires:  pkgconfig(pkgmgr)
 BuildRequires:  pkgconfig(vconf)
 BuildRequires:  pkgconfig(capi-appfw-event)
 
+# CLI Tools native libs
+# libcurl missing in x86 gb repository, excluded.
+
 # OpenSSL is statically linked via Rust vendored build (no system OpenSSL needed)
 
 Requires:       unzip
@@ -61,6 +64,7 @@ mkdir -p %{buildroot}/opt/usr/share/tizenclaw/config
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/rag
 mkdir -p %{buildroot}/opt/usr/share/tizen-tools/embedded
 mkdir -p %{buildroot}/opt/usr/share/tizen-tools/actions
+mkdir -p %{buildroot}/opt/usr/share/tizen-tools/cli
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/sandbox/packages/pip
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/sandbox/packages/npm
 mkdir -p %{buildroot}/opt/usr/share/crash/dump
@@ -93,6 +97,8 @@ fi
 /opt/usr/share/tizenclaw/web/
 /opt/usr/share/tizen-tools/embedded/
 %dir /opt/usr/share/tizen-tools/actions/
+%dir /opt/usr/share/tizen-tools/cli/
+/opt/usr/share/tizen-tools/cli/*
 %dir /opt/usr/share/tizen-tools/
 %dir /opt/usr/share/tizenclaw/config/
 %dir /opt/usr/share/tizenclaw/sandbox/
