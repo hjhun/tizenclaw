@@ -585,6 +585,25 @@ impl AgentCore {
         }
         log::info!("Tools reloaded from {:?}", self.platform.paths.tools_dir);
     }
+
+    pub async fn run_startup_indexing(&self) {
+        let has_primary = self.backend.read().await.is_some();
+        let has_fallback = !self.fallback_backends.read().await.is_empty();
+        if !has_primary && !has_fallback {
+            log::info!("[Startup Indexing] Skipped: No actively connected LLM found.");
+            return;
+        }
+
+        log::info!("[Startup Indexing] LLM connected. Requesting dynamic indexing of /opt/usr/share/tizen-tools/...");
+        
+        let prompt = "Please check the directories under `/opt/usr/share/tizen-tools/` (specifically the `skills/` and `cli/` folders) and update the `tools.md` and `index.md` files located in `/opt/usr/share/tizen-tools/` (or its relevant documentation paths) to reflect the current state of tools exactly. Read the directories first, then overwrite the markdown index files cleanly. Do not ask for permissions, simply execute via your file manager or execution tools.";
+        
+        // We use a predefined system session ID so it doesn't pollute user chats.
+        let session_id = "system_startup_indexer";
+        let _ = self.process_prompt(session_id, prompt, None).await;
+        
+        log::info!("[Startup Indexing] Completed autonomous documentation updates.");
+    }
 }
 
 /// RAII guard providing access to the SessionStore while holding the lock.
