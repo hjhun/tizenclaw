@@ -60,6 +60,7 @@ No stages can be skipped, and the completion conditions of each stage must be me
 > [!CAUTION]
 > **Local Build/Test Prohibition**: Do not execute `cargo build`, `cargo test`, `cargo clippy` locally.
 > All builds and tests are to be performed in the QEMU/Device environment via `./deploy.sh`.
+> **Untested Code is Garbage**: A developer must *never* consider a task done simply by writing code. Running a build, deploying it, and testing its execution behavior using `./deploy.sh` is an imperative baseline. Code not proven by device testing must be rejected.
 
 - **Prerequisite**: You **must perform builds across both x86_64 and armv7l architectures**.
 - **[DISABLED]**: armv7l (ARM) architecture verification is currently disabled to prioritize execution speed but can be re-enabled if required.
@@ -88,7 +89,11 @@ No stages can be skipped, and the completion conditions of each stage must be me
 > [!IMPORTANT]
 > **Mandatory WSL Shell (Ubuntu) Usage**: Execute all terminal commands through the WSL shell (e.g., `wsl -e bash -c "..."`) as direct PowerShell executions are error-prone.
 
+> [!IMPORTANT]
+> **Shell Detection Rule**: Before executing ANY command, follow the [`rules/shell-detection.md`](rules/shell-detection.md) decision matrix to determine the correct shell (PowerShell vs WSL Bash). This rule is authoritative for all shell decisions.
+
 Follow the background limits and sequential execution commands in the environment skill carefully to avoid Samba/WSL lockups.
+- **Rule Reference**: [`rules/shell-detection.md`](rules/shell-detection.md)
 - **Skill Usage**: [`skills/managing-environment/SKILL.md`](skills/managing-environment/SKILL.md)
 
 ---

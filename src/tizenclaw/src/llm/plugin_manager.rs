@@ -57,9 +57,12 @@ impl PluginManager {
             for pkg in pkgs {
                 if let Some(so_name) = pkgmgr.get_package_metadata_value(&pkg.pkg_id, "http://tizen.org/metadata/tizenclaw/llm-backend") {
                     if let Some(root_path) = pkgmgr.get_package_root_path(&pkg.pkg_id) {
-                        let so_path = PathBuf::from(&root_path).join("lib").join(&so_name);
-                        let cfg_path = PathBuf::from(&root_path).join("res").join("plugin_llm_config.json");
-                        let fallback_cfg_path = PathBuf::from(&root_path).join("plugin_llm_config.json");
+                        // Match tizenclaw-cpp string concatenation to prevent PathBuf absolute path wiping
+                        let so_path_str = format!("{}/lib/{}", root_path, so_name);
+                        let so_path = PathBuf::from(&so_path_str);
+                        
+                        let cfg_path = PathBuf::from(format!("{}/res/plugin_llm_config.json", root_path));
+                        let fallback_cfg_path = PathBuf::from(format!("{}/plugin_llm_config.json", root_path));
                         
                         let mut config = serde_json::json!({});
                         if let Ok(content) = std::fs::read_to_string(&cfg_path).or_else(|_| std::fs::read_to_string(&fallback_cfg_path)) {
@@ -69,14 +72,13 @@ impl PluginManager {
                         }
 
                         if so_path.exists() {
-                            let name = so_path.file_stem()
-                                .and_then(|s| s.to_str())
-                                .unwrap_or(&pkg.pkg_id)
-                                .replace("lib", "");
+                            let name = pkg.pkg_id.clone();
                             
                             log::info!("PluginManager: pkgmgr discovered plugin '{}' at {:?}", name, so_path);
                             self.plugin_registry.insert(name.clone(), so_path);
                             self.plugin_configs.insert(name, config);
+                        } else {
+                            log::warn!("PluginManager: plugin path does not exist: {:?}", so_path);
                         }
                     }
                 }
