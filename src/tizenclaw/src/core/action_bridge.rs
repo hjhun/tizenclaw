@@ -165,7 +165,7 @@ impl ActionBridge {
             let md_path = if pkg_id.is_empty() {
                 format!("{}/{}.md", ACTIONS_DIR, action_id)
             } else {
-                format!("{}/{}/{}_{}.md", ACTIONS_DIR, pkg_id, pkg_id, action_id)
+                format!("{}/{}/{}.md", ACTIONS_DIR, pkg_id, action_id)
             };
             
             index_entries.push(format!("| {} | {} | {} | [Link]({}) |", action_id, pkg_id, description, md_path));
@@ -410,11 +410,7 @@ fn write_action_md(pkg_id: &str, action_id: &str, schema: &Value) {
         dir
     };
 
-    let md_path = dir_path.join(if pkg_id.is_empty() {
-        format!("{}.md", action_id)
-    } else {
-        format!("{}_{}.md", pkg_id, action_id)
-    });
+    let md_path = dir_path.join(format!("{}.md", action_id));
 
     let description = schema.get("description").and_then(|v| v.as_str()).unwrap_or("");
     let category = schema.get("category").and_then(|v| v.as_str()).unwrap_or("");
