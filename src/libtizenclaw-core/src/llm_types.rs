@@ -13,21 +13,24 @@ const EINVAL: i32 = -1;  // TIZENCLAW_ERROR_INVALID_PARAMETER
 //  Internal Rust types
 // ═══════════════════════════════════════════
 
+#[derive(Clone)]
 struct ToolCallInner {
     id: String,
     name: String,
     args_json: String,
 }
 
+#[derive(Clone)]
 struct MessageInner {
     role: String,
     text: String,
-    tool_calls: Vec<*mut ToolCallInner>,
+    tool_calls: Vec<Box<ToolCallInner>>,
     tool_name: String,
     tool_call_id: String,
     tool_result_json: String,
 }
 
+#[derive(Clone)]
 struct ToolInner {
     name: String,
     description: String,
@@ -38,7 +41,7 @@ struct ResponseInner {
     success: bool,
     text: String,
     error_message: String,
-    tool_calls: Vec<*mut ToolCallInner>,
+    tool_calls: Vec<Box<ToolCallInner>>,
     prompt_tokens: i32,
     completion_tokens: i32,
     total_tokens: i32,
@@ -46,11 +49,11 @@ struct ResponseInner {
 }
 
 struct MessagesListInner {
-    items: Vec<*mut MessageInner>,
+    items: Vec<Box<MessageInner>>,
 }
 
 struct ToolsListInner {
-    items: Vec<*mut ToolInner>,
+    items: Vec<Box<ToolInner>>,
 }
 
 // ═══════════════════════════════════════════
@@ -195,7 +198,7 @@ pub unsafe extern "C" fn tizenclaw_llm_message_get_text(h: *mut libc::c_void, ou
 #[no_mangle]
 pub unsafe extern "C" fn tizenclaw_llm_message_add_tool_call(h: *mut libc::c_void, tc: *mut libc::c_void) -> i32 {
     if h.is_null() || tc.is_null() { return EINVAL; }
-    (&mut *(h as *mut MessageInner)).tool_calls.push(tc as *mut ToolCallInner);
+    (&mut *(h as *mut MessageInner)).tool_calls.push(Box::new((*(tc as *mut ToolCallInner)).clone()));
     OK
 }
 
@@ -208,7 +211,7 @@ pub unsafe extern "C" fn tizenclaw_llm_message_foreach_tool_calls(
     if h.is_null() { return EINVAL; }
     let inner = &*(h as *mut MessageInner);
     for tc in &inner.tool_calls {
-        if !cb(*tc as *mut libc::c_void, ud) { break; }
+        if !cb(tc.as_ref() as *const _ as *mut libc::c_void, ud) { break; }
     }
     OK
 }
@@ -271,7 +274,7 @@ pub unsafe extern "C" fn tizenclaw_llm_messages_destroy(h: *mut libc::c_void) ->
 #[no_mangle]
 pub unsafe extern "C" fn tizenclaw_llm_messages_add(h: *mut libc::c_void, msg: *mut libc::c_void) -> i32 {
     if h.is_null() || msg.is_null() { return EINVAL; }
-    (&mut *(h as *mut MessagesListInner)).items.push(msg as *mut MessageInner);
+    (&mut *(h as *mut MessagesListInner)).items.push(Box::new((*(msg as *mut MessageInner)).clone()));
     OK
 }
 
@@ -284,7 +287,7 @@ pub unsafe extern "C" fn tizenclaw_llm_messages_foreach(
     if h.is_null() { return EINVAL; }
     let inner = &*(h as *mut MessagesListInner);
     for m in &inner.items {
-        if !cb(*m as *mut libc::c_void, ud) { break; }
+        if !cb(m.as_ref() as *const _ as *mut libc::c_void, ud) { break; }
     }
     OK
 }
@@ -366,7 +369,7 @@ pub unsafe extern "C" fn tizenclaw_llm_tools_destroy(h: *mut libc::c_void) -> i3
 #[no_mangle]
 pub unsafe extern "C" fn tizenclaw_llm_tools_add(h: *mut libc::c_void, tool: *mut libc::c_void) -> i32 {
     if h.is_null() || tool.is_null() { return EINVAL; }
-    (&mut *(h as *mut ToolsListInner)).items.push(tool as *mut ToolInner);
+    (&mut *(h as *mut ToolsListInner)).items.push(Box::new((*(tool as *mut ToolInner)).clone()));
     OK
 }
 
@@ -379,7 +382,7 @@ pub unsafe extern "C" fn tizenclaw_llm_tools_foreach(
     if h.is_null() { return EINVAL; }
     let inner = &*(h as *mut ToolsListInner);
     for t in &inner.items {
-        if !cb(*t as *mut libc::c_void, ud) { break; }
+        if !cb(t.as_ref() as *const _ as *mut libc::c_void, ud) { break; }
     }
     OK
 }
@@ -446,7 +449,7 @@ pub unsafe extern "C" fn tizenclaw_llm_response_get_error_message(h: *mut libc::
 #[no_mangle]
 pub unsafe extern "C" fn tizenclaw_llm_response_add_llm_tool_call(h: *mut libc::c_void, tc: *mut libc::c_void) -> i32 {
     if h.is_null() || tc.is_null() { return EINVAL; }
-    (&mut *(h as *mut ResponseInner)).tool_calls.push(tc as *mut ToolCallInner);
+    (&mut *(h as *mut ResponseInner)).tool_calls.push(Box::new((*(tc as *mut ToolCallInner)).clone()));
     OK
 }
 
@@ -456,7 +459,7 @@ pub unsafe extern "C" fn tizenclaw_llm_response_foreach_llm_tool_calls(
 ) -> i32 {
     if h.is_null() { return EINVAL; }
     for tc in &(*(h as *mut ResponseInner)).tool_calls {
-        if !cb(*tc as *mut libc::c_void, ud) { break; }
+        if !cb(tc.as_ref() as *const _ as *mut libc::c_void, ud) { break; }
     }
     OK
 }
