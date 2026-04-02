@@ -41,6 +41,16 @@ async fn main() {
     // ── Phase 2: Initialize logging (platform-aware) ──
     // The platform logger is loaded dynamically from the platform context
     common::logging::init_with_logger(Some(platform.logger.clone()));
+
+    // ── Phase 2.5: Pre-initialize HTTP Client ──
+    // Force initialization of reqwest::Client on the global multi-threaded
+    // Tokio runtime. If initialized lazily inside a spawned IpcServer thread
+    // (which uses a temporary single-threaded runtime), the client's reactor 
+    // dies when that thread finishes, causing subsequent LLM requests to hang.
+    // Pre-initialization also allows the client to multiplex multiple sessions
+    // over a shared Hyper connection pool using the same TLS configuration.
+    infra::http_client::default_client();
+
     log::info!("═══════════════════════════════════════");
     log::info!("  TizenClaw Daemon v1.0.0");
     log::info!("  Platform: {}", platform.platform_name());

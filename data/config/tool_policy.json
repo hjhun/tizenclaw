@@ -7,9 +7,5 @@
         "enabled": true,
         "fallback_sequence": ["skill", "action", "cli"],
         "max_retries_per_layer": 1
-    },
-    "aliases": {
-        "control_display": "action_brightness",
-        "control_volume": "action_volume"
     }
 }

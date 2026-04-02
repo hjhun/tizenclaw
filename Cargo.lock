@@ -1372,10 +1372,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "tizenclaw-metadata-plugin"
+name = "tizenclaw-metadata-cli-plugin"
 version = "0.1.0"
 dependencies = [
- "libc",
+ "tizenclaw-metadata-plugin",
+]
+
+[[package]]
+name = "tizenclaw-metadata-llm-backend-plugin"
+version = "0.1.0"
+dependencies = [
+ "tizenclaw-metadata-plugin",
+]
+
+[[package]]
+name = "tizenclaw-metadata-plugin"
+version = "0.1.0"
+
+[[package]]
+name = "tizenclaw-metadata-skill-plugin"
+version = "0.1.0"
+dependencies = [
+ "tizenclaw-metadata-plugin",
 ]
 
 [[package]]
