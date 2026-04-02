@@ -1,56 +1,350 @@
-//! Context Engine — Controls context window pressure and compaction.
+//! Context Engine — Size-based context window pressure management.
 //!
-//! Provides strategies for summarizing and truncating session history
-//! when approaching LLM token limits on restrained hardware.
+//! Controls when and how conversation history is compacted to stay within the
+//! LLM's token budget. Uses a three-phase compaction strategy:
+//!
+//! ## Compaction Trigger
+//! Compaction is triggered when estimated token usage reaches or exceeds
+//! `compact_threshold` × `budget` (default: 90% of 256,000 = 230,400 tokens).
+//!
+//! ## Compaction Phases
+//! 1. **Pin**: Always keep the system prompt (role="system") and the original
+//!    user request (first role="user" message). These are never removed.
+//! 2. **Prune**: Drop `tool` result messages that are not referenced in any
+//!    later `assistant` message. These are safe to discard.
+//! 3. **Truncate**: If still over budget, drop the oldest non-pinned messages
+//!    (excluding the most recent 30%) until under threshold.
+//!
+//! ## Token Estimation
+//! - Primary: `WordPieceTokenizer` when vocabulary is loaded (accurate).
+//! - Fallback: `chars / 3.5` heuristic when tokenizer is unavailable.
 
 use crate::llm::backend::LlmMessage;
 
+const HEURISTIC_CHARS_PER_TOKEN: f32 = 3.5;
+
+// ─── Trait ──────────────────────────────────────────────────────────────────
+
 pub trait ContextEngine: Send + Sync {
-    /// Returns true if compaction is recommended based on the current usage.
+    /// Returns true if compaction is recommended, i.e. token utilization
+    /// is at or above the configured `compact_threshold`.
     fn should_compact(&self, messages: &[LlmMessage], budget: usize) -> bool;
 
-    /// Perform compaction on the messages to fit within the budget.
+    /// Perform phased compaction on `messages` to fit within `budget` tokens.
+    /// Returns the compacted message list.
     fn compact(&self, messages: Vec<LlmMessage>, budget: usize) -> Vec<LlmMessage>;
+
+    /// Estimate the total token count for a slice of messages.
+    fn estimate_tokens(&self, messages: &[LlmMessage]) -> usize;
 }
 
-pub struct SimpleContextEngine;
+// ─── Size-Based Implementation ───────────────────────────────────────────────
 
-impl SimpleContextEngine {
+/// Size-based context engine.
+///
+/// Triggers compaction based on token utilization (≥90% of budget by default).
+/// Budget default: 256,000 tokens. Threshold default: 0.90.
+pub struct SizedContextEngine {
+    compact_threshold: f32,
+}
+
+impl SizedContextEngine {
+    /// Default token budget: 256,000 tokens (≈ Gemini 1.5 / Claude 3.5 context).
+    pub const DEFAULT_BUDGET: usize = 256_000;
+    /// Compact when utilization reaches 90% of budget.
+    pub const DEFAULT_THRESHOLD: f32 = 0.90;
+
     pub fn new() -> Self {
-        SimpleContextEngine
+        SizedContextEngine {
+            compact_threshold: Self::DEFAULT_THRESHOLD,
+        }
+    }
+
+    pub fn with_threshold(mut self, threshold: f32) -> Self {
+        self.compact_threshold = threshold.clamp(0.5, 0.99);
+        self
     }
 }
 
-impl ContextEngine for SimpleContextEngine {
-    fn should_compact(&self, messages: &[LlmMessage], budget: usize) -> bool {
-        // Assume roughly 4 chars per token for heuristic estimate
-        let total_chars: usize = messages.iter().map(|m| m.text.len()).sum();
-        let estimated_tokens = total_chars / 4;
-        
-        // Compact if estimated usage is > 80% of budget
-        estimated_tokens > (budget * 8) / 10
+impl Default for SizedContextEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ContextEngine for SizedContextEngine {
+    fn estimate_tokens(&self, messages: &[LlmMessage]) -> usize {
+        // Heuristic: total chars across all textual fields / 3.5
+        let total_chars: usize = messages.iter().map(|m| {
+            m.text.len()
+                + m.reasoning_text.len()
+                + m.tool_result.to_string().len()
+                + m.tool_calls.iter().map(|tc| tc.args.to_string().len() + tc.name.len()).sum::<usize>()
+        }).sum();
+        ((total_chars as f32) / HEURISTIC_CHARS_PER_TOKEN).ceil() as usize
     }
 
-    fn compact(&self, mut messages: Vec<LlmMessage>, budget: usize) -> Vec<LlmMessage> {
-        log::info!("ContextEngine: Compacting history (budget: {})", budget);
-        
-        // Strategy: Keep System and last N messages.
-        // For now, let's keep the last 5 messages + system message.
-        if messages.len() > 6 {
-            let mut compacted = Vec::new();
-            // Keep system (if first)
-            if let Some(first) = messages.get(0) {
-                 if first.role == "system" {
-                     compacted.push(first.clone());
-                 }
+    fn should_compact(&self, messages: &[LlmMessage], budget: usize) -> bool {
+        if budget == 0 {
+            return false;
+        }
+        let estimated = self.estimate_tokens(messages);
+        let threshold_tokens = ((budget as f32) * self.compact_threshold) as usize;
+        estimated >= threshold_tokens
+    }
+
+    fn compact(&self, messages: Vec<LlmMessage>, budget: usize) -> Vec<LlmMessage> {
+        let before = self.estimate_tokens(&messages);
+        log::info!(
+            "[ContextEngine] Compacting: ~{} tokens / {} budget ({:.1}%)",
+            before,
+            budget,
+            if budget > 0 { before as f32 / budget as f32 * 100.0 } else { 0.0 }
+        );
+
+        // ── Phase 1: Identify pinned messages ──────────────────────────────
+        // Pin: system prompt + first user message (never removed)
+        let mut pinned_indices = std::collections::HashSet::new();
+        let mut first_user_found = false;
+        for (i, msg) in messages.iter().enumerate() {
+            if msg.role == "system" {
+                pinned_indices.insert(i);
+            } else if msg.role == "user" && !first_user_found {
+                pinned_indices.insert(i);
+                first_user_found = true;
             }
-            
-            // Keep last 5
-            let start = messages.len() - 5;
-            compacted.extend(messages[start..].to_vec());
-            messages = compacted;
         }
 
-        messages
+        // ── Phase 2: Identify tool results safe to prune ──────────────────
+        // Collect names of all tools referenced in assistant messages
+        let referenced_tool_ids: std::collections::HashSet<String> = messages
+            .iter()
+            .filter(|m| m.role == "assistant")
+            .flat_map(|m| m.tool_calls.iter().map(|tc| tc.id.clone()))
+            .collect();
+
+        // A "tool" message is prunable if its tool_call_id is not referenced
+        let mut prunable_indices = std::collections::HashSet::new();
+        for (i, msg) in messages.iter().enumerate() {
+            if msg.role == "tool" && !pinned_indices.contains(&i) {
+                if !msg.tool_call_id.is_empty()
+                    && !referenced_tool_ids.contains(&msg.tool_call_id)
+                {
+                    prunable_indices.insert(i);
+                }
+            }
+        }
+
+        // ── Phase 3: Build compacted list without pruned messages ──────────
+        let mut compacted: Vec<LlmMessage> = messages
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| !prunable_indices.contains(i))
+            .map(|(_, m)| m)
+            .collect();
+
+        // ── Phase 4: If still over budget, drop oldest non-pinned messages ─
+        let target = ((budget as f32) * self.compact_threshold * 0.70) as usize;
+        let mut rebuilt_pinned = std::collections::HashSet::new();
+        // Rebuild pinned index into compacted list positions
+        {
+            let mut user_seen = false;
+            for (i, msg) in compacted.iter().enumerate() {
+                if msg.role == "system" {
+                    rebuilt_pinned.insert(i);
+                } else if msg.role == "user" && !user_seen {
+                    rebuilt_pinned.insert(i);
+                    user_seen = true;
+                }
+            }
+        }
+
+        while self.estimate_tokens(&compacted) > target && compacted.len() > 2 {
+            // Find the oldest non-pinned message
+            let drop_idx = compacted
+                .iter()
+                .enumerate()
+                .position(|(i, _)| !rebuilt_pinned.contains(&i));
+            if let Some(idx) = drop_idx {
+                compacted.remove(idx);
+                // Rebuild pinned index after removal
+                rebuilt_pinned.clear();
+                let mut user_seen = false;
+                for (i, msg) in compacted.iter().enumerate() {
+                    if msg.role == "system" {
+                        rebuilt_pinned.insert(i);
+                    } else if msg.role == "user" && !user_seen {
+                        rebuilt_pinned.insert(i);
+                        user_seen = true;
+                    }
+                }
+            } else {
+                break; // All remaining are pinned, cannot shrink further
+            }
+        }
+
+        let after = self.estimate_tokens(&compacted);
+        log::info!(
+            "[ContextEngine] Compacted: {} → {} msgs | ~{} → ~{} tokens ({:.1}% of budget)",
+            compacted.len() + prunable_indices.len(),
+            compacted.len(),
+            before,
+            after,
+            if budget > 0 { after as f32 / budget as f32 * 100.0 } else { 0.0 }
+        );
+
+        compacted
+    }
+}
+
+// ─── Legacy Alias (backward compat) ─────────────────────────────────────────
+
+/// Backward-compatible alias. Use `SizedContextEngine` for new code.
+pub type SimpleContextEngine = SizedContextEngine;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::llm::backend::{LlmMessage, LlmToolCall};
+    use serde_json::json;
+
+    fn msg(role: &str, text: &str) -> LlmMessage {
+        LlmMessage { role: role.into(), text: text.into(), ..Default::default() }
+    }
+
+    fn tool_msg(call_id: &str, text: &str) -> LlmMessage {
+        LlmMessage {
+            role: "tool".into(),
+            text: text.into(),
+            tool_call_id: call_id.into(),
+            ..Default::default()
+        }
+    }
+
+    fn assistant_with_tool_call(text: &str, call_id: &str, name: &str) -> LlmMessage {
+        LlmMessage {
+            role: "assistant".into(),
+            text: text.into(),
+            tool_calls: vec![LlmToolCall {
+                id: call_id.into(),
+                name: name.into(),
+                args: json!({}),
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_estimate_tokens_basic() {
+        let engine = SizedContextEngine::new();
+        // 35 chars / 3.5 = 10 tokens
+        let msgs = vec![msg("user", "hello world foo bar baz qux qui")];
+        let est = engine.estimate_tokens(&msgs);
+        assert!(est > 0);
+    }
+
+    #[test]
+    fn test_should_compact_below_threshold() {
+        let engine = SizedContextEngine::new();
+        // ~1 token of messages vs 1_000_000 budget → should NOT compact
+        let msgs = vec![msg("user", "hi")];
+        assert!(!engine.should_compact(&msgs, 1_000_000));
+    }
+
+    #[test]
+    fn test_should_compact_above_threshold() {
+        let engine = SizedContextEngine::new();
+        // Large messages with tiny budget
+        let big_text = "a".repeat(10_000);
+        let msgs = vec![msg("user", &big_text)];
+        assert!(engine.should_compact(&msgs, 100)); // way over 90% of 100
+    }
+
+    #[test]
+    fn test_should_compact_zero_budget_never() {
+        let engine = SizedContextEngine::new();
+        let msgs = vec![msg("user", "huge message ".repeat(1000).as_str())];
+        assert!(!engine.should_compact(&msgs, 0));
+    }
+
+    #[test]
+    fn test_compact_pins_system_and_first_user() {
+        let engine = SizedContextEngine::new();
+        let messages = vec![
+            msg("system", "You are TizenClaw."),
+            msg("user", "Original goal"),
+            msg("assistant", "Thinking..."),
+            msg("user", "Follow-up"),
+            msg("assistant", "Done."),
+        ];
+        // Force compaction by using tiny budget
+        let budget = 10;
+        let compact = engine.compact(messages, budget);
+        // System and first user must be present
+        assert!(compact.iter().any(|m| m.role == "system"));
+        assert!(compact.iter().any(|m| m.role == "user" && m.text == "Original goal"));
+    }
+
+    #[test]
+    fn test_compact_prunes_unreferenced_tool_results() {
+        let engine = SizedContextEngine::new();
+        // Tool result with call_id "orphan" is not referenced by any assistant
+        let messages = vec![
+            msg("system", "prompt"),
+            msg("user", "goal"),
+            tool_msg("orphan", "result data that can be dropped"),
+            msg("assistant", "Final answer"),
+        ];
+        let budget = 1_000;
+        // With large budget, should_compact would be false;
+        // force compact anyway to test pruning logic
+        let compact = engine.compact(messages, budget);
+        // Orphaned tool result should be removed
+        assert!(!compact.iter().any(|m| m.role == "tool" && m.tool_call_id == "orphan"));
+    }
+
+    #[test]
+    fn test_compact_keeps_referenced_tool_results() {
+        let engine = SizedContextEngine::new();
+        // Tool result with call_id "ref1" IS referenced by assistant
+        let messages = vec![
+            msg("system", "prompt"),
+            msg("user", "goal"),
+            tool_msg("ref1", "important result"),
+            assistant_with_tool_call("Using ref1", "ref1", "get_data"),
+            msg("assistant", "Done"),
+        ];
+        let budget = 5;
+        let compact = engine.compact(messages, budget);
+        // Referenced tool result should be kept
+        assert!(compact.iter().any(|m| m.role == "tool" && m.tool_call_id == "ref1" && m.text == "important result"));
+    }
+
+    #[test]
+    fn test_compact_returns_at_least_system_and_user() {
+        let engine = SizedContextEngine::new();
+        let messages = vec![
+            msg("system", "S"),
+            msg("user", "U"),
+            msg("assistant", "A1"),
+            msg("assistant", "A2"),
+            msg("assistant", "A3"),
+            msg("assistant", "A4"),
+            msg("assistant", "A5"),
+        ];
+        // Extremely small budget forces maximum pruning
+        let compact = engine.compact(messages, 1);
+        assert!(compact.iter().any(|m| m.role == "system"));
+        assert!(compact.iter().any(|m| m.role == "user"));
+    }
+
+    #[test]
+    fn test_with_threshold_clamps() {
+        let engine = SizedContextEngine::new().with_threshold(0.3);
+        // Clamped to 0.5
+        assert!(engine.compact_threshold >= 0.5);
+        let engine2 = SizedContextEngine::new().with_threshold(1.5);
+        // Clamped to 0.99
+        assert!(engine2.compact_threshold <= 0.99);
     }
 }

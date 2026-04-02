@@ -33,7 +33,9 @@ pub mod auto_skill_agent;
 pub mod context_fusion_engine;
 pub mod fallback_parser;
 pub mod context_engine;
+pub mod agent_loop_state;
 pub mod device_profiler;
+pub mod perception_engine;
 // Embedding Engine
 pub mod wordpiece_tokenizer;
 pub mod on_device_embedding;

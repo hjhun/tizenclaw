@@ -14,10 +14,13 @@ use crate::llm::backend::{self, LlmBackend, LlmMessage, LlmResponse};
 use crate::storage::session_store::SessionStore;
 use crate::core::tool_dispatcher::ToolDispatcher;
 use crate::core::fallback_parser::FallbackParser;
-use crate::core::context_engine::{ContextEngine, SimpleContextEngine};
+use crate::core::context_engine::{ContextEngine, SizedContextEngine};
+use crate::core::agent_loop_state::{AgentLoopState, AgentPhase, EvalVerdict};
 
-const MAX_TOOL_ROUNDS: usize = 10;
 const MAX_CONTEXT_MESSAGES: usize = 20;
+const CONTEXT_TOKEN_BUDGET: usize = 256_000;
+const CONTEXT_COMPACT_THRESHOLD: f32 = 0.90;
+const MAX_TOOL_RETRY: usize = 3;
 
 /// LLM backend configuration loaded from `llm_config.json`.
 #[derive(Debug)]
@@ -551,17 +554,49 @@ impl AgentCore {
         }
     }
 
-    /// Process a user prompt through the agentic loop.
+    /// Process a user prompt through the 15-phase autonomous agent loop.
     ///
-    /// Thread-safe: acquires fine-grained locks on individual fields
-    /// rather than locking the entire AgentCore.
+    /// ## Loop Phases
+    /// 1. GoalParsing: Initialize AgentLoopState for this session + prompt
+    /// 2. ContextLoading: Load session history, build messages + tools
+    /// 3. Pre-loop Compaction: Compact if ≥90% of 256k token budget
+    /// 4-13. Main loop: DecisionMaking → SafetyCheck → ToolDispatching
+    ///        → ObservationCollect → Evaluating → ErrorRecovery
+    ///        → StateTracking → SelfInspection → RePlanning → TerminationCheck
+    /// 14. ResultReporting: Format and return final answer
+    ///
+    /// Thread-safe: acquires fine-grained locks on individual fields.
     pub async fn process_prompt(
         &self,
         session_id: &str,
         prompt: &str,
         on_chunk: Option<&(dyn Fn(&str) + Send + Sync)>,
     ) -> String {
-        log::info!("Processing prompt for session '{}' ({} chars)", session_id, prompt.len());
+        // ── Phase 1: GoalParsing ─────────────────────────────────────────
+        let mut loop_state = AgentLoopState::new(session_id, prompt);
+
+        // Load context token budget from config if available
+        let (budget, threshold) = {
+            let cfg = self.llm_config.lock().ok();
+            let b = cfg.as_ref()
+                .and_then(|c| c.backends.get("context_token_budget"))
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+                .unwrap_or(CONTEXT_TOKEN_BUDGET);
+            let t = cfg.as_ref()
+                .and_then(|c| c.backends.get("context_compact_threshold"))
+                .and_then(|v| v.as_f64())
+                .map(|v| v as f32)
+                .unwrap_or(CONTEXT_COMPACT_THRESHOLD);
+            (b, t)
+        };
+        loop_state.token_budget = budget;
+        loop_state.compact_threshold = threshold;
+
+        log::info!(
+            "[AgentLoop] Phase=GoalParsing session='{}' goal='{}' budget={}",
+            session_id, &prompt[..prompt.len().min(80)], budget
+        );
 
         // Quick check: do we have any backend?
         {
@@ -572,14 +607,17 @@ impl AgentCore {
             }
         }
 
-        // Store user message (short lock on session_store)
+        // ── Phase 2: ContextLoading ──────────────────────────────────────
+        loop_state.transition(AgentPhase::ContextLoading);
+
+        // Store user message
         if let Ok(ss) = self.session_store.lock() {
             if let Some(store) = ss.as_ref() {
                 store.add_message(session_id, "user", prompt);
             }
         }
 
-        // Build conversation history (short lock on session_store)
+        // Build conversation history
         let history = {
             let ss = self.session_store.lock();
             ss.ok()
@@ -596,20 +634,18 @@ impl AgentCore {
             })
             .collect();
 
-        // If history is empty or doesn't end with user message, add it
         if messages.is_empty() || messages.last().map(|m| m.role.as_str()) != Some("user") {
             messages.push(LlmMessage::user(prompt));
         }
 
-        // Get tool declarations (read lock — allows concurrent reads)
+        // Get tool declarations
         let mut tools = self.tool_dispatcher.read().await.get_tool_declarations();
         crate::core::tool_declaration_builder::ToolDeclarationBuilder::append_builtin_tools(&mut tools);
-
         if let Ok(bridge) = self.action_bridge.lock() {
             tools.extend(bridge.get_action_declarations());
         }
 
-        // Build System Prompt Dynamically
+        // Build System Prompt
         let system_prompt = {
             let mut builder = crate::core::prompt_builder::SystemPromptBuilder::new();
             if let Ok(base) = self.system_prompt.read() {
@@ -622,84 +658,94 @@ impl AgentCore {
             }
             let tool_names = tools.iter().map(|t| t.name.clone()).collect();
             builder = builder.add_tool_names(tool_names);
-            
+
             let skills_dir = self.platform.paths.skills_dir.to_string_lossy().to_string();
             let textual_skills = crate::core::textual_skill_scanner::scan_textual_skills(&skills_dir);
             let formatted_skills = textual_skills.into_iter()
                 .map(|s| (s.absolute_path, s.description))
                 .collect();
             builder = builder.add_available_skills(formatted_skills);
-            
+
             let model_name = self.backend_name.read().unwrap().clone();
             let platform_name = self.platform.platform_name().to_string();
             let data_dir = self.platform.paths.data_dir.to_string_lossy().to_string();
-            builder = builder.set_runtime_context(
-                platform_name,
-                model_name,
-                data_dir,
-            );
+            builder = builder.set_runtime_context(platform_name, model_name, data_dir);
             builder.build()
         };
 
-        // --- ENHANCEMENT: Proactive Compaction (Step 1: Before loop) ---
-        let context_engine = SimpleContextEngine::new();
-        let budget = 32000; // Default budget (can be made configurable)
-        if context_engine.should_compact(&messages, budget) {
-            messages = context_engine.compact(messages, budget);
+        // ── Phase 3: Planning (pre-loop compaction) ──────────────────────
+        loop_state.transition(AgentPhase::Planning);
+        let context_engine = SizedContextEngine::new().with_threshold(loop_state.compact_threshold);
+
+        // Update token_used estimate
+        loop_state.token_used = context_engine.estimate_tokens(&messages);
+        if loop_state.needs_compaction() {
+            log::info!("[AgentLoop] Pre-loop compaction triggered ({}% used)",
+                (loop_state.token_used as f32 / loop_state.token_budget as f32 * 100.0) as u32);
+            messages = context_engine.compact(messages, loop_state.token_budget);
+            loop_state.token_used = context_engine.estimate_tokens(&messages);
         }
 
-        // Agentic loop — no global lock held during LLM calls
-        for round in 0..MAX_TOOL_ROUNDS {
-            log::info!("[LLM Conversation DLOG] ----- Round {} Input -----", round);
-            // System prompt is often huge, let's log length or a preview, or full if requested. The user requested we output the conversation content.
+        // ── Phases 4–13: Main agentic loop ───────────────────────────────
+        loop {
+            // ── Phase 4: DecisionMaking / LLM call ──────────────────────
+            loop_state.transition(AgentPhase::DecisionMaking);
+            log::info!(
+                "[AgentLoop] Round {} | session='{}' phase=DecisionMaking msgs={}",
+                loop_state.round, session_id, messages.len()
+            );
+
             log::debug!("[System Prompt]:\n{}", system_prompt);
             for (i, msg) in messages.iter().enumerate() {
                 log::info!("[Message {}] Role: {}\nText: {}", i, msg.role, msg.text);
             }
-            log::info!("--------------------------------------------------");
 
             let response = self.chat_with_fallback(&messages, &tools, on_chunk, &system_prompt).await;
 
-            log::info!("[LLM Conversation DLOG] ----- Round {} Output -----", round);
-            log::info!("[Response Success? {}]", response.success);
-            log::info!("[Response Text]:\n{}", response.text);
-            if !response.reasoning_text.is_empty() {
-                log::info!("[Response Reasoning]:\n{}", response.reasoning_text);
-            }
-            for tc in &response.tool_calls {
-                log::info!("[Tool Call]: {} (id: {}) with args: {:?}", tc.name, tc.id, tc.args);
-            }
-            log::info!("---------------------------------------------------");
+            // ── Phase 6: ObservationCollect ──────────────────────────────
+            loop_state.transition(AgentPhase::ObservationCollect);
+            log::info!("[AgentLoop] Round {} Response: success={} text_len={}",
+                loop_state.round, response.success, response.text.len());
 
+            // ── Phase 11: SafetyCheck — handle LLM error ─────────────────
             if !response.success {
+                loop_state.transition(AgentPhase::ErrorRecovery);
+                loop_state.error_count += 1;
                 let err = format!(
                     "LLM error (HTTP {}): {}",
                     response.http_status, response.error_message
                 );
-                log::error!("{}", err);
-                return err;
+                log::error!("[AgentLoop] {}", err);
+
+                if loop_state.error_count >= MAX_TOOL_RETRY {
+                    loop_state.transition(AgentPhase::ResultReporting);
+                    return err;
+                }
+                // Retry: continue loop
+                loop_state.round += 1;
+                continue;
             }
 
-            // --- ENHANCEMENT: Reasoning Extraction ---
+            // Extract reasoning
             let mut reasoning_text = response.reasoning_text.clone();
             if reasoning_text.is_empty() {
-                // Regex fallback for <think> tags
                 let think_re = regex::Regex::new(r"(?s)<think>(.*?)</think>").unwrap();
                 if let Some(cap) = think_re.captures(&response.text) {
                     reasoning_text = cap[1].trim().to_string();
                 }
             }
 
-            // --- ENHANCEMENT: Fallback Parsing ---
+            // Fallback parser
             let mut detected_tool_calls = response.tool_calls.clone();
             if detected_tool_calls.is_empty() {
                 detected_tool_calls = FallbackParser::parse(&response.text);
                 if !detected_tool_calls.is_empty() {
-                    log::info!("FallbackParser: Detected {} tool calls from text", detected_tool_calls.len());
+                    log::info!("[AgentLoop] FallbackParser detected {} tool call(s)",
+                        detected_tool_calls.len());
                 }
             }
 
-            // Record token usage (short lock on session_store)
+            // Record token usage
             {
                 let be_name = self.backend.read().await
                     .as_ref()
@@ -714,36 +760,45 @@ impl AgentCore {
                             &be_name,
                         );
                         let usage = store.load_token_usage(session_id);
-                        log::info!("[LLM Token Usage DLOG] Round Usage: Prompt {} + Completion {} = {}", response.prompt_tokens, response.completion_tokens, response.prompt_tokens + response.completion_tokens);
-                        log::info!("[LLM Token Usage DLOG] Cumulative Session Usage: Prompt {} + Completion {} = {}", usage.total_prompt_tokens, usage.total_completion_tokens, usage.total_prompt_tokens + usage.total_completion_tokens);
+                        log::info!("[TokenUsage] Round: P{}+C{}={} | Session cumulative: {}",
+                            response.prompt_tokens, response.completion_tokens,
+                            response.prompt_tokens + response.completion_tokens,
+                            usage.total_prompt_tokens + usage.total_completion_tokens);
+                        loop_state.token_used = usage.total_prompt_tokens as usize
+                            + context_engine.estimate_tokens(&messages);
                     }
                 }
             }
 
             if !detected_tool_calls.is_empty() {
-                log::info!("Round {}: {} tool call(s)", round, detected_tool_calls.len());
+                // ── Phase 5: ToolDispatching ─────────────────────────────
+                loop_state.transition(AgentPhase::ToolDispatching);
+                loop_state.total_tool_calls += detected_tool_calls.len();
+                log::info!("[AgentLoop] Round {} dispatching {} tool(s)",
+                    loop_state.round, detected_tool_calls.len());
 
-                // Add assistant message with tool calls and reasoning
+                // Add assistant message
                 messages.push(LlmMessage {
                     role: "assistant".into(),
                     text: response.text.clone(),
-                    reasoning_text,
+                    reasoning_text: reasoning_text.clone(),
                     tool_calls: detected_tool_calls.clone(),
                     ..Default::default()
                 });
 
-                // Execute tool calls — parallel with tokio join_all
+                // Parallel tool execution
                 let td_guard = self.tool_dispatcher.read().await;
                 let mut futures_list = Vec::new();
+
                 for tc in detected_tool_calls.iter() {
-                    log::info!("Executing tool (async): {} (id: {})", tc.name, tc.id);
                     let skills_dir = self.platform.paths.skills_dir.clone();
                     let td_guard_ref = &*td_guard;
                     let tc_name = tc.name.clone();
                     let tc_args = tc.args.clone();
                     let tc_id = tc.id.clone();
                     let bridge_ref = &self.action_bridge;
-                    
+
+                    // ── Phase 11: SafetyCheck per tool ───────────────────
                     let block_reason = if let Ok(tp) = self.tool_policy.lock() {
                         match tp.check_policy(session_id, &tc_name, &tc_args) {
                             Err(reason) => Some(reason),
@@ -753,8 +808,9 @@ impl AgentCore {
 
                     futures_list.push(async move {
                         if let Some(reason) = block_reason {
-                            log::warn!("Tool execution blocked: {}", reason);
-                            return LlmMessage::tool_result(&tc_id, &tc_name, serde_json::json!({"error": reason}));
+                            log::warn!("[SafetyCheck] Tool '{}' blocked: {}", tc_name, reason);
+                            return LlmMessage::tool_result(&tc_id, &tc_name,
+                                serde_json::json!({"error": reason}));
                         }
 
                         let result = if tc_name.starts_with("action_") {
@@ -771,7 +827,6 @@ impl AgentCore {
                             let name = tc_args.get("name").and_then(|v| v.as_str()).unwrap_or("unnamed_skill");
                             let content = tc_args.get("content").and_then(|v| v.as_str()).unwrap_or("");
                             let sanitized_name = name.replace(|c: char| !c.is_ascii_alphanumeric() && c != '_', "");
-                            
                             if sanitized_name.is_empty() {
                                 serde_json::json!({"error": "Invalid skill name"})
                             } else {
@@ -781,8 +836,8 @@ impl AgentCore {
                                 } else {
                                     let skill_md_path = skill_dir_path.join("SKILL.md");
                                     match std::fs::write(&skill_md_path, content) {
-                                        Ok(_) => serde_json::json!({"status": "success", "message": format!("Skill '{}' created successfully at {:?}", sanitized_name, skill_md_path)}),
-                                        Err(e) => serde_json::json!({"error": format!("Failed to write skill content: {}", e)})
+                                        Ok(_) => serde_json::json!({"status": "success", "message": format!("Skill '{}' created at {:?}", sanitized_name, skill_md_path)}),
+                                        Err(e) => serde_json::json!({"error": format!("Failed to write skill: {}", e)})
                                     }
                                 }
                             }
@@ -797,43 +852,92 @@ impl AgentCore {
                         } else {
                             td_guard_ref.execute(&tc_name, &tc_args).await
                         };
+
+                        log::info!("[ObservationCollect] Tool '{}' result: {} chars",
+                            tc_name, result.to_string().len());
                         LlmMessage::tool_result(&tc_id, &tc_name, result)
                     });
                 }
+
                 let results = futures_util::future::join_all(futures_list).await;
                 messages.extend(results);
-                // Continue loop for next LLM response
+
+                // ── Phase 7: Evaluating (partial progress) ───────────────
+                loop_state.transition(AgentPhase::Evaluating);
+                let verdict = loop_state.observe_output(&response.text);
+                log::info!("[Evaluating] Round {} verdict={}", loop_state.round, verdict.as_str());
+
+                if verdict == EvalVerdict::Stuck {
+                    log::warn!("[AgentLoop] Idle loop detected (same output {} rounds). Terminating.",
+                        AgentLoopState::IDLE_WINDOW);
+                    loop_state.transition(AgentPhase::TerminationCheck);
+                    loop_state.transition(AgentPhase::ResultReporting);
+
+                    if let Ok(ss) = self.session_store.lock() {
+                        if let Some(store) = ss.as_ref() {
+                            store.add_message(session_id, "assistant",
+                                "Task completed (idle loop detected).");
+                        }
+                    }
+                    return response.text;
+                }
+
             } else {
-                // Final text response
+                // ── Phase 7: Evaluating — GoalAchieved ──────────────────
+                loop_state.transition(AgentPhase::Evaluating);
+                loop_state.last_eval_verdict = EvalVerdict::GoalAchieved;
+
+                log::info!("[Evaluating] Round {} verdict=GoalAchieved (no tool calls)",
+                    loop_state.round);
+
                 let text = response.text;
-                let mut reasoning_text = response.reasoning_text.clone();
-                if reasoning_text.is_empty() {
-                    let think_re = regex::Regex::new(r"(?s)<think>(.*?)</think>").unwrap();
-                    if let Some(cap) = think_re.captures(&text) {
-                        reasoning_text = cap[1].trim().to_string();
+                if let Ok(ss) = self.session_store.lock() {
+                    if let Some(store) = ss.as_ref() {
+                        store.add_message(session_id, "assistant", &text);
                     }
                 }
 
-                if let Ok(ss) = self.session_store.lock() {
-                    if let Some(store) = ss.as_ref() {
-                        // Store reasoning in the message too
-                        let mut msg = LlmMessage::assistant(&text);
-                        msg.reasoning_text = reasoning_text;
-                        store.add_message(session_id, "assistant", &text);
-                        // TODO: Update SessionStore to optionally store reasoning_text properly
-                    }
-                }
+                // ── Phase 14: ResultReporting ────────────────────────────
+                loop_state.transition(AgentPhase::ResultReporting);
+                loop_state.transition(AgentPhase::Complete);
+                loop_state.log_self_inspection();
                 return text;
             }
 
-            // --- ENHANCEMENT: Proactive Compaction (Step 2: During loop) ---
-            if context_engine.should_compact(&messages, budget) {
-                messages = context_engine.compact(messages, budget);
+            // ── Phase 8: RePlanning / Phase 12: StateTracking ────────────
+            loop_state.transition(AgentPhase::StateTracking);
+
+            // ── Phase 13: SelfInspection ─────────────────────────────────
+            loop_state.transition(AgentPhase::SelfInspection);
+            loop_state.log_self_inspection();
+
+            // In-loop size-based compaction
+            loop_state.token_used = context_engine.estimate_tokens(&messages);
+            if loop_state.needs_compaction() {
+                log::info!("[ContextEngine] In-loop compaction triggered (round {})", loop_state.round);
+                messages = context_engine.compact(messages, loop_state.token_budget);
+                loop_state.token_used = context_engine.estimate_tokens(&messages);
             }
+
+            // ── Phase 9: TerminationCheck ─────────────────────────────────
+            loop_state.round += 1;
+            loop_state.transition(AgentPhase::TerminationCheck);
+
+            if loop_state.is_round_limit_reached() {
+                log::warn!("[AgentLoop] Max rounds ({}) reached for session '{}'",
+                    loop_state.max_tool_rounds, session_id);
+                break;
+            }
+
+            loop_state.transition(AgentPhase::RePlanning);
         }
 
+        // ── Phase 14: ResultReporting (limit hit) ────────────────────────
+        loop_state.transition(AgentPhase::ResultReporting);
+        loop_state.log_self_inspection();
         "Error: Maximum tool call rounds exceeded".into()
     }
+
 
     pub async fn shutdown(&self) {
         log::info!("AgentCore shutting down");
