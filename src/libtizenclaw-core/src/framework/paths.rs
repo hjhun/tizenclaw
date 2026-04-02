@@ -65,10 +65,12 @@ impl PlatformPaths {
             .map(PathBuf::from)
             .unwrap_or_else(|_| base.join("tools"));
 
+        let skills_dir = tools_dir.join("skills");
+
         PlatformPaths {
             config_dir: base.join("config"),
             tools_dir,
-            skills_dir: base.join("skills"),
+            skills_dir,
             plugins_dir: base.join("plugins"),
             web_root: base.join("web"),
             workflows_dir: base.join("workflows"),
@@ -86,11 +88,13 @@ impl PlatformPaths {
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(TIZEN_TOOLS_DIR));
 
+        let skills_dir = tools_dir.join("skills");
+
         PlatformPaths {
             data_dir: PathBuf::from(TIZEN_DATA_DIR),
             config_dir: PathBuf::from(TIZEN_DATA_DIR).join("config"),
             tools_dir,
-            skills_dir: PathBuf::from(TIZEN_DATA_DIR).join("skills"),
+            skills_dir,
             plugins_dir: PathBuf::from(TIZEN_DATA_DIR).join("plugins"),
             web_root: PathBuf::from(TIZEN_DATA_DIR).join("web"),
             workflows_dir: PathBuf::from(TIZEN_DATA_DIR).join("workflows"),

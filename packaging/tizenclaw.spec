@@ -90,6 +90,7 @@ mkdir -p %{buildroot}/opt/usr/share/tizenclaw/rag
 mkdir -p %{buildroot}/opt/usr/share/tizen-tools/embedded
 mkdir -p %{buildroot}/opt/usr/share/tizen-tools/actions
 mkdir -p %{buildroot}/opt/usr/share/tizen-tools/cli
+mkdir -p %{buildroot}/opt/usr/share/tizen-tools/skills
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/sandbox/packages/pip
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/sandbox/packages/npm
 mkdir -p %{buildroot}/opt/usr/share/crash/dump
@@ -123,6 +124,7 @@ fi
 /opt/usr/share/tizen-tools/embedded/
 %dir /opt/usr/share/tizen-tools/actions/
 %dir /opt/usr/share/tizen-tools/cli/
+%dir /opt/usr/share/tizen-tools/skills/
 /opt/usr/share/tizen-tools/cli/*
 %dir /opt/usr/share/tizen-tools/
 %dir /opt/usr/share/tizenclaw/config/
