@@ -29,17 +29,21 @@ impl PlatformPlugin for TizenPlatform {
     }
 
     fn initialize(&mut self) -> bool {
+        log::debug!("ENTER TizenPlatform::initialize");
         // Initialize tizen-core main loop (if needed)
         unsafe {
             crate::tizen_sys::tizen_core::tizen_core_init();
         }
+        log::debug!("EXIT TizenPlatform::initialize");
         true
     }
 
     fn shutdown(&mut self) {
+        log::debug!("ENTER TizenPlatform::shutdown");
         unsafe {
             crate::tizen_sys::tizen_core::tizen_core_shutdown();
         }
+        log::debug!("EXIT TizenPlatform::shutdown");
     }
 }
 
@@ -114,11 +118,12 @@ pub struct TizenPackageManager;
 
 impl PackageManagerProvider for TizenPackageManager {
     fn list_packages(&self) -> Vec<PackageInfo> {
+        log::debug!("ENTER TizenPackageManager::list_packages");
         let output = Command::new("pkgcmd")
             .args(["--list", "-t", "0"])
             .output();
 
-        match output {
+        let result = match output {
             Ok(out) => {
                 let stdout = String::from_utf8_lossy(&out.stdout);
                 parse_tizen_pkg_list(&stdout)
@@ -127,25 +132,31 @@ impl PackageManagerProvider for TizenPackageManager {
                 log::warn!("TizenPackageManager: pkgcmd failed: {}", e);
                 Vec::new()
             }
-        }
+        };
+        log::debug!("EXIT TizenPackageManager::list_packages");
+        result
     }
 
     fn get_package_info(&self, pkg_id: &str) -> Option<PackageInfo> {
+        log::debug!("ENTER TizenPackageManager::get_package_info");
         let output = Command::new("pkgcmd")
             .args(["--info", "-n", pkg_id])
             .output();
 
-        match output {
+        let result = match output {
             Ok(out) if out.status.success() => {
                 let stdout = String::from_utf8_lossy(&out.stdout);
                 Some(parse_tizen_pkg_info(&stdout, pkg_id))
             }
             _ => None,
-        }
+        };
+        log::debug!("EXIT TizenPackageManager::get_package_info");
+        result
     }
 
     fn get_packages_by_metadata_key(&self, key: &str) -> Vec<PackageInfo> {
-        unsafe {
+        log::debug!("ENTER TizenPackageManager::get_packages_by_metadata_key");
+        let result = unsafe {
             use crate::tizen_sys::pkgmgr_info::*;
             let mut filter: pkgmgrinfo_pkginfo_filter_h = std::ptr::null_mut();
             // CRITICAL: Must use metadata_filter_create, NOT generic filter_create
@@ -196,11 +207,14 @@ impl PackageManagerProvider for TizenPackageManager {
                 installed: true,
                 ..Default::default()
             }).collect()
-        }
+        };
+        log::debug!("EXIT TizenPackageManager::get_packages_by_metadata_key");
+        result
     }
 
     fn get_package_metadata_value(&self, pkg_id: &str, key: &str) -> Option<String> {
-        unsafe {
+        log::debug!("ENTER TizenPackageManager::get_package_metadata_value");
+        let result = unsafe {
             use crate::tizen_sys::pkgmgr_info::*;
             let mut pkginfo: pkgmgrinfo_pkginfo_h = std::ptr::null_mut();
             let c_pkgid = std::ffi::CString::new(pkg_id).unwrap();
@@ -223,11 +237,14 @@ impl PackageManagerProvider for TizenPackageManager {
 
             pkgmgrinfo_pkginfo_destroy_pkginfo(pkginfo);
             result
-        }
+        };
+        log::debug!("EXIT TizenPackageManager::get_package_metadata_value");
+        result
     }
 
     fn get_package_root_path(&self, pkg_id: &str) -> Option<String> {
-        unsafe {
+        log::debug!("ENTER TizenPackageManager::get_package_root_path");
+        let result = unsafe {
             use crate::tizen_sys::pkgmgr_info::*;
             let mut pkginfo: pkgmgrinfo_pkginfo_h = std::ptr::null_mut();
             let c_pkgid = std::ffi::CString::new(pkg_id).unwrap();
@@ -249,11 +266,14 @@ impl PackageManagerProvider for TizenPackageManager {
 
             pkgmgrinfo_pkginfo_destroy_pkginfo(pkginfo);
             result
-        }
+        };
+        log::debug!("EXIT TizenPackageManager::get_package_root_path");
+        result
     }
 
     fn get_package_res_path(&self, pkg_id: &str) -> Option<String> {
-        unsafe {
+        log::debug!("ENTER TizenPackageManager::get_package_res_path");
+        let result = unsafe {
             use crate::tizen_sys::pkgmgr_info::*;
             let mut pkginfo: pkgmgrinfo_pkginfo_h = std::ptr::null_mut();
             let c_pkgid = std::ffi::CString::new(pkg_id).unwrap();
@@ -274,7 +294,9 @@ impl PackageManagerProvider for TizenPackageManager {
 
             pkgmgrinfo_pkginfo_destroy_pkginfo(pkginfo);
             result
-        }
+        };
+        log::debug!("EXIT TizenPackageManager::get_package_res_path");
+        result
     }
 }
 
@@ -326,7 +348,8 @@ pub struct TizenAppControl;
 
 impl AppControlProvider for TizenAppControl {
     fn launch_app(&self, app_id: &str) -> Result<(), String> {
-        unsafe {
+        log::debug!("ENTER TizenAppControl::launch_app");
+        let result = unsafe {
             use crate::tizen_sys::app_control::*;
 
             let mut handle: app_control_h = std::ptr::null_mut();
@@ -350,6 +373,8 @@ impl AppControlProvider for TizenAppControl {
             } else {
                 Err(format!("app_control_send_launch_request failed: {}", result))
             }
-        }
+        };
+        log::debug!("EXIT TizenAppControl::launch_app");
+        result
     }
 }

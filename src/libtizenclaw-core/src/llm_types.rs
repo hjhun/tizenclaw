@@ -60,7 +60,14 @@ struct ToolsListInner {
 unsafe fn set_str(dst: *mut *mut c_char, src: &str) -> i32 {
     if dst.is_null() { return EINVAL; }
     match CString::new(src) {
-        Ok(cs) => { *dst = cs.into_raw(); OK }
+        Ok(cs) => { 
+            let ptr = libc::strdup(cs.as_ptr());
+            if ptr.is_null() {
+                return EINVAL;
+            }
+            *dst = ptr;
+            OK
+        }
         Err(_) => EINVAL,
     }
 }
