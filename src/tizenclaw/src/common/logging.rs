@@ -109,7 +109,28 @@ impl FileLogBackend {
                     libtizenclaw_core::framework::LogLevel::Info  => "I",
                     libtizenclaw_core::framework::LogLevel::Debug => "D",
                 };
-                let line = format!("[{}] {}\n", level_str, msg);
+                let pid = std::process::id();
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default();
+                let secs = now.as_secs() as libc::time_t;
+                let ms = now.subsec_millis();
+                let mut tm_buf: libc::tm = unsafe { std::mem::zeroed() };
+                unsafe { libc::gmtime_r(&secs, &mut tm_buf) };
+
+                let ts = format!(
+                    "{:04}{:02}{:02}.{:02}{:02}{:02}.{:03}UTC",
+                    tm_buf.tm_year + 1900,
+                    tm_buf.tm_mon + 1,
+                    tm_buf.tm_mday,
+                    tm_buf.tm_hour,
+                    tm_buf.tm_min,
+                    tm_buf.tm_sec,
+                    ms
+                );
+
+                let line = format!("{}|{}|[{}] {}\n", ts, pid, level_str, msg);
+
                 let _ = std::fs::OpenOptions::new()
                     .create(true)
                     .append(true)
@@ -127,5 +148,28 @@ impl FileLogBackend {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[tokio::test]
+    async fn test_file_log_format_contains_pid() {
+        let path = "test_tizenclaw.log";
+        let _ = fs::remove_file(path);
+        
+        FileLogBackend::init(path, 1024);
+        FileLogBackend::write("test payload", libtizenclaw_core::framework::LogLevel::Info);
+        
+        let content = fs::read_to_string(path).unwrap_or_default();
+        let pid = std::process::id();
+        assert!(content.contains(&format!("|{}|", pid)), "Log does not contain PID");
+        assert!(content.contains("UTC|"), "Log does not contain UTC timestamp tag");
+        assert!(content.contains("test payload"), "Log does not contain payload");
+        
+        let _ = fs::remove_file(path);
     }
 }
