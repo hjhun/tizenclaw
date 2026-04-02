@@ -107,6 +107,7 @@ pub struct AgentCore {
     backend_name: RwLock<String>,
     llm_config: Mutex<LlmConfig>,
     circuit_breakers: RwLock<std::collections::HashMap<String, CircuitBreakerState>>,
+    action_bridge: Mutex<crate::core::action_bridge::ActionBridge>,
 }
 
 impl AgentCore {
@@ -123,6 +124,7 @@ impl AgentCore {
             backend_name: RwLock::new(String::new()),
             llm_config: Mutex::new(LlmConfig::default()),
             circuit_breakers: RwLock::new(std::collections::HashMap::new()),
+            action_bridge: Mutex::new(crate::core::action_bridge::ActionBridge::new()),
         }
     }
 
@@ -255,6 +257,11 @@ impl AgentCore {
             td.load_tools_from_root(&paths.tools_dir.to_string_lossy());
         }
         log::info!("Tools loaded from {:?}", paths.tools_dir);
+
+        {
+            let mut bridge = self.action_bridge.lock().unwrap();
+            bridge.start();
+        }
 
         true
     }
@@ -524,6 +531,10 @@ impl AgentCore {
         let mut tools = self.tool_dispatcher.read().await.get_tool_declarations();
         crate::core::tool_declaration_builder::ToolDeclarationBuilder::append_builtin_tools(&mut tools);
 
+        if let Ok(bridge) = self.action_bridge.lock() {
+            tools.extend(bridge.get_action_declarations());
+        }
+
         // Build System Prompt Dynamically
         let system_prompt = {
             let mut builder = crate::core::prompt_builder::SystemPromptBuilder::new();
@@ -654,9 +665,20 @@ impl AgentCore {
                     let tc_name = tc.name.clone();
                     let tc_args = tc.args.clone();
                     let tc_id = tc.id.clone();
+                    let bridge_ref = &self.action_bridge;
                     
                     futures_list.push(async move {
-                        let result = if tc_name == "create_skill" {
+                        let result = if tc_name.starts_with("action_") {
+                            if let Some(action_id) = tc_name.strip_prefix("action_") {
+                                if let Ok(bridge) = bridge_ref.lock() {
+                                    bridge.execute_action(action_id, &tc_args)
+                                } else {
+                                    json!({"error": "Failed to lock action bridge"})
+                                }
+                            } else {
+                                json!({"error": "Invalid action format"})
+                            }
+                        } else if tc_name == "create_skill" {
                             let name = tc_args.get("name").and_then(|v| v.as_str()).unwrap_or("unnamed_skill");
                             let content = tc_args.get("content").and_then(|v| v.as_str()).unwrap_or("");
                             let sanitized_name = name.replace(|c: char| !c.is_ascii_alphanumeric() && c != '_', "");

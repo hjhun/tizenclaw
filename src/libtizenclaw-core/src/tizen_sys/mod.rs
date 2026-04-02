@@ -18,7 +18,7 @@ static LIB_APP_CONTROL: LazyLock<Option<Library>> = LazyLock::new(|| unsafe { Li
 static LIB_SYSTEM_INFO: LazyLock<Option<Library>> = LazyLock::new(|| unsafe { Library::new("libcapi-system-info.so.0").or_else(|_| Library::new("libcapi-system-info.so")).ok() });
 static LIB_ALARM: LazyLock<Option<Library>> = LazyLock::new(|| unsafe { Library::new("libcapi-appfw-alarm.so.0").or_else(|_| Library::new("libcapi-appfw-alarm.so")).ok() });
 static LIB_BUNDLE: LazyLock<Option<Library>> = LazyLock::new(|| unsafe { Library::new("libbundle.so.0").or_else(|_| Library::new("libbundle.so")).ok() });
-static LIB_ACTION: LazyLock<Option<Library>> = LazyLock::new(|| unsafe { Library::new("libaction.so.0").or_else(|_| Library::new("libaction.so")).ok() });
+static LIB_ACTION: LazyLock<Option<Library>> = LazyLock::new(|| unsafe { Library::new("libcapi-appfw-tizen-action.so.1").or_else(|_| Library::new("libtizen-action.so.1")).or_else(|_| Library::new("libtizen-action.so")).ok() });
 
 macro_rules! dlsym_call {
     ($lib:expr, $sym:expr, $sig:ty, $fallback:expr $(, $args:expr)*) => {{
