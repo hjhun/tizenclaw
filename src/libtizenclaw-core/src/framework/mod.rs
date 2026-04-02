@@ -196,6 +196,21 @@ impl PlatformContext {
             return ctx;
         }
 
+        // Check if the built-in Tizen adapters are compatible natively
+        let mut tizen = crate::plugin_core::adapters::TizenPlatform;
+        if tizen.is_compatible() {
+            log::info!("Tizen Platform detected natively. Using internal adapters.");
+            tizen.initialize();
+            return PlatformContext {
+                logger: std::sync::Arc::new(generic_linux::StderrLogger),
+                system_info: Box::new(crate::plugin_core::adapters::TizenSystemInfo),
+                package_manager: Box::new(crate::plugin_core::adapters::TizenPackageManager),
+                app_control: Box::new(crate::plugin_core::adapters::TizenAppControl),
+                platform: Box::new(tizen),
+                paths: platform_paths,
+            };
+        }
+
         // Fallback: use built-in Generic Linux platform
         log::info!("No platform plugin found, using Generic Linux fallback");
         let generic = generic_linux::GenericLinuxPlatform::new();
