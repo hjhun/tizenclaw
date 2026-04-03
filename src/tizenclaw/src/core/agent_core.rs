@@ -844,7 +844,7 @@ impl AgentCore {
             loop_state.active_workflow_id = Some(wf_id);
         } else {
             // Optional LLM Cognitive Step for Complex Prompts
-            if prompt.len() > 100 || prompt.contains(" and ") || prompt.contains(" 그리고 ") || prompt.contains("나머지") || prompt.contains("순서대로") {
+            if crate::core::intent_analyzer::IntentAnalyzer::is_complex_task(prompt) {
                 log::debug!("[AgentLoop] Complex prompt detected. Triggering explicit Plan-and-Solve...");
                 let plan_sys = "You are a precise planner. Outline the distinct steps to solve the user's request. Output only a list of concise steps.";
                 

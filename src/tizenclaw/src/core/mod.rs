@@ -7,6 +7,7 @@ pub mod tool_policy;
 pub mod prompt_builder;
 pub mod textual_skill_scanner;
 
+pub mod intent_analyzer;
 pub mod tool_indexer;
 pub mod ipc_server;
 pub mod event_bus;
