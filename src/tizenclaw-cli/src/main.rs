@@ -193,7 +193,7 @@ fn print_usage() {
     eprintln!("  tizenclaw-cli [options] [prompt]\n");
     eprintln!("Options:");
     eprintln!("  -s <id>       Session ID (default: cli_test)");
-    eprintln!("  --stream      Enable streaming");
+    eprintln!("  --no-stream   Disable real-time streaming (wait for full response)");
     eprintln!("  --usage       Show token usage");
     eprintln!("  -h, --help    Show this help\n");
     eprintln!("If no prompt given, starts interactive mode.");
@@ -202,7 +202,7 @@ fn print_usage() {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut session_id = "cli_test".to_string();
-    let mut stream = false;
+    let mut stream = true;
     let mut prompt_parts: Vec<String> = vec![];
     let mut i = 1;
 
@@ -216,7 +216,7 @@ fn main() {
                 i += 1;
                 session_id = args[i].clone();
             }
-            "--stream" => stream = true,
+            "--no-stream" => stream = false,
             "--usage" => {
                 match send_jsonrpc("get_usage", json!({})) {
                     Ok(resp) => println!("{}", serde_json::to_string_pretty(&resp).unwrap_or_default()),
