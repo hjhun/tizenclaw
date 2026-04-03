@@ -617,12 +617,30 @@ impl AgentCore {
             }
         }
 
-        // Build conversation history
+        // Build conversation history — compaction-aware load
         let history = {
             let ss = self.session_store.lock();
-            ss.ok()
-                .and_then(|s| s.as_ref().map(|store| store.get_messages(session_id, MAX_CONTEXT_MESSAGES)))
-                .unwrap_or_default()
+            if let Some(Ok(guard)) = ss.ok().map(|s| {
+                // Returns (Vec<SessionMessage>, bool)
+                Ok::<_, ()>(s.as_ref().map(|store| {
+                    store.load_session_context(session_id, MAX_CONTEXT_MESSAGES)
+                }))
+            }) {
+                if let Some((msgs, from_compact)) = guard {
+                    if from_compact {
+                        log::info!("[ContextLoading] session='{}' loaded from compacted.md",
+                            session_id);
+                    } else {
+                        log::info!("[ContextLoading] session='{}' loaded {} msgs from history",
+                            session_id, msgs.len());
+                    }
+                    msgs
+                } else {
+                    vec![]
+                }
+            } else {
+                vec![]
+            }
         };
 
         let mut messages: Vec<LlmMessage> = history
@@ -914,9 +932,34 @@ impl AgentCore {
             // In-loop size-based compaction
             loop_state.token_used = context_engine.estimate_tokens(&messages);
             if loop_state.needs_compaction() {
-                log::info!("[ContextEngine] In-loop compaction triggered (round {})", loop_state.round);
+                log::info!("[ContextEngine] In-loop compaction triggered (round {})",
+                    loop_state.round);
                 messages = context_engine.compact(messages, loop_state.token_budget);
                 loop_state.token_used = context_engine.estimate_tokens(&messages);
+
+                // Persist compacted snapshot to disk (compacted.md)
+                if let Ok(ss) = self.session_store.lock() {
+                    if let Some(store) = ss.as_ref() {
+                        use crate::storage::session_store::SessionMessage;
+                        let session_msgs: Vec<SessionMessage> = messages
+                            .iter()
+                            .map(|m| SessionMessage {
+                                role: m.role.clone(),
+                                text: m.text.clone(),
+                                timestamp: String::new(),
+                            })
+                            .collect();
+                        match store.save_compacted(session_id, &session_msgs) {
+                            Ok(_) => log::info!(
+                                "[ContextEngine] compacted.md saved ({} msgs)",
+                                session_msgs.len()
+                            ),
+                            Err(e) => log::warn!(
+                                "[ContextEngine] Failed to save compacted.md: {}", e
+                            ),
+                        }
+                    }
+                }
             }
 
             // ── Phase 9: TerminationCheck ─────────────────────────────────
