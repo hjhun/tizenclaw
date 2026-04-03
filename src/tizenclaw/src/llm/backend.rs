@@ -104,6 +104,7 @@ pub trait LlmBackend: Send + Sync {
     async fn chat(
         &self, messages: &[LlmMessage], tools: &[LlmToolDecl],
         on_chunk: Option<&(dyn Fn(&str) + Send + Sync)>, system_prompt: &str,
+        max_tokens: Option<u32>,
     ) -> LlmResponse;
     fn get_name(&self) -> &str;
     fn shutdown(&mut self) {}

@@ -33,8 +33,8 @@ impl LlmBackend for AnthropicBackend {
         !self.api_key.is_empty()
     }
 
-    async fn chat(&self, messages: &[LlmMessage], tools: &[LlmToolDecl], _on_chunk: Option<&(dyn Fn(&str) + Send + Sync)>, system_prompt: &str) -> LlmResponse {
-        let mut req = json!({"model": self.model, "max_tokens": 4096});
+    async fn chat(&self, messages: &[LlmMessage], tools: &[LlmToolDecl], _on_chunk: Option<&(dyn Fn(&str) + Send + Sync)>, system_prompt: &str, max_tokens: Option<u32>) -> LlmResponse {
+        let mut req = json!({"model": self.model, "max_tokens": max_tokens.unwrap_or(4096)});
         if !system_prompt.is_empty() { 
             req["system"] = json!([{
                 "type": "text", 

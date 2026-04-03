@@ -31,7 +31,7 @@ impl LlmBackend for OllamaBackend {
         true
     }
 
-    async fn chat(&self, messages: &[LlmMessage], _tools: &[LlmToolDecl], _on_chunk: Option<&(dyn Fn(&str) + Send + Sync)>, system_prompt: &str) -> LlmResponse {
+    async fn chat(&self, messages: &[LlmMessage], _tools: &[LlmToolDecl], _on_chunk: Option<&(dyn Fn(&str) + Send + Sync)>, system_prompt: &str, max_tokens: Option<u32>) -> LlmResponse {
         let mut msgs = vec![];
         if !system_prompt.is_empty() {
             msgs.push(json!({"role": "system", "content": system_prompt}));
@@ -39,7 +39,14 @@ impl LlmBackend for OllamaBackend {
         for msg in messages {
             msgs.push(json!({"role": msg.role, "content": msg.text}));
         }
-        let req = json!({"model": self.model, "messages": msgs, "stream": false});
+        let req = json!({
+            "model": self.model, 
+            "messages": msgs, 
+            "stream": false,
+            "options": {
+                "num_predict": max_tokens.unwrap_or(4096)
+            }
+        });
 
         let url = format!("{}/api/chat", self.endpoint);
         let http_resp = http_client::http_post(&url, &[], &req.to_string(), 1, 120).await;

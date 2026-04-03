@@ -288,7 +288,12 @@ impl AgentCore {
         // Initialize memory store
         let mem_dir = paths.data_dir.join("memory");
         let mem_db = paths.data_dir.join("memories.db");
-        match crate::storage::memory_store::MemoryStore::new(&mem_dir.to_string_lossy(), &mem_db.to_string_lossy()) {
+        let model_dir = paths.data_dir.join("models");
+        match crate::storage::memory_store::MemoryStore::new(
+            &mem_dir.to_string_lossy(), 
+            &mem_db.to_string_lossy(),
+            &model_dir.to_string_lossy()
+        ) {
             Ok(store) => {
                 log::info!("Memory store initialized");
                 if let Ok(mut ms) = self.memory_store.lock() {
@@ -537,6 +542,7 @@ impl AgentCore {
         tools: &[crate::llm::backend::LlmToolDecl],
         on_chunk: Option<&(dyn Fn(&str) + Send + Sync)>,
         system_prompt: &str,
+        max_tokens: Option<u32>,
     ) -> LlmResponse {
         // Try primary backend — lock is held only during chat()
         {
@@ -544,7 +550,7 @@ impl AgentCore {
             if self.is_backend_available(&bn) {
                 let be_guard = self.backend.read().await;
                 if let Some(be) = be_guard.as_ref() {
-                    let resp = be.chat(messages, tools, on_chunk, system_prompt).await;
+                    let resp = be.chat(messages, tools, on_chunk, system_prompt, max_tokens).await;
                     if resp.success {
                         self.record_success(&bn);
                         return resp;
@@ -568,7 +574,7 @@ impl AgentCore {
                 let bn = fb.get_name().to_string();
                 if self.is_backend_available(&bn) {
                     log::debug!("Trying fallback backend '{}'", bn);
-                    let resp = fb.chat(messages, tools, on_chunk, system_prompt).await;
+                    let resp = fb.chat(messages, tools, on_chunk, system_prompt, max_tokens).await;
                     if resp.success {
                         self.record_success(&bn);
                         return resp;
@@ -588,6 +594,35 @@ impl AgentCore {
             error_message: "All LLM backends failed".into(),
             ..Default::default()
         }
+    }
+
+    /// Extract intent keywords for dynamic tool filtering.
+    fn extract_intent_keywords(prompt: &str) -> Vec<String> {
+        let p = prompt.to_lowercase();
+        let mut keywords = Vec::new();
+
+        if p.contains("파일") || p.contains("읽어") || p.contains("열어") || p.contains("file") || p.contains("read") {
+            keywords.extend(["fs", "file", "read", "write"].map(String::from));
+        }
+        if p.contains("설치") || p.contains("앱") || p.contains("패키지") || p.contains("install") || p.contains("package") || p.contains("app") {
+            keywords.extend(["pkg", "app", "install"].map(String::from));
+        }
+        if p.contains("기억") || p.contains("저장") || p.contains("remember") || p.contains("memory") || p.contains("search") || p.contains("knowledge") {
+            keywords.extend(["mem", "remember", "forget", "recall", "search"].map(String::from));
+        }
+        if p.contains("실행") || p.contains("명령") || p.contains("run") || p.contains("exec") || p.contains("shell") {
+            keywords.extend(["exec", "shell", "run"].map(String::from));
+        }
+        if p.contains("일정") || p.contains("알람") || p.contains("task") || p.contains("schedule") {
+            keywords.extend(["task", "sched", "alarm"].map(String::from));
+        }
+        
+        for word in p.split_whitespace() {
+            if word.len() >= 4 {
+                keywords.push(word.into());
+            }
+        }
+        keywords
     }
 
     /// Process a user prompt through the 15-phase autonomous agent loop.
@@ -694,8 +729,11 @@ impl AgentCore {
             messages.push(LlmMessage::user(prompt));
         }
 
+        // Extract intent keywords for optimal tool injection
+        let intent_keywords = Self::extract_intent_keywords(prompt);
+
         // Get tool declarations
-        let mut tools = self.tool_dispatcher.read().await.get_tool_declarations();
+        let mut tools = self.tool_dispatcher.read().await.get_tool_declarations_filtered(&intent_keywords);
         crate::core::tool_declaration_builder::ToolDeclarationBuilder::append_builtin_tools(&mut tools, prompt);
         if let Ok(bridge) = self.action_bridge.lock() {
             tools.extend(bridge.get_action_declarations());
@@ -730,7 +768,7 @@ impl AgentCore {
             // Load long term memory
             if let Ok(ms) = self.memory_store.lock() {
                 if let Some(store) = ms.as_ref() {
-                    let mem_str = store.load_for_prompt();
+                    let mem_str = store.load_relevant_for_prompt(prompt, 5, 0.1);
                     if !mem_str.is_empty() {
                         builder = builder.add_long_term_memory(mem_str);
                     }
@@ -797,7 +835,10 @@ impl AgentCore {
                 log::debug!("[Message {}] Role: {}\nText: {}", i, msg.role, msg.text);
             }
 
-            let response = self.chat_with_fallback(&messages, &tools, on_chunk, &system_prompt).await;
+            // Step 6: Set Max Tokens Dynamically
+            let dynamic_max_tokens = if prompt.len() < 50 { 1024 } else { 4096 };
+
+            let response = self.chat_with_fallback(&messages, &tools, on_chunk, &system_prompt, Some(dynamic_max_tokens)).await;
 
             // ── Phase 6: ObservationCollect ──────────────────────────────
             loop_state.transition(AgentPhase::ObservationCollect);
@@ -1234,7 +1275,7 @@ If there is nothing new to remember, output exactly: []";
         msgs.push(LlmMessage::user(&convo_text));
 
         log::debug!("[MemoryExtractor] Triggering LLM extraction sub-task...");
-        let response = self.chat_with_fallback(&msgs, &[], None, system_prompt).await;
+        let response = self.chat_with_fallback(&msgs, &[], None, system_prompt, Some(8192)).await;
 
         if response.success {
             let text = response.text.trim();

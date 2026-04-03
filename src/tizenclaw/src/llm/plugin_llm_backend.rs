@@ -331,6 +331,7 @@ impl LlmBackend for PluginLlmBackend {
         tools: &[LlmToolDecl],
         _on_chunk: Option<&(dyn Fn(&str) + Send + Sync)>,
         system_prompt: &str,
+        _max_tokens: Option<u32>,
     ) -> LlmResponse {
         let handle = match self.lib_handle {
             Some(h) => h,

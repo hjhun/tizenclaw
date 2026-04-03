@@ -32,7 +32,7 @@ impl LlmBackend for OpenAiBackend {
         !self.api_key.is_empty()
     }
 
-    async fn chat(&self, messages: &[LlmMessage], tools: &[LlmToolDecl], _on_chunk: Option<&(dyn Fn(&str) + Send + Sync)>, system_prompt: &str) -> LlmResponse {
+    async fn chat(&self, messages: &[LlmMessage], tools: &[LlmToolDecl], _on_chunk: Option<&(dyn Fn(&str) + Send + Sync)>, system_prompt: &str, max_tokens: Option<u32>) -> LlmResponse {
         let mut msgs = vec![];
         if !system_prompt.is_empty() {
             msgs.push(json!({"role": "system", "content": system_prompt}));
@@ -53,6 +53,11 @@ impl LlmBackend for OpenAiBackend {
             }
         }
         let mut req = json!({"model": self.model, "messages": msgs});
+        if let Some(tokens) = max_tokens {
+            req["max_tokens"] = json!(tokens);
+        } else {
+            req["max_tokens"] = json!(4096);
+        }
         if !tools.is_empty() {
             let tool_arr: Vec<Value> = tools.iter().map(|t| json!({
                 "type": "function", "function": {"name": t.name, "description": t.description, "parameters": t.parameters}

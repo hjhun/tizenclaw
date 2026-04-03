@@ -193,6 +193,28 @@ impl ToolDispatcher {
         }).collect()
     }
 
+    /// Get tool declarations filtered by intent keywords.
+    pub fn get_tool_declarations_filtered(&self, keywords: &[String]) -> Vec<crate::llm::backend::LlmToolDecl> {
+        if keywords.is_empty() {
+            return self.get_tool_declarations();
+        }
+        
+        self.tools.values().filter(|t| {
+            let name_lower = t.name.to_lowercase();
+            let desc_lower = t.description.to_lowercase();
+            keywords.iter().any(|k| {
+                let kl = k.to_lowercase();
+                name_lower.contains(&kl) || desc_lower.contains(&kl)
+            })
+        }).map(|t| {
+            crate::llm::backend::LlmToolDecl {
+                name: t.name.clone(),
+                description: t.description.clone(),
+                parameters: t.parameters.clone(),
+            }
+        }).collect()
+    }
+
     /// Execute a tool call.
     pub async fn execute(&self, tool_name: &str, args: &Value) -> Value {
         let decl = match self.tools.get(tool_name) {

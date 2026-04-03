@@ -52,8 +52,13 @@ impl GeminiBackend {
         tools: &[LlmToolDecl],
         system_prompt: &str,
         cached_name: Option<&str>,
+        max_tokens: Option<u32>,
     ) -> Value {
         let mut req = json!({});
+        
+        if let Some(tokens) = max_tokens {
+            req["generationConfig"] = json!({ "maxOutputTokens": tokens });
+        }
 
         if let Some(name) = cached_name {
             // Reference the server-side cached content (avoids re-sending
@@ -223,6 +228,7 @@ impl LlmBackend for GeminiBackend {
         tools: &[LlmToolDecl],
         _on_chunk: Option<&(dyn Fn(&str) + Send + Sync)>,
         system_prompt: &str,
+        max_tokens: Option<u32>,
     ) -> LlmResponse {
         // Read cached content name (non-blocking shared read)
         let cached_name_opt: Option<String> = self
@@ -232,7 +238,7 @@ impl LlmBackend for GeminiBackend {
             .and_then(|g| g.clone());
 
         let body = self
-            .build_request(messages, tools, system_prompt, cached_name_opt.as_deref())
+            .build_request(messages, tools, system_prompt, cached_name_opt.as_deref(), max_tokens)
             .to_string();
 
         let url = format!(

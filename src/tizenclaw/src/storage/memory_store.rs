@@ -8,25 +8,31 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 
 use super::sqlite;
+use crate::core::on_device_embedding::OnDeviceEmbedding;
 
 #[derive(Clone)]
 pub struct MemoryStore {
     base_dir: PathBuf,
     db: Arc<Mutex<rusqlite::Connection>>,
     file_lock: Arc<RwLock<()>>,
+    embedding_engine: Arc<Mutex<OnDeviceEmbedding>>,
 }
 
 impl MemoryStore {
-    pub fn new(base_dir: &str, db_path: &str) -> Result<Self, String> {
+    pub fn new(base_dir: &str, db_path: &str, model_dir: &str) -> Result<Self, String> {
         let base_path = PathBuf::from(base_dir);
         fs::create_dir_all(&base_path).map_err(|e| format!("Failed to create memory dir: {}", e))?;
 
         let db = sqlite::open_database(db_path).map_err(|e| format!("DB open: {}", e))?;
         
+        let mut embedding = OnDeviceEmbedding::new();
+        embedding.initialize(model_dir, None);
+
         let store = MemoryStore {
             base_dir: base_path,
             db: Arc::new(Mutex::new(db)),
             file_lock: Arc::new(RwLock::new(())),
+            embedding_engine: Arc::new(Mutex::new(embedding)),
         };
         
         store.init_tables().map_err(|e| format!("DB init: {}", e))?;
@@ -122,6 +128,58 @@ impl MemoryStore {
         }
     }
 
+    /// Loads subset of memory files by semantics using RAG OnDeviceEmbedding
+    pub fn load_relevant_for_prompt(&self, prompt: &str, top_k: usize, threshold: f32) -> String {
+        let mut engine_guard = self.embedding_engine.lock().unwrap();
+        if !engine_guard.is_available() {
+            // Fallback: load everything
+            return self.load_for_prompt();
+        }
+        let prompt_emb = engine_guard.encode(prompt);
+        if prompt_emb.is_empty() {
+            return self.load_for_prompt();
+        }
+
+        let mut combined = String::new();
+        let _g = self.file_lock.read().unwrap();
+        
+        if let Ok(entries) = fs::read_dir(&self.base_dir) {
+            let mut paths: Vec<_> = entries
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.extension().is_some_and(|ext| ext == "md"))
+                .collect();
+            
+            paths.sort();
+
+            let mut scored_memories = Vec::new();
+
+            for path in paths {
+                if let Ok(content) = fs::read_to_string(&path) {
+                    let cat_name = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+                    let emb = engine_guard.encode(&content);
+                    if emb.is_empty() { continue; }
+                    
+                    // Cosine similarity
+                    let similarity: f32 = prompt_emb.iter().zip(emb.iter()).map(|(a, b)| a * b).sum();
+                    if similarity >= threshold {
+                        scored_memories.push((similarity, cat_name, content));
+                    }
+                }
+            }
+
+            scored_memories.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+            
+            for (_, cat_name, content) in scored_memories.into_iter().take(top_k) {
+                combined.push_str(&format!("### Category: {}\n", cat_name));
+                combined.push_str(&content);
+                combined.push_str("\n\n");
+            }
+        }
+        
+        combined.trim_end().to_string()
+    }
+
     /// Loads all markdown files from the `base_dir` and concatenates them for LLM injection.
     pub fn load_for_prompt(&self) -> String {
         let _g = self.file_lock.read().unwrap();
@@ -183,8 +241,13 @@ mod tests {
         let tmp = tempdir().unwrap();
         let md_dir = tmp.path().join("memory");
         let db_path = tmp.path().join("mem.db");
+        let model_dir = tmp.path().join("models");
         
-        let store = MemoryStore::new(md_dir.to_str().unwrap(), db_path.to_str().unwrap()).unwrap();
+        let store = MemoryStore::new(
+            md_dir.to_str().unwrap(), 
+            db_path.to_str().unwrap(),
+            model_dir.to_str().unwrap()
+        ).unwrap();
 
         // 1. Write memories
         store.set("fact::light", "Living room light is GPIO 17", "facts");

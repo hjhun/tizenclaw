@@ -140,7 +140,18 @@ impl ContextEngine for SizedContextEngine {
             .into_iter()
             .enumerate()
             .filter(|(i, _)| !prunable_indices.contains(i))
-            .map(|(_, m)| m)
+            .map(|(_, mut m)| {
+                if m.role == "tool" {
+                    if m.text.len() > 200 {
+                        m.text = format!("{}... [truncated]", &m.text[..200]);
+                    }
+                    let res_str = m.tool_result.to_string();
+                    if res_str.len() > 200 {
+                        m.tool_result = serde_json::json!(format!("{}... [truncated]", &res_str[..200]));
+                    }
+                }
+                m
+            })
             .collect();
 
         // ── Phase 4: If still over budget, drop oldest non-pinned messages ─
