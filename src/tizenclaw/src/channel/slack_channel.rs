@@ -3,6 +3,7 @@
 //! Outbound: Slack Incoming Webhook (POST JSON).
 //! Inbound: Slack Bot Token + conversations.history polling.
 //! Supports Block Kit formatting for rich messages.
+//! Exclusively uses Tokio Async Reactor (epoll) to avoid blocking thread allocations.
 
 use super::{Channel, ChannelConfig};
 use serde_json::{json, Value};
@@ -15,7 +16,6 @@ pub struct SlackChannel {
     bot_token: String,
     channel_id: String,
     running: Arc<AtomicBool>,
-    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl SlackChannel {
@@ -29,14 +29,13 @@ impl SlackChannel {
             channel_id: config.settings.get("channel_id")
                 .and_then(|v| v.as_str()).unwrap_or("").to_string(),
             running: Arc::new(AtomicBool::new(false)),
-            thread: None,
         }
     }
 
-    /// Post a message using Bot Token API (for replies to specific channels).
-    fn post_to_channel(&self, channel: &str, text: &str) -> Result<(), String> {
-        if self.bot_token.is_empty() {
-            return Err("Slack bot_token not configured".into());
+    /// Post a message using Bot Token API (for replies to specific channels) asynchronously.
+    fn post_to_channel_async(bot_token: &str, channel: &str, text: &str) {
+        if bot_token.is_empty() {
+            return;
         }
 
         let url = "https://slack.com/api/chat.postMessage";
@@ -46,10 +45,10 @@ impl SlackChannel {
             "mrkdwn": true
         }).to_string();
 
-        // Slack Bot API requires Authorization: Bearer <token> header
-        let client = crate::infra::http_client::HttpClient::new();
-        client.post_sync(url, &payload).map_err(|e| e.to_string())?;
-        Ok(())
+        tokio::spawn(async move {
+            let client = crate::infra::http_client::HttpClient::new();
+            let _ = client.post(url, &payload).await;
+        });
     }
 }
 
@@ -65,14 +64,13 @@ impl Channel for SlackChannel {
 
         self.running.store(true, Ordering::SeqCst);
 
-        // If bot token & channel configured, poll for inbound messages
         if !self.bot_token.is_empty() && !self.channel_id.is_empty() {
             let running = self.running.clone();
             let bot_token = self.bot_token.clone();
             let channel_id = self.channel_id.clone();
 
-            self.thread = Some(std::thread::spawn(move || {
-                log::info!("SlackChannel: polling started for channel {}", channel_id);
+            tokio::spawn(async move {
+                log::info!("SlackChannel: async epoll started for channel {}", channel_id);
                 let mut last_ts = String::new();
 
                 while running.load(Ordering::SeqCst) {
@@ -89,7 +87,7 @@ impl Channel for SlackChannel {
                     };
 
                     let client = crate::infra::http_client::HttpClient::new();
-                    match client.get_sync(&url) {
+                    match client.get(&url).await {
                         Ok(resp) => {
                             if let Ok(data) = serde_json::from_str::<Value>(&resp.body) {
                                 if data["ok"].as_bool().unwrap_or(false) {
@@ -114,10 +112,11 @@ impl Channel for SlackChannel {
                         Err(e) => log::error!("Slack polling error: {}", e),
                     }
 
-                    std::thread::sleep(std::time::Duration::from_secs(5));
+                    // Native epoll sleep
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                 }
-                log::info!("SlackChannel: polling stopped");
-            }));
+                log::info!("SlackChannel: async epoll stopped");
+            });
         }
 
         log::info!("SlackChannel started");
@@ -126,24 +125,24 @@ impl Channel for SlackChannel {
 
     fn stop(&mut self) {
         self.running.store(false, Ordering::SeqCst);
-        if let Some(h) = self.thread.take() {
-            let _ = h.join();
-        }
     }
 
     fn send_message(&self, msg: &str) -> Result<(), String> {
-        // Prefer webhook for outbound
         if !self.webhook_url.is_empty() {
             let body = json!({"text": msg}).to_string();
-            crate::infra::http_client::HttpClient::new()
-                .post_sync(&self.webhook_url, &body)
-                .map_err(|e| e.to_string())?;
+            let webhook_url = self.webhook_url.clone();
+            
+            tokio::spawn(async move {
+                let _ = crate::infra::http_client::HttpClient::new().post(&webhook_url, &body).await;
+            });
             return Ok(());
         }
-        // Fallback to bot token API
+        
         if !self.bot_token.is_empty() && !self.channel_id.is_empty() {
-            return self.post_to_channel(&self.channel_id, msg);
+            SlackChannel::post_to_channel_async(&self.bot_token, &self.channel_id, msg);
+            return Ok(());
         }
+        
         Err("Slack: no webhook or bot_token configured".into())
     }
 

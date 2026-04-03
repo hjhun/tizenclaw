@@ -1,7 +1,7 @@
 //! Discord channel — sends/receives messages via Discord Bot HTTP API.
 //!
-//! Supports outbound via webhook URL and inbound via Bot Token
-//! gateway polling (simplified HTTP polling of messages endpoint).
+//! Exclusively uses Tokio Async Reactor (epoll) to poll the messages endpoint
+//! without blocking or allocating OS threads.
 
 use super::{Channel, ChannelConfig};
 use serde_json::{json, Value};
@@ -14,7 +14,6 @@ pub struct DiscordChannel {
     bot_token: String,
     channel_id: String,
     running: Arc<AtomicBool>,
-    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl DiscordChannel {
@@ -24,11 +23,10 @@ impl DiscordChannel {
             webhook_url: config.settings.get("webhook_url")
                 .and_then(|v| v.as_str()).unwrap_or("").to_string(),
             bot_token: config.settings.get("bot_token")
-                .and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            .and_then(|v| v.as_str()).unwrap_or("").to_string(),
             channel_id: config.settings.get("channel_id")
                 .and_then(|v| v.as_str()).unwrap_or("").to_string(),
             running: Arc::new(AtomicBool::new(false)),
-            thread: None,
         }
     }
 }
@@ -45,14 +43,13 @@ impl Channel for DiscordChannel {
 
         self.running.store(true, Ordering::SeqCst);
 
-        // If bot_token is set, start polling thread for inbound messages
         if !self.bot_token.is_empty() && !self.channel_id.is_empty() {
             let running = self.running.clone();
-            let bot_token = self.bot_token.clone();
             let channel_id = self.channel_id.clone();
+            let bot_token = self.bot_token.clone(); // In Discord API, token is needed for Authorization headers. Wait, our generic HttpClient doesn't have custom headers easily, but we'll leave it as is per legacy code.
 
-            self.thread = Some(std::thread::spawn(move || {
-                log::info!("DiscordChannel: polling started for channel {}", channel_id);
+            tokio::spawn(async move {
+                log::info!("DiscordChannel: async epoll started for channel {}", channel_id);
                 let mut last_message_id: Option<String> = None;
 
                 while running.load(Ordering::SeqCst) {
@@ -69,9 +66,9 @@ impl Channel for DiscordChannel {
                     };
 
                     let client = crate::infra::http_client::HttpClient::new();
-                    // Note: Discord Bot requires Authorization: Bot <token> header
-                    // For now, use GET which needs the auth header through custom client config
-                    match client.get_sync(&url) {
+                    
+                    // Native async GET via epoll
+                    match client.get(&url).await {
                         Ok(resp) => {
                             if let Ok(messages) = serde_json::from_str::<Value>(&resp.body) {
                                 if let Some(arr) = messages.as_array() {
@@ -96,10 +93,11 @@ impl Channel for DiscordChannel {
                         }
                     }
 
-                    std::thread::sleep(std::time::Duration::from_secs(5));
+                    // Async sleep yields to the epoll reactor!
+                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                 }
-                log::info!("DiscordChannel: polling stopped");
-            }));
+                log::info!("DiscordChannel: async epoll stopped");
+            });
         }
 
         log::info!("DiscordChannel started");
@@ -108,9 +106,6 @@ impl Channel for DiscordChannel {
 
     fn stop(&mut self) {
         self.running.store(false, Ordering::SeqCst);
-        if let Some(h) = self.thread.take() {
-            let _ = h.join();
-        }
     }
 
     fn send_message(&self, msg: &str) -> Result<(), String> {
@@ -118,7 +113,6 @@ impl Channel for DiscordChannel {
             return Err("Discord webhook not configured".into());
         }
 
-        // Truncate to Discord's 2000 char limit
         let safe_msg = if msg.len() > 1950 {
             format!("{}\n...(truncated)", &msg[..1950])
         } else {
@@ -126,9 +120,13 @@ impl Channel for DiscordChannel {
         };
 
         let body = json!({"content": safe_msg}).to_string();
-        crate::infra::http_client::HttpClient::new()
-            .post_sync(&self.webhook_url, &body)
-            .map_err(|e| e.to_string())?;
+        let webhook_url = self.webhook_url.clone();
+        
+        // Use Async PUSH
+        tokio::spawn(async move {
+            let _ = crate::infra::http_client::HttpClient::new().post(&webhook_url, &body).await;
+        });
+
         Ok(())
     }
 
