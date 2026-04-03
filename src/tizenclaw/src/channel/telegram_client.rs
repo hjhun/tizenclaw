@@ -24,7 +24,7 @@ pub struct TelegramClient {
 
 impl TelegramClient {
     pub fn new(config: &ChannelConfig, agent: Option<Arc<crate::core::agent_core::AgentCore>>) -> Self {
-        let bot_token = config.settings.get("bot_token")
+        let mut bot_token = config.settings.get("bot_token")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
@@ -34,6 +34,28 @@ impl TelegramClient {
             for id in arr {
                 if let Some(n) = id.as_i64() {
                     allowed_chat_ids.insert(n);
+                }
+            }
+        }
+
+        if let Ok(content) = std::fs::read_to_string("/opt/usr/share/tizenclaw/config/telegram_config.json") {
+            if let Ok(json) = serde_json::from_str::<Value>(&content) {
+                if let Some(token) = json.get("bot_token").and_then(|v| v.as_str()) {
+                    if !token.is_empty() {
+                        bot_token = token.to_string();
+                        log::info!("TelegramClient: loaded bot_token override from telegram_config.json");
+                    }
+                }
+                if let Some(arr) = json.get("allowed_chat_ids").and_then(|v| v.as_array()) {
+                    if !arr.is_empty() {
+                        allowed_chat_ids.clear();
+                        for id in arr {
+                            if let Some(n) = id.as_i64() {
+                                allowed_chat_ids.insert(n);
+                            }
+                        }
+                        log::info!("TelegramClient: loaded allowed_chat_ids override from telegram_config.json");
+                    }
                 }
             }
         }
