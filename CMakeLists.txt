@@ -61,10 +61,7 @@ INSTALL(FILES
 INSTALL(DIRECTORY "${CMAKE_SOURCE_DIR}/data/web/"
         DESTINATION "${APP_DATA_DIR}/web")
 
-# Tool routing guides
-INSTALL(FILES
-  "${CMAKE_SOURCE_DIR}/tools/tools.md"
-  DESTINATION "/opt/usr/share/tizen-tools")
+# tools.md is generated at runtime by the daemon's startup indexer
 
 # Embedded tool descriptors
 INSTALL(DIRECTORY "${CMAKE_SOURCE_DIR}/tools/embedded/"
@@ -96,8 +93,7 @@ INSTALL(FILES "${CMAKE_SOURCE_DIR}/src/tizenclaw-metadata-skill-plugin/data/tize
 INSTALL(FILES "${CMAKE_SOURCE_DIR}/src/tizenclaw-metadata-cli-plugin/data/tizenclaw-metadata-cli-plugin.info"
         DESTINATION "/usr/share/parser-plugins")
 
-# System CLI tools — create empty dir
-INSTALL(DIRECTORY DESTINATION "/opt/usr/share/tizen-tools/system_cli")
+# system_cli removed — tools are discovered dynamically at runtime
 
 # Code executor removed (now pure shell)
 

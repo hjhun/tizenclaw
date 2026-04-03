@@ -1349,71 +1349,83 @@ impl AgentCore {
     }
 
     pub async fn run_startup_indexing(&self) {
+        use crate::core::tool_indexer;
+
+        let root_dir = "/opt/usr/share/tizen-tools";
+
+        // Phase 1: Hash-based change detection (fast, no I/O beyond stat)
+        if !tool_indexer::needs_reindex(root_dir) {
+            log::info!(
+                "[Startup Indexing] No changes detected (hash match). Skipping."
+            );
+            return;
+        }
+
+        // Phase 2: Local filesystem scan — collect all tool metadata
+        log::info!("[Startup Indexing] Scanning tool metadata from {}...", root_dir);
+        let metadata = tool_indexer::scan_tools_metadata(root_dir);
+
+        if metadata.total_tools() == 0 {
+            log::info!("[Startup Indexing] No tools found. Skipping index generation.");
+            return;
+        }
+
+        log::info!(
+            "[Startup Indexing] Found {} tools across {} categories.",
+            metadata.total_tools(),
+            metadata.categories.len(),
+        );
+
+        // Phase 3: LLM-assisted markdown generation (single call)
         let has_primary = self.backend.read().await.is_some();
         let has_fallback = !self.fallback_backends.read().await.is_empty();
-        if !has_primary && !has_fallback {
-            log::info!("[Startup Indexing] Skipped: No actively connected LLM found.");
-            return;
-        }
 
-        let base_dir = std::path::Path::new("/opt/usr/share/tizen-tools");
-        let tools_to_check = ["cli", "actions", "skills", "system_cli"];
-        let mut needs_update = false;
+        if has_primary || has_fallback {
+            log::info!("[Startup Indexing] Generating documentation via LLM...");
+            let prompt = tool_indexer::build_indexing_prompt(&metadata);
+            let system_prompt = "You are a precise documentation generator. \
+                Output ONLY the requested JSON. No extra commentary.";
 
-        // Check tools.md
-        let tools_md = base_dir.join("tools.md");
-        if !tools_md.exists() {
-            needs_update = true;
-        }
+            let msgs = vec![LlmMessage::user(&prompt)];
+            let response = self.chat_with_fallback(
+                &msgs, &[], None, system_prompt, Some(8192),
+            ).await;
 
-        // Check subdirectory indices
-        for subdir in &tools_to_check {
-            let dir_path = base_dir.join(subdir);
-            if dir_path.exists() && dir_path.is_dir() {
-                let index_path = dir_path.join("index.md");
-                if !index_path.exists() {
-                    needs_update = true;
-                    break;
+            if response.success {
+                let written = tool_indexer::apply_llm_index_result(
+                    &response.text, root_dir,
+                );
+                if written > 0 {
+                    tool_indexer::save_index_hash(root_dir);
+                    log::info!(
+                        "[Startup Indexing] LLM generated {} index files.",
+                        written,
+                    );
+                } else {
+                    log::warn!(
+                        "[Startup Indexing] LLM response parsed but 0 files \
+                         written. Falling back to template."
+                    );
+                    tool_indexer::generate_fallback_index(&metadata, root_dir);
+                    tool_indexer::save_index_hash(root_dir);
                 }
-                
-                // Compare contents
-                let index_content = std::fs::read_to_string(&index_path).unwrap_or_default();
-                if let Ok(entries) = std::fs::read_dir(&dir_path) {
-                    for entry in entries.flatten() {
-                        let name = entry.file_name().to_string_lossy().to_string();
-                        if name == "index.md" || name == "tools.md" || name == "SKILL.md" {
-                            continue;
-                        }
-                        if !index_content.contains(&name) {
-                            needs_update = true;
-                            break;
-                        }
-                    }
-                }
+            } else {
+                log::warn!(
+                    "[Startup Indexing] LLM call failed. Using fallback template."
+                );
+                tool_indexer::generate_fallback_index(&metadata, root_dir);
+                tool_indexer::save_index_hash(root_dir);
             }
-            if needs_update { break; }
+        } else {
+            // No LLM available — generate a basic template
+            log::info!(
+                "[Startup Indexing] No LLM available. Generating fallback index."
+            );
+            tool_indexer::generate_fallback_index(&metadata, root_dir);
+            tool_indexer::save_index_hash(root_dir);
         }
 
-        if !needs_update && tools_md.exists() {
-            log::info!("[Startup Indexing] Index files are fully synchronized. Skipping LLM request to avoid token waste.");
-            return;
-        }
-
-        log::info!("[Startup Indexing] Mismatch detected. Requesting dynamic indexing of /opt/usr/share/tizen-tools/...");
-
-        // Ensure we don't accumulate tokens from previous iterations
-        let session_id = "system_startup_indexer";
-        if let Ok(ss) = self.session_store.lock() {
-            if let Some(store) = ss.as_ref() {
-                store.clear_session(session_id);
-            }
-        }
-        
-        let prompt = "Please check the directories under `/opt/usr/share/tizen-tools/` (specifically `skills/`, `cli/`, `actions/`, `system_cli/`) and update `tools.md` and their respective `index.md` files to reflect the current state. Read the directories first, then overwrite the markdown files cleanly. Do not ask for permissions, simply execute via your file manager or execution tools.";
-        
-        let _ = self.process_prompt(session_id, prompt, None).await;
-        
-        log::info!("[Startup Indexing] Completed autonomous documentation updates.");
+        log::info!("[Startup Indexing] Completed.");
     }
 
     /// Extractor sub-task logic. Invokes the LLM to glean long-term knowledge.

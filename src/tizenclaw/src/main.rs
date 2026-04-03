@@ -153,10 +153,13 @@ async fn main() {
 
     log::info!("[Boot] TizenClaw daemon ready.");
 
-    // ── Phase 9: Startup LLM Context Indexing ──
+    // ── Phase 9: Startup Tool Indexing (Hybrid: Local Scan + LLM) ──
+    // Scans /opt/usr/share/tizen-tools locally, then uses a single
+    // LLM call to generate high-quality tools.md / index.md.
+    // Falls back to template generation if no LLM is available.
     let startup_agent = agent.clone();
     tokio::spawn(async move {
-        // Wait 5 seconds to ensure IPC/channels are completely established
+        // Wait for IPC/channels to be fully established
         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         startup_agent.run_startup_indexing().await;
     });
