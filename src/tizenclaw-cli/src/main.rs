@@ -201,7 +201,11 @@ fn print_usage() {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let mut session_id = "cli_test".to_string();
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let mut session_id = format!("cli_{}", ts);
     let mut stream = true;
     let mut prompt_parts: Vec<String> = vec![];
     let mut i = 1;

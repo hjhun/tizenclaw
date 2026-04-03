@@ -1,9 +1,9 @@
 # TizenClaw Development Dashboard
 
-## Active Cycle: IPC Server Non-Blocking Refactor
+## Active Cycle: Dynamic CLI Session Isolation
 
 ### Overview
-Prevent Tokio worker threads from being stalled by blocking OS syscalls (`libc::write`) during Unix domain socket streaming by explicitly isolating them into `tokio::task::spawn_blocking`.
+Update the default `tizenclaw-cli` session behavior to dynamically generate an isolated, timestamp-based session ID (`cli_<timestamp>`) for every execution. This ensures independent contexts for single-shot terminal invocations while naturally caching the session during interactive REPL execution.
 
 ### Current Status
 *   Stage 1: Planning - DONE
@@ -14,17 +14,16 @@ Prevent Tokio worker threads from being stalled by blocking OS syscalls (`libc::
 *   Stage 6: Version Control - Active
 
 ### Architecture Summary
-- `ipc_server.rs`: Target `rt_handle.spawn` streaming block.
-- `send_response`: Use `spawn_blocking` to decouple.
+- `main.rs`: Replace `cli_test` static default with dynamically evaluated timestamp string generated via `SystemTime::now()`.
 
 ### Supervisor Audit Log
-*   [x] Planning: Execution mode=Daemon Sub-task. docs/ipc_server_blocking_fix_planning.md created. DASHBOARD updated.
+*   [x] Planning: Execution mode=One-shot Worker. DASHBOARD updated natively.
 *   [x] Supervisor Gate 1 - PASS.
-*   [x] Design: Spawn blocking macro mapped. Moving string avoids lifetime conflicts.
+*   [x] Design: SystemTime strategy documented.
 *   [x] Supervisor Gate 2 - PASS.
-*   [x] Development: Raw write safely captured via tokio blocking pool thread. DASHBOARD updated.
+*   [x] Development: CLI timestamp dynamic isolation injected correctly. Local cargo checks avoided. DASHBOARD updated.
 *   [x] Supervisor Gate 3 - PASS.
-*   [x] Build: `deploy.sh -a x86_64` executed and returned Exit Code 0. Deployed.
+*   [x] Build: `deploy.sh -a x86_64` executed perfectly natively.
 *   [x] Supervisor Gate 4 - PASS.
-*   [x] Test: Target `tizenclaw-cli` tested seamlessly. No Tokio worker pool jitter observed during streaming.
+*   [x] Test: Verified single-shot isolated sessions. Interactive loops operate under the shared timestamp consistently.
 *   [x] Supervisor Gate 5 - PASS.
