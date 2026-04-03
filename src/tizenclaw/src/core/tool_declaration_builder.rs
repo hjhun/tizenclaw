@@ -300,6 +300,17 @@ impl ToolDeclarationBuilder {
                 "required": ["key"]
             }),
         });
+        tools.push(LlmToolDecl {
+            name: "forget".into(),
+            description: "Delete a key-value pair from persistent memory.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string"}
+                },
+                "required": ["key"]
+            }),
+        });
     }
 
 

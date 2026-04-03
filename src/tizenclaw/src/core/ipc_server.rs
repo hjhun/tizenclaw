@@ -186,15 +186,56 @@ impl IpcServer {
             "prompt" => {
                 let session_id = params["session_id"].as_str().unwrap_or("default");
                 let text = params["text"].as_str().unwrap_or("");
+                let stream = params.get("stream").and_then(|v| v.as_bool()).unwrap_or(false);
                 if text.is_empty() {
                     return json!({"jsonrpc":"2.0","error":{"code":-32602,"message":"Empty prompt"},"id":req_id}).to_string();
                 }
-                let fut = agent.process_prompt(session_id, text, None);
-                let result = if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                    tokio::task::block_in_place(|| handle.block_on(fut))
+
+                let result = if stream {
+                    // Phase 1: Real-time token streaming pipeline
+                    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+                    let req_id_clone = req_id.clone();
+                    let fd_clone = _client_fd;
+
+                    // Fire up receiver task to push streaming chunks immediately to the socket
+                    if let Ok(rt) = tokio::runtime::Handle::try_current() {
+                        rt.spawn(async move {
+                            while let Some(chunk) = rx.recv().await {
+                                let stream_resp = json!({
+                                    "jsonrpc": "2.0",
+                                    "method": "stream_chunk",
+                                    "params": {
+                                        "id": &req_id_clone,
+                                        "chunk": chunk
+                                    }
+                                }).to_string();
+                                IpcServer::send_response(fd_clone, &stream_resp);
+                            }
+                        });
+                    }
+
+                    let on_chunk = move |chunk: &str| {
+                        let _ = tx.send(chunk.to_string());
+                    };
+                    
+                    let fut = agent.process_prompt(session_id, text, Some(&on_chunk));
+                    
+                    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                        tokio::task::block_in_place(|| handle.block_on(fut))
+                    } else {
+                        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(fut)
+                    }
                 } else {
-                    tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(fut)
+                    // Traditional atomic reply mode for legacy CLI tools
+                    let fut = agent.process_prompt(session_id, text, None);
+                    
+                    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                        tokio::task::block_in_place(|| handle.block_on(fut))
+                    } else {
+                        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(fut)
+                    }
                 };
+                
                 json!({"text": result})
             }
             "get_usage" => {

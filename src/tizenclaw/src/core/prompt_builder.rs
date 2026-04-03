@@ -10,6 +10,7 @@ pub struct SystemPromptBuilder {
     runtime_context: Option<RuntimeContext>,
     soul_content: Option<String>,
     available_skills: Vec<(String, String)>,
+    long_term_memory: Option<String>,
 }
 
 impl Default for SystemPromptBuilder {
@@ -20,6 +21,7 @@ impl Default for SystemPromptBuilder {
             runtime_context: None,
             soul_content: None,
             available_skills: Vec::new(),
+            long_term_memory: None,
         }
     }
 }
@@ -36,6 +38,11 @@ impl SystemPromptBuilder {
 
     pub fn set_soul_content(mut self, soul: String) -> Self {
         self.soul_content = Some(soul);
+        self
+    }
+
+    pub fn add_long_term_memory(mut self, memory_str: String) -> Self {
+        self.long_term_memory = Some(memory_str);
         self
     }
 
@@ -71,6 +78,18 @@ impl SystemPromptBuilder {
             lines.push("Embody the following persona and tone. Avoid stiff, generic replies; follow its guidance unless higher-priority instructions override it.".into());
             lines.push(soul);
             lines.push("".into());
+        }
+
+        // Long-Term Memory Injection
+        if let Some(mem) = &self.long_term_memory {
+            if !mem.is_empty() {
+                lines.push("## Long-Term Memory".into());
+                lines.push("Below are persistent memories, facts, and skills you have learned. Use these as primary context.".into());
+                lines.push("<long_term_memory>".into());
+                lines.push(mem.clone());
+                lines.push("</long_term_memory>".into());
+                lines.push("".into());
+            }
         }
 
         // 2. Tooling Constraints & Execution Rules

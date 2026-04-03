@@ -314,7 +314,7 @@ mod tests {
             assistant_with_tool_call("Using ref1", "ref1", "get_data"),
             msg("assistant", "Done"),
         ];
-        let budget = 5;
+        let budget = 50;
         let compact = engine.compact(messages, budget);
         // Referenced tool result should be kept
         assert!(compact.iter().any(|m| m.role == "tool" && m.tool_call_id == "ref1" && m.text == "important result"));

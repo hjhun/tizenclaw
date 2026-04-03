@@ -141,6 +141,7 @@ pub struct AgentCore {
     circuit_breakers: RwLock<std::collections::HashMap<String, CircuitBreakerState>>,
     action_bridge: Mutex<crate::core::action_bridge::ActionBridge>,
     tool_policy: Mutex<crate::core::tool_policy::ToolPolicy>,
+    memory_store: Mutex<Option<crate::storage::memory_store::MemoryStore>>,
 }
 
 impl AgentCore {
@@ -159,6 +160,7 @@ impl AgentCore {
             circuit_breakers: RwLock::new(std::collections::HashMap::new()),
             action_bridge: Mutex::new(crate::core::action_bridge::ActionBridge::new()),
             tool_policy: Mutex::new(crate::core::tool_policy::ToolPolicy::new()),
+            memory_store: Mutex::new(None),
         }
     }
 
@@ -260,6 +262,19 @@ impl AgentCore {
                 }
             }
             Err(e) => log::error!("Session store failed: {}", e),
+        }
+
+        // Initialize memory store
+        let mem_dir = paths.data_dir.join("memory");
+        let mem_db = paths.data_dir.join("memories.db");
+        match crate::storage::memory_store::MemoryStore::new(&mem_dir.to_string_lossy(), &mem_db.to_string_lossy()) {
+            Ok(store) => {
+                log::info!("Memory store initialized");
+                if let Ok(mut ms) = self.memory_store.lock() {
+                    *ms = Some(store);
+                }
+            }
+            Err(e) => log::error!("Memory store failed: {}", e),
         }
 
         // Load tools from all subdirectories under the tools directory
@@ -688,6 +703,17 @@ impl AgentCore {
             let platform_name = self.platform.platform_name().to_string();
             let data_dir = self.platform.paths.data_dir.to_string_lossy().to_string();
             builder = builder.set_runtime_context(platform_name, model_name, data_dir);
+
+            // Load long term memory
+            if let Ok(ms) = self.memory_store.lock() {
+                if let Some(store) = ms.as_ref() {
+                    let mem_str = store.load_for_prompt();
+                    if !mem_str.is_empty() {
+                        builder = builder.add_long_term_memory(mem_str);
+                    }
+                }
+            }
+
             builder.build()
         };
 
@@ -807,6 +833,7 @@ impl AgentCore {
                 // Parallel tool execution
                 let td_guard = self.tool_dispatcher.read().await;
                 let mut futures_list = Vec::new();
+                let mem_store_opt = self.memory_store.lock().ok().and_then(|ms| ms.as_ref().cloned());
 
                 for tc in detected_tool_calls.iter() {
                     let skills_dir = self.platform.paths.skills_dir.clone();
@@ -815,6 +842,7 @@ impl AgentCore {
                     let tc_args = tc.args.clone();
                     let tc_id = tc.id.clone();
                     let bridge_ref = &self.action_bridge;
+                    let ms_clone = mem_store_opt.clone();
 
                     // ── Phase 11: SafetyCheck per tool ───────────────────
                     let block_reason = if let Ok(tp) = self.tool_policy.lock() {
@@ -867,6 +895,42 @@ impl AgentCore {
                                 Ok(content) => serde_json::json!({"status": "success", "content": content}),
                                 Err(e) => serde_json::json!({"error": format!("Failed to read skill '{}': {}", sanitized_name, e)})
                             }
+                        } else if tc_name == "remember" {
+                            if let Some(store) = ms_clone {
+                                let key = tc_args.get("key").and_then(|v| v.as_str()).unwrap_or("");
+                                let value = tc_args.get("value").and_then(|v| v.as_str()).unwrap_or("");
+                                let category = tc_args.get("category").and_then(|v| v.as_str()).unwrap_or("general");
+                                if !key.is_empty() && !value.is_empty() {
+                                    store.set(key, value, category);
+                                    serde_json::json!({"status": "success", "message": format!("Remembered '{}'", key)})
+                                } else {
+                                    serde_json::json!({"error": "Missing key or value"})
+                                }
+                            } else {
+                                serde_json::json!({"error": "MemoryStore not initialized"})
+                            }
+                        } else if tc_name == "recall" {
+                            if let Some(store) = ms_clone {
+                                let key = tc_args.get("key").and_then(|v| v.as_str()).unwrap_or("");
+                                if let Some(val) = store.get(key) {
+                                    serde_json::json!({"status": "success", "value": val})
+                                } else {
+                                    serde_json::json!({"error": "Key not found"})
+                                }
+                            } else {
+                                serde_json::json!({"error": "MemoryStore not initialized"})
+                            }
+                        } else if tc_name == "forget" {
+                            if let Some(store) = ms_clone {
+                                let key = tc_args.get("key").and_then(|v| v.as_str()).unwrap_or("");
+                                if store.delete(key) {
+                                    serde_json::json!({"status": "success", "message": format!("Forgot '{}'", key)})
+                                } else {
+                                    serde_json::json!({"error": "Key not found"})
+                                }
+                            } else {
+                                serde_json::json!({"error": "MemoryStore not initialized"})
+                            }
                         } else {
                             td_guard_ref.execute(&tc_name, &tc_args).await
                         };
@@ -917,6 +981,10 @@ impl AgentCore {
 
                 // ── Phase 14: ResultReporting ────────────────────────────
                 loop_state.transition(AgentPhase::ResultReporting);
+                
+                // Trigger auto-extraction (small overhead at end of conversation)
+                self.extract_and_save_memory(&messages, &text).await;
+
                 loop_state.transition(AgentPhase::Complete);
                 loop_state.log_self_inspection();
                 return text;
@@ -1076,6 +1144,78 @@ impl AgentCore {
         let _ = self.process_prompt(session_id, prompt, None).await;
         
         log::info!("[Startup Indexing] Completed autonomous documentation updates.");
+    }
+
+    /// Extractor sub-task logic. Invokes the LLM to glean long-term knowledge.
+    async fn extract_and_save_memory(&self, history: &[LlmMessage], final_response: &str) {
+        let ms_clone = self.memory_store.lock().ok().and_then(|ms| ms.as_ref().cloned());
+        if ms_clone.is_none() {
+            return;
+        }
+        let store = ms_clone.unwrap();
+
+        // only extract if we have some messages
+        if history.is_empty() {
+            return;
+        }
+
+        let system_prompt = "You are an automated daemon component for TizenClaw responsible for extracting \
+useful Long-Term Memories. Analyze the recent conversation snippet and the assistant's final response. \
+Identify permanent facts, user preferences, names, device states, or specific instructions the user wants kept. \
+Output ONLY a raw JSON array. DO NOT append Markdown code blocks. \
+Output format: [{\"category\": \"preferences\", \"key\": \"pref::timezone\", \"value\": \"KST\"}] \
+If there is nothing new to remember, output exactly: []";
+
+        let mut msgs = vec![];
+        let mut convo_text = String::new();
+        // Give the last few messages for context
+        for m in history.iter().rev().take(3).rev() {
+            convo_text.push_str(&format!("{}: {}\n", m.role, m.text));
+        }
+        convo_text.push_str(&format!("assistant: {}\n", final_response));
+        msgs.push(LlmMessage::user(&convo_text));
+
+        log::info!("[MemoryExtractor] Triggering LLM extraction sub-task...");
+        let response = self.chat_with_fallback(&msgs, &[], None, system_prompt).await;
+
+        if response.success {
+            let text = response.text.trim();
+            // clean potential markdown code block
+            let clean_json = if text.starts_with("```json") {
+                text.trim_start_matches("```json").trim_end_matches("```").trim()
+            } else if text.starts_with("```") {
+                text.trim_start_matches("```").trim_end_matches("```").trim()
+            } else {
+                text
+            };
+
+            if clean_json == "[]" || clean_json.is_empty() {
+                log::info!("[MemoryExtractor] No new memories extracted.");
+                return;
+            }
+
+            if let Ok(parsed) = serde_json::from_str::<Vec<serde_json::Value>>(clean_json) {
+                let mut count = 0;
+                for item in parsed {
+                    if let (Some(cat), Some(k), Some(v)) = (
+                        item.get("category").and_then(|v| v.as_str()),
+                        item.get("key").and_then(|v| v.as_str()),
+                        item.get("value").and_then(|v| v.as_str())
+                    ) {
+                        store.set(k, v, cat);
+                        count += 1;
+                        log::info!("[MemoryExtractor] Saved memory -> {}: {}", k, v);
+                    }
+                }
+                if count > 0 {
+                    log::info!("[MemoryExtractor] Successfully saved {} extracted memories.", count);
+                }
+            } else {
+                log::warn!("[MemoryExtractor] Failed to parse JSON response: {}", clean_json);
+            }
+        } else {
+            log::warn!("[MemoryExtractor] Extractor LLM call failed.");
+        }
     }
 }
 
