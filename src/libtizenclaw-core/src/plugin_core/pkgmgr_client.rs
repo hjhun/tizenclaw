@@ -58,7 +58,7 @@ impl PkgmgrClient {
 
             let handle = pkgmgr_client_new(PC_LISTENING);
             if handle.is_null() {
-                error!("pkgmgr_client_new() failed");
+                warn!("pkgmgr_client_new() failed: daemon may not receive dynamic package install events");
                 return;
             }
 

@@ -388,7 +388,7 @@ impl AgentCore {
         if be.initialize(&merged_cfg) {
             Some(be)
         } else {
-            log::warn!("Backend '{}' created but failed to initialize", name);
+            log::info!("Backend '{}' skipped: not configured or initialization failed", name);
             None
         }
     }
@@ -881,6 +881,9 @@ impl AgentCore {
                                     serde_json::json!({"error": format!("Failed to create skill directory: {}", e)})
                                 } else {
                                     let skill_md_path = skill_dir_path.join("SKILL.md");
+                                    if skill_md_path.is_dir() {
+                                        let _ = std::fs::remove_dir_all(&skill_md_path);
+                                    }
                                     match std::fs::write(&skill_md_path, content) {
                                         Ok(_) => serde_json::json!({"status": "success", "message": format!("Skill '{}' created at {:?}", sanitized_name, skill_md_path)}),
                                         Err(e) => serde_json::json!({"error": format!("Failed to write skill: {}", e)})

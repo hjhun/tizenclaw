@@ -33,9 +33,10 @@ impl IpcServer {
         let running = self.running.clone();
         let active_clients = self.active_clients.clone();
         running.store(true, Ordering::SeqCst);
+        let rt_handle = tokio::runtime::Handle::current();
 
         std::thread::spawn(move || {
-            Self::server_loop(running, active_clients, agent);
+            Self::server_loop(rt_handle, running, active_clients, agent);
         })
     }
 
@@ -44,6 +45,7 @@ impl IpcServer {
     }
 
     fn server_loop(
+        rt_handle: tokio::runtime::Handle,
         running: Arc<AtomicBool>,
         active_clients: Arc<AtomicUsize>,
         agent: Arc<AgentCore>,
@@ -113,10 +115,11 @@ impl IpcServer {
 
             let agent = agent.clone();
             let active = active_clients.clone();
+            let rt_handle_clone = rt_handle.clone();
             active.fetch_add(1, Ordering::SeqCst);
 
             std::thread::spawn(move || {
-                Self::handle_client(client_fd, agent);
+                Self::handle_client(rt_handle_clone, client_fd, agent);
                 active.fetch_sub(1, Ordering::SeqCst);
                 unsafe { libc::close(client_fd); }
             });
@@ -126,7 +129,7 @@ impl IpcServer {
         log::info!("IPC Server stopped")
     }
 
-    fn handle_client(fd: i32, agent: Arc<AgentCore>) {
+    fn handle_client(rt_handle: tokio::runtime::Handle, fd: i32, agent: Arc<AgentCore>) {
         loop {
             // Read 4-byte length prefix
             let mut len_buf = [0u8; 4];
@@ -154,22 +157,18 @@ impl IpcServer {
 
             log::info!("IPC msg received ({} bytes)", raw_msg.len());
 
-            let response = Self::dispatch_request(&raw_msg, &agent, fd);
+            let response = Self::dispatch_request(&rt_handle, &raw_msg, &agent, fd);
             Self::send_response(fd, &response);
         }
     }
 
-    fn dispatch_request(raw: &str, agent: &Arc<AgentCore>, _client_fd: i32) -> String {
+    fn dispatch_request(rt_handle: &tokio::runtime::Handle, raw: &str, agent: &Arc<AgentCore>, _client_fd: i32) -> String {
         let req: Value = match serde_json::from_str(raw) {
             Ok(v) => v,
             Err(_) => {
                 // Plain text prompt — no lock needed, AgentCore handles its own locking
                 let fut = agent.process_prompt("default", raw, None);
-                let result = if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                    tokio::task::block_in_place(|| handle.block_on(fut))
-                } else {
-                    tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(fut)
-                };
+                let result = tokio::task::block_in_place(|| rt_handle.block_on(fut));
                 return json!({"jsonrpc":"2.0","id":null,"result":{"text":result}}).to_string();
             }
         };
@@ -198,42 +197,30 @@ impl IpcServer {
                     let fd_clone = _client_fd;
 
                     // Fire up receiver task to push streaming chunks immediately to the socket
-                    if let Ok(rt) = tokio::runtime::Handle::try_current() {
-                        rt.spawn(async move {
-                            while let Some(chunk) = rx.recv().await {
-                                let stream_resp = json!({
-                                    "jsonrpc": "2.0",
-                                    "method": "stream_chunk",
-                                    "params": {
-                                        "id": &req_id_clone,
-                                        "chunk": chunk
-                                    }
-                                }).to_string();
-                                IpcServer::send_response(fd_clone, &stream_resp);
-                            }
-                        });
-                    }
+                    rt_handle.spawn(async move {
+                        while let Some(chunk) = rx.recv().await {
+                            let stream_resp = json!({
+                                "jsonrpc": "2.0",
+                                "method": "stream_chunk",
+                                "params": {
+                                    "id": &req_id_clone,
+                                    "chunk": chunk
+                                }
+                            }).to_string();
+                            IpcServer::send_response(fd_clone, &stream_resp);
+                        }
+                    });
 
                     let on_chunk = move |chunk: &str| {
                         let _ = tx.send(chunk.to_string());
                     };
                     
                     let fut = agent.process_prompt(session_id, text, Some(&on_chunk));
-                    
-                    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                        tokio::task::block_in_place(|| handle.block_on(fut))
-                    } else {
-                        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(fut)
-                    }
+                    tokio::task::block_in_place(|| rt_handle.block_on(fut))
                 } else {
                     // Traditional atomic reply mode for legacy CLI tools
                     let fut = agent.process_prompt(session_id, text, None);
-                    
-                    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                        tokio::task::block_in_place(|| handle.block_on(fut))
-                    } else {
-                        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(fut)
-                    }
+                    tokio::task::block_in_place(|| rt_handle.block_on(fut))
                 };
                 
                 json!({"text": result})
