@@ -1,0 +1,17 @@
+[package]
+name = "tizenclaw-web-dashboard"
+version = "1.0.0"
+edition = "2021"
+
+[[bin]]
+name = "tizenclaw-web-dashboard"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "net"] }
+axum = { version = "0.7", features = ["macros"] }
+tower-http = { version = "0.5", features = ["fs", "cors"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"
+log = "0.4"

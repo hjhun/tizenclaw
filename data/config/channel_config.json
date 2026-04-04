@@ -1,0 +1,13 @@
+{
+  "channels": [
+    {
+      "name": "web_dashboard",
+      "type": "web_dashboard",
+      "enabled": true,
+      "settings": {
+        "port": 9090,
+        "localhost_only": false
+      }
+    }
+  ]
+}

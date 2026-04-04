@@ -23,6 +23,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PKG_NAME="tizenclaw"
 TOOL_EXECUTOR_NAME="tizenclaw-tool-executor"
 CLI_NAME="tizenclaw-cli"
+WEB_DASHBOARD_NAME="tizenclaw-web-dashboard"
 
 INSTALL_DIR="/usr/local/bin"
 DATA_DIR="/opt/usr/data/tizenclaw"
@@ -161,11 +162,12 @@ do_build() {
     cargo_args+=("--release")
   fi
 
-  # Build daemon + tool-executor + CLI
+  # Build daemon + tool-executor + CLI + web-dashboard
   cargo_args+=(
     "-p" "${PKG_NAME}"
     "-p" "${TOOL_EXECUTOR_NAME}"
     "-p" "${CLI_NAME}"
+    "-p" "${WEB_DASHBOARD_NAME}"
   )
 
   log "Running: cargo ${cargo_args[*]}"
@@ -213,7 +215,7 @@ do_install() {
 
   local build_dir="${PROJECT_DIR}/target/${BUILD_MODE}"
 
-  for bin in "${PKG_NAME}" "${TOOL_EXECUTOR_NAME}" "${CLI_NAME}"; do
+  for bin in "${PKG_NAME}" "${TOOL_EXECUTOR_NAME}" "${CLI_NAME}" "${WEB_DASHBOARD_NAME}"; do
     local bin_path="${build_dir}/${bin}"
     if [ ! -f "${bin_path}" ]; then
       fail "Binary not found: ${bin_path}"

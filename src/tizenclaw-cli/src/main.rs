@@ -4,6 +4,9 @@
 //!   tizenclaw-cli "What is the battery level?"
 //!   tizenclaw-cli -s my_session "Run a skill"
 //!   tizenclaw-cli --stream "Tell me about Tizen"
+//!   tizenclaw-cli dashboard start
+//!   tizenclaw-cli dashboard stop
+//!   tizenclaw-cli dashboard status
 //!   tizenclaw-cli   (interactive mode)
 
 use serde_json::{json, Value};
@@ -23,7 +26,8 @@ fn connect_daemon() -> Result<i32, String> {
         for (i, b) in name.iter().enumerate() {
             addr.sun_path[1 + i] = *b as libc::c_char;
         }
-        let addr_len = (std::mem::size_of::<libc::sa_family_t>() + 1 + name.len()) as libc::socklen_t;
+        let addr_len =
+            (std::mem::size_of::<libc::sa_family_t>() + 1 + name.len()) as libc::socklen_t;
 
         if libc::connect(fd, &addr as *const _ as *const libc::sockaddr, addr_len) < 0 {
             libc::close(fd);
@@ -109,7 +113,11 @@ fn send_jsonrpc(method: &str, params: Value) -> Result<(Value, bool), String> {
 
         if parsed.get("method").and_then(|v| v.as_str()) == Some("stream_chunk") {
             stream_received = true;
-            if let Some(chunk) = parsed.get("params").and_then(|p| p.get("chunk")).and_then(|c| c.as_str()) {
+            if let Some(chunk) = parsed
+                .get("params")
+                .and_then(|p| p.get("chunk"))
+                .and_then(|c| c.as_str())
+            {
                 print!("{}", chunk);
                 std::io::stdout().flush().ok();
             }
@@ -123,19 +131,14 @@ fn send_jsonrpc(method: &str, params: Value) -> Result<(Value, bool), String> {
 
 /// Send a prompt and print the response.
 fn send_prompt(session_id: &str, prompt: &str, stream: bool) -> Result<(), String> {
-    let (resp, stream_received) = send_jsonrpc("prompt", json!({
-        "session_id": session_id,
-        "text": prompt,
-        "stream": stream
-    }))?;
+    let (resp, stream_received) = send_jsonrpc(
+        "prompt",
+        json!({"session_id": session_id, "text": prompt, "stream": stream}),
+    )?;
 
     if let Some(result) = resp.get("result") {
         if let Some(text) = result.get("text").and_then(|v| v.as_str()) {
-            if !stream_received {
-                println!("{}", text);
-            } else {
-                println!();
-            }
+            if !stream_received { println!("{}", text); } else { println!(); }
         } else {
             println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
         }
@@ -144,6 +147,56 @@ fn send_prompt(session_id: &str, prompt: &str, stream: bool) -> Result<(), Strin
         eprintln!("Error: {}", msg);
     }
     Ok(())
+}
+
+/// Handle `tizenclaw-cli dashboard <action>`.
+fn cmd_dashboard(action: &str) {
+    match action {
+        "start" => {
+            match send_jsonrpc("start_channel", json!({"name": "web_dashboard"})) {
+                Ok((resp, _)) => {
+                    if resp.get("result").is_some() {
+                        println!("Dashboard started.");
+                    } else if let Some(err) = resp.get("error") {
+                        eprintln!("Error: {}", err.get("message").and_then(|v| v.as_str()).unwrap_or("unknown"));
+                        std::process::exit(1);
+                    }
+                }
+                Err(e) => { eprintln!("{}", e); std::process::exit(1); }
+            }
+        }
+        "stop" => {
+            match send_jsonrpc("stop_channel", json!({"name": "web_dashboard"})) {
+                Ok((resp, _)) => {
+                    if resp.get("result").is_some() {
+                        println!("Dashboard stopped.");
+                    } else if let Some(err) = resp.get("error") {
+                        eprintln!("Error: {}", err.get("message").and_then(|v| v.as_str()).unwrap_or("unknown"));
+                        std::process::exit(1);
+                    }
+                }
+                Err(e) => { eprintln!("{}", e); std::process::exit(1); }
+            }
+        }
+        "status" => {
+            match send_jsonrpc("channel_status", json!({"name": "web_dashboard"})) {
+                Ok((resp, _)) => {
+                    if let Some(result) = resp.get("result") {
+                        let running = result.get("running").and_then(|v| v.as_bool()).unwrap_or(false);
+                        println!("Dashboard: {}", if running { "running" } else { "stopped" });
+                    } else if let Some(err) = resp.get("error") {
+                        eprintln!("Error: {}", err.get("message").and_then(|v| v.as_str()).unwrap_or("unknown"));
+                        std::process::exit(1);
+                    }
+                }
+                Err(e) => { eprintln!("{}", e); std::process::exit(1); }
+            }
+        }
+        _ => {
+            eprintln!("Unknown dashboard action '{}'. Use: start | stop | status", action);
+            std::process::exit(1);
+        }
+    }
 }
 
 /// Interactive REPL mode.
@@ -167,16 +220,23 @@ fn interactive_mode(session_id: &str, stream: bool) {
             "quit" | "exit" => break,
             "/help" => {
                 println!("Commands:");
-                println!("  /usage          Show token usage");
-                println!("  /session <id>   Switch session");
-                println!("  quit, exit      Exit");
-                println!("  <text>          Send prompt");
+                println!("  /usage            Show token usage");
+                println!("  /dashboard start  Start web dashboard");
+                println!("  /dashboard stop   Stop web dashboard");
+                println!("  /dashboard status Show dashboard status");
+                println!("  /session <id>     Switch session");
+                println!("  quit, exit        Exit");
+                println!("  <text>            Send prompt");
             }
             cmd if cmd.starts_with("/usage") => {
                 match send_jsonrpc("get_usage", json!({})) {
                     Ok(resp) => println!("{}", serde_json::to_string_pretty(&resp).unwrap_or_default()),
                     Err(e) => eprintln!("Error: {}", e),
                 }
+            }
+            cmd if cmd.starts_with("/dashboard ") => {
+                let action = cmd.trim_start_matches("/dashboard ").trim();
+                cmd_dashboard(action);
             }
             prompt => {
                 if let Err(e) = send_prompt(session_id, prompt, stream) {
@@ -192,10 +252,14 @@ fn print_usage() {
     eprintln!("Usage:");
     eprintln!("  tizenclaw-cli [options] [prompt]\n");
     eprintln!("Options:");
-    eprintln!("  -s <id>       Session ID (default: cli_test)");
-    eprintln!("  --no-stream   Disable real-time streaming (wait for full response)");
-    eprintln!("  --usage       Show token usage");
-    eprintln!("  -h, --help    Show this help\n");
+    eprintln!("  -s <id>           Session ID (default: cli_<timestamp>)");
+    eprintln!("  --no-stream       Disable real-time streaming");
+    eprintln!("  --usage           Show token usage");
+    eprintln!("  -h, --help        Show this help\n");
+    eprintln!("Dashboard commands:");
+    eprintln!("  tizenclaw-cli dashboard start   Start the web dashboard");
+    eprintln!("  tizenclaw-cli dashboard stop    Stop the web dashboard");
+    eprintln!("  tizenclaw-cli dashboard status  Show dashboard status\n");
     eprintln!("If no prompt given, starts interactive mode.");
 }
 
@@ -228,6 +292,15 @@ fn main() {
                 }
                 return;
             }
+            "dashboard" if i + 1 < args.len() => {
+                i += 1;
+                cmd_dashboard(&args[i]);
+                return;
+            }
+            "dashboard" => {
+                eprintln!("Usage: tizenclaw-cli dashboard <start|stop|status>");
+                std::process::exit(1);
+            }
             _ => {
                 for arg in args.iter().skip(i) {
                     prompt_parts.push(arg.clone());
@@ -241,13 +314,11 @@ fn main() {
     let prompt = prompt_parts.join(" ");
 
     if !prompt.is_empty() {
-        // Single-shot mode
         if let Err(e) = send_prompt(&session_id, &prompt, stream) {
             eprintln!("{}", e);
             std::process::exit(1);
         }
     } else {
-        // Interactive mode
         interactive_mode(&session_id, stream);
     }
 }
