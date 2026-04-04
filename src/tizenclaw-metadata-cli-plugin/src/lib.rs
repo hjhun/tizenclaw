@@ -16,6 +16,8 @@
 
 //! TizenClaw CLI metadata parser plugin (Rust implementation).
 
+#![allow(clippy::missing_safety_doc)]
+
 use std::ffi::{c_char, c_int};
 
 use tizenclaw_metadata_plugin::ffi::GList;

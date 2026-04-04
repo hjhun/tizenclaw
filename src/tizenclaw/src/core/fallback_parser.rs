@@ -24,7 +24,7 @@ impl FallbackParser {
             let args_raw = &cap[2];
             let args: Value = serde_json::from_str(args_raw).unwrap_or(json!({}));
             tool_calls.push(LlmToolCall {
-                id: format!("call_fb_{}", uuid::Uuid::new_v4().to_string()[..8].to_string()),
+                id: format!("call_fb_{}", &uuid::Uuid::new_v4().to_string()[..8]),
                 name,
                 args,
             });
@@ -43,7 +43,7 @@ impl FallbackParser {
             let clean_args = args_raw.replace("\\\"", "\"");
             let args: Value = serde_json::from_str(&clean_args).unwrap_or(json!({}));
             tool_calls.push(LlmToolCall {
-                id: format!("call_xml_{}", uuid::Uuid::new_v4().to_string()[..8].to_string()),
+                id: format!("call_xml_{}", &uuid::Uuid::new_v4().to_string()[..8]),
                 name,
                 args,
             });
@@ -57,14 +57,14 @@ impl FallbackParser {
                  if let Ok(v) = serde_json::from_str::<Value>(&cap[1]) {
                      if let (Some(name), Some(args)) = (v["tool"].as_str(), v.get("arguments")) {
                          tool_calls.push(LlmToolCall {
-                             id: format!("call_fb_j_{}", uuid::Uuid::new_v4().to_string()[..8].to_string()),
+                             id: format!("call_fb_j_{}", &uuid::Uuid::new_v4().to_string()[..8]),
                              name: name.to_string(),
                              args: args.clone(),
                          });
                      } else if let (Some(name), Some(args)) = (v["name"].as_str(), v.get("args")) {
                          // Alternative naming
                          tool_calls.push(LlmToolCall {
-                             id: format!("call_fb_j_{}", uuid::Uuid::new_v4().to_string()[..8].to_string()),
+                             id: format!("call_fb_j_{}", &uuid::Uuid::new_v4().to_string()[..8]),
                              name: name.to_string(),
                              args: args.clone(),
                          });

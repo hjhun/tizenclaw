@@ -388,7 +388,7 @@ impl MemoryStore {
                 md.push_str(&format!("| {} | {} | {} |\n", ts, key, short_val));
             }
         }
-        md.push_str("\n");
+        md.push('\n');
 
         // 2. Key Facts (Long-term)
         md.push_str("## Core Facts & Preferences (Long-term)\n\n");
@@ -406,7 +406,7 @@ impl MemoryStore {
                 md.push_str(&format!("- **{}**: {}\n", key, first_line));
             }
         }
-        md.push_str("\n");
+        md.push('\n');
 
         let _g = self.file_lock.write().unwrap();
         let _ = fs::write(self.base_dir.join("memory.md"), md);

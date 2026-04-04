@@ -119,7 +119,7 @@ impl SessionStore {
         let path = self.session_file_today(session_id);
         if !path.exists() {
             let _g = self.lock.write().unwrap();
-            if let Ok(mut f) = OpenOptions::new().create(true).write(true).open(&path) {
+            if let Ok(mut f) = OpenOptions::new().create(true).truncate(true).write(true).open(&path) {
                 let front = format!(
                     "---\nid: {}\ndate: {}\n---\n\n",
                     session_id,
@@ -370,7 +370,7 @@ fn parse_session_markdown(content: &str) -> Vec<SessionMessage> {
     let mut current_text: Vec<&str> = Vec::new();
 
     for line in content.lines() {
-        if line.starts_with("## ") {
+        if let Some(role_str) = line.strip_prefix("## ") {
             // Flush previous block
             if !current_role.is_empty() {
                 messages.push(SessionMessage {
@@ -380,7 +380,7 @@ fn parse_session_markdown(content: &str) -> Vec<SessionMessage> {
                 });
                 current_text.clear();
             }
-            current_role = line[3..].trim().to_string();
+            current_role = role_str.trim().to_string();
         } else if !current_role.is_empty() && !line.starts_with("---") {
             current_text.push(line);
         }
@@ -444,7 +444,7 @@ fn today_date_str() -> String {
     let days = secs / 86400;
     let y = (days * 4 + 2) / 1461 + 1970;
     let mut doy = days - ((y - 1970) * 365 + (y - 1969) / 4);
-    let leap = if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) {
+    let leap = if y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400)) {
         1
     } else {
         0

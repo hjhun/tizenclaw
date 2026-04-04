@@ -27,6 +27,9 @@ struct BridgeState {
     running: bool,
 }
 
+unsafe impl Send for BridgeState {}
+unsafe impl Sync for BridgeState {}
+
 pub struct ActionBridge {
     state: Arc<Mutex<BridgeState>>,
 }
@@ -265,16 +268,10 @@ unsafe extern "C" fn on_action_found(action: action_h, user_data: *mut c_void) -
     
     if !c_schema.is_null() {
         let schema_str = CStr::from_ptr(c_schema).to_string_lossy().to_string();
-        if let Ok(val) = serde_json::from_str::<Value>(&schema_str) {
-            // Merge into schema_val, giving priority to val
-            match val {
-                Value::Object(map) => {
-                    let obj = schema_val.as_object_mut().unwrap();
-                    for (k, v) in map {
-                        obj.insert(k, v);
-                    }
-                }
-                _ => {}
+        if let Ok(Value::Object(map)) = serde_json::from_str::<Value>(&schema_str) {
+            let obj = schema_val.as_object_mut().unwrap();
+            for (k, v) in map {
+                obj.insert(k, v);
             }
         }
         libc::free(c_schema as *mut c_void);
@@ -429,7 +426,7 @@ fn write_action_md(pkg_id: &str, action_id: &str, schema: &Value) {
             for p in req_privs {
                 md_content.push_str(&format!("- {}\n", p.as_str().unwrap_or("")));
             }
-            md_content.push_str("\n");
+            md_content.push('\n');
         }
     }
 

@@ -640,7 +640,7 @@ fn today_date_str() -> String {
     let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
     let days = secs / 86400; let y = (days * 4 + 2) / 1461 + 1970;
     let mut doy = days - ((y - 1970) * 365 + (y - 1969) / 4);
-    let leap = if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { 1 } else { 0 };
+    let leap = if y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400)) { 1 } else { 0 };
     let months = [31, 28 + leap, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     let mut m = 0;
     for (i, &ml) in months.iter().enumerate() { if doy < ml { m = i as u64 + 1; break; } doy -= ml; }

@@ -65,7 +65,7 @@ impl PackageEventAdapter {
         unsafe {
             use libtizenclaw_core::tizen_sys::pkgmgr::*;
             // Create a pkgmgr client for listening
-            self.client = pkgmgr_client_new(PC_LISTENING) as *mut std::ffi::c_void;
+            self.client = pkgmgr_client_new(PC_LISTENING);
             if self.client.is_null() {
                 log::error!("[TIZENCLAW] PackageEventAdapter: failed to create pkgmgr_client");
                 return false;

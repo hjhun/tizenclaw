@@ -17,10 +17,10 @@ fn parse_proc_status() -> (i64, i64, i32) {
     if let Ok(content) = std::fs::read_to_string("/proc/self/status") {
         for line in content.lines() {
             if let Some(val) = line.strip_prefix("VmRSS:") {
-                rss_kb = val.trim().split_whitespace().next()
+                rss_kb = val.split_whitespace().next()
                     .and_then(|s| s.parse().ok()).unwrap_or(0);
             } else if let Some(val) = line.strip_prefix("VmSize:") {
-                vm_kb = val.trim().split_whitespace().next()
+                vm_kb = val.split_whitespace().next()
                     .and_then(|s| s.parse().ok()).unwrap_or(0);
             } else if let Some(val) = line.strip_prefix("Threads:") {
                 threads = val.trim().parse().unwrap_or(0);

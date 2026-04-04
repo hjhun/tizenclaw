@@ -140,15 +140,10 @@ impl ContainerEngine {
 
         let (tx, rx) = mpsc::channel(100);
         tokio::spawn(async move {
-            loop {
-                match Self::recv_payload(&mut stream).await {
-                    Ok(v) => {
-                        let is_exit = v["event"].as_str() == Some("exit");
-                        let _ = tx.send(v).await;
-                        if is_exit { break; }
-                    }
-                    Err(_) => break,
-                }
+            while let Ok(v) = Self::recv_payload(&mut stream).await {
+                let is_exit = v["event"].as_str() == Some("exit");
+                let _ = tx.send(v).await;
+                if is_exit { break; }
             }
         });
         Ok(rx)

@@ -196,11 +196,10 @@ impl ContextEngine for SizedContextEngine {
         // A "tool" message is prunable if its tool_call_id is not referenced
         let mut prunable_indices = std::collections::HashSet::new();
         for (i, msg) in messages.iter().enumerate() {
-            if msg.role == "tool" && !pinned_indices.contains(&i) {
-                if !msg.tool_call_id.is_empty() && !referenced_tool_ids.contains(&msg.tool_call_id)
-                {
-                    prunable_indices.insert(i);
-                }
+            if msg.role == "tool" && !pinned_indices.contains(&i)
+                && !msg.tool_call_id.is_empty() && !referenced_tool_ids.contains(&msg.tool_call_id)
+            {
+                prunable_indices.insert(i);
             }
         }
 

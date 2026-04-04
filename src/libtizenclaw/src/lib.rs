@@ -10,6 +10,7 @@
 // Suppress unused warnings during C++ → Rust migration.
 // TODO: Remove once all API functions are fully wired.
 #![allow(unused)]
+#![allow(clippy::missing_safety_doc)]
 
 pub mod api;
 
@@ -69,7 +70,7 @@ type HandlePtr = *mut Arc<Mutex<HandleInner>>;
 // ═══════════════════════════════════════════
 
 #[no_mangle]
-pub extern "C" fn tizenclaw_create(handle: *mut *mut libc::c_void) -> i32 {
+pub unsafe extern "C" fn tizenclaw_create(handle: *mut *mut libc::c_void) -> i32 {
     if handle.is_null() {
         set_last_error("handle pointer is null");
         return TIZENCLAW_ERROR_INVALID_PARAMETER;
@@ -83,7 +84,7 @@ pub extern "C" fn tizenclaw_create(handle: *mut *mut libc::c_void) -> i32 {
     let boxed = Box::new(arc);
     let raw = Box::into_raw(boxed);
 
-    unsafe { *handle = raw as *mut libc::c_void; }
+    *handle = raw as *mut libc::c_void;
     TIZENCLAW_ERROR_NONE
 }
 

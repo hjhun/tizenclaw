@@ -83,17 +83,17 @@ impl ToolWatcher {
                                     _ => {}
                                 }
                             }
-                            if metadata.is_dir() {
-                                if scan_dir_recursive(
+                            if metadata.is_dir()
+                                && scan_dir_recursive(
                                     &path,
                                     max_depth,
                                     current_depth + 1,
                                     last_modified_times,
                                     current_seen,
                                     initial_scan_done,
-                                ) {
-                                    changed = true;
-                                }
+                                )
+                            {
+                                changed = true;
                             }
                         }
                     }

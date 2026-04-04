@@ -19,6 +19,8 @@
 //! Exports the 9 `PKGMGR_MDPARSER_PLUGIN_*` C ABI symbols required by
 //! Tizen's package manager parser plugin interface.
 
+#![allow(clippy::missing_safety_doc)]
+
 use std::ffi::{c_char, c_int};
 
 use tizenclaw_metadata_plugin::ffi::GList;

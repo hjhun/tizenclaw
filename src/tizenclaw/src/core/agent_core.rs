@@ -14,7 +14,10 @@
 //! share `Arc<AgentCore>` without an outer Mutex.
 
 use serde_json::{json, Value};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, LazyLock, Mutex, RwLock};
+
+static THINK_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?s)<think>(.*?)</think>").unwrap());
 
 use crate::core::agent_loop_state::{AgentLoopState, AgentPhase, EvalVerdict};
 use crate::core::context_engine::{
@@ -846,9 +849,9 @@ impl AgentCore {
     /// 1. GoalParsing: Initialize AgentLoopState for this session + prompt
     /// 2. ContextLoading: Load session history, build messages + tools
     /// 3. Pre-loop Compaction: Compact if ≥90% of 256k token budget
-    /// 4-13. Main loop: DecisionMaking → SafetyCheck → ToolDispatching
-    ///        → ObservationCollect → Evaluating → ErrorRecovery
-    ///        → StateTracking → SelfInspection → RePlanning → TerminationCheck
+    ///    4-13. Main loop: DecisionMaking → SafetyCheck → ToolDispatching
+    ///    → ObservationCollect → Evaluating → ErrorRecovery
+    ///    → StateTracking → SelfInspection → RePlanning → TerminationCheck
     /// 14. ResultReporting: Format and return final answer
     ///
     /// Thread-safe: acquires fine-grained locks on individual fields.
@@ -912,30 +915,26 @@ impl AgentCore {
         // Build conversation history — compaction-aware load
         let history = {
             let ss = self.session_store.lock();
-            if let Some(Ok(guard)) = ss.ok().map(|s| {
+            if let Some(Ok(Some((msgs, from_compact)))) = ss.ok().map(|s| {
                 // Returns (Vec<SessionMessage>, bool)
                 Ok::<_, ()>(
                     s.as_ref()
                         .map(|store| store.load_session_context(session_id, MAX_CONTEXT_MESSAGES)),
                 )
             }) {
-                if let Some((msgs, from_compact)) = guard {
-                    if from_compact {
-                        log::info!(
-                            "[ContextLoading] session='{}' loaded from compacted.md",
-                            session_id
-                        );
-                    } else {
-                        log::info!(
-                            "[ContextLoading] session='{}' loaded {} msgs from history",
-                            session_id,
-                            msgs.len()
-                        );
-                    }
-                    msgs
+                if from_compact {
+                    log::info!(
+                        "[ContextLoading] session='{}' loaded from compacted.md",
+                        session_id
+                    );
                 } else {
-                    vec![]
+                    log::info!(
+                        "[ContextLoading] session='{}' loaded {} msgs from history",
+                        session_id,
+                        msgs.len()
+                    );
                 }
+                msgs
             } else {
                 vec![]
             }
@@ -1320,8 +1319,7 @@ impl AgentCore {
             // Extract reasoning
             let mut reasoning_text = response.reasoning_text.clone();
             if reasoning_text.is_empty() {
-                let think_re = regex::Regex::new(r"(?s)<think>(.*?)</think>").unwrap();
-                if let Some(cap) = think_re.captures(&response.text) {
+                if let Some(cap) = THINK_RE.captures(&response.text) {
                     reasoning_text = cap[1].trim().to_string();
                 }
             }
@@ -1425,10 +1423,7 @@ impl AgentCore {
 
                     // ── Phase 11: SafetyCheck per tool ───────────────────
                     let block_reason = if let Ok(tp) = self.tool_policy.lock() {
-                        match tp.check_policy(session_id, &tc_name, &tc_args) {
-                            Err(reason) => Some(reason),
-                            Ok(_) => None,
-                        }
+                        tp.check_policy(session_id, &tc_name, &tc_args).err()
                     } else {
                         None
                     };
@@ -1668,11 +1663,9 @@ impl AgentCore {
                 }
             } else {
                 let mut advance_workflow = false;
-                if loop_state.active_workflow_id.is_some() {
+                if let Some(wf_id) = loop_state.active_workflow_id.as_ref() {
                     let we = self.workflow_engine.read().await;
-                    if let Some(wf) =
-                        we.get_workflow(loop_state.active_workflow_id.as_ref().unwrap())
-                    {
+                    if let Some(wf) = we.get_workflow(wf_id) {
                         let step = &wf.steps[loop_state.current_workflow_step];
                         loop_state.workflow_vars.insert(
                             step.output_var.clone(),

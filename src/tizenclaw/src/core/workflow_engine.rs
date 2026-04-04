@@ -3,17 +3,12 @@
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum WorkflowStepType {
     Tool,
+    #[default]
     Prompt,
     Condition,
-}
-
-impl Default for WorkflowStepType {
-    fn default() -> Self {
-        WorkflowStepType::Prompt
-    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -232,9 +227,7 @@ impl WorkflowEngine {
         // 2. Extract Steps
         let mut current_step: Option<(String, String, Vec<String>)> = None; // (id, title, buffer)
 
-        for i in body_start..lines.len() {
-            let line = lines[i];
-            
+        for line in lines.iter().skip(body_start) {
             // "## Step 1: Check System"
             if line.starts_with("## Step ") {
                 if let Some((id, _, buf)) = current_step.take() {
@@ -287,7 +280,7 @@ impl WorkflowEngine {
             if trimmed.is_empty() { continue; }
 
             let prefix = "- ";
-            let text = if trimmed.starts_with(prefix) { &trimmed[prefix.len()..] } else { trimmed };
+            let text = trimmed.strip_prefix(prefix).unwrap_or(trimmed);
             
             if let Some((k, v)) = text.split_once(':') {
                 let key = k.trim();
@@ -324,10 +317,8 @@ impl WorkflowEngine {
             }
         }
 
-        if in_multiline {
-            if multiline_key == "instruction" {
-                step.instruction = multiline_val.join("\n").trim().to_string();
-            }
+        if in_multiline && multiline_key == "instruction" {
+            step.instruction = multiline_val.join("\n").trim().to_string();
         }
 
         if step.output_var.is_empty() {

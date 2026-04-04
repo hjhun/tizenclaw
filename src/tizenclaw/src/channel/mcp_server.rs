@@ -193,8 +193,8 @@ impl McpServer {
         }
 
         let result = process_prompt("mcp_session", prompt);
-        return json!({
+        json!({
             "content": [{"type": "text", "text": result}]
-        });
+        })
     }
 }

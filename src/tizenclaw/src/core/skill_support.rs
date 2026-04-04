@@ -25,11 +25,10 @@ pub fn normalize_skill_name(name: &str) -> Result<String, String> {
         if ch.is_ascii_lowercase() || ch.is_ascii_digit() {
             normalized.push(ch);
             last_was_hyphen = false;
-        } else if (ch == '-' || ch == '_' || ch.is_ascii_whitespace()) && !normalized.is_empty() {
-            if !last_was_hyphen {
-                normalized.push('-');
-                last_was_hyphen = true;
-            }
+        } else if (ch == '-' || ch == '_' || ch.is_ascii_whitespace()) && !normalized.is_empty()
+            && !last_was_hyphen {
+            normalized.push('-');
+            last_was_hyphen = true;
         }
     }
 

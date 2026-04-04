@@ -315,12 +315,12 @@ fn parse_tool_dir(dir: &Path, category: &str) -> Vec<ToolMeta> {
     // Parse YAML frontmatter and content
     for line in content.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("name:") {
-            name = trimmed[5..].trim().trim_matches('"').to_string();
-        } else if trimmed.starts_with("description:") {
-            description = trimmed[12..].trim().trim_matches('"').to_string();
-        } else if trimmed.starts_with("binary:") {
-            binary_path = Some(trimmed[7..].trim().trim_matches('"').to_string());
+        if let Some(v) = trimmed.strip_prefix("name:") {
+            name = v.trim().trim_matches('"').to_string();
+        } else if let Some(v) = trimmed.strip_prefix("description:") {
+            description = v.trim().trim_matches('"').to_string();
+        } else if let Some(v) = trimmed.strip_prefix("binary:") {
+            binary_path = Some(v.trim().trim_matches('"').to_string());
         } else if trimmed.starts_with("# ") && name.is_empty() {
             name = trimmed[2..].trim().to_string();
         } else if trimmed.starts_with("| `") && trimmed.contains('|') {
@@ -429,8 +429,8 @@ fn extract_description_from_md(path: &Path) -> String {
     // Try YAML frontmatter first
     for line in content.lines() {
         let t = line.trim();
-        if t.starts_with("description:") {
-            return t[12..].trim().trim_matches('"').to_string();
+        if let Some(v) = t.strip_prefix("description:") {
+            return v.trim().trim_matches('"').to_string();
         }
     }
 
@@ -574,7 +574,7 @@ pub fn build_indexing_prompt(metadata: &ToolsMetadata) -> String {
                 ));
             }
         }
-        prompt.push_str("\n");
+        prompt.push('\n');
     }
 
     prompt.push_str(

@@ -16,6 +16,12 @@ pub struct MdnsScanner {
     pub peers: Arc<RwLock<HashMap<String, Peer>>>,
 }
 
+impl Default for MdnsScanner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MdnsScanner {
     pub fn new() -> Self {
         Self {

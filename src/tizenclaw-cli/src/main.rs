@@ -229,8 +229,8 @@ fn main() {
                 return;
             }
             _ => {
-                for j in i..args.len() {
-                    prompt_parts.push(args[j].clone());
+                for arg in args.iter().skip(i) {
+                    prompt_parts.push(arg.clone());
                 }
                 break;
             }

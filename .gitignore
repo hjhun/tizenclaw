@@ -85,6 +85,9 @@ journal.txt
 # Agents
 .agent/
 
+# Claude Code (local dev only)
+.claude/
+
 # Dev notes
 .dev_note/
 docs/
