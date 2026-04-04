@@ -14,6 +14,8 @@
 //! share `Arc<AgentCore>` without an outer Mutex.
 
 use serde_json::{json, Value};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex, RwLock};
 
 static THINK_RE: LazyLock<regex::Regex> =
@@ -146,6 +148,127 @@ fn build_progress_marker(
     }
 
     "<empty-response>".into()
+}
+
+fn parse_shell_like_args(args: &str) -> Vec<String> {
+    let mut parsed = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let mut quote_char = '\0';
+
+    for ch in args.chars() {
+        if in_quotes {
+            if ch == quote_char {
+                in_quotes = false;
+            } else {
+                current.push(ch);
+            }
+            continue;
+        }
+
+        if ch == '"' || ch == '\'' {
+            in_quotes = true;
+            quote_char = ch;
+        } else if ch.is_whitespace() {
+            if !current.is_empty() {
+                parsed.push(current.clone());
+                current.clear();
+            }
+        } else {
+            current.push(ch);
+        }
+    }
+
+    if !current.is_empty() {
+        parsed.push(current);
+    }
+
+    parsed
+}
+
+fn generated_code_runtime_spec(runtime: &str) -> Option<(&'static str, &'static str)> {
+    match runtime.trim().to_ascii_lowercase().as_str() {
+        "python" | "python3" => Some(("python3", ".py")),
+        "node" => Some(("node", ".js")),
+        "bash" => Some(("bash", ".sh")),
+        _ => None,
+    }
+}
+
+fn generated_code_script_path(base_dir: &Path, runtime: &str) -> Option<PathBuf> {
+    let (_, suffix) = generated_code_runtime_spec(runtime)?;
+    Some(
+        base_dir
+            .join("codes")
+            .join(format!("generated-{}{}", uuid::Uuid::new_v4(), suffix)),
+    )
+}
+
+async fn run_generated_code_tool(
+    runtime: &str,
+    code: &str,
+    args: &str,
+    base_dir: &Path,
+) -> Value {
+    let binary = match generated_code_runtime_spec(runtime) {
+        Some((binary, _suffix)) => binary,
+        None => {
+            return json!({
+                "error": format!(
+                    "Unsupported runtime '{}'. Expected python, python3, node, or bash.",
+                    runtime
+                )
+            });
+        }
+    };
+
+    let codes_dir = base_dir.join("codes");
+    if let Err(err) = std::fs::create_dir_all(&codes_dir) {
+        return json!({"error": format!("Failed to create codes dir: {}", err)});
+    }
+
+    let script_path = match generated_code_script_path(base_dir, runtime) {
+        Some(path) => path,
+        None => {
+            return json!({
+                "error": format!(
+                    "Unsupported runtime '{}'. Expected python, python3, node, or bash.",
+                    runtime
+                )
+            });
+        }
+    };
+    let mut temp_file = match std::fs::File::create(&script_path) {
+        Ok(file) => file,
+        Err(err) => {
+            return json!({"error": format!("Failed to create code file: {}", err)});
+        }
+    };
+
+    if let Err(err) = temp_file.write_all(code.as_bytes()) {
+        return json!({"error": format!("Failed to write generated code: {}", err)});
+    }
+    if let Err(err) = temp_file.flush() {
+        return json!({"error": format!("Failed to flush generated code: {}", err)});
+    }
+    let script_path = script_path.to_string_lossy().to_string();
+    let mut exec_args = vec![script_path.clone()];
+    exec_args.extend(parse_shell_like_args(args));
+    let exec_args_ref: Vec<&str> = exec_args.iter().map(|value| value.as_str()).collect();
+
+    let engine = crate::infra::container_engine::ContainerEngine::new();
+    match engine.execute_oneshot(binary, &exec_args_ref).await {
+        Ok(result) => json!({
+            "runtime": runtime,
+            "script_path": script_path,
+            "result": result
+        }),
+        Err(err) => json!({
+            "runtime": runtime,
+            "script_path": script_path,
+            "error": format!("Failed to execute generated code: {}", err)
+        }),
+    }
 }
 
 /// LLM backend configuration loaded from `llm_config.json`.
@@ -1536,6 +1659,12 @@ impl AgentCore {
                                 }),
                                 Err(err) => serde_json::json!({"error": err}),
                             }
+                        } else if tc_name == "run_generated_code" {
+                            let runtime = tc_args.get("runtime").and_then(|v| v.as_str()).unwrap_or("");
+                            let code = tc_args.get("code").and_then(|v| v.as_str()).unwrap_or("");
+                            let args = tc_args.get("args").and_then(|v| v.as_str()).unwrap_or("");
+                            let base_dir = self.platform.paths.data_dir.clone();
+                            run_generated_code_tool(runtime, code, args, &base_dir).await
                         } else if tc_name == "remember" {
                             if let Some(store) = ms_clone {
                                 let key = tc_args.get("key").and_then(|v| v.as_str()).unwrap_or("");
@@ -2009,7 +2138,8 @@ impl<'a> SessionStoreRef<'a> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_progress_marker, build_skill_prefetch_message, select_relevant_skills,
+        build_progress_marker, build_skill_prefetch_message, generated_code_runtime_spec,
+        generated_code_script_path, parse_shell_like_args, select_relevant_skills,
         utf8_safe_preview,
     };
     use crate::core::textual_skill_scanner::TextualSkill;
@@ -2085,5 +2215,37 @@ mod tests {
 
         assert!(marker.contains("search_tools"));
         assert!(marker.contains("\"ALL\""));
+    }
+
+    #[test]
+    fn parse_shell_like_args_preserves_quoted_groups() {
+        let parsed = parse_shell_like_args("--name \"hello world\" 'alpha beta'");
+
+        assert_eq!(
+            parsed,
+            vec![
+                "--name".to_string(),
+                "hello world".to_string(),
+                "alpha beta".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn generated_code_runtime_spec_maps_supported_runtimes() {
+        assert_eq!(generated_code_runtime_spec("python"), Some(("python3", ".py")));
+        assert_eq!(generated_code_runtime_spec("python3"), Some(("python3", ".py")));
+        assert_eq!(generated_code_runtime_spec("node"), Some(("node", ".js")));
+        assert_eq!(generated_code_runtime_spec("bash"), Some(("bash", ".sh")));
+        assert_eq!(generated_code_runtime_spec("ruby"), None);
+    }
+
+    #[test]
+    fn generated_code_script_path_uses_codes_directory() {
+        let base_dir = std::path::Path::new("/opt/usr/share/tizenclaw");
+        let script_path = generated_code_script_path(base_dir, "python").unwrap();
+
+        assert!(script_path.starts_with(base_dir.join("codes")));
+        assert_eq!(script_path.extension().and_then(|ext| ext.to_str()), Some("py"));
     }
 }

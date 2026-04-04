@@ -64,6 +64,23 @@ impl ToolDeclarationBuilder {
                 "required": ["operation"]
             }),
         });
+        tools.push(LlmToolDecl {
+            name: "run_generated_code".into(),
+            description: "Write generated Python, Node.js, or Bash code under the device-owned codes directory and execute it immediately. Use this when the user asks you to generate code and run it.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "runtime": {
+                        "type": "string",
+                        "enum": ["python", "python3", "node", "bash"],
+                        "description": "Interpreter used to execute the generated code"
+                    },
+                    "code": {"type": "string", "description": "Full source code to write into a reusable script file before execution"},
+                    "args": {"type": "string", "description": "Optional command-line arguments passed to the generated script as a single shell-style string"}
+                },
+                "required": ["runtime", "code"]
+            }),
+        });
     }
 
     fn push_task_tools(tools: &mut Vec<LlmToolDecl>) {

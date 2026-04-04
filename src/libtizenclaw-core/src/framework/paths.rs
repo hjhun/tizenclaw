@@ -32,6 +32,8 @@ pub struct PlatformPaths {
     pub web_root: PathBuf,
     /// Workflows directory
     pub workflows_dir: PathBuf,
+    /// Generated and reusable code directory
+    pub codes_dir: PathBuf,
     /// Actions directory
     pub actions_dir: PathBuf,
     /// Pipelines directory
@@ -84,6 +86,7 @@ impl PlatformPaths {
             docs_dir: base.join("docs"),
             web_root: base.join("web"),
             workflows_dir: base.join("workflows"),
+            codes_dir: base.join("codes"),
             actions_dir: base.join("actions"),
             pipelines_dir: base.join("pipelines"),
             llm_plugins_dir: base.join("plugins/llm"),
@@ -113,6 +116,7 @@ impl PlatformPaths {
             docs_dir: PathBuf::from(TIZEN_DATA_DIR).join("docs"),
             web_root: PathBuf::from(TIZEN_DATA_DIR).join("web"),
             workflows_dir: PathBuf::from(TIZEN_DATA_DIR).join("workflows"),
+            codes_dir: PathBuf::from(TIZEN_DATA_DIR).join("codes"),
             actions_dir: PathBuf::from(TIZEN_DATA_DIR).join("actions"),
             pipelines_dir: PathBuf::from(TIZEN_DATA_DIR).join("pipelines"),
             llm_plugins_dir: PathBuf::from(TIZEN_DATA_DIR).join("plugins/llm"),
@@ -143,6 +147,7 @@ impl PlatformPaths {
             &self.docs_dir,
             &self.web_root,
             &self.workflows_dir,
+            &self.codes_dir,
         ];
         for dir in &dirs {
             if !dir.exists() {
@@ -193,6 +198,7 @@ mod tests {
         assert_eq!(paths.tools_dir, base.join("tools"));
         assert_eq!(paths.skills_dir, base.join("tools/skills"));
         assert_eq!(paths.embedded_tools_dir, base.join("embedded"));
+        assert_eq!(paths.codes_dir, base.join("codes"));
     }
 
     #[test]
@@ -210,6 +216,7 @@ mod tests {
         paths.ensure_dirs();
 
         assert!(paths.embedded_tools_dir.exists());
+        assert!(paths.codes_dir.exists());
 
         let _ = std::fs::remove_dir_all(base);
     }
