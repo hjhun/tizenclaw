@@ -12,7 +12,9 @@
 #![allow(unused)]
 
 pub mod common;
+pub mod generic;
 pub mod infra;
+pub mod tizen;
 pub mod storage;
 pub mod llm;
 pub mod core;

@@ -27,7 +27,7 @@ pub mod agent_role;
 pub mod agent_factory;
 pub mod workflow_engine;
 pub mod pipeline_executor;
-pub mod action_bridge;
+pub use crate::tizen::core::action_bridge;
 pub mod autonomous_trigger;
 pub mod swarm_manager;
 pub mod proactive_advisor;
