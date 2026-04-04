@@ -96,6 +96,7 @@ docs/
 
 # Temporary files
 .tmp/
+src/tizenclaw/error.log
 
 # Prompts
 .prompt
