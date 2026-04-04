@@ -75,11 +75,9 @@ impl SystemPromptBuilder {
 
 
 
-        // 2. Action Formatting
-        lines.push("## System Output Formatting".into());
-        lines.push("Always output your step-by-step reasoning wrapped in <Thought>...</Thought> tags before making any function calls or displaying output to the user.".into());
-        lines.push("Use the native tool calling schema to execute system actions.".into());
-        lines.push("If appropriate, provide a state summary via <NewSummary>Target: [Goal], Status: [Current Status], Fact1: [Important Var]</NewSummary> at the bottom of your text output.".into());
+        // 2. Tool Call Style
+        lines.push("## Tool Call Style".into());
+        lines.push("Skip narration for routine calls. Use the native tool calling schema to execute system actions.".into());
         lines.push("".into());
 
         // 3. Safety

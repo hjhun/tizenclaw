@@ -67,11 +67,11 @@ mod tests {
 
     #[test]
     fn test_dense_punctuation() {
-        let prompt = "Turn on the AC. Then close the door! And what about the weather?";
+        let prompt = "Turn on the AC. Then close the door! And what about the weather? It is very important that you do this task perfectly. Please give me an update when you finish.";
         assert!(IntentAnalyzer::is_complex_task(prompt));
         
         // Korean multi-sentence
-        let prompt_kr = "에어컨 켜줘. 그리고 문도 닫아줄래? 날씨는 어때.";
+        let prompt_kr = "에어컨 켜줘. 그리고 문도 닫아줄래? 날씨는 어때. 이것은 복잡한 작업인지 확인하기 위한 테스트 문장입니다 길이가 길어져서 100자를 넘을수 있도록 문장을 길게 작성합니다. 꼭 확인해주세요 절대로 실수하지마세요.";
         assert!(IntentAnalyzer::is_complex_task(prompt_kr));
     }
 }
