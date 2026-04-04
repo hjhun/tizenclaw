@@ -1834,20 +1834,29 @@ impl AgentCore {
     pub async fn run_startup_indexing(&self) {
         use crate::core::tool_indexer;
 
-        let root_dir = "/opt/usr/share/tizen-tools";
+        let root_dir = self.platform.paths.tools_dir.to_string_lossy().to_string();
+        let embedded_dir = self
+            .platform
+            .paths
+            .embedded_tools_dir
+            .to_string_lossy()
+            .to_string();
+        let scan_roots = [root_dir.as_str(), embedded_dir.as_str()];
 
         // Phase 1: Hash-based change detection (fast, no I/O beyond stat)
-        if !tool_indexer::needs_reindex(root_dir) {
+        if !tool_indexer::needs_reindex_for_roots(&root_dir, &scan_roots) {
             log::info!("[Startup Indexing] No changes detected (hash match). Skipping.");
             return;
         }
 
         // Phase 2: Local filesystem scan — collect all tool metadata
         log::info!(
-            "[Startup Indexing] Scanning tool metadata from {}...",
-            root_dir
+            "[Startup Indexing] Scanning tool metadata from {} and {}...",
+            root_dir,
+            embedded_dir
         );
-        let metadata = tool_indexer::scan_tools_metadata(root_dir);
+        let metadata =
+            tool_indexer::scan_tools_metadata_with_embedded(&root_dir, Some(&embedded_dir));
 
         if metadata.total_tools() == 0 {
             log::info!("[Startup Indexing] No tools found. Skipping index generation.");
@@ -1876,28 +1885,29 @@ impl AgentCore {
                 .await;
 
             if response.success {
-                let written = tool_indexer::apply_llm_index_result(&response.text, root_dir);
+                let written =
+                    tool_indexer::apply_llm_index_result(&response.text, &root_dir, &metadata);
                 if written > 0 {
-                    tool_indexer::save_index_hash(root_dir);
+                    tool_indexer::save_index_hash_for_roots(&root_dir, &scan_roots);
                     log::info!("[Startup Indexing] LLM generated {} index files.", written,);
                 } else {
                     log::warn!(
                         "[Startup Indexing] LLM response parsed but 0 files \
                          written. Falling back to template."
                     );
-                    tool_indexer::generate_fallback_index(&metadata, root_dir);
-                    tool_indexer::save_index_hash(root_dir);
+                    tool_indexer::generate_fallback_index(&metadata, &root_dir);
+                    tool_indexer::save_index_hash_for_roots(&root_dir, &scan_roots);
                 }
             } else {
                 log::warn!("[Startup Indexing] LLM call failed. Using fallback template.");
-                tool_indexer::generate_fallback_index(&metadata, root_dir);
-                tool_indexer::save_index_hash(root_dir);
+                tool_indexer::generate_fallback_index(&metadata, &root_dir);
+                tool_indexer::save_index_hash_for_roots(&root_dir, &scan_roots);
             }
         } else {
             // No LLM available — generate a basic template
             log::info!("[Startup Indexing] No LLM available. Generating fallback index.");
-            tool_indexer::generate_fallback_index(&metadata, root_dir);
-            tool_indexer::save_index_hash(root_dir);
+            tool_indexer::generate_fallback_index(&metadata, &root_dir);
+            tool_indexer::save_index_hash_for_roots(&root_dir, &scan_roots);
         }
 
         log::info!("[Startup Indexing] Completed.");

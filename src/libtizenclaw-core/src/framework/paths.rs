@@ -1,7 +1,8 @@
 //! Platform-resolved paths.
 //!
 //! Determines the correct directories for data, config, tools, skills,
-//! plugins, and web assets based on environment variables or defaults.
+//! plugins, embedded tool descriptors, and web assets based on
+//! environment variables or defaults.
 //!
 //! Priority:
 //! 1. Environment variables (TIZENCLAW_DATA_DIR, TIZENCLAW_TOOLS_DIR, etc.)
@@ -21,6 +22,8 @@ pub struct PlatformPaths {
     pub tools_dir: PathBuf,
     /// Textual skills directory
     pub skills_dir: PathBuf,
+    /// TizenClaw-owned embedded tool descriptor directory
+    pub embedded_tools_dir: PathBuf,
     /// Plugin .so files directory
     pub plugins_dir: PathBuf,
     /// Packaged reference docs directory
@@ -68,11 +71,15 @@ impl PlatformPaths {
             .unwrap_or_else(|_| base.join("tools"));
 
         let skills_dir = tools_dir.join("skills");
+        let embedded_tools_dir = std::env::var("TIZENCLAW_EMBEDDED_TOOLS_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| base.join("embedded"));
 
         PlatformPaths {
             config_dir: base.join("config"),
             tools_dir,
             skills_dir,
+            embedded_tools_dir,
             plugins_dir: base.join("plugins"),
             docs_dir: base.join("docs"),
             web_root: base.join("web"),
@@ -92,12 +99,16 @@ impl PlatformPaths {
             .unwrap_or_else(|_| PathBuf::from(TIZEN_TOOLS_DIR));
 
         let skills_dir = tools_dir.join("skills");
+        let embedded_tools_dir = std::env::var("TIZENCLAW_EMBEDDED_TOOLS_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from(TIZEN_DATA_DIR).join("embedded"));
 
         PlatformPaths {
             data_dir: PathBuf::from(TIZEN_DATA_DIR),
             config_dir: PathBuf::from(TIZEN_DATA_DIR).join("config"),
             tools_dir,
             skills_dir,
+            embedded_tools_dir,
             plugins_dir: PathBuf::from(TIZEN_DATA_DIR).join("plugins"),
             docs_dir: PathBuf::from(TIZEN_DATA_DIR).join("docs"),
             web_root: PathBuf::from(TIZEN_DATA_DIR).join("web"),
@@ -127,6 +138,7 @@ impl PlatformPaths {
             &self.config_dir,
             &self.tools_dir,
             &self.skills_dir,
+            &self.embedded_tools_dir,
             &self.plugins_dir,
             &self.docs_dir,
             &self.web_root,
@@ -167,4 +179,38 @@ fn dirs_or_home() -> PathBuf {
     std::env::var("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("/tmp"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_base_places_embedded_tools_under_base() {
+        let base = PathBuf::from("/tmp/tizenclaw-paths");
+        let paths = PlatformPaths::from_base(base.clone());
+
+        assert_eq!(paths.tools_dir, base.join("tools"));
+        assert_eq!(paths.skills_dir, base.join("tools/skills"));
+        assert_eq!(paths.embedded_tools_dir, base.join("embedded"));
+    }
+
+    #[test]
+    fn ensure_dirs_creates_embedded_directory() {
+        let unique = format!(
+            "tizenclaw-paths-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let base = std::env::temp_dir().join(unique);
+        let paths = PlatformPaths::from_base(base.clone());
+
+        paths.ensure_dirs();
+
+        assert!(paths.embedded_tools_dir.exists());
+
+        let _ = std::fs::remove_dir_all(base);
+    }
 }

@@ -154,8 +154,9 @@ async fn main() {
     log::info!("[Boot] TizenClaw daemon ready.");
 
     // ── Phase 9: Startup Tool Indexing (Hybrid: Local Scan + LLM) ──
-    // Scans /opt/usr/share/tizen-tools locally, then uses a single
-    // LLM call to generate high-quality tools.md / index.md.
+    // Scans the external tools root plus the TizenClaw-owned embedded
+    // descriptor root, then uses a single LLM call to generate
+    // high-quality tools.md / index.md.
     // Falls back to template generation if no LLM is available.
     let startup_agent = agent.clone();
     tokio::spawn(async move {

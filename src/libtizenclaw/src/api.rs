@@ -261,38 +261,74 @@ impl TizenClaw {
             .map_err(|e| format!("Invalid UTF-8 response: {}", e))
     }
 
-    /// Discover tool names from all subdirectories under /opt/usr/share/tizen-tools.
+    /// Discover tool names from both the shared tool tree and the
+    /// TizenClaw-owned embedded descriptor directory.
     fn discover_tools() -> Vec<String> {
         let mut tools = Vec::new();
-        let root = "/opt/usr/share/tizen-tools";
-
-        let root_entries = match std::fs::read_dir(root) {
-            Ok(e) => e,
-            Err(_) => return tools,
-        };
-
-        for root_entry in root_entries.flatten() {
-            let sub_dir = root_entry.path();
-            if !sub_dir.is_dir() { continue; }
-
-            if let Ok(entries) = std::fs::read_dir(&sub_dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if !path.is_dir() { continue; }
-                    let name = path.file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("")
-                        .to_string();
-                    if !name.starts_with('.') && !name.is_empty() {
-                        tools.push(name);
-                    }
-                }
-            }
-        }
-
+        collect_tools_from_tree("/opt/usr/share/tizen-tools", &mut tools);
+        collect_embedded_tool_names("/opt/usr/share/tizenclaw/embedded", &mut tools);
         tools.sort();
         tools.dedup();
         tools
+    }
+}
+
+fn collect_tools_from_tree(root: &str, tools: &mut Vec<String>) {
+    let root_entries = match std::fs::read_dir(root) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for root_entry in root_entries.flatten() {
+        let sub_dir = root_entry.path();
+        if !sub_dir.is_dir() {
+            continue;
+        }
+
+        if let Ok(entries) = std::fs::read_dir(&sub_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() {
+                    continue;
+                }
+                let name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                if !name.starts_with('.') && !name.is_empty() {
+                    tools.push(name);
+                }
+            }
+        }
+    }
+}
+
+fn collect_embedded_tool_names(root: &str, tools: &mut Vec<String>) {
+    let entries = match std::fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+        if !file_name.ends_with(".md")
+            || file_name == "index.md"
+            || file_name == "tools.md"
+            || file_name.starts_with('.')
+        {
+            continue;
+        }
+
+        tools.push(file_name.trim_end_matches(".md").to_string());
     }
 }
 

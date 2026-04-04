@@ -128,6 +128,7 @@ impl ToolIndexer {
 // ─────────────────────────────────────────────────────────────
 
 const HASH_FILE: &str = ".index_hash";
+const EMBEDDED_CATEGORY_NAME: &str = "embedded";
 
 /// Scan all tool/skill metadata from a root directory.
 ///
@@ -239,6 +240,26 @@ pub fn scan_tools_metadata(root_dir: &str) -> ToolsMetadata {
     ToolsMetadata { root_dir: root_dir.to_string(), categories }
 }
 
+/// Scan metadata from the standard tools root plus an optional flat
+/// embedded-descriptor root.
+pub fn scan_tools_metadata_with_embedded(
+    root_dir: &str,
+    embedded_dir: Option<&str>,
+) -> ToolsMetadata {
+    let mut metadata = scan_tools_metadata(root_dir);
+    metadata
+        .categories
+        .retain(|category| category.name != EMBEDDED_CATEGORY_NAME);
+
+    if let Some(dir) = embedded_dir {
+        if let Some(category) = scan_flat_markdown_category(dir, EMBEDDED_CATEGORY_NAME) {
+            metadata.categories.push(category);
+        }
+    }
+
+    metadata
+}
+
 /// Parse a single tool directory for metadata.
 fn parse_tool_dir(dir: &Path, category: &str) -> Vec<ToolMeta> {
     let dir_name_str = dir.file_name().and_then(|n| n.to_str()).unwrap_or("unknown").to_string();
@@ -348,6 +369,56 @@ fn parse_tool_dir(dir: &Path, category: &str) -> Vec<ToolMeta> {
     }]
 }
 
+fn scan_flat_markdown_category(dir: &str, category_name: &str) -> Option<CategoryMeta> {
+    let path = Path::new(dir);
+    if !path.exists() || !path.is_dir() {
+        return None;
+    }
+
+    let entries = std::fs::read_dir(path).ok()?;
+    let mut tools = Vec::new();
+
+    for entry in entries.flatten() {
+        let file_path = entry.path();
+        if !file_path.is_file() {
+            continue;
+        }
+
+        let file_name = file_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+        if !file_name.ends_with(".md")
+            || file_name == "index.md"
+            || file_name == "tools.md"
+            || file_name.starts_with('.')
+        {
+            continue;
+        }
+
+        tools.push(ToolMeta {
+            name: file_name.trim_end_matches(".md").to_string(),
+            description: extract_description_from_md(&file_path),
+            category: category_name.to_string(),
+            dir_path: path.to_string_lossy().to_string(),
+            binary_path: None,
+            commands: vec![],
+        });
+    }
+
+    if tools.is_empty() {
+        return None;
+    }
+
+    tools.sort_by(|left, right| left.name.cmp(&right.name));
+
+    Some(CategoryMeta {
+        name: category_name.to_string(),
+        dir_path: path.to_string_lossy().to_string(),
+        tools,
+    })
+}
+
 /// Extract a single-line description from a markdown file.
 fn extract_description_from_md(path: &Path) -> String {
     let content = match std::fs::read_to_string(path) {
@@ -377,10 +448,16 @@ fn extract_description_from_md(path: &Path) -> String {
 /// Check whether the tool directory has changed since the last indexing.
 /// Returns `true` if re-indexing is needed.
 pub fn needs_reindex(root_dir: &str) -> bool {
-    let root = Path::new(root_dir);
+    needs_reindex_for_roots(root_dir, &[root_dir])
+}
+
+/// Check whether any scanned tool roots changed since the last indexing.
+/// The hash file is stored under `hash_root_dir`.
+pub fn needs_reindex_for_roots(hash_root_dir: &str, scan_roots: &[&str]) -> bool {
+    let root = Path::new(hash_root_dir);
     let hash_path = root.join(HASH_FILE);
 
-    let current_hash = compute_dir_hash(root);
+    let current_hash = compute_roots_hash(scan_roots);
 
     if let Ok(stored) = std::fs::read_to_string(&hash_path) {
         let stored_hash: u64 = stored.trim().parse().unwrap_or(0);
@@ -394,9 +471,14 @@ pub fn needs_reindex(root_dir: &str) -> bool {
 
 /// Save the current directory hash after successful indexing.
 pub fn save_index_hash(root_dir: &str) {
-    let root = Path::new(root_dir);
+    save_index_hash_for_roots(root_dir, &[root_dir]);
+}
+
+/// Save the current multi-root hash after successful indexing.
+pub fn save_index_hash_for_roots(hash_root_dir: &str, scan_roots: &[&str]) {
+    let root = Path::new(hash_root_dir);
     let hash_path = root.join(HASH_FILE);
-    let hash = compute_dir_hash(root);
+    let hash = compute_roots_hash(scan_roots);
     let _ = std::fs::write(&hash_path, hash.to_string());
 }
 
@@ -442,6 +524,19 @@ fn compute_dir_hash(dir: &Path) -> u64 {
     }
 
     walk(dir, &mut hasher, 0);
+    hasher.finish()
+}
+
+fn compute_roots_hash(root_dirs: &[&str]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    let mut roots = root_dirs.to_vec();
+    roots.sort();
+
+    for root in roots {
+        root.hash(&mut hasher);
+        compute_dir_hash(Path::new(root)).hash(&mut hasher);
+    }
+
     hasher.finish()
 }
 
@@ -516,7 +611,7 @@ pub fn build_indexing_prompt(metadata: &ToolsMetadata) -> String {
 /// Parse the LLM response JSON and write the generated files to disk.
 ///
 /// Returns the number of files successfully written.
-pub fn apply_llm_index_result(result: &str, root_dir: &str) -> usize {
+pub fn apply_llm_index_result(result: &str, root_dir: &str, metadata: &ToolsMetadata) -> usize {
     let clean = result.trim();
     // Strip markdown code fences if present
     let json_str = if clean.starts_with("```json") {
@@ -554,7 +649,12 @@ pub fn apply_llm_index_result(result: &str, root_dir: &str) -> usize {
     if let Some(indices) = parsed.get("indices").and_then(|v| v.as_object()) {
         for (cat_name, content) in indices {
             if let Some(md_content) = content.as_str() {
-                let cat_dir = root.join(cat_name);
+                let cat_dir = metadata
+                    .categories
+                    .iter()
+                    .find(|category| category.name == *cat_name)
+                    .map(|category| Path::new(&category.dir_path).to_path_buf())
+                    .unwrap_or_else(|| root.join(cat_name));
                 if cat_dir.exists() && cat_dir.is_dir() {
                     let index_path = cat_dir.join("index.md");
                     match std::fs::write(&index_path, md_content) {
@@ -683,4 +783,119 @@ pub fn get_tool_catalog(root_dir: &str) -> String {
         "ToolIndexer: tools.md not available, performing live query"
     );
     query_tools_live(root_dir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn scan_tools_metadata_with_embedded_adds_flat_category() {
+        let tools_root = TempDir::new().unwrap();
+        let cli_dir = tools_root.path().join("cli");
+        let tool_dir = cli_dir.join("sample-cli");
+        std::fs::create_dir_all(&tool_dir).unwrap();
+        std::fs::write(
+            tool_dir.join("tool.md"),
+            "name: sample-cli\ndescription: Sample CLI tool\n",
+        )
+        .unwrap();
+
+        let embedded_root = TempDir::new().unwrap();
+        std::fs::write(
+            embedded_root.path().join("create_task.md"),
+            "# create_task\n\nCreate a task.\n",
+        )
+        .unwrap();
+
+        let metadata = scan_tools_metadata_with_embedded(
+            &tools_root.path().to_string_lossy(),
+            Some(&embedded_root.path().to_string_lossy()),
+        );
+
+        assert_eq!(metadata.categories.len(), 2);
+        assert!(metadata.categories.iter().any(|category| category.name == "cli"));
+        let embedded = metadata
+            .categories
+            .iter()
+            .find(|category| category.name == "embedded")
+            .unwrap();
+        assert_eq!(embedded.tools.len(), 1);
+        assert_eq!(embedded.tools[0].name, "create_task");
+    }
+
+    #[test]
+    fn apply_llm_index_result_writes_embedded_index_to_embedded_dir() {
+        let tools_root = TempDir::new().unwrap();
+        std::fs::create_dir_all(tools_root.path().join("cli")).unwrap();
+
+        let embedded_root = TempDir::new().unwrap();
+        std::fs::write(
+            embedded_root.path().join("create_task.md"),
+            "# create_task\n\nCreate a task.\n",
+        )
+        .unwrap();
+
+        let metadata = scan_tools_metadata_with_embedded(
+            &tools_root.path().to_string_lossy(),
+            Some(&embedded_root.path().to_string_lossy()),
+        );
+        let result = "{\n\
+          \"tools_md\": \"# TizenClaw Tool Catalog\\n\",\n\
+          \"indices\": {\n\
+            \"embedded\": \"# Embedded\\n\"\n\
+          }\n\
+        }";
+
+        let written = apply_llm_index_result(
+            result,
+            &tools_root.path().to_string_lossy(),
+            &metadata,
+        );
+
+        assert_eq!(written, 2);
+        assert!(embedded_root.path().join("index.md").exists());
+        assert!(!tools_root.path().join("embedded/index.md").exists());
+    }
+
+    #[test]
+    fn scan_tools_metadata_with_embedded_ignores_legacy_root_category() {
+        let tools_root = TempDir::new().unwrap();
+        let legacy_embedded = tools_root.path().join("embedded");
+        std::fs::create_dir_all(&legacy_embedded).unwrap();
+        std::fs::write(
+            legacy_embedded.join("create_task.md"),
+            "# create_task\n\nLegacy descriptor.\n",
+        )
+        .unwrap();
+
+        let embedded_root = TempDir::new().unwrap();
+        std::fs::write(
+            embedded_root.path().join("create_task.md"),
+            "# create_task\n\nNew descriptor.\n",
+        )
+        .unwrap();
+
+        let metadata = scan_tools_metadata_with_embedded(
+            &tools_root.path().to_string_lossy(),
+            Some(&embedded_root.path().to_string_lossy()),
+        );
+
+        let embedded_categories = metadata
+            .categories
+            .iter()
+            .filter(|category| category.name == "embedded")
+            .count();
+        assert_eq!(embedded_categories, 1);
+        assert_eq!(
+            metadata
+                .categories
+                .iter()
+                .find(|category| category.name == "embedded")
+                .unwrap()
+                .dir_path,
+            embedded_root.path().to_string_lossy()
+        );
+    }
 }

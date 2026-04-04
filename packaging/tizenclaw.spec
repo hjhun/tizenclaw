@@ -88,8 +88,8 @@ mkdir -p %{buildroot}%{_unitdir}/multi-user.target.wants
 mkdir -p %{buildroot}%{_unitdir}/sockets.target.wants
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/config
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/docs
+mkdir -p %{buildroot}/opt/usr/share/tizenclaw/embedded
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/memory
-mkdir -p %{buildroot}/opt/usr/share/tizen-tools/embedded
 # actions/ dir removed — tools are discovered dynamically
 mkdir -p %{buildroot}/opt/usr/share/tizen-tools/cli
 mkdir -p %{buildroot}/opt/usr/share/tizen-tools/skills
@@ -99,6 +99,9 @@ ln -sf ../tizenclaw.service %{buildroot}%{_unitdir}/multi-user.target.wants/tize
 ln -sf ../tizenclaw-tool-executor.socket %{buildroot}%{_unitdir}/sockets.target.wants/tizenclaw-tool-executor.socket
 
 %post
+if [ -d /opt/usr/share/tizen-tools/embedded ]; then
+rm -rf /opt/usr/share/tizen-tools/embedded
+fi
 
 %files
 %defattr(-,root,root,-)
@@ -118,7 +121,7 @@ ln -sf ../tizenclaw-tool-executor.socket %{buildroot}%{_unitdir}/sockets.target.
 # tools.md is generated at runtime by the daemon startup indexer
 /opt/usr/share/tizenclaw/web/
 /opt/usr/share/tizenclaw/docs/
-/opt/usr/share/tizen-tools/embedded/
+/opt/usr/share/tizenclaw/embedded/
 # actions/ dir removed
 %dir /opt/usr/share/tizen-tools/cli/
 %dir /opt/usr/share/tizen-tools/skills/

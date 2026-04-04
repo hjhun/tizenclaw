@@ -92,7 +92,7 @@ INSTALL(DIRECTORY "${CMAKE_SOURCE_DIR}/data/docs/"
 
 # Embedded tool descriptors
 INSTALL(DIRECTORY "${CMAKE_SOURCE_DIR}/tools/embedded/"
-        DESTINATION "/opt/usr/share/tizen-tools/embedded")
+        DESTINATION "${APP_DATA_DIR}/embedded")
 
 # CLI tool scripts (Enabled)
 enable_language(C CXX)
