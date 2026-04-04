@@ -275,12 +275,12 @@ fn parse_tool_dir(dir: &Path, category: &str) -> Vec<ToolMeta> {
                         let action_name = fname.trim_end_matches(".md").to_string();
                         let desc = extract_description_from_md(&p);
                         results.push(ToolMeta {
-                            name: dir_name.clone(),
+                            name: action_name.clone(),
                             description: format!("[Action: {}] {}", action_name, desc),
                             category: category.to_string(),
                             dir_path: dir.to_string_lossy().to_string(),
                             binary_path: None,
-                            commands: vec![action_name],
+                            commands: vec![fname],
                         });
                     }
                 }
@@ -502,8 +502,9 @@ pub fn build_indexing_prompt(metadata: &ToolsMetadata) -> String {
          - The content should allow a user or agent to IMMEDIATELY understand \
            what capabilities are available\n\n\
          ### index.md Requirements (per category):\n\
-         - Title with the category name\n\
-         - Detailed tool reference table with commands/parameters if available\n\
+         - If the category name is `actions`, you MUST create a table with the exact columns: `| Action Name | Description | Markdown |`.\n\
+         - In the `actions` table, the `Markdown` column must use the filename provided in the `Commands` list from the metadata (e.g., `[launch.md](launch.md)` or similar if appropriate).\n\
+         - For all other categories, format with a detailed tool reference table with commands/parameters if available.\n\
          - Usage examples where applicable\n\
          - Installation path information\n\n\
          Output ONLY the raw JSON object. Do NOT wrap it in markdown code blocks."
