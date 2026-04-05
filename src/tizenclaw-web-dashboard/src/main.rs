@@ -573,11 +573,55 @@ async fn api_metrics() -> Json<Value> {
     let hours = uptime_secs as u64 / 3600;
     let minutes = (uptime_secs as u64 % 3600) / 60;
     let seconds = uptime_secs as u64 % 60;
+
+    // Query live usage counters from the agent daemon via IPC.
+    let usage = tokio::task::spawn_blocking(ipc_get_usage)
+        .await
+        .ok()
+        .flatten();
+    let agent_connected = usage.is_some();
+    let llm_calls = usage
+        .as_ref()
+        .and_then(|u| u["total_requests"].as_i64())
+        .unwrap_or(0);
+    let prompt_tokens = usage
+        .as_ref()
+        .and_then(|u| u["prompt_tokens"].as_i64())
+        .unwrap_or(0);
+    let completion_tokens = usage
+        .as_ref()
+        .and_then(|u| u["completion_tokens"].as_i64())
+        .unwrap_or(0);
+    let cache_read_tokens = usage
+        .as_ref()
+        .and_then(|u| u["cache_read_input_tokens"].as_i64())
+        .unwrap_or(0);
+    let cache_write_tokens = usage
+        .as_ref()
+        .and_then(|u| u["cache_creation_input_tokens"].as_i64())
+        .unwrap_or(0);
+
     Json(json!({
         "version": "1.0.0",
-        "status": "running",
-        "uptime": {"seconds": uptime_secs, "formatted": format!("{}h {}m {}s", hours, minutes, seconds)},
-        "counters": {"requests": 0, "errors": 0, "llm_calls": 0, "tool_calls": 0},
+        "status": if agent_connected { "running" } else { "disconnected" },
+        "agent_connected": agent_connected,
+        "uptime": {
+            "seconds": uptime_secs,
+            "formatted": format!("{}h {}m {}s", hours, minutes, seconds)
+        },
+        "counters": {
+            "requests": 0,
+            "errors": 0,
+            "llm_calls": llm_calls,
+            "tool_calls": 0
+        },
+        "tokens": {
+            "prompt": prompt_tokens,
+            "completion": completion_tokens,
+            "cache_read": cache_read_tokens,
+            "cache_write": cache_write_tokens,
+            "total": prompt_tokens + completion_tokens
+        },
         "memory": {"vm_rss_kb": rss_kb, "vm_size_kb": vm_kb},
         "cpu": {"load_1m": load_1m, "load_5m": load_5m, "load_15m": load_15m},
         "threads": threads,
@@ -990,6 +1034,90 @@ async fn api_a2a() -> Json<Value> {
 }
 
 // ─── IPC helper ───────────────────────────────────────────────
+
+/// Query live token-usage counters from the agent daemon.
+/// Returns `None` when the agent is unreachable or returns an error.
+fn ipc_get_usage() -> Option<Value> {
+    unsafe {
+        let fd = libc::socket(libc::AF_UNIX, libc::SOCK_STREAM, 0);
+        if fd < 0 {
+            return None;
+        }
+
+        let mut addr: libc::sockaddr_un = std::mem::zeroed();
+        addr.sun_family = libc::AF_UNIX as u16;
+        let name = b"tizenclaw.sock";
+        for (i, b) in name.iter().enumerate() {
+            addr.sun_path[1 + i] = *b as libc::c_char;
+        }
+        let addr_len =
+            (std::mem::size_of::<libc::sa_family_t>() + 1 + name.len()) as libc::socklen_t;
+
+        // Short timeout: don't block the metrics endpoint.
+        let timeout = libc::timeval { tv_sec: 1, tv_usec: 0 };
+        libc::setsockopt(
+            fd,
+            libc::SOL_SOCKET,
+            libc::SO_RCVTIMEO,
+            &timeout as *const _ as *const libc::c_void,
+            std::mem::size_of::<libc::timeval>() as libc::socklen_t,
+        );
+        libc::setsockopt(
+            fd,
+            libc::SOL_SOCKET,
+            libc::SO_SNDTIMEO,
+            &timeout as *const _ as *const libc::c_void,
+            std::mem::size_of::<libc::timeval>() as libc::socklen_t,
+        );
+
+        if libc::connect(fd, &addr as *const _ as *const libc::sockaddr, addr_len) < 0 {
+            libc::close(fd);
+            return None;
+        }
+
+        let req = json!({"jsonrpc": "2.0", "method": "get_usage", "id": 1, "params": {}});
+        let data = req.to_string();
+        let len_bytes = (data.len() as u32).to_be_bytes();
+        if libc::write(fd, len_bytes.as_ptr() as *const _, 4) != 4 {
+            libc::close(fd);
+            return None;
+        }
+        let mut sent = 0usize;
+        while sent < data.len() {
+            let n = libc::write(fd, data.as_ptr().add(sent) as *const _, data.len() - sent);
+            if n <= 0 {
+                libc::close(fd);
+                return None;
+            }
+            sent += n as usize;
+        }
+
+        let mut len_buf = [0u8; 4];
+        if libc::recv(fd, len_buf.as_mut_ptr() as *mut _, 4, libc::MSG_WAITALL) != 4 {
+            libc::close(fd);
+            return None;
+        }
+        let resp_len = u32::from_be_bytes(len_buf) as usize;
+        if resp_len == 0 || resp_len > 1024 * 1024 {
+            libc::close(fd);
+            return None;
+        }
+        let mut buf = vec![0u8; resp_len];
+        let mut got = 0usize;
+        while got < resp_len {
+            let n = libc::recv(fd, buf.as_mut_ptr().add(got) as *mut _, resp_len - got, 0);
+            if n <= 0 {
+                break;
+            }
+            got += n as usize;
+        }
+        libc::close(fd);
+
+        let raw = String::from_utf8_lossy(&buf[..got]).to_string();
+        let resp: Value = serde_json::from_str(&raw).ok()?;
+        resp.get("result").cloned()
+    }
+}
 
 fn ipc_send_prompt(session_id: &str, prompt: &str) -> Result<String, String> {
     unsafe {

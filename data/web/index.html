@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TizenClaw Dashboard</title>
   <meta name="description" content="TizenClaw AI Agent System Dashboard">
-  <link rel="stylesheet" href="/style.css?v=20260405b">
+  <link rel="stylesheet" href="/style.css?v=20260405d">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
@@ -15,106 +15,234 @@
 
 <body>
   <div class="app">
+    <!-- Sidebar -->
     <nav class="sidebar" id="sidebar">
       <div class="sidebar-header">
-        <h1 class="logo">
+        <div class="logo-wrap">
           <img src="/img/tizenclaw.jpg" alt="TizenClaw" class="logo-img">
-          TizenClaw
-        </h1>
-        <span class="version">v1.0.0</span>
+          <div class="logo-text">
+            <span class="logo-name">TizenClaw</span>
+            <span class="version">v1.0.0</span>
+          </div>
+        </div>
       </div>
+
       <ul class="nav-items">
         <li class="nav-item active" data-page="dashboard" id="nav-dashboard">
-          <span class="nav-icon">📊</span>
-          Dashboard
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          <span>Dashboard</span>
         </li>
         <li class="nav-item" data-page="sessions" id="nav-sessions">
-          <span class="nav-icon">💬</span>
-          Sessions
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          <span>Sessions</span>
         </li>
         <li class="nav-item" data-page="tasks" id="nav-tasks">
-          <span class="nav-icon">📋</span>
-          Tasks
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          <span>Tasks</span>
         </li>
         <li class="nav-item" data-page="logs" id="nav-logs">
-          <span class="nav-icon">📜</span>
-          Logs
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          <span>Logs</span>
         </li>
         <li class="nav-item" data-page="chat" id="nav-chat">
-          <span class="nav-icon">🤖</span>
-          Chat
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg>
+          <span>Chat</span>
         </li>
         <li class="nav-item" data-page="ota" id="nav-ota">
-          <span class="nav-icon">🔄</span>
-          OTA Updates
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+          <span>OTA Updates</span>
         </li>
         <li class="nav-divider"></li>
         <li class="nav-item" data-page="admin" id="nav-admin">
-          <span class="nav-icon">⚙️</span>
-          Admin
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M12 14c-4.418 0-8 1.79-8 4v2h16v-2c0-2.21-3.582-4-8-4z"/></svg>
+          <span>Admin</span>
         </li>
       </ul>
+
+      <div class="sidebar-footer">
+        <div class="agent-status">
+          <span class="status-dot" id="status-dot"></span>
+          <span class="status-label" id="status-label">Connecting...</span>
+        </div>
+      </div>
     </nav>
 
+    <!-- Main Content -->
     <main class="content" id="content">
+
       <!-- Dashboard Page -->
       <section class="page active" id="page-dashboard">
-        <h2 class="page-title">Dashboard</h2>
-        <div class="stats-grid" id="stats-grid">
+        <div class="page-header">
+          <h2 class="page-title">Dashboard</h2>
+          <span class="refresh-hint">Auto-refresh: 5s</span>
+        </div>
+
+        <!-- Primary Stats -->
+        <div class="stats-grid stats-grid-4" id="stats-grid">
           <div class="stat-card">
-            <div class="stat-label">Status</div>
-            <div class="stat-value" id="stat-status">—</div>
+            <div class="stat-icon stat-icon--green">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Agent Status</div>
+              <div class="stat-value stat-value--md" id="stat-status">—</div>
+            </div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Uptime</div>
-            <div class="stat-value" id="stat-uptime">—</div>
+            <div class="stat-icon stat-icon--blue">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Uptime</div>
+              <div class="stat-value stat-value--md" id="stat-uptime">—</div>
+            </div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Sessions</div>
-            <div class="stat-value" id="stat-sessions">—</div>
+            <div class="stat-icon stat-icon--purple">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Sessions</div>
+              <div class="stat-value" id="stat-sessions">—</div>
+            </div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Tasks</div>
-            <div class="stat-value" id="stat-tasks">—</div>
+            <div class="stat-icon stat-icon--teal">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Tasks</div>
+              <div class="stat-value" id="stat-tasks">—</div>
+            </div>
           </div>
         </div>
-        <h3 class="section-title">System Health</h3>
-        <div class="stats-grid" id="health-grid">
-          <div class="stat-card">
-            <div class="stat-label">Memory (RSS)</div>
-            <div class="stat-value" id="stat-memory">—</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">CPU Load (1m)</div>
-            <div class="stat-value" id="stat-cpu">—</div>
-          </div>
 
+        <!-- LLM Usage -->
+        <h3 class="section-title">
+          LLM Usage
+          <span class="section-badge" id="usage-source-badge"></span>
+        </h3>
+        <div class="stats-grid stats-grid-3">
           <div class="stat-card">
-            <div class="stat-label">Errors</div>
-            <div class="stat-value stat-error" id="stat-errors">—</div>
+            <div class="stat-icon stat-icon--indigo">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">LLM Calls (today)</div>
+              <div class="stat-value" id="stat-llm">—</div>
+            </div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">LLM Calls</div>
-            <div class="stat-value" id="stat-llm">—</div>
+            <div class="stat-icon stat-icon--amber">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Tool Calls</div>
+              <div class="stat-value" id="stat-tools">—</div>
+            </div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Tool Calls</div>
-            <div class="stat-value" id="stat-tools">—</div>
+            <div class="stat-icon stat-icon--red">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Errors</div>
+              <div class="stat-value stat-error" id="stat-errors">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Token Usage -->
+        <h3 class="section-title">
+          Token Usage
+          <span class="section-sub">(today, all sessions)</span>
+        </h3>
+        <div class="stats-grid stats-grid-4">
+          <div class="stat-card">
+            <div class="stat-icon stat-icon--violet">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Prompt Tokens</div>
+              <div class="stat-value" id="stat-prompt-tokens">—</div>
+            </div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Threads</div>
-            <div class="stat-value" id="stat-threads">—</div>
+            <div class="stat-icon stat-icon--cyan">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Completion Tokens</div>
+              <div class="stat-value" id="stat-completion-tokens">—</div>
+            </div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">PID</div>
-            <div class="stat-value" id="stat-pid">—</div>
+            <div class="stat-icon stat-icon--green">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Cache Read</div>
+              <div class="stat-value" id="stat-cache-read">—</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon stat-icon--orange">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 9v4a2 2 0 01-2 2H5a2 2 0 01-2-2V9"/><polyline points="7 14 12 9 17 14"/><line x1="12" y1="9" x2="12" y2="21"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Cache Write</div>
+              <div class="stat-value" id="stat-cache-write">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- System Health -->
+        <h3 class="section-title">System Health</h3>
+        <div class="stats-grid stats-grid-4" id="health-grid">
+          <div class="stat-card">
+            <div class="stat-icon stat-icon--blue">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M9 9h1v6H9zM12 7h1v8h-1zM15 11h1v4h-1z"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Memory (RSS)</div>
+              <div class="stat-value" id="stat-memory">—</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon stat-icon--purple">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">CPU Load (1m)</div>
+              <div class="stat-value" id="stat-cpu">—</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon stat-icon--teal">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Threads</div>
+              <div class="stat-value" id="stat-threads">—</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon stat-icon--slate">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">PID</div>
+              <div class="stat-value" id="stat-pid">—</div>
+            </div>
           </div>
         </div>
       </section>
 
       <!-- Sessions Page -->
       <section class="page" id="page-sessions">
-        <h2 class="page-title">Sessions</h2>
+        <div class="page-header">
+          <h2 class="page-title">Sessions</h2>
+        </div>
         <div class="date-nav" id="session-date-nav"></div>
         <div class="card-list" id="session-list">
           <p class="empty-state">Loading...</p>
@@ -128,10 +256,11 @@
         </div>
       </section>
 
+      <!-- Tasks Page -->
       <section class="page" id="page-tasks">
-        <h2 class="page-title">
-          Scheduled Tasks
-        </h2>
+        <div class="page-header">
+          <h2 class="page-title">Scheduled Tasks</h2>
+        </div>
         <div class="date-nav" id="task-date-nav"></div>
         <div class="card-list" id="task-list">
           <p class="empty-state">Loading...</p>
@@ -145,8 +274,11 @@
         </div>
       </section>
 
+      <!-- Logs Page -->
       <section class="page" id="page-logs">
-        <h2 class="page-title">Audit Logs</h2>
+        <div class="page-header">
+          <h2 class="page-title">Audit Logs</h2>
+        </div>
         <div class="date-nav" id="log-date-nav"></div>
         <div class="log-container" id="log-view">
           <pre class="log-content" id="log-content">Loading...</pre>
@@ -155,11 +287,16 @@
 
       <!-- Chat Page -->
       <section class="page" id="page-chat">
-        <h2 class="page-title">Chat</h2>
+        <div class="page-header">
+          <h2 class="page-title">Chat</h2>
+        </div>
         <div class="chat-container">
           <aside class="chat-sidebar">
             <div class="chat-sidebar-header">
-              <button id="chat-new-session" class="btn-outline btn-full">새 대화</button>
+              <button id="chat-new-session" class="btn-primary btn-full">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                새 대화
+              </button>
             </div>
             <div class="chat-bulk-actions">
               <button id="chat-select-all" class="btn-outline">전체 선택</button>
@@ -174,13 +311,15 @@
             <div class="chat-session-meta" id="chat-session-meta">새 대화를 시작해 보세요.</div>
             <div class="chat-messages" id="chat-messages">
               <div class="chat-welcome">
-                Type a message to start chatting
-                with TizenClaw.
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="36" height="36"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg>
+                <p>TizenClaw에게 메시지를 보내보세요.</p>
               </div>
             </div>
             <div class="chat-input-area">
-              <textarea id="chat-input" placeholder="Type your message..." rows="2"></textarea>
-              <button id="chat-send" class="btn-send">Send</button>
+              <textarea id="chat-input" placeholder="메시지를 입력하세요..." rows="2"></textarea>
+              <button id="chat-send" class="btn-send">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </button>
             </div>
           </div>
         </div>
@@ -188,9 +327,10 @@
 
       <!-- Admin Page -->
       <section class="page" id="page-admin">
-        <h2 class="page-title">Admin</h2>
+        <div class="page-header">
+          <h2 class="page-title">Admin</h2>
+        </div>
 
-        <!-- Login Form (shown when not authed) -->
         <div id="admin-login" class="admin-login">
           <div class="login-card">
             <img src="/img/tizenclaw.jpg" alt="TizenClaw" class="login-logo">
@@ -198,72 +338,65 @@
             <div class="form-group">
               <input type="password" id="admin-password" placeholder="Password" autocomplete="current-password">
             </div>
-            <button id="admin-login-btn" class="btn-send btn-full">
-              Login
-            </button>
+            <button id="admin-login-btn" class="btn-primary btn-full">Login</button>
             <p class="login-error" id="login-error"></p>
           </div>
         </div>
 
-        <!-- Admin Panel (shown when authed) -->
         <div id="admin-panel" class="admin-panel" style="display:none">
           <div class="admin-toolbar">
             <div class="admin-toolbar-left">
               <span class="admin-badge">
-                🔐 Authenticated
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                Authenticated
               </span>
             </div>
             <div class="admin-toolbar-right">
-              <button id="admin-change-pw-btn" class="btn-outline">
-                Change Password
-              </button>
-              <button id="admin-logout-btn" class="btn-outline btn-danger-outline">
-                Logout
-              </button>
+              <button id="admin-change-pw-btn" class="btn-outline">Change Password</button>
+              <button id="admin-logout-btn" class="btn-outline btn-danger-outline">Logout</button>
             </div>
           </div>
 
-          <!-- Password Change (hidden) -->
           <div id="pw-change-form" class="pw-change-form" style="display:none">
             <div class="form-row">
               <input type="password" id="pw-current" placeholder="Current password">
               <input type="password" id="pw-new" placeholder="New password">
-              <button id="pw-save-btn" class="btn-send">Save</button>
+              <button id="pw-save-btn" class="btn-primary">Save</button>
               <button id="pw-cancel-btn" class="btn-outline">Cancel</button>
             </div>
             <p class="pw-change-msg" id="pw-change-msg"></p>
           </div>
 
-          <!-- Config Cards -->
           <div class="config-list" id="config-list">
-            <p class="empty-state">
-              Loading configurations...
-            </p>
+            <p class="empty-state">Loading configurations...</p>
           </div>
         </div>
       </section>
 
       <!-- OTA Updates Page -->
       <section class="page" id="page-ota">
-        <h2 class="page-title">OTA Updates</h2>
+        <div class="page-header">
+          <h2 class="page-title">OTA Updates</h2>
+        </div>
         <div class="ota-toolbar">
-          <button id="ota-check-btn"
-            class="btn-send">
+          <button id="ota-check-btn" class="btn-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
             Check for Updates
           </button>
-          <span class="ota-status"
-            id="ota-status"></span>
+          <span class="ota-status" id="ota-status"></span>
         </div>
         <div class="card-list" id="ota-list">
-          <p class="empty-state">
-            Click "Check for Updates" to scan
-            for available skill updates.
-          </p>
+          <p class="empty-state">"Check for Updates"를 클릭하여 사용 가능한 스킬 업데이트를 확인하세요.</p>
         </div>
       </section>
+
     </main>
   </div>
-  <script src="/app.js?v=20260405b"></script>
+
+  <!-- Toast container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="/app.js?v=20260405d"></script>
 </body>
 
 </html>

@@ -19,12 +19,19 @@
         document.querySelectorAll('.nav-item');
     const pages =
         document.querySelectorAll('.page');
+    let metricsInterval = null;
 
     function navigateTo(page) {
         navItems.forEach(n =>
             n.classList.remove('active'));
         pages.forEach(p =>
             p.classList.remove('active'));
+
+        // Stop dashboard auto-refresh when leaving
+        if (page !== 'dashboard' && metricsInterval) {
+            clearInterval(metricsInterval);
+            metricsInterval = null;
+        }
 
         const navEl =
             document.getElementById('nav-' + page);
@@ -318,71 +325,109 @@
     }
 
     // --- Dashboard ---
-    let metricsInterval = null;
-
     async function loadDashboard() {
-        // Clear previous interval
         if (metricsInterval)
             clearInterval(metricsInterval);
-
         await refreshMetrics();
+        metricsInterval = setInterval(refreshMetrics, 5000);
+    }
 
-        // Auto-refresh every 5 seconds
-        metricsInterval = setInterval(
-            refreshMetrics, 5000);
+    function fmtTokens(n) {
+        if (n == null) return '—';
+        if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+        if (n >= 1000)    return (n / 1000).toFixed(1) + 'K';
+        return String(n);
     }
 
     async function refreshMetrics() {
-        const m = await apiFetch('metrics');
+        const [m, sessions, tasks] = await Promise.all([
+            apiFetch('metrics'),
+            apiFetch('sessions'),
+            apiFetch('tasks'),
+        ]);
+
+        const s = id => document.getElementById(id);
+
         if (m) {
-            const s = id =>
-                document.getElementById(id);
-            s('stat-status').textContent =
-                m.status || '—';
-            s('stat-uptime').textContent =
-                (m.uptime && m.uptime.formatted)
-                    || '—';
-            s('stat-memory').textContent =
-                (m.memory && m.memory.vm_rss_kb)
-                    ? (m.memory.vm_rss_kb /
-                        1024).toFixed(1) + ' MB'
-                    : '—';
-            s('stat-cpu').textContent =
-                (m.cpu && m.cpu.load_1m != null)
-                    ? m.cpu.load_1m.toFixed(2)
-                    : '—';
-            s('stat-errors').textContent =
-                (m.counters &&
-                    m.counters.errors != null)
-                    ? m.counters.errors : '—';
-            s('stat-llm').textContent =
-                (m.counters &&
-                    m.counters.llm_calls != null)
-                    ? m.counters.llm_calls : '—';
-            s('stat-tools').textContent =
-                (m.counters &&
-                    m.counters.tool_calls != null)
-                    ? m.counters.tool_calls : '—';
-            s('stat-threads').textContent =
-                m.threads || '—';
-            s('stat-pid').textContent =
-                m.pid || '—';
+            const connected = m.agent_connected === true;
+
+            // Sidebar agent status indicator
+            const dot = s('status-dot');
+            const label = s('status-label');
+            if (dot)   dot.className = 'status-dot ' + (connected ? 'running' : 'disconnected');
+            if (label) label.textContent = connected ? 'Agent running' : 'Agent offline';
+
+            // LLM usage section badge
+            const badge = s('usage-source-badge');
+            if (badge) {
+                badge.textContent = connected ? 'live' : 'offline';
+                badge.style.background = connected
+                    ? 'rgba(5,150,105,0.1)' : 'rgba(220,38,38,0.08)';
+                badge.style.color = connected ? 'var(--success)' : 'var(--danger)';
+                badge.style.borderColor = connected
+                    ? 'rgba(5,150,105,0.15)' : 'rgba(220,38,38,0.15)';
+            }
+
+            // Primary stats
+            if (s('stat-status')) {
+                const txt = m.status || '—';
+                s('stat-status').textContent = txt;
+                const icon = s('stat-status').closest('.stat-card')
+                    && s('stat-status').closest('.stat-card').querySelector('.stat-icon');
+                if (icon) {
+                    icon.className = 'stat-icon ' +
+                        (txt === 'running' ? 'stat-icon--green' :
+                         txt === 'disconnected' ? 'stat-icon--red' : 'stat-icon--amber');
+                }
+            }
+            s('stat-uptime') &&
+                (s('stat-uptime').textContent =
+                    (m.uptime && m.uptime.formatted) || '—');
+
+            // System health
+            s('stat-memory') &&
+                (s('stat-memory').textContent =
+                    (m.memory && m.memory.vm_rss_kb)
+                        ? (m.memory.vm_rss_kb / 1024).toFixed(1) + ' MB' : '—');
+            s('stat-cpu') &&
+                (s('stat-cpu').textContent =
+                    (m.cpu && m.cpu.load_1m != null)
+                        ? m.cpu.load_1m.toFixed(2) : '—');
+            s('stat-threads') && (s('stat-threads').textContent = m.threads || '—');
+            s('stat-pid')     && (s('stat-pid').textContent = m.pid || '—');
+
+            // LLM counters
+            s('stat-errors') &&
+                (s('stat-errors').textContent =
+                    (m.counters && m.counters.errors != null)
+                        ? m.counters.errors : '—');
+            s('stat-llm') &&
+                (s('stat-llm').textContent =
+                    (m.counters && m.counters.llm_calls != null)
+                        ? m.counters.llm_calls : (connected ? '0' : '—'));
+            s('stat-tools') &&
+                (s('stat-tools').textContent =
+                    (m.counters && m.counters.tool_calls != null)
+                        ? m.counters.tool_calls : '—');
+
+            // Token usage (new)
+            if (m.tokens) {
+                s('stat-prompt-tokens')     && (s('stat-prompt-tokens').textContent     = fmtTokens(m.tokens.prompt));
+                s('stat-completion-tokens') && (s('stat-completion-tokens').textContent = fmtTokens(m.tokens.completion));
+                s('stat-cache-read')        && (s('stat-cache-read').textContent        = fmtTokens(m.tokens.cache_read));
+                s('stat-cache-write')       && (s('stat-cache-write').textContent       = fmtTokens(m.tokens.cache_write));
+            } else {
+                ['stat-prompt-tokens','stat-completion-tokens',
+                 'stat-cache-read','stat-cache-write'].forEach(id => {
+                    s(id) && (s(id).textContent = connected ? '0' : '—');
+                });
+            }
         }
 
-        const sessions =
-            await apiFetch('sessions');
-        if (sessions) {
-            document.getElementById(
-                'stat-sessions').textContent =
-                sessions.length;
-        }
-
-        const tasks = await apiFetch('tasks');
-        if (tasks) {
-            document.getElementById(
-                'stat-tasks').textContent =
-                tasks.length;
-        }
+        if (sessions && s('stat-sessions'))
+            s('stat-sessions').textContent = sessions.length;
+        if (tasks && s('stat-tasks'))
+            s('stat-tasks').textContent = tasks.length;
     }
 
     // --- Sessions ---
@@ -1504,6 +1549,26 @@
         div.textContent = s;
         return div.innerHTML;
     }
+
+    // --- Toast Notifications ---
+    function showToast(msg, type, durationMs) {
+        durationMs = durationMs || 3000;
+        const container =
+            document.getElementById('toast-container');
+        if (!container) return;
+        const el = document.createElement('div');
+        el.className = 'toast' + (type ? ' ' + type : '');
+        el.textContent = msg;
+        container.appendChild(el);
+        setTimeout(function () {
+            el.style.animation =
+                'toastOut 0.22s ease forwards';
+            setTimeout(function () {
+                el.remove();
+            }, 230);
+        }, durationMs);
+    }
+    window._showToast = showToast;
 
     // --- Initial Load ---
     formatChatSessionMeta();
