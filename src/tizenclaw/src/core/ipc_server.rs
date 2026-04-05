@@ -10,6 +10,7 @@ use crate::core::registration_store::RegistrationKind;
 
 const MAX_CONCURRENT_CLIENTS: usize = 8;
 const MAX_PAYLOAD_SIZE: usize = 10 * 1024 * 1024; // 10MB
+static SESSION_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 pub struct IpcServer {
     running: Arc<AtomicBool>,
@@ -48,6 +49,20 @@ impl IpcServer {
 
     pub fn stop(&self) {
         self.running.store(false, Ordering::SeqCst);
+    }
+
+    fn resolve_session_id(requested: Option<&str>, prefix: &str) -> String {
+        let requested = requested.unwrap_or("").trim();
+        if !requested.is_empty() {
+            return requested.to_string();
+        }
+
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let seq = SESSION_COUNTER.fetch_add(1, Ordering::Relaxed);
+        format!("{}_{}_{}", prefix, ts, seq)
     }
 
     fn server_loop(
@@ -211,7 +226,7 @@ impl IpcServer {
 
         let result: Value = match method {
             "prompt" => {
-                let session_id = params["session_id"].as_str().unwrap_or("default");
+                let session_id = Self::resolve_session_id(params["session_id"].as_str(), "ipc");
                 let text = params["text"].as_str().unwrap_or("");
                 let stream = params
                     .get("stream")
@@ -243,14 +258,14 @@ impl IpcServer {
                     let on_chunk = move |chunk: &str| {
                         let _ = tx.send(chunk.to_string());
                     };
-                    let fut = agent.process_prompt(session_id, text, Some(&on_chunk));
+                    let fut = agent.process_prompt(&session_id, text, Some(&on_chunk));
                     tokio::task::block_in_place(|| rt_handle.block_on(fut))
                 } else {
-                    let fut = agent.process_prompt(session_id, text, None);
+                    let fut = agent.process_prompt(&session_id, text, None);
                     tokio::task::block_in_place(|| rt_handle.block_on(fut))
                 };
 
-                json!({"text": result})
+                json!({"text": result, "session_id": session_id})
             }
 
             "get_usage" => {

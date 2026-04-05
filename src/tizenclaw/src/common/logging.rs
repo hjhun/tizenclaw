@@ -7,6 +7,7 @@
 //!   log::debug!("message {}", value);
 //!   log::error!("something failed: {}", err);
 
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, Once};
 
 const TAG: &str = "TIZENCLAW";
@@ -113,16 +114,16 @@ impl log::Log for PlatformLogBridge {
 static FILE_LOG: Mutex<Option<FileLogBackend>> = Mutex::new(None);
 
 pub struct FileLogBackend {
-    path: String,
+    base_dir: PathBuf,
     max_size: usize,
 }
 
 impl FileLogBackend {
     /// Initialize file-based log backend.
-    pub fn init(path: &str, max_size: usize) {
+    pub fn init(base_dir: &Path, max_size: usize) {
         if let Ok(mut guard) = FILE_LOG.lock() {
             *guard = Some(FileLogBackend {
-                path: path.to_string(),
+                base_dir: base_dir.to_path_buf(),
                 max_size,
             });
         }
@@ -158,24 +159,73 @@ impl FileLogBackend {
                 );
 
                 let line = format!("{}|{}|[{}] {}\n", ts, pid, level_str, msg);
+                let path = backend.runtime_log_path();
+
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
 
                 let _ = std::fs::OpenOptions::new()
                     .create(true)
                     .append(true)
-                    .open(&backend.path)
+                    .open(&path)
                     .and_then(|mut f| {
                         use std::io::Write;
                         f.write_all(line.as_bytes())
                     });
-                // Rotate if needed
-                if let Ok(meta) = std::fs::metadata(&backend.path) {
+
+                if let Ok(meta) = std::fs::metadata(&path) {
                     if meta.len() as usize > backend.max_size {
-                        let rotated = format!("{}.old", backend.path);
-                        let _ = std::fs::rename(&backend.path, &rotated);
+                        let rotated = path.with_extension("log.old");
+                        let _ = std::fs::rename(&path, &rotated);
                     }
                 }
             }
         }
+    }
+
+    fn runtime_log_path(&self) -> PathBuf {
+        let now = local_time_parts();
+        self.base_dir
+            .join(format!("{:04}", now.year))
+            .join(format!("{:02}", now.month))
+            .join(format!("{:02}", now.day))
+            .join(format!("{}.log", now.weekday_short))
+    }
+}
+
+struct LocalTimeParts {
+    year: i32,
+    month: u32,
+    day: u32,
+    weekday_short: &'static str,
+}
+
+fn local_time_parts() -> LocalTimeParts {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as libc::time_t;
+    let mut tm_buf: libc::tm = unsafe { std::mem::zeroed() };
+    unsafe {
+        libc::localtime_r(&now, &mut tm_buf);
+    }
+
+    let weekday_short = match tm_buf.tm_wday {
+        0 => "Sun",
+        1 => "Mon",
+        2 => "Tue",
+        3 => "Wed",
+        4 => "Thu",
+        5 => "Fri",
+        _ => "Sat",
+    };
+
+    LocalTimeParts {
+        year: tm_buf.tm_year + 1900,
+        month: (tm_buf.tm_mon + 1) as u32,
+        day: tm_buf.tm_mday as u32,
+        weekday_short,
     }
 }
 
@@ -186,13 +236,24 @@ mod tests {
 
     #[tokio::test]
     async fn test_file_log_format_contains_pid() {
-        let path = "test_tizenclaw.log";
-        let _ = fs::remove_file(path);
+        let dir = std::env::temp_dir().join(format!(
+            "tizenclaw-log-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&dir);
 
-        FileLogBackend::init(path, 1024);
+        FileLogBackend::init(&dir, 1024);
         FileLogBackend::write("test payload", libtizenclaw_core::framework::LogLevel::Info);
 
-        let content = fs::read_to_string(path).unwrap_or_default();
+        let path = FileLogBackend {
+            base_dir: dir.clone(),
+            max_size: 1024,
+        }
+        .runtime_log_path();
+        let content = fs::read_to_string(&path).unwrap_or_default();
         let pid = std::process::id();
         assert!(
             content.contains(&format!("|{}|", pid)),
@@ -207,6 +268,6 @@ mod tests {
             "Log does not contain payload"
         );
 
-        let _ = fs::remove_file(path);
+        let _ = fs::remove_dir_all(dir);
     }
 }

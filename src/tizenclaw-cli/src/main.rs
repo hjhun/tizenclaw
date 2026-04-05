@@ -11,6 +11,9 @@
 
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static CLI_SESSION_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 /// Connect to the daemon's abstract Unix socket.
 fn connect_daemon() -> Result<i32, String> {
@@ -139,14 +142,27 @@ fn send_jsonrpc(method: &str, params: Value) -> Result<(Value, bool), String> {
     }
 }
 
+fn generate_session_id() -> String {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let seq = CLI_SESSION_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("cli_{}_{}", ts, seq)
+}
+
 /// Send a prompt and print the response.
-fn send_prompt(session_id: &str, prompt: &str, stream: bool) -> Result<(), String> {
+fn send_prompt(session_id: &str, prompt: &str, stream: bool) -> Result<String, String> {
     let (resp, stream_received) = send_jsonrpc(
         "prompt",
         json!({"session_id": session_id, "text": prompt, "stream": stream}),
     )?;
+    let mut resolved_session_id = session_id.to_string();
 
     if let Some(result) = resp.get("result") {
+        if let Some(actual_session_id) = result.get("session_id").and_then(|v| v.as_str()) {
+            resolved_session_id = actual_session_id.to_string();
+        }
         if let Some(text) = result.get("text").and_then(|v| v.as_str()) {
             if !stream_received {
                 println!("{}", text);
@@ -166,7 +182,7 @@ fn send_prompt(session_id: &str, prompt: &str, stream: bool) -> Result<(), Strin
             .unwrap_or("Unknown error");
         eprintln!("Error: {}", msg);
     }
-    Ok(())
+    Ok(resolved_session_id)
 }
 
 /// Handle `tizenclaw-cli dashboard <action>`.
@@ -244,8 +260,11 @@ fn cmd_dashboard(action: &str) {
 }
 
 /// Interactive REPL mode.
-fn interactive_mode(session_id: &str, stream: bool) {
-    println!("TizenClaw Interactive CLI (session: {})", session_id);
+fn interactive_mode(explicit_session_id: Option<&str>, stream: bool) {
+    match explicit_session_id {
+        Some(session_id) => println!("TizenClaw Interactive CLI (session: {})", session_id),
+        None => println!("TizenClaw Interactive CLI (new session per prompt)"),
+    }
     println!("Type 'quit' or 'exit' to leave. Type '/help' for commands.\n");
 
     let stdin = io::stdin();
@@ -270,7 +289,7 @@ fn interactive_mode(session_id: &str, stream: bool) {
                 println!("  /dashboard start  Start web dashboard");
                 println!("  /dashboard stop   Stop web dashboard");
                 println!("  /dashboard status Show dashboard status");
-                println!("  /session <id>     Switch session");
+                println!("  -s <id>           Re-run CLI with a fixed session");
                 println!("  quit, exit        Exit");
                 println!("  <text>            Send prompt");
             }
@@ -286,7 +305,10 @@ fn interactive_mode(session_id: &str, stream: bool) {
                 cmd_dashboard(action);
             }
             prompt => {
-                if let Err(e) = send_prompt(session_id, prompt, stream) {
+                let session_id = explicit_session_id
+                    .map(ToOwned::to_owned)
+                    .unwrap_or_else(generate_session_id);
+                if let Err(e) = send_prompt(&session_id, prompt, stream) {
                     eprintln!("Error: {}", e);
                 }
             }
@@ -451,7 +473,7 @@ fn print_usage() {
     eprintln!("Usage:");
     eprintln!("  tizenclaw-cli [options] [prompt]\n");
     eprintln!("Options:");
-    eprintln!("  -s <id>           Session ID (default: cli_<timestamp>)");
+    eprintln!("  -s <id>           Reuse a fixed session ID");
     eprintln!("  --no-stream       Disable real-time streaming");
     eprintln!("  --usage           Show token usage");
     eprintln!("  -h, --help        Show this help\n");
@@ -550,11 +572,8 @@ fn cmd_list_registrations() {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let mut session_id = format!("cli_{}", ts);
+    let mut session_id: Option<String> = None;
+    let mut explicit_session_id = false;
     let mut stream = true;
     let mut prompt_parts: Vec<String> = vec![];
     let mut i = 1;
@@ -567,7 +586,8 @@ fn main() {
             }
             "-s" if i + 1 < args.len() => {
                 i += 1;
-                session_id = args[i].clone();
+                session_id = Some(args[i].clone());
+                explicit_session_id = true;
             }
             "--no-stream" => stream = false,
             "--usage" => {
@@ -626,11 +646,17 @@ fn main() {
     let prompt = prompt_parts.join(" ");
 
     if !prompt.is_empty() {
-        if let Err(e) = send_prompt(&session_id, &prompt, stream) {
+        let resolved_session_id = session_id.unwrap_or_else(generate_session_id);
+        if let Err(e) = send_prompt(&resolved_session_id, &prompt, stream) {
             eprintln!("{}", e);
             std::process::exit(1);
         }
     } else {
-        interactive_mode(&session_id, stream);
+        let explicit = if explicit_session_id {
+            session_id.as_deref()
+        } else {
+            None
+        };
+        interactive_mode(explicit, stream);
     }
 }

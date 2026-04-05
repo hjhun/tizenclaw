@@ -18,6 +18,35 @@ fn sanitize_filename(s: &str) -> String {
         .collect()
 }
 
+fn normalize_markdown_body(content: &str) -> Option<String> {
+    let mut lines = Vec::new();
+    let mut blank_run = 0usize;
+
+    for raw_line in content.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            blank_run += 1;
+            if !lines.is_empty() && blank_run == 1 {
+                lines.push(String::new());
+            }
+            continue;
+        }
+
+        blank_run = 0;
+        lines.push(line.to_string());
+    }
+
+    while matches!(lines.last(), Some(line) if line.is_empty()) {
+        lines.pop();
+    }
+
+    if lines.is_empty() {
+        None
+    } else {
+        Some(lines.join("\n"))
+    }
+}
+
 #[derive(Clone)]
 pub struct MemoryStore {
     base_dir: PathBuf,
@@ -402,7 +431,12 @@ impl MemoryStore {
 
         let content = format!(
             "---\nkey: {}\ncategory: {}\nupdated_at: {}\n---\n\n## {} (Recorded at: {})\n{}\n",
-            key, category, updated_at, key, updated_at, value
+            key,
+            category,
+            updated_at,
+            key,
+            updated_at,
+            normalize_markdown_body(value).unwrap_or_default()
         );
 
         let _ = fs::write(filepath, content);
@@ -478,6 +512,12 @@ impl MemoryStore {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn normalize_markdown_body_collapses_extra_blank_lines() {
+        let normalized = normalize_markdown_body("  alpha  \n\n\n beta ");
+        assert_eq!(normalized.as_deref(), Some("alpha\n\nbeta"));
+    }
 
     #[test]
     fn test_memory_store_subdirectories() {

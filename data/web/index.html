@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TizenClaw Dashboard</title>
   <meta name="description" content="TizenClaw AI Agent System Dashboard">
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/style.css?v=20260405b">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
@@ -157,21 +157,31 @@
       <section class="page" id="page-chat">
         <h2 class="page-title">Chat</h2>
         <div class="chat-container">
-          <div class="chat-session-select">
-            <label for="chat-session">
-              Session:
-            </label>
-            <input type="text" id="chat-session" value="web_dashboard" placeholder="session id">
-          </div>
-          <div class="chat-messages" id="chat-messages">
-            <div class="chat-welcome">
-              Type a message to start chatting
-              with TizenClaw.
+          <aside class="chat-sidebar">
+            <div class="chat-sidebar-header">
+              <button id="chat-new-session" class="btn-outline btn-full">새 대화</button>
             </div>
-          </div>
-          <div class="chat-input-area">
-            <textarea id="chat-input" placeholder="Type your message..." rows="2"></textarea>
-            <button id="chat-send" class="btn-send">Send</button>
+            <div class="chat-bulk-actions">
+              <button id="chat-select-all" class="btn-outline">전체 선택</button>
+              <button id="chat-delete-selected" class="btn-outline btn-danger-outline">선택 삭제</button>
+            </div>
+            <div class="chat-selection-meta" id="chat-selection-meta">선택된 세션 없음</div>
+            <div class="chat-session-list" id="chat-session-list">
+              <p class="empty-state">Loading...</p>
+            </div>
+          </aside>
+          <div class="chat-main">
+            <div class="chat-session-meta" id="chat-session-meta">새 대화를 시작해 보세요.</div>
+            <div class="chat-messages" id="chat-messages">
+              <div class="chat-welcome">
+                Type a message to start chatting
+                with TizenClaw.
+              </div>
+            </div>
+            <div class="chat-input-area">
+              <textarea id="chat-input" placeholder="Type your message..." rows="2"></textarea>
+              <button id="chat-send" class="btn-send">Send</button>
+            </div>
           </div>
         </div>
       </section>
@@ -253,7 +263,7 @@
       </section>
     </main>
   </div>
-  <script src="/app.js"></script>
+  <script src="/app.js?v=20260405b"></script>
 </body>
 
 </html>

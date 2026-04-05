@@ -60,6 +60,35 @@ pub struct SessionStore {
     lock: Arc<RwLock<()>>,
 }
 
+fn normalize_markdown_block(content: &str) -> Option<String> {
+    let mut lines = Vec::new();
+    let mut blank_run = 0usize;
+
+    for raw_line in content.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            blank_run += 1;
+            if !lines.is_empty() && blank_run == 1 {
+                lines.push(String::new());
+            }
+            continue;
+        }
+
+        blank_run = 0;
+        lines.push(line.to_string());
+    }
+
+    while matches!(lines.last(), Some(line) if line.is_empty()) {
+        lines.pop();
+    }
+
+    if lines.is_empty() {
+        None
+    } else {
+        Some(lines.join("\n"))
+    }
+}
+
 impl SessionStore {
     pub fn new(base_dir: &Path, db_path: &str) -> Result<Self, String> {
         let base_dir = base_dir.to_path_buf();
@@ -156,15 +185,14 @@ impl SessionStore {
 
     /// Append a message to today's session file.
     pub fn add_message(&self, session_id: &str, role: &str, content: &str) {
-        let trimmed = content.trim();
-        if trimmed.is_empty() {
+        let Some(normalized) = normalize_markdown_block(content) else {
             return;
-        }
+        };
         self.ensure_session(session_id);
         let path = self.session_file_today(session_id);
         let _g = self.lock.write().unwrap();
         if let Ok(mut file) = OpenOptions::new().append(true).open(&path) {
-            let block = format!("## {}\n{}\n\n", role, trimmed);
+            let block = format!("## {}\n{}\n\n", role, normalized);
             let _ = file.write_all(block.as_bytes());
         }
     }
@@ -241,11 +269,10 @@ impl SessionStore {
             messages.len()
         );
         for msg in messages {
-            let trimmed = msg.text.trim();
-            if trimmed.is_empty() {
+            let Some(normalized) = normalize_markdown_block(&msg.text) else {
                 continue;
-            }
-            content.push_str(&format!("## {}\n{}\n\n", msg.role, trimmed));
+            };
+            content.push_str(&format!("## {}\n{}\n\n", msg.role, normalized));
         }
 
         // Write temp → rename (atomic on POSIX/Tizen)
@@ -783,6 +810,12 @@ mod tests {
         assert_eq!(msgs.len(), 2);
         assert_eq!(msgs[0].role, "user");
         assert_eq!(msgs[0].text, "Hello");
+    }
+
+    #[test]
+    fn test_normalize_markdown_block_collapses_extra_blank_lines() {
+        let normalized = normalize_markdown_block("  hello  \n\n\n world  ");
+        assert_eq!(normalized.as_deref(), Some("hello\n\nworld"));
     }
 
     #[test]

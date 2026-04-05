@@ -1,6 +1,6 @@
 //! Task scheduler — manages recurring and one-shot scheduled agent tasks.
 
-use serde_json::{json, Value};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -118,6 +118,59 @@ impl TaskScheduler {
         }
     }
 
+    pub fn seed_default_tasks_if_empty(&self, dir_path: &str) -> usize {
+        let dir = Path::new(dir_path);
+        let _ = std::fs::create_dir_all(dir);
+
+        let has_existing_tasks = std::fs::read_dir(dir)
+            .ok()
+            .into_iter()
+            .flat_map(|entries| entries.filter_map(|entry| entry.ok()))
+            .any(|entry| {
+                entry
+                    .path()
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| ext == "md")
+                    .unwrap_or(false)
+            });
+
+        if has_existing_tasks {
+            return 0;
+        }
+
+        let today = local_date_string();
+        let defaults = [
+            (
+                format!("{}-daily-health-check.md", today),
+                format!(
+                    "---\nname: Daily health check\ninterval_secs: 3600\none_shot: false\nenabled: true\nsession_id: scheduler_health\n---\nCollect a short health summary for CPU, memory, and service status.\n"
+                ),
+            ),
+            (
+                format!("{}-memory-watch.md", today),
+                format!(
+                    "---\nname: Memory watch\ninterval_secs: 1800\none_shot: false\nenabled: true\nsession_id: scheduler_memory\n---\nCheck memory pressure and report if the daemon footprint grows unusually.\n"
+                ),
+            ),
+            (
+                format!("{}-log-rollup.md", today),
+                format!(
+                    "---\nname: Log rollup\ninterval_secs: 7200\none_shot: false\nenabled: true\nsession_id: scheduler_logs\n---\nReview recent runtime logs and prepare a concise operator summary.\n"
+                ),
+            ),
+        ];
+
+        let mut created = 0usize;
+        for (file_name, content) in defaults {
+            let path = dir.join(file_name);
+            if std::fs::write(&path, content).is_ok() {
+                created += 1;
+            }
+        }
+        created
+    }
+
     pub fn start(&self) -> Option<tokio::task::JoinHandle<()>> {
         if self.running.load(Ordering::SeqCst) {
             return None;
@@ -174,6 +227,24 @@ impl TaskScheduler {
     pub fn stop(&self) {
         self.running.store(false, Ordering::SeqCst);
     }
+}
+
+fn local_date_string() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as libc::time_t;
+    let mut tm_buf: libc::tm = unsafe { std::mem::zeroed() };
+    unsafe {
+        libc::localtime_r(&now, &mut tm_buf);
+    }
+
+    format!(
+        "{:04}-{:02}-{:02}",
+        tm_buf.tm_year + 1900,
+        tm_buf.tm_mon + 1,
+        tm_buf.tm_mday
+    )
 }
 
 #[cfg(test)]

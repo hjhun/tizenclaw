@@ -40,6 +40,35 @@ const CONTEXT_COMPACT_THRESHOLD: f32 = 0.90;
 const MAX_TOOL_RETRY: usize = 3;
 const MAX_PREFETCHED_SKILLS: usize = 3;
 
+fn normalize_text_block(text: &str) -> Option<String> {
+    let mut lines = Vec::new();
+    let mut blank_run = 0usize;
+
+    for raw_line in text.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            blank_run += 1;
+            if !lines.is_empty() && blank_run == 1 {
+                lines.push(String::new());
+            }
+            continue;
+        }
+
+        blank_run = 0;
+        lines.push(line.to_string());
+    }
+
+    while matches!(lines.last(), Some(line) if line.is_empty()) {
+        lines.pop();
+    }
+
+    if lines.is_empty() {
+        None
+    } else {
+        Some(lines.join("\n"))
+    }
+}
+
 fn utf8_safe_preview(text: &str, max_chars: usize) -> &str {
     if max_chars == 0 {
         return "";
@@ -52,17 +81,12 @@ fn utf8_safe_preview(text: &str, max_chars: usize) -> &str {
 }
 
 fn normalize_conversation_log_text(text: &str) -> Option<String> {
-    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if normalized.is_empty() {
-        None
-    } else {
-        Some(normalized)
-    }
+    normalize_text_block(text)
 }
 
 fn log_conversation(role: &str, text: &str) {
     if let Some(normalized) = normalize_conversation_log_text(text) {
-        log::info!("[Conversation][{}] {}", role, normalized);
+        log::info!("[Conversation][{}]\n{}", role, normalized);
     }
 }
 
@@ -101,6 +125,98 @@ fn sanitize_messages_for_transport(messages: Vec<LlmMessage>) -> Vec<LlmMessage>
         .into_iter()
         .filter_map(sanitize_message_for_transport)
         .collect()
+}
+
+fn estimate_text_tokens(text: &str) -> usize {
+    estimate_char_tokens(text.chars().count())
+}
+
+fn estimate_char_tokens(chars: usize) -> usize {
+    (chars.saturating_add(3)) / 4
+}
+
+fn tool_schema_char_count(tools: &[backend::LlmToolDecl]) -> usize {
+    tools
+        .iter()
+        .map(|tool| {
+            tool.name.len() + tool.description.len() + tool.parameters.to_string().chars().count()
+        })
+        .sum()
+}
+
+fn total_message_chars(messages: &[LlmMessage]) -> usize {
+    messages
+        .iter()
+        .map(|message| {
+            message.text.chars().count()
+                + message.reasoning_text.chars().count()
+                + message.tool_name.chars().count()
+                + message.tool_call_id.chars().count()
+                + message.tool_result.to_string().chars().count()
+                + message
+                    .tool_calls
+                    .iter()
+                    .map(|tool_call| {
+                        tool_call.id.chars().count()
+                            + tool_call.name.chars().count()
+                            + tool_call.args.to_string().chars().count()
+                    })
+                    .sum::<usize>()
+        })
+        .sum()
+}
+
+fn log_payload_breakdown(
+    session_id: &str,
+    prompt: &str,
+    history: &[crate::storage::session_store::SessionMessage],
+    prefetched_skill_context: Option<&str>,
+    dynamic_context: Option<&str>,
+    memory_context: Option<&str>,
+    system_prompt: &str,
+    tools: &[backend::LlmToolDecl],
+    messages: &[LlmMessage],
+    context_engine: &SizedContextEngine,
+) {
+    let history_chars: usize = history.iter().map(|msg| msg.text.chars().count()).sum();
+    let system_chars = system_prompt.chars().count();
+    let skill_chars = prefetched_skill_context
+        .map(|text| text.chars().count())
+        .unwrap_or(0);
+    let runtime_chars = dynamic_context
+        .map(|text| text.chars().count())
+        .unwrap_or(0);
+    let memory_chars = memory_context.map(|text| text.chars().count()).unwrap_or(0);
+    let tool_schema_chars = tool_schema_char_count(tools);
+    let message_chars = total_message_chars(messages);
+    let estimated_message_tokens = context_engine.estimate_tokens(messages);
+    let estimated_system_tokens = estimate_text_tokens(system_prompt);
+    let estimated_tool_schema_tokens = estimate_char_tokens(tool_schema_chars);
+
+    log::debug!(
+        "[PayloadBreakdown] session='{}'\n  prompt_chars={} (~{} tok)\n  history_msgs={} history_chars={} (~{} tok)\n  prefetched_skill_chars={} (~{} tok)\n  runtime_context_chars={} (~{} tok)\n  memory_context_chars={} (~{} tok)\n  system_prompt_chars={} (~{} tok)\n  tools={} tool_schema_chars={} (~{} tok)\n  transport_msgs={} transport_chars={} (~{} tok)\n  estimated_total_input_tokens~={}",
+        session_id,
+        prompt.chars().count(),
+        estimate_text_tokens(prompt),
+        history.len(),
+        history_chars,
+        estimate_char_tokens(history_chars),
+        skill_chars,
+        estimate_char_tokens(skill_chars),
+        runtime_chars,
+        estimate_char_tokens(runtime_chars),
+        memory_chars,
+        estimate_char_tokens(memory_chars),
+        system_chars,
+        estimated_system_tokens,
+        tools.len(),
+        tool_schema_chars,
+        estimated_tool_schema_tokens,
+        messages.len(),
+        message_chars,
+        estimated_message_tokens,
+        estimated_system_tokens + estimated_tool_schema_tokens + estimated_message_tokens
+    );
 }
 
 fn skill_relevance_score(prompt: &str, skill: &TextualSkill) -> usize {
@@ -1344,8 +1460,9 @@ impl AgentCore {
                 .map(|skill| skill.file_name.clone())
                 .collect(),
         );
-        if let Some(skill_context) = build_skill_prefetch_message(&prefetched_skills) {
-            inject_context_message(&mut messages, skill_context);
+        let skill_context = build_skill_prefetch_message(&prefetched_skills);
+        if let Some(skill_context) = skill_context.as_ref() {
+            inject_context_message(&mut messages, skill_context.clone());
         }
 
         // Get tool declarations
@@ -1418,11 +1535,12 @@ impl AgentCore {
             (system_prompt, dynamic_context)
         };
 
-        if let Some(dynamic_context) = dynamic_context {
-            inject_context_message(&mut messages, dynamic_context);
+        if let Some(dynamic_context) = dynamic_context.as_ref() {
+            inject_context_message(&mut messages, dynamic_context.clone());
         }
 
         // Load long term memory dynamically and inject into messages (preserves system_prompt cache)
+        let mut memory_context_for_log: Option<String> = None;
         if let Ok(ms) = self.memory_store.lock() {
             if let Some(store) = ms.as_ref() {
                 let mem_str = store.load_relevant_for_prompt(prompt, 5, 0.1);
@@ -1430,7 +1548,8 @@ impl AgentCore {
                     let memory_context = format!("## Context from Long-Term Memory\n<long_term_memory>\n{}\n</long_term_memory>", mem_str);
                     loop_state
                         .record_prefetch_memory(Some(utf8_safe_preview(&mem_str, 240).to_string()));
-                    inject_context_message(&mut messages, memory_context);
+                    inject_context_message(&mut messages, memory_context.clone());
+                    memory_context_for_log = Some(memory_context);
                 } else {
                     loop_state.record_prefetch_memory(None);
                 }
@@ -1476,6 +1595,19 @@ impl AgentCore {
         // ── Phase 3: Planning (Cognitive Plan-and-Solve & compaction) ────
         loop_state.transition(AgentPhase::Planning);
         let context_engine = SizedContextEngine::new().with_threshold(loop_state.compact_threshold);
+
+        log_payload_breakdown(
+            session_id,
+            prompt,
+            &history,
+            skill_context.as_deref(),
+            dynamic_context.as_deref(),
+            memory_context_for_log.as_deref(),
+            &system_prompt,
+            &tools,
+            &messages,
+            &context_engine,
+        );
 
         let mut matched_workflow_id = None;
         {
@@ -2541,12 +2673,15 @@ mod tests {
     }
 
     #[test]
-    fn normalize_conversation_log_text_collapses_multiline_whitespace() {
+    fn normalize_conversation_log_text_preserves_meaningful_line_breaks() {
         let text = "  첫 줄입니다.\n\n   결과만   알려줘.  ";
 
         let normalized = normalize_conversation_log_text(text);
 
-        assert_eq!(normalized.as_deref(), Some("첫 줄입니다. 결과만 알려줘."));
+        assert_eq!(
+            normalized.as_deref(),
+            Some("첫 줄입니다.\n\n결과만   알려줘.")
+        );
     }
 
     #[test]

@@ -10,15 +10,16 @@
 
 use axum::{
     extract::{Path as AxumPath, Query, State},
-    http::{header, HeaderMap, StatusCode},
-    response::Json,
+    http::{header, HeaderMap, HeaderValue, StatusCode},
+    middleware,
+    response::{Json, Response},
     routing::{get, post},
     Router,
 };
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -26,6 +27,22 @@ use tower_http::{
 };
 
 static RUNNING: AtomicBool = AtomicBool::new(true);
+static DASHBOARD_SESSION_COUNTER: AtomicUsize = AtomicUsize::new(1);
+
+async fn add_no_cache_headers(response: Response) -> Response {
+    let mut response = response;
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("no-store, no-cache, must-revalidate, max-age=0"),
+    );
+    response
+        .headers_mut()
+        .insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
+    response
+        .headers_mut()
+        .insert(header::EXPIRES, HeaderValue::from_static("0"));
+    response
+}
 
 extern "C" fn signal_handler(_: libc::c_int) {
     RUNNING.store(false, Ordering::SeqCst);
@@ -89,6 +106,42 @@ struct AppState {
     data_dir: PathBuf,
     admin_pw_hash: Arc<Mutex<String>>,
     active_tokens: Arc<Mutex<HashSet<String>>>,
+}
+
+#[derive(Clone)]
+struct SessionSummary {
+    id: String,
+    date: Option<String>,
+    modified: u64,
+    size_bytes: u64,
+    message_count: usize,
+    title: String,
+    preview: String,
+}
+
+#[derive(Clone)]
+struct TaskSummary {
+    id: String,
+    file: String,
+    title: String,
+    date: Option<String>,
+    modified: u64,
+    size_bytes: u64,
+    preview: String,
+}
+
+#[derive(Clone)]
+struct LogEntry {
+    date: String,
+    file: String,
+    label: String,
+    content: String,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct DashboardSessionMessage {
+    role: String,
+    text: String,
 }
 
 // ─── Main ─────────────────────────────────────────────────────
@@ -199,8 +252,11 @@ async fn main() {
         .route("/api/metrics", get(api_metrics))
         .route("/api/chat", post(api_chat))
         .route("/api/sessions/dates", get(api_session_dates))
-        .route("/api/sessions", get(api_sessions))
-        .route("/api/sessions/:id", get(api_session_detail))
+        .route("/api/sessions", get(api_sessions).delete(api_sessions_delete))
+        .route(
+            "/api/sessions/:id",
+            get(api_session_detail).delete(api_session_delete),
+        )
         .route("/api/tasks/dates", get(api_task_dates))
         .route("/api/tasks", get(api_tasks))
         .route("/api/tasks/:id", get(api_task_detail))
@@ -222,6 +278,7 @@ async fn main() {
         .merge(api_routes)
         .nest_service("/", ServeDir::new(&web_root))
         .layer(cors)
+        .layer(middleware::map_response(add_no_cache_headers))
         .with_state(state);
 
     let listener = match tokio::net::TcpListener::bind(&bind_addr).await {
@@ -251,6 +308,243 @@ async fn main() {
 
 fn json_error(status: StatusCode, msg: &str) -> (StatusCode, Json<Value>) {
     (status, Json(json!({"error": msg})))
+}
+
+fn generate_session_id(prefix: &str) -> String {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let seq = DASHBOARD_SESSION_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{}_{}_{}", prefix, ts, seq)
+}
+
+fn parse_session_markdown(content: &str) -> Vec<DashboardSessionMessage> {
+    let mut messages = Vec::new();
+    let mut current_role = String::new();
+    let mut current_text: Vec<&str> = Vec::new();
+
+    for line in content.lines() {
+        if let Some(role_str) = line.strip_prefix("## ") {
+            if !current_role.is_empty() {
+                let text = current_text.join("\n").trim().to_string();
+                if !text.is_empty() {
+                    messages.push(DashboardSessionMessage {
+                        role: current_role.clone(),
+                        text,
+                    });
+                }
+                current_text.clear();
+            }
+            current_role = role_str.trim().to_string();
+        } else if !current_role.is_empty() && !line.starts_with("---") {
+            current_text.push(line);
+        }
+    }
+
+    if !current_role.is_empty() {
+        let text = current_text.join("\n").trim().to_string();
+        if !text.is_empty() {
+            messages.push(DashboardSessionMessage {
+                role: current_role,
+                text,
+            });
+        }
+    }
+
+    messages
+}
+
+fn deduplicate_after_compacted(
+    compacted: &[DashboardSessionMessage],
+    today: &[DashboardSessionMessage],
+) -> Vec<DashboardSessionMessage> {
+    if compacted.is_empty() {
+        return today.to_vec();
+    }
+
+    let compacted_set: std::collections::HashSet<(String, String)> = compacted
+        .iter()
+        .map(|msg| {
+            (
+                msg.role.clone(),
+                msg.text.chars().take(100).collect::<String>(),
+            )
+        })
+        .collect();
+
+    today
+        .iter()
+        .filter(|msg| {
+            let preview = msg.text.chars().take(100).collect::<String>();
+            !compacted_set.contains(&(msg.role.clone(), preview))
+        })
+        .cloned()
+        .collect()
+}
+
+fn load_session_messages(session_dir: &std::path::Path) -> Vec<DashboardSessionMessage> {
+    let compacted_path = session_dir.join("compacted.md");
+    let compacted = std::fs::read_to_string(&compacted_path)
+        .ok()
+        .map(|content| parse_session_markdown(&content))
+        .unwrap_or_default();
+
+    let mut day_files: Vec<_> = std::fs::read_dir(session_dir)
+        .ok()
+        .into_iter()
+        .flat_map(|entries| entries.filter_map(|entry| entry.ok()))
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_file()
+                && path.extension().is_some_and(|ext| ext == "md")
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| name != "compacted.md")
+                    .unwrap_or(false)
+        })
+        .collect();
+    day_files.sort();
+
+    if compacted.is_empty() {
+        let mut all = Vec::new();
+        for path in day_files {
+            if let Ok(content) = std::fs::read_to_string(path) {
+                all.extend(parse_session_markdown(&content));
+            }
+        }
+        return all;
+    }
+
+    let today = day_files
+        .last()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .map(|content| parse_session_markdown(&content))
+        .unwrap_or_default();
+
+    let mut merged = compacted.clone();
+    merged.extend(deduplicate_after_compacted(&compacted, &today));
+    merged
+}
+
+fn render_session_markdown(messages: &[DashboardSessionMessage]) -> String {
+    let mut out = String::new();
+    for message in messages {
+        out.push_str(&format!("## {}\n{}\n\n", message.role, message.text));
+    }
+    out.trim_end().to_string()
+}
+
+fn session_display_title(messages: &[DashboardSessionMessage], fallback: &str) -> String {
+    messages
+        .iter()
+        .find(|msg| !msg.text.trim().is_empty() && msg.role == "user")
+        .or_else(|| messages.iter().find(|msg| !msg.text.trim().is_empty()))
+        .map(|msg| first_line_preview(&msg.text, 48))
+        .filter(|title| !title.is_empty())
+        .unwrap_or_else(|| fallback.to_string())
+}
+
+fn collect_session_summaries(data_dir: &std::path::Path) -> Vec<SessionSummary> {
+    let sessions_dir = data_dir.join("sessions");
+    let mut sessions = Vec::new();
+
+    let entries = match std::fs::read_dir(&sessions_dir) {
+        Ok(entries) => entries,
+        Err(_) => return sessions,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let id = entry.file_name().to_string_lossy().to_string();
+        if id.starts_with('.') || id.is_empty() {
+            continue;
+        }
+
+        let messages = load_session_messages(&path);
+        let title = session_display_title(&messages, &id);
+        let preview = messages
+            .iter()
+            .find(|msg| !msg.text.trim().is_empty())
+            .map(|msg| snippet_preview(&msg.text, 120))
+            .unwrap_or_default();
+
+        let mut modified = 0u64;
+        let mut size_bytes = 0u64;
+        let mut latest_date: Option<String> = None;
+
+        if let Ok(files) = std::fs::read_dir(&path) {
+            for file in files.flatten() {
+                let file_path = file.path();
+                if !file_path.is_file() {
+                    continue;
+                }
+
+                if let Ok(meta) = file.metadata() {
+                    size_bytes += meta.len();
+                    if let Ok(mtime) = meta.modified() {
+                        if let Ok(duration) = mtime.duration_since(std::time::UNIX_EPOCH) {
+                            modified = modified.max(duration.as_secs());
+                        }
+                    }
+                }
+
+                if let Some(name) = file_path.file_name().and_then(|name| name.to_str()) {
+                    if name.len() >= 10 && name.as_bytes().get(4) == Some(&b'-') {
+                        latest_date = Some(
+                            latest_date
+                                .map(|current| current.max(name[..10].to_string()))
+                                .unwrap_or_else(|| name[..10].to_string()),
+                        );
+                    }
+                }
+            }
+        }
+
+        sessions.push(SessionSummary {
+            id,
+            date: latest_date,
+            modified,
+            size_bytes,
+            message_count: messages.len(),
+            title,
+            preview,
+        });
+    }
+
+    sessions.sort_by(|left, right| {
+        right
+            .modified
+            .cmp(&left.modified)
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    sessions
+}
+
+fn first_line_preview(text: &str, max_chars: usize) -> String {
+    let line = text.lines().find(|line| !line.trim().is_empty()).unwrap_or("").trim();
+    truncate_chars(line, max_chars)
+}
+
+fn snippet_preview(text: &str, max_chars: usize) -> String {
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    truncate_chars(&normalized, max_chars)
+}
+
+fn truncate_chars(text: &str, max_chars: usize) -> String {
+    let mut out = String::new();
+    for (idx, ch) in text.chars().enumerate() {
+        if idx >= max_chars {
+            out.push_str("...");
+            break;
+        }
+        out.push(ch);
+    }
+    out
 }
 
 async fn validate_token(headers: &HeaderMap, state: &AppState) -> bool {
@@ -297,11 +591,16 @@ async fn api_chat(Json(payload): Json<Value>) -> Result<Json<Value>, (StatusCode
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    let session_id = payload
+    let requested_session_id = payload
         .get("session_id")
         .and_then(|v| v.as_str())
-        .unwrap_or("web_dashboard")
+        .unwrap_or("")
         .to_string();
+    let session_id = if requested_session_id.trim().is_empty() {
+        generate_session_id("web")
+    } else {
+        requested_session_id.trim().to_string()
+    };
     if prompt.is_empty() {
         return Err(json_error(StatusCode::BAD_REQUEST, "Empty prompt"));
     }
@@ -322,24 +621,37 @@ async fn api_chat(Json(payload): Json<Value>) -> Result<Json<Value>, (StatusCode
 }
 
 async fn api_sessions(State(state): State<AppState>) -> Json<Value> {
-    let dir = state.data_dir.join("sessions");
-    Json(Value::Array(list_md_files(dir.to_str().unwrap_or(""))))
+    Json(Value::Array(
+        collect_session_summaries(&state.data_dir)
+            .into_iter()
+            .map(|session| {
+                json!({
+                    "id": session.id,
+                    "title": session.title,
+                    "date": session.date,
+                    "modified": session.modified,
+                    "size_bytes": session.size_bytes,
+                    "message_count": session.message_count,
+                    "content_preview": session.preview
+                })
+            })
+            .collect(),
+    ))
 }
 
 async fn api_session_dates(State(state): State<AppState>) -> Json<Value> {
-    let dir = state.data_dir.join("sessions");
     let mut dates = std::collections::BTreeSet::new();
-    if let Ok(entries) = std::fs::read_dir(&dir) {
-        for entry in entries.flatten() {
-            if entry.path().is_dir() {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if name.len() == 10 {
-                    dates.insert(name);
-                }
-            }
+    for session in collect_session_summaries(&state.data_dir) {
+        if let Some(date) = session.date {
+            dates.insert(date);
         }
     }
     Json(json!({"dates": dates.into_iter().collect::<Vec<_>>()}))
+}
+
+#[derive(serde::Deserialize)]
+struct SessionDeletePayload {
+    ids: Vec<String>,
 }
 
 async fn api_session_detail(
@@ -349,30 +661,64 @@ async fn api_session_detail(
     if id.contains("..") || id.contains('/') {
         return Err(json_error(StatusCode::BAD_REQUEST, "Invalid id"));
     }
-    let parts: Vec<&str> = id.split('_').collect();
-    let path = if parts.len() >= 2 && parts[0].len() == 10 {
-        state
-            .data_dir
-            .join("sessions")
-            .join(&parts[0])
-            .join(format!("{}.md", id))
-    } else {
-        state.data_dir.join("sessions").join(format!("{}.md", id))
-    };
-    match std::fs::read_to_string(&path) {
-        Ok(content) => Ok(Json(json!({"id": id, "content": content}))),
-        Err(_) => Err(json_error(StatusCode::NOT_FOUND, "Session not found")),
+    let path = state.data_dir.join("sessions").join(&id);
+    if !path.is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "Session not found"));
     }
+
+    let messages = load_session_messages(&path);
+    let content = render_session_markdown(&messages);
+
+    Ok(Json(json!({
+        "id": id,
+        "content": content,
+        "messages": messages
+    })))
+}
+
+async fn api_session_delete(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    delete_session_dirs(&state.data_dir, &[id])
+}
+
+async fn api_sessions_delete(
+    State(state): State<AppState>,
+    Json(payload): Json<SessionDeletePayload>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    delete_session_dirs(&state.data_dir, &payload.ids)
 }
 
 async fn api_tasks(State(state): State<AppState>) -> Json<Value> {
     let dir = state.data_dir.join("tasks");
-    Json(Value::Array(list_md_files(dir.to_str().unwrap_or(""))))
+    Json(Value::Array(
+        collect_task_summaries(&dir)
+            .into_iter()
+            .map(|task| {
+                json!({
+                    "id": task.id,
+                    "file": task.file,
+                    "title": task.title,
+                    "date": task.date,
+                    "modified": task.modified,
+                    "size_bytes": task.size_bytes,
+                    "content_preview": task.preview
+                })
+            })
+            .collect(),
+    ))
 }
 
 async fn api_task_dates(State(state): State<AppState>) -> Json<Value> {
     let dir = state.data_dir.join("tasks");
-    Json(json!({"dates": collect_dates(dir.to_str().unwrap_or(""))}))
+    let dates = collect_task_summaries(&dir)
+        .into_iter()
+        .filter_map(|task| task.date)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    Json(json!({"dates": dates}))
 }
 
 async fn api_task_detail(
@@ -404,20 +750,27 @@ async fn api_logs(
     Query(q): Query<LogQuery>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let date = q.date.unwrap_or_else(today_date_str);
-    if date.len() != 10 || date.as_bytes().get(4) != Some(&b'-') {
+    if !is_valid_date(&date) {
         return Err(json_error(StatusCode::BAD_REQUEST, "Invalid date format"));
     }
-    let path = state.data_dir.join("audit").join(format!("{}.md", date));
-    let mut logs = vec![];
-    if let Ok(content) = std::fs::read_to_string(&path) {
-        logs.push(json!({"date": date, "content": content}));
-    }
+
+    let logs = collect_logs_for_date(&state.data_dir.join("logs"), &date)
+        .into_iter()
+        .map(|entry| {
+            json!({
+                "date": entry.date,
+                "file": entry.file,
+                "label": entry.label,
+                "content": entry.content
+            })
+        })
+        .collect::<Vec<_>>();
     Ok(Json(Value::Array(logs)))
 }
 
 async fn api_log_dates(State(state): State<AppState>) -> Json<Value> {
-    let dir = state.data_dir.join("audit");
-    Json(json!({"dates": collect_dates(dir.to_str().unwrap_or(""))}))
+    let dir = state.data_dir.join("logs");
+    Json(json!({"dates": collect_log_dates(&dir)}))
 }
 
 async fn api_auth_login(
@@ -813,83 +1166,215 @@ fn get_process_uptime() -> f64 {
 }
 
 fn today_date_str() -> String {
-    let secs = std::time::SystemTime::now()
+    let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs();
-    let days = secs / 86400;
-    let y = (days * 4 + 2) / 1461 + 1970;
-    let mut doy = days - ((y - 1970) * 365 + (y - 1969) / 4);
-    let leap: u64 = if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) {
-        1
-    } else {
-        0
-    };
-    let months = [31u64, 28 + leap, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    let mut m = 0u64;
-    for (i, &ml) in months.iter().enumerate() {
-        if doy < ml {
-            m = i as u64 + 1;
-            break;
-        }
-        doy -= ml;
+        .as_secs() as libc::time_t;
+    let mut tm_buf: libc::tm = unsafe { std::mem::zeroed() };
+    unsafe {
+        libc::localtime_r(&now, &mut tm_buf);
     }
-    if m == 0 {
-        m = 12;
-    }
-    format!("{:04}-{:02}-{:02}", y, m, doy + 1)
+    format!(
+        "{:04}-{:02}-{:02}",
+        tm_buf.tm_year + 1900,
+        tm_buf.tm_mon + 1,
+        tm_buf.tm_mday
+    )
 }
 
-fn list_md_files(dir: &str) -> Vec<Value> {
-    let mut entries = vec![];
-    if let Ok(read_dir) = std::fs::read_dir(dir) {
-        for entry in read_dir.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                if let Ok(sub) = std::fs::read_dir(&path) {
-                    for s in sub.flatten() {
-                        let sp = s.path();
-                        if !sp.is_file() {
-                            continue;
-                        }
-                        let name = sp
-                            .file_name()
-                            .unwrap_or_default()
-                            .to_string_lossy()
-                            .to_string();
-                        if name.starts_with('.') || !name.ends_with(".md") {
-                            continue;
-                        }
-                        entries.push(json!({"id": name.trim_end_matches(".md"), "file": name,
-                            "size_bytes": sp.metadata().map(|m| m.len()).unwrap_or(0)}));
-                    }
-                }
-            } else if path.is_file() {
-                let name = path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string();
-                if name.starts_with('.') || !name.ends_with(".md") {
-                    continue;
-                }
-                entries.push(json!({"id": name.trim_end_matches(".md"), "file": name,
-                    "size_bytes": path.metadata().map(|m| m.len()).unwrap_or(0)}));
-            }
+fn delete_session_dirs(
+    data_dir: &std::path::Path,
+    ids: &[String],
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let mut deleted = Vec::new();
+
+    for id in ids {
+        if id.contains("..") || id.contains('/') || id.trim().is_empty() {
+            return Err(json_error(StatusCode::BAD_REQUEST, "Invalid session id"));
+        }
+
+        let path = data_dir.join("sessions").join(id);
+        if path.is_dir() && std::fs::remove_dir_all(&path).is_ok() {
+            deleted.push(id.clone());
         }
     }
+
+    Ok(Json(json!({"status": "ok", "deleted_ids": deleted})))
+}
+
+fn collect_task_summaries(dir: &std::path::Path) -> Vec<TaskSummary> {
+    let mut entries = Vec::new();
+    let read_dir = match std::fs::read_dir(dir) {
+        Ok(read_dir) => read_dir,
+        Err(_) => return entries,
+    };
+
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        if !path.is_file()
+            || path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext != "md")
+                .unwrap_or(true)
+        {
+            continue;
+        }
+
+        let file = entry.file_name().to_string_lossy().to_string();
+        if file.starts_with('.') {
+            continue;
+        }
+
+        let content = std::fs::read_to_string(&path).unwrap_or_default();
+        let (title, preview) = parse_task_markdown_summary(&file, &content);
+        let date = extract_date_prefix(&file);
+        let modified = path
+            .metadata()
+            .ok()
+            .and_then(|meta| meta.modified().ok())
+            .and_then(|mtime| mtime.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let size_bytes = path.metadata().map(|meta| meta.len()).unwrap_or(0);
+
+        entries.push(TaskSummary {
+            id: file.trim_end_matches(".md").to_string(),
+            file,
+            title,
+            date,
+            modified,
+            size_bytes,
+            preview,
+        });
+    }
+
+    entries.sort_by(|left, right| right.modified.cmp(&left.modified));
     entries
 }
 
-fn collect_dates(dir: &str) -> Vec<String> {
+fn parse_task_markdown_summary(file: &str, content: &str) -> (String, String) {
+    let mut title = file.trim_end_matches(".md").to_string();
+    let mut preview_lines = Vec::new();
+    let mut in_frontmatter = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "---" {
+            in_frontmatter = !in_frontmatter;
+            continue;
+        }
+
+        if in_frontmatter {
+            if let Some((key, value)) = trimmed.split_once(':') {
+                if key.trim() == "name" {
+                    title = value.trim().trim_matches('"').trim_matches('\'').to_string();
+                }
+            }
+            continue;
+        }
+
+        if !trimmed.is_empty() {
+            preview_lines.push(trimmed);
+        }
+    }
+
+    let preview = truncate_chars(&preview_lines.join(" "), 120);
+    (title, preview)
+}
+
+fn extract_date_prefix(name: &str) -> Option<String> {
+    if name.len() >= 10 {
+        let prefix = &name[..10];
+        if is_valid_date(prefix) {
+            return Some(prefix.to_string());
+        }
+    }
+    None
+}
+
+fn is_valid_date(date: &str) -> bool {
+    date.len() == 10
+        && date.as_bytes().get(4) == Some(&b'-')
+        && date.as_bytes().get(7) == Some(&b'-')
+        && date
+            .chars()
+            .enumerate()
+            .all(|(idx, ch)| idx == 4 || idx == 7 || ch.is_ascii_digit())
+}
+
+fn collect_log_dates(logs_dir: &std::path::Path) -> Vec<String> {
     let mut dates = std::collections::BTreeSet::new();
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name.len() == 13 && name.ends_with(".md") && name.as_bytes()[4] == b'-' {
-                dates.insert(name[..10].to_string());
+
+    let years = match std::fs::read_dir(logs_dir) {
+        Ok(years) => years,
+        Err(_) => return Vec::new(),
+    };
+
+    for year in years.flatten() {
+        let year_name = year.file_name().to_string_lossy().to_string();
+        if year_name.len() != 4 || !year_name.chars().all(|ch| ch.is_ascii_digit()) {
+            continue;
+        }
+
+        if let Ok(months) = std::fs::read_dir(year.path()) {
+            for month in months.flatten() {
+                let month_name = month.file_name().to_string_lossy().to_string();
+                if month_name.len() != 2 || !month_name.chars().all(|ch| ch.is_ascii_digit()) {
+                    continue;
+                }
+
+                if let Ok(days) = std::fs::read_dir(month.path()) {
+                    for day in days.flatten() {
+                        let day_name = day.file_name().to_string_lossy().to_string();
+                        if day_name.len() != 2 || !day_name.chars().all(|ch| ch.is_ascii_digit()) {
+                            continue;
+                        }
+
+                        let date = format!("{}-{}-{}", year_name, month_name, day_name);
+                        if is_valid_date(&date) {
+                            dates.insert(date);
+                        }
+                    }
+                }
             }
         }
     }
+
     dates.into_iter().collect()
+}
+
+fn collect_logs_for_date(logs_dir: &std::path::Path, date: &str) -> Vec<LogEntry> {
+    let day_dir = logs_dir.join(date.replace('-', "/"));
+    let mut entries = Vec::new();
+    let read_dir = match std::fs::read_dir(day_dir) {
+        Ok(read_dir) => read_dir,
+        Err(_) => return entries,
+    };
+
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        if !path.is_file()
+            || path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext != "log")
+                .unwrap_or(true)
+        {
+            continue;
+        }
+
+        let file = entry.file_name().to_string_lossy().to_string();
+        let label = file.trim_end_matches(".log").to_string();
+        let content = std::fs::read_to_string(&path).unwrap_or_default();
+        entries.push(LogEntry {
+            date: date.to_string(),
+            file,
+            label,
+            content,
+        });
+    }
+
+    entries.sort_by(|left, right| left.file.cmp(&right.file));
+    entries
 }
