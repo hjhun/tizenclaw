@@ -51,6 +51,21 @@ fn utf8_safe_preview(text: &str, max_chars: usize) -> &str {
     }
 }
 
+fn normalize_conversation_log_text(text: &str) -> Option<String> {
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized)
+    }
+}
+
+fn log_conversation(role: &str, text: &str) {
+    if let Some(normalized) = normalize_conversation_log_text(text) {
+        log::info!("[Conversation][{}] {}", role, normalized);
+    }
+}
+
 fn inject_context_message(messages: &mut Vec<LlmMessage>, text: String) {
     if text.trim().is_empty() {
         return;
@@ -1261,7 +1276,7 @@ impl AgentCore {
         // ── Phase 2: ContextLoading ──────────────────────────────────────
         loop_state.transition(AgentPhase::ContextLoading);
 
-        log::debug!("[AgentCore] USER: {}", prompt);
+        log_conversation("User", prompt);
 
         // Store user message
         if let Ok(ss) = self.session_store.lock() {
@@ -1548,10 +1563,12 @@ impl AgentCore {
                 messages.len()
             );
 
-            log::debug!("[System Prompt]:\n{}", system_prompt);
-            for (i, msg) in messages.iter().enumerate() {
-                log::debug!("[Message {}] Role: {}\nText: {}", i, msg.role, msg.text);
-            }
+            log::debug!(
+                "[AgentLoop] Round {} dispatching {} transport messages with {} tools",
+                loop_state.round,
+                messages.len(),
+                tools.len()
+            );
 
             // Step 6: Set Max Tokens Dynamically
             let dynamic_max_tokens = if prompt.len() < 50 { 1024 } else { 4096 };
@@ -2139,7 +2156,7 @@ impl AgentCore {
                 loop_state.transition(AgentPhase::Complete);
                 loop_state.log_self_inspection();
 
-                log::debug!("[AgentCore] AGENT: {}", text);
+                log_conversation("Assistant", &text);
                 return text;
             }
 
@@ -2495,8 +2512,9 @@ impl<'a> SessionStoreRef<'a> {
 mod tests {
     use super::{
         build_progress_marker, build_skill_prefetch_message, generated_code_runtime_spec,
-        generated_code_script_path, manage_generated_code_tool, parse_shell_like_args,
-        sanitize_generated_code_name, select_relevant_skills, utf8_safe_preview,
+        generated_code_script_path, manage_generated_code_tool, normalize_conversation_log_text,
+        parse_shell_like_args, sanitize_generated_code_name, select_relevant_skills,
+        utf8_safe_preview,
     };
     use crate::core::textual_skill_scanner::TextualSkill;
     use crate::llm::backend::LlmToolCall;
@@ -2520,6 +2538,20 @@ mod tests {
     #[test]
     fn utf8_safe_preview_handles_zero_length() {
         assert_eq!(utf8_safe_preview("안녕하세요", 0), "");
+    }
+
+    #[test]
+    fn normalize_conversation_log_text_collapses_multiline_whitespace() {
+        let text = "  첫 줄입니다.\n\n   결과만   알려줘.  ";
+
+        let normalized = normalize_conversation_log_text(text);
+
+        assert_eq!(normalized.as_deref(), Some("첫 줄입니다. 결과만 알려줘."));
+    }
+
+    #[test]
+    fn normalize_conversation_log_text_skips_empty_content() {
+        assert_eq!(normalize_conversation_log_text(" \n\t "), None);
     }
 
     #[test]
