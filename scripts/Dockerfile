@@ -15,8 +15,8 @@ RUN apk update && \
     jq
 
 # Setup a clean workspace for skills to run in (will be mounted by runc)
-RUN mkdir -p /home/owner/share/tizenclaw/tools/skills
-WORKDIR /home/owner/share/tizenclaw/tools/skills
+RUN mkdir -p /home/owner/share/tizenclaw/workspace/skills
+WORKDIR /home/owner/share/tizenclaw/workspace/skills
 
 # Default command placeholder (runc will override this from config.json)
 CMD ["/bin/bash"]

@@ -115,6 +115,7 @@ where
 
     let tool_name = req["tool_name"].as_str().unwrap_or("");
     let mode = req["mode"].as_str().unwrap_or("oneshot");
+    let cwd = req["cwd"].as_str().filter(|value| !value.trim().is_empty());
     let mut args: Vec<String> = vec![];
 
     if let Some(arr) = req["args"].as_array() {
@@ -148,15 +149,19 @@ where
         }
     };
 
-    log::debug!("Executing [{}]: {} {:?}", mode, bin_path, args);
+    log::debug!("Executing [{}]: {} {:?} cwd={:?}", mode, bin_path, args, cwd);
 
-    let mut child = match Command::new(&bin_path)
+    let mut command = Command::new(&bin_path);
+    command
         .args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
+        .stderr(Stdio::piped());
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
+
+    let mut child = match command.spawn() {
         Ok(c) => c,
         Err(e) => {
             let mut writer = writer;

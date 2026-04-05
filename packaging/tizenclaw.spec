@@ -92,7 +92,7 @@ mkdir -p %{buildroot}/opt/usr/share/tizenclaw/embedded
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/memory
 # actions/ dir removed — tools are discovered dynamically
 mkdir -p %{buildroot}/opt/usr/share/tizenclaw/tools/cli
-mkdir -p %{buildroot}/opt/usr/share/tizenclaw/tools/skills
+mkdir -p %{buildroot}/opt/usr/share/tizenclaw/workspace/skills
 mkdir -p %{buildroot}/opt/usr/share/crash/dump
 
 ln -sf ../tizenclaw.service %{buildroot}%{_unitdir}/multi-user.target.wants/tizenclaw.service
@@ -126,7 +126,8 @@ fi
 # actions/ dir removed
 %dir /opt/usr/share/tizenclaw/tools/
 %dir /opt/usr/share/tizenclaw/tools/cli/
-%dir /opt/usr/share/tizenclaw/tools/skills/
+%dir /opt/usr/share/tizenclaw/workspace/
+%dir /opt/usr/share/tizenclaw/workspace/skills/
 /opt/usr/share/tizenclaw/tools/cli/*
 %dir /opt/usr/share/tizenclaw/config/
 %dir /opt/usr/share/tizenclaw/memory/

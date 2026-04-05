@@ -280,7 +280,7 @@ run_without_container() {
   local CMD="mount --make-rprivate / || true"
   CMD="$CMD; mount -t proc proc \"$R/proc\" || true"
   CMD="$CMD; mount --rbind /dev \"$R/dev\" || true"
-  CMD="$CMD; mount --rbind \"/opt/usr/share/tizenclaw/tools/skills\" \"$R/skills\" || true"
+  CMD="$CMD; mount --rbind \"/opt/usr/share/tizenclaw/workspace/skills\" \"$R/skills\" || true"
   CMD="$CMD; mount --rbind \"${APP_DATA_DIR}/data\" \"$R/data\" || true"
   CMD="$CMD; mount --rbind /tmp \"$R/tmp\" || true"
 

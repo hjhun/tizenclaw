@@ -236,12 +236,18 @@ impl ContainerEngine {
     }
 
     /// Backwards compatible execute endpoint for oneshot requests inside ToolDispatcher.
-    pub async fn execute_oneshot(&self, binary: &str, args: &[&str]) -> Result<Value, String> {
+    pub async fn execute_oneshot(
+        &self,
+        binary: &str,
+        args: &[&str],
+        cwd: Option<&str>,
+    ) -> Result<Value, String> {
         let req = json!({
             "command": "execute",
             "tool_name": binary,
             "args": args,
-            "mode": "oneshot"
+            "mode": "oneshot",
+            "cwd": cwd
         });
 
         match self.execute_oneshot_via_socket(&req).await {
@@ -258,7 +264,7 @@ impl ContainerEngine {
                             "Executor stdio fallback unavailable, using direct execution: {}",
                             stdio_err
                         );
-                        self.execute_direct(binary, args).await
+                        self.execute_direct(binary, args, cwd).await
                     }
                 }
             }
@@ -270,12 +276,14 @@ impl ContainerEngine {
         &self,
         binary: &str,
         args: &[&str],
+        cwd: Option<&str>,
     ) -> Result<mpsc::Receiver<Value>, String> {
         let req = json!({
             "command": "execute",
             "tool_name": binary,
             "args": args,
-            "mode": "streaming"
+            "mode": "streaming",
+            "cwd": cwd
         });
 
         match self.execute_streaming_via_socket(&req).await {
@@ -292,7 +300,7 @@ impl ContainerEngine {
                             "Executor streaming stdio fallback unavailable, using direct execution: {}",
                             stdio_err
                         );
-                        let output = self.execute_direct(binary, args).await?;
+                        let output = self.execute_direct(binary, args, cwd).await?;
                         let (tx, rx) = mpsc::channel(4);
                         let stdout = output["stdout"].as_str().unwrap_or("").to_string();
                         let stderr = output["stderr"].as_str().unwrap_or("").to_string();
@@ -314,11 +322,19 @@ impl ContainerEngine {
     }
 
     /// Fallback direct mode only when executor delegation is unavailable.
-    async fn execute_direct(&self, binary: &str, args: &[&str]) -> Result<Value, String> {
-        match tokio::process::Command::new(binary)
-            .args(args)
-            .output()
-            .await
+    async fn execute_direct(
+        &self,
+        binary: &str,
+        args: &[&str],
+        cwd: Option<&str>,
+    ) -> Result<Value, String> {
+        let mut command = tokio::process::Command::new(binary);
+        command.args(args);
+        if let Some(cwd) = cwd.filter(|value| !value.trim().is_empty()) {
+            command.current_dir(cwd);
+        }
+
+        match command.output().await
         {
             Ok(output) => Ok(json!({
                 "exit_code": output.status.code().unwrap_or(-1),

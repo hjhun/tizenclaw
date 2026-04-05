@@ -108,7 +108,12 @@ impl SystemCliAdapter {
             .collect()
     }
 
-    pub async fn execute(&self, tool_name: &str, args: &Value) -> Value {
+    pub async fn execute(
+        &self,
+        tool_name: &str,
+        args: &Value,
+        workdir: Option<&std::path::Path>,
+    ) -> Value {
         let name = tool_name.strip_prefix("execute_cli_").unwrap_or(tool_name);
         let tool = match self.tools.get(name) {
             Some(t) => t,
@@ -131,7 +136,11 @@ impl SystemCliAdapter {
         let engine = crate::infra::container_engine::ContainerEngine::new();
         let args_ref: Vec<&str> = cmd_args.iter().map(|s| s.as_str()).collect();
 
-        match engine.execute_oneshot(&tool.binary_path, &args_ref).await {
+        let cwd = workdir.map(|path| path.to_string_lossy().to_string());
+        match engine
+            .execute_oneshot(&tool.binary_path, &args_ref, cwd.as_deref())
+            .await
+        {
             Ok(val) => val,
             Err(e) => json!({"error": format!("Failed to execute via IPC: {}", e)}),
         }

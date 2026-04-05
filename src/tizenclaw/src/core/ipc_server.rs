@@ -270,8 +270,31 @@ impl IpcServer {
 
             "get_usage" => {
                 if let Some(ss_ref) = agent.get_session_store() {
-                    let usage = ss_ref.store().load_daily_usage("");
+                    let session_id = params
+                        .get("session_id")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("")
+                        .trim();
+                    let date = params
+                        .get("date")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("")
+                        .trim();
+                    let usage = if session_id.is_empty() {
+                        ss_ref.store().load_daily_usage(date)
+                    } else {
+                        ss_ref.store().load_token_usage(session_id)
+                    };
+                    let baseline = crate::storage::session_store::TokenUsage::from_json(
+                        params.get("baseline"),
+                    );
+                    let delta = usage.diff_from(&baseline);
                     json!({
+                        "scope": if session_id.is_empty() { "daily" } else { "session" },
+                        "session_id": if session_id.is_empty() { Value::Null } else { Value::String(session_id.to_string()) },
+                        "date": if session_id.is_empty() { Value::String(if date.is_empty() { "today".to_string() } else { date.to_string() }) } else { Value::Null },
+                        "usage": usage.to_json(),
+                        "delta": delta.to_json(),
                         "prompt_tokens": usage.total_prompt_tokens,
                         "completion_tokens": usage.total_completion_tokens,
                         "cache_creation_input_tokens": usage.total_cache_creation_input_tokens,

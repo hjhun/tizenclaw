@@ -28,7 +28,10 @@ WEB_DASHBOARD_NAME="tizenclaw-web-dashboard"
 HOST_BASE_DIR="${HOME}/.tizenclaw"
 INSTALL_DIR="${HOST_BASE_DIR}/bin"
 DATA_DIR="${HOST_BASE_DIR}"
+BUILD_ROOT_DIR="${HOST_BASE_DIR}/build"
+CARGO_TARGET_DIR_DEFAULT="${BUILD_ROOT_DIR}/cargo-target"
 TOOLS_DIR="${DATA_DIR}/tools"
+WORKSPACE_DIR="${DATA_DIR}/workspace"
 LOG_DIR="${DATA_DIR}/logs"
 CONFIG_DIR="${DATA_DIR}/config"
 LEGACY_HOST_BASE_DIR="${HOME}/.local/share/tizenclaw"
@@ -62,6 +65,7 @@ DRY_RUN=false
 RUN_TESTS=false
 REMOVE_INSTALL=false
 LLM_CONFIG=""
+CARGO_TARGET_DIR_HOST="${CARGO_TARGET_DIR:-${CARGO_TARGET_DIR_DEFAULT}}"
 
 # ─────────────────────────────────────────────
 # Logging helpers
@@ -103,6 +107,7 @@ ${CYAN}Options:${NC}
       --status            Show current daemon status
       --log               Follow daemon log output
       --dry-run           Print commands without executing
+      --build-root <dir>  Override host Cargo target dir
       --llm-config <path> Use specified llm_config.json (sets TIZENCLAW_DATA_DIR)
   -h, --help              Show this help
 
@@ -115,6 +120,7 @@ ${CYAN}Examples:${NC}
   $(basename "$0") --log                     # Tail daemon logs
   $(basename "$0") -s                        # Stop the daemon
   $(basename "$0") --remove                  # Remove host install and stop tools
+  $(basename "$0") --build-root /tmp/tc-build  # Use external build root
   $(basename "$0") --llm-config /path/to/llm_config.json  # Use custom LLM config
 EOF
   exit 0
@@ -134,6 +140,9 @@ parse_args() {
       --status)         SHOW_STATUS=true; shift ;;
       --log)            FOLLOW_LOG=true; shift ;;
       --dry-run)        DRY_RUN=true; shift ;;
+      --build-root)
+        [[ $# -lt 2 ]] && fail "--build-root requires a path argument"
+        CARGO_TARGET_DIR_HOST="$(realpath -m "$2")"; shift 2 ;;
       --llm-config)
         [[ $# -lt 2 ]] && fail "--llm-config requires a path argument"
         LLM_CONFIG="$(realpath "$2")"; shift 2 ;;
@@ -162,6 +171,7 @@ check_prerequisites() {
   log "Project dir : ${PROJECT_DIR}"
   log "Build only  : ${BUILD_ONLY}"
   log "Data dir    : ${DATA_DIR}"
+  log "Build root  : ${CARGO_TARGET_DIR_HOST}"
 }
 
 ensure_shell_path() {
@@ -247,12 +257,15 @@ do_build() {
   cd "${PROJECT_DIR}"
 
   if [ "${DRY_RUN}" = true ]; then
+    echo -e "  ${YELLOW}[DRY-RUN]${NC} export CARGO_TARGET_DIR='${CARGO_TARGET_DIR_HOST}'"
     echo -e "  ${YELLOW}[DRY-RUN]${NC} cargo ${cargo_args[*]}"
     ok "Build succeeded (dry-run)"
     return 0
   fi
 
-  if cargo "${cargo_args[@]}"; then
+  mkdir -p "${CARGO_TARGET_DIR_HOST}"
+
+  if CARGO_TARGET_DIR="${CARGO_TARGET_DIR_HOST}" cargo "${cargo_args[@]}"; then
     ok "Cargo build succeeded (${BUILD_MODE})"
   else
     fail "Cargo build failed"
@@ -269,11 +282,14 @@ do_test() {
   cd "${PROJECT_DIR}"
 
   if [ "${DRY_RUN}" = true ]; then
+    echo -e "  ${YELLOW}[DRY-RUN]${NC} export CARGO_TARGET_DIR='${CARGO_TARGET_DIR_HOST}'"
     echo -e "  ${YELLOW}[DRY-RUN]${NC} cargo test --offline"
     return 0
   fi
 
-  if cargo test --offline -- --test-threads=1 2>&1; then
+  mkdir -p "${CARGO_TARGET_DIR_HOST}"
+
+  if CARGO_TARGET_DIR="${CARGO_TARGET_DIR_HOST}" cargo test --offline -- --test-threads=1 2>&1; then
     ok "All tests passed"
   else
     warn "Some tests failed (see output above)"
@@ -286,19 +302,34 @@ do_test() {
 do_install() {
   header "Step 2/3: Install Binaries"
 
-  local build_dir="${PROJECT_DIR}/target/${BUILD_MODE}"
+  local build_dir="${CARGO_TARGET_DIR_HOST}/${BUILD_MODE}"
 
   migrate_legacy_host_install
 
   log "Preparing host install tree under ${DATA_DIR}"
   run mkdir -p "${INSTALL_DIR}" "${CONFIG_DIR}" "${TOOLS_DIR}/cli" \
-    "${TOOLS_DIR}/skills" "${DATA_DIR}/embedded" "${DATA_DIR}/web" \
+    "${WORKSPACE_DIR}/skills" "${TOOLS_DIR}" "${DATA_DIR}/embedded" "${DATA_DIR}/web" \
     "${DATA_DIR}/workflows" "${DATA_DIR}/pipelines" "${DATA_DIR}/codes" \
     "${DATA_DIR}/memory" "${DATA_DIR}/plugins" "${LOG_DIR}"
 
+  if [ -d "${TOOLS_DIR}/skills" ] && [ ! -e "${WORKSPACE_DIR}/skills" ]; then
+    log "Migrating legacy skills dir → ${WORKSPACE_DIR}/skills"
+    run mv "${TOOLS_DIR}/skills" "${WORKSPACE_DIR}/skills"
+  fi
+  if [ "${DRY_RUN}" = false ]; then
+    run mkdir -p "${WORKSPACE_DIR}/skills"
+    if [ -L "${TOOLS_DIR}/skills" ] || [ -d "${TOOLS_DIR}/skills" ] || [ -f "${TOOLS_DIR}/skills" ]; then
+      run rm -rf "${TOOLS_DIR}/skills"
+    fi
+    run ln -s "${WORKSPACE_DIR}/skills" "${TOOLS_DIR}/skills"
+  else
+    echo -e "  ${YELLOW}[DRY-RUN]${NC} mkdir -p '${WORKSPACE_DIR}/skills'"
+    echo -e "  ${YELLOW}[DRY-RUN]${NC} ln -s '${WORKSPACE_DIR}/skills' '${TOOLS_DIR}/skills'"
+  fi
+
   for bin in "${PKG_NAME}" "${TOOL_EXECUTOR_NAME}" "${CLI_NAME}" "${WEB_DASHBOARD_NAME}"; do
     local bin_path="${build_dir}/${bin}"
-    if [ ! -f "${bin_path}" ]; then
+    if [ "${DRY_RUN}" = false ] && [ ! -f "${bin_path}" ]; then
       fail "Binary not found: ${bin_path}"
     fi
     log "Installing ${bin} → ${INSTALL_DIR}/${bin}"
@@ -420,6 +451,12 @@ remove_installation() {
     log "Removing legacy host data tree ${LEGACY_HOST_BASE_DIR}"
     run rm -rf "${LEGACY_HOST_BASE_DIR}"
     ok "Removed legacy host data tree"
+  fi
+
+  if [ -d "${BUILD_ROOT_DIR}" ]; then
+    log "Removing host build tree ${BUILD_ROOT_DIR}"
+    run rm -rf "${BUILD_ROOT_DIR}"
+    ok "Removed host build tree"
   fi
 
   for legacy_bin in "${PKG_NAME}" "${TOOL_EXECUTOR_NAME}" "${CLI_NAME}" "${WEB_DASHBOARD_NAME}"; do
@@ -587,7 +624,7 @@ main() {
   do_build
 
   if [ "${BUILD_ONLY}" = true ]; then
-    ok "Build complete. Binaries in: ${PROJECT_DIR}/target/${BUILD_MODE}/"
+    ok "Build complete. Binaries in: ${CARGO_TARGET_DIR_HOST}/${BUILD_MODE}/"
     exit 0
   fi
 

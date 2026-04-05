@@ -10,9 +10,38 @@ PinchBench 실행에 필요한 Anthropic/Gemini 설정을 맞추는 방법을
 - `tizenclaw` daemon이 실행 중이어야 합니다.
 - `tizenclaw-cli`가 PATH에 있어야 합니다.
 - 런타임 설정은 daemon의 `llm_config.json`에 저장됩니다.
+- 사용자 스킬의 canonical 경로는 `~/.tizenclaw/workspace/skills`
+  입니다. host install은 기존 `~/.tizenclaw/tools/skills` 를 이
+  경로로 연결해 하위 호환을 유지합니다.
 - `tizenclaw-cli config set`은 기본적으로 문자열을 저장합니다.
 - 숫자, 배열, 객체, 불리언을 저장할 때는 `--strict-json`을
   사용해야 합니다.
+
+## 빠른 시작
+
+반복 입력이 번거로우면 repo 루트의 `setup_pinchbench.sh` 로 자주 쓰는
+설정 흐름을 한 번에 처리할 수 있습니다.
+
+```bash
+# 현재 관련 설정 보기
+./setup_pinchbench.sh show
+
+# Anthropic PinchBench preset 적용
+./setup_pinchbench.sh anthropic \
+  --model claude-sonnet-4-20250514 \
+  --temperature 0.7 \
+  --max-tokens 4096 \
+  --fallback gemini
+
+# 목표 메타데이터 기록
+./setup_pinchbench.sh target \
+  --score 0.85 \
+  --suite all \
+  --summary "match openclaw anthropic baseline"
+
+# 현재 usage를 benchmark metadata에 기록
+./setup_pinchbench.sh record-usage
+```
 
 ## 1. 현재 설정 확인
 

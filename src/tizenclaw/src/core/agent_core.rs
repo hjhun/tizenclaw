@@ -14,6 +14,7 @@
 //! share `Arc<AgentCore>` without an outer Mutex.
 
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex, RwLock};
@@ -373,6 +374,188 @@ fn parse_shell_like_args(args: &str) -> Vec<String> {
     parsed
 }
 
+fn extract_option_value(args: &[String], flag: &str) -> Option<String> {
+    args.windows(2)
+        .find(|window| window[0] == flag)
+        .map(|window| window[1].clone())
+}
+
+fn canonical_tool_trace(tc: &backend::LlmToolCall) -> Value {
+    let default = json!({
+        "type": "toolCall",
+        "name": tc.name,
+        "params": tc.args,
+        "arguments": tc.args,
+        "actual_tool_name": tc.name
+    });
+
+    if tc.name == "run_generated_code" {
+        let runtime = tc
+            .args
+            .get("runtime")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase();
+        let code = tc
+            .args
+            .get("code")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .trim();
+
+        if runtime == "bash" && !code.is_empty() {
+            let parsed = parse_shell_like_args(code);
+            if let Some(command) = parsed.first().map(String::as_str) {
+                match command {
+                    "cat" => {
+                        if let Some(path) = parsed.get(1) {
+                            return json!({
+                                "type": "toolCall",
+                                "name": "read_file",
+                                "params": {
+                                    "path": path.as_str(),
+                                    "file_path": path.as_str(),
+                                    "files": [path.as_str()],
+                                    "runtime": runtime,
+                                    "actual_tool_name": tc.name,
+                                    "raw_code": code
+                                },
+                                "arguments": {
+                                    "path": path.as_str(),
+                                    "file_path": path.as_str(),
+                                    "files": [path.as_str()]
+                                }
+                            });
+                        }
+                    }
+                    "ls" => {
+                        let path = parsed
+                            .iter()
+                            .skip(1)
+                            .find(|value| !value.starts_with('-'))
+                            .map(String::as_str)
+                            .unwrap_or(".");
+                        return json!({
+                            "type": "toolCall",
+                            "name": "list_files",
+                            "params": {
+                                "path": path,
+                                "runtime": runtime,
+                                "actual_tool_name": tc.name,
+                                "raw_code": code
+                            },
+                            "arguments": {
+                                "path": path
+                            }
+                        });
+                    }
+                    "find" => {
+                        let path = parsed.get(1).map(String::as_str).unwrap_or(".");
+                        return json!({
+                            "type": "toolCall",
+                            "name": "list_files",
+                            "params": {
+                                "path": path,
+                                "runtime": runtime,
+                                "actual_tool_name": tc.name,
+                                "raw_code": code
+                            },
+                            "arguments": {
+                                "path": path
+                            }
+                        });
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    let Some(args_str) = tc.args.get("args").and_then(|value| value.as_str()) else {
+        return default;
+    };
+
+    if !tc.name.contains("file-manager") {
+        return default;
+    }
+
+    let parsed = parse_shell_like_args(args_str);
+    let Some(subcommand) = parsed.first().map(String::as_str) else {
+        return default;
+    };
+
+    match subcommand {
+        "read" => {
+            if let Some(path) = extract_option_value(&parsed, "--path") {
+                json!({
+                    "type": "toolCall",
+                    "name": "read_file",
+                    "params": {
+                        "path": path.as_str(),
+                        "file_path": path.as_str(),
+                        "files": [path.as_str()],
+                        "subcommand": subcommand,
+                        "actual_tool_name": tc.name,
+                        "raw_args": args_str
+                    },
+                    "arguments": {
+                        "path": path.as_str(),
+                        "file_path": path.as_str(),
+                        "files": [path.as_str()]
+                    }
+                })
+            } else {
+                default
+            }
+        }
+        "write" | "append" => {
+            if let Some(path) = extract_option_value(&parsed, "--path") {
+                let content = extract_option_value(&parsed, "--content").unwrap_or_default();
+                json!({
+                    "type": "toolCall",
+                    "name": "write_file",
+                    "params": {
+                        "path": path.as_str(),
+                        "file_path": path.as_str(),
+                        "content": content.as_str(),
+                        "subcommand": subcommand,
+                        "actual_tool_name": tc.name,
+                        "raw_args": args_str
+                    },
+                    "arguments": {
+                        "path": path.as_str(),
+                        "file_path": path.as_str(),
+                        "content": content.as_str()
+                    }
+                })
+            } else {
+                default
+            }
+        }
+        "list" => {
+            if let Some(path) = extract_option_value(&parsed, "--path") {
+                json!({
+                    "type": "toolCall",
+                    "name": "list_files",
+                    "params": {
+                        "path": path.as_str(),
+                        "subcommand": subcommand,
+                        "actual_tool_name": tc.name,
+                        "raw_args": args_str
+                    },
+                    "arguments": {
+                        "path": path.as_str()
+                    }
+                })
+            } else {
+                default
+            }
+        }
+        _ => default,
+    }
+}
+
 fn generated_code_runtime_spec(runtime: &str) -> Option<(&'static str, &'static str)> {
     match runtime.trim().to_ascii_lowercase().as_str() {
         "python" | "python3" => Some(("python3", ".py")),
@@ -571,6 +754,7 @@ async fn run_generated_code_tool(
     code: &str,
     args: &str,
     base_dir: &Path,
+    workdir: Option<&Path>,
 ) -> Value {
     let binary = match generated_code_runtime_spec(runtime) {
         Some((binary, _suffix)) => binary,
@@ -584,23 +768,22 @@ async fn run_generated_code_tool(
         }
     };
 
-    let codes_dir = base_dir.join("codes");
-    if let Err(err) = std::fs::create_dir_all(&codes_dir) {
+    let target_dir = workdir
+        .map(|path| path.join("codes"))
+        .unwrap_or_else(|| base_dir.join("codes"));
+    if let Err(err) = std::fs::create_dir_all(&target_dir) {
         return json!({"error": format!("Failed to create codes dir: {}", err)});
     }
 
-    let script_path = match generated_code_script_path(base_dir, runtime, name.unwrap_or("script"))
-    {
-        Some(path) => path,
-        None => {
-            return json!({
-                "error": format!(
-                    "Failed to allocate generated code path for runtime '{}'.",
-                    runtime
-                )
-            });
-        }
+    let Some((_, suffix)) = generated_code_runtime_spec(runtime) else {
+        return json!({"error": format!("Unsupported runtime '{}'.", runtime)});
     };
+    let script_name = format!(
+        "{}{}",
+        sanitize_generated_code_name(name.unwrap_or("script")),
+        suffix
+    );
+    let script_path = target_dir.join(script_name);
     let mut temp_file = match std::fs::File::create(&script_path) {
         Ok(file) => file,
         Err(err) => {
@@ -620,7 +803,11 @@ async fn run_generated_code_tool(
     let exec_args_ref: Vec<&str> = exec_args.iter().map(|value| value.as_str()).collect();
 
     let engine = crate::infra::container_engine::ContainerEngine::new();
-    match engine.execute_oneshot(binary, &exec_args_ref).await {
+    let cwd = target_dir.to_string_lossy().to_string();
+    match engine
+        .execute_oneshot(binary, &exec_args_ref, Some(cwd.as_str()))
+        .await
+    {
         Ok(result) => json!({
             "runtime": runtime,
             "script_path": script_path,
@@ -1394,10 +1581,19 @@ impl AgentCore {
 
         log_conversation("User", prompt);
 
+        let session_workdir = if let Ok(ss) = self.session_store.lock() {
+            ss.as_ref()
+                .map(|store| store.session_workdir(session_id))
+                .unwrap_or_else(|| self.platform.paths.data_dir.clone())
+        } else {
+            self.platform.paths.data_dir.clone()
+        };
+
         // Store user message
         if let Ok(ss) = self.session_store.lock() {
             if let Some(store) = ss.as_ref() {
                 store.add_message(session_id, "user", prompt);
+                store.add_structured_user_message(session_id, prompt);
             }
         }
 
@@ -1520,7 +1716,7 @@ impl AgentCore {
                 (*bn).clone()
             };
             let platform_name = self.platform.platform_name().to_string();
-            let data_dir = self.platform.paths.data_dir.to_string_lossy().to_string();
+            let data_dir = session_workdir.to_string_lossy().to_string();
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| {
@@ -1538,6 +1734,13 @@ impl AgentCore {
         if let Some(dynamic_context) = dynamic_context.as_ref() {
             inject_context_message(&mut messages, dynamic_context.clone());
         }
+        inject_context_message(
+            &mut messages,
+            format!(
+                "## Working Directory\nUse '{}' as the primary working directory for file reads, file writes, generated scripts, and task artifacts unless the user explicitly gives a different absolute path.",
+                session_workdir.to_string_lossy()
+            ),
+        );
 
         // Load long term memory dynamically and inject into messages (preserves system_prompt cache)
         let mut memory_context_for_log: Option<String> = None;
@@ -1935,11 +2138,35 @@ impl AgentCore {
                 // Add assistant message
                 messages.push(LlmMessage {
                     role: "assistant".into(),
-                    text: final_text,
+                    text: final_text.clone(),
                     reasoning_text: reasoning_text.clone(),
                     tool_calls: detected_tool_calls.clone(),
                     ..Default::default()
                 });
+
+                let canonical_tool_calls: Vec<Value> =
+                    detected_tool_calls.iter().map(canonical_tool_trace).collect();
+                let canonical_tool_names: HashMap<String, String> = detected_tool_calls
+                    .iter()
+                    .zip(canonical_tool_calls.iter())
+                    .map(|(tc, trace)| {
+                        (
+                            tc.id.clone(),
+                            trace["name"]
+                                .as_str()
+                                .unwrap_or(tc.name.as_str())
+                                .to_string(),
+                        )
+                    })
+                    .collect();
+                if let Ok(ss) = self.session_store.lock() {
+                    if let Some(store) = ss.as_ref() {
+                        if !final_text.trim().is_empty() {
+                            store.add_structured_assistant_text_message(session_id, &final_text);
+                        }
+                        store.add_structured_tool_call_message(session_id, canonical_tool_calls);
+                    }
+                }
 
                 // Parallel tool execution
                 let td_guard = self.tool_dispatcher.read().await;
@@ -1960,6 +2187,7 @@ impl AgentCore {
                     let tc_id = tc.id.clone();
                     let bridge_ref = &self.action_bridge;
                     let ms_clone = mem_store_opt.clone();
+                    let session_workdir = session_workdir.clone();
 
                     // ── Phase 11: SafetyCheck per tool ───────────────────
                     let block_reason = if let Ok(tp) = self.tool_policy.lock() {
@@ -2091,12 +2319,19 @@ impl AgentCore {
                             let code = tc_args.get("code").and_then(|v| v.as_str()).unwrap_or("");
                             let args = tc_args.get("args").and_then(|v| v.as_str()).unwrap_or("");
                             let base_dir = self.platform.paths.data_dir.clone();
-                            run_generated_code_tool(runtime, name, code, args, &base_dir).await
+                            run_generated_code_tool(
+                                runtime,
+                                name,
+                                code,
+                                args,
+                                &base_dir,
+                                Some(&session_workdir),
+                            )
+                            .await
                         } else if tc_name == "manage_generated_code" {
                             let operation = tc_args.get("operation").and_then(|v| v.as_str()).unwrap_or("");
                             let name = tc_args.get("name").and_then(|v| v.as_str());
-                            let base_dir = self.platform.paths.data_dir.clone();
-                            manage_generated_code_tool(operation, name, &base_dir)
+                            manage_generated_code_tool(operation, name, &session_workdir)
                         } else if tc_name == "remember" {
                             if let Some(store) = ms_clone {
                                 let key = tc_args.get("key").and_then(|v| v.as_str()).unwrap_or("");
@@ -2134,7 +2369,9 @@ impl AgentCore {
                                 serde_json::json!({"error": "MemoryStore not initialized"})
                             }
                         } else {
-                            td_guard_ref.execute(&tc_name, &tc_args).await
+                            td_guard_ref
+                                .execute(&tc_name, &tc_args, Some(&session_workdir))
+                                .await
                         };
 
                         log::debug!("[ObservationCollect] Tool '{}' result: {} chars",
@@ -2145,6 +2382,22 @@ impl AgentCore {
                 }
 
                 let results = futures_util::future::join_all(futures_list).await;
+                if let Ok(ss) = self.session_store.lock() {
+                    if let Some(store) = ss.as_ref() {
+                        for result in &results {
+                            let trace_name = canonical_tool_names
+                                .get(&result.tool_call_id)
+                                .map(String::as_str)
+                                .unwrap_or(result.tool_name.as_str());
+                            store.add_structured_tool_result_message(
+                                session_id,
+                                trace_name,
+                                &result.tool_call_id,
+                                &result.tool_result,
+                            );
+                        }
+                    }
+                }
                 let (budgeted_results, budgeted_count) = context_engine
                     .budget_tool_result_messages(results, DEFAULT_TOOL_RESULT_BUDGET_CHARS);
                 if budgeted_count > 0 {
@@ -2183,6 +2436,10 @@ impl AgentCore {
                                 store.add_message(
                                     session_id,
                                     "assistant",
+                                    "Task aborted (terminal idle loop).",
+                                );
+                                store.add_structured_assistant_text_message(
+                                    session_id,
                                     "Task aborted (terminal idle loop).",
                                 );
                             }
@@ -2276,6 +2533,7 @@ impl AgentCore {
                 if let Ok(ss) = self.session_store.lock() {
                     if let Some(store) = ss.as_ref() {
                         store.add_message(session_id, "assistant", &text);
+                        store.add_structured_assistant_text_message(session_id, &text);
                     }
                 }
 

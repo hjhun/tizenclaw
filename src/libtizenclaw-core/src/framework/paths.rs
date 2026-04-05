@@ -73,7 +73,7 @@ impl PlatformPaths {
             .map(PathBuf::from)
             .unwrap_or_else(|_| base.join("tools"));
 
-        let skills_dir = tools_dir.join("skills");
+        let skills_dir = base.join("workspace/skills");
         let embedded_tools_dir = std::env::var("TIZENCLAW_EMBEDDED_TOOLS_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| base.join("embedded"));
@@ -103,7 +103,7 @@ impl PlatformPaths {
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(TIZEN_TOOLS_DIR));
 
-        let skills_dir = tools_dir.join("skills");
+        let skills_dir = PathBuf::from(TIZEN_DATA_DIR).join("workspace/skills");
         let embedded_tools_dir = std::env::var("TIZENCLAW_EMBEDDED_TOOLS_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(TIZEN_DATA_DIR).join("embedded"));
@@ -192,7 +192,7 @@ mod tests {
         let paths = PlatformPaths::from_base(base.clone());
 
         assert_eq!(paths.tools_dir, base.join("tools"));
-        assert_eq!(paths.skills_dir, base.join("tools/skills"));
+        assert_eq!(paths.skills_dir, base.join("workspace/skills"));
         assert_eq!(paths.embedded_tools_dir, base.join("embedded"));
         assert_eq!(paths.codes_dir, base.join("codes"));
     }

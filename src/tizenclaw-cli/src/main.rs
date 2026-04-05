@@ -151,6 +151,39 @@ fn generate_session_id() -> String {
     format!("cli_{}_{}", ts, seq)
 }
 
+fn parse_usage_baseline(raw: &str) -> Result<Value, String> {
+    serde_json::from_str(raw).map_err(|err| format!("Invalid usage baseline JSON: {}", err))
+}
+
+fn show_usage(session_id: Option<&str>, baseline: Option<&Value>) {
+    let mut params = json!({});
+    if let Some(session_id) = session_id.filter(|value| !value.trim().is_empty()) {
+        params["session_id"] = Value::String(session_id.to_string());
+    }
+    if let Some(baseline) = baseline {
+        params["baseline"] = baseline.clone();
+    }
+
+    match send_jsonrpc("get_usage", params) {
+        Ok((resp, _)) => {
+            if let Some(result) = resp.get("result") {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(result).unwrap_or_default()
+                );
+            } else if let Some(err) = resp.get("error") {
+                eprintln!(
+                    "Error: {}",
+                    err.get("message")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown")
+                );
+            }
+        }
+        Err(e) => eprintln!("Error: {}", e),
+    }
+}
+
 /// Send a prompt and print the response.
 fn send_prompt(session_id: &str, prompt: &str, stream: bool) -> Result<String, String> {
     let (resp, stream_received) = send_jsonrpc(
@@ -293,13 +326,9 @@ fn interactive_mode(explicit_session_id: Option<&str>, stream: bool) {
                 println!("  quit, exit        Exit");
                 println!("  <text>            Send prompt");
             }
-            cmd if cmd.starts_with("/usage") => match send_jsonrpc("get_usage", json!({})) {
-                Ok(resp) => println!(
-                    "{}",
-                    serde_json::to_string_pretty(&resp).unwrap_or_default()
-                ),
-                Err(e) => eprintln!("Error: {}", e),
-            },
+            cmd if cmd.starts_with("/usage") => {
+                show_usage(explicit_session_id, None);
+            }
             cmd if cmd.starts_with("/dashboard ") => {
                 let action = cmd.trim_start_matches("/dashboard ").trim();
                 cmd_dashboard(action);
@@ -476,6 +505,7 @@ fn print_usage() {
     eprintln!("  -s <id>           Reuse a fixed session ID");
     eprintln!("  --no-stream       Disable real-time streaming");
     eprintln!("  --usage           Show token usage");
+    eprintln!("  --usage-baseline  JSON baseline for usage delta");
     eprintln!("  -h, --help        Show this help\n");
     eprintln!("Dashboard commands:");
     eprintln!("  tizenclaw-cli dashboard start   Start the web dashboard");
@@ -575,6 +605,8 @@ fn main() {
     let mut session_id: Option<String> = None;
     let mut explicit_session_id = false;
     let mut stream = true;
+    let mut usage_requested = false;
+    let mut usage_baseline: Option<Value> = None;
     let mut prompt_parts: Vec<String> = vec![];
     let mut i = 1;
 
@@ -591,14 +623,18 @@ fn main() {
             }
             "--no-stream" => stream = false,
             "--usage" => {
-                match send_jsonrpc("get_usage", json!({})) {
-                    Ok(resp) => println!(
-                        "{}",
-                        serde_json::to_string_pretty(&resp).unwrap_or_default()
-                    ),
-                    Err(e) => eprintln!("Error: {}", e),
-                }
-                return;
+                usage_requested = true;
+            }
+            "--usage-baseline" if i + 1 < args.len() => {
+                i += 1;
+                usage_baseline = Some(parse_usage_baseline(&args[i]).unwrap_or_else(|err| {
+                    eprintln!("{}", err);
+                    std::process::exit(1);
+                }));
+            }
+            "--usage-baseline" => {
+                eprintln!("Usage: tizenclaw-cli --usage-baseline '<json>'");
+                std::process::exit(1);
             }
             "dashboard" if i + 1 < args.len() => {
                 i += 1;
@@ -641,6 +677,11 @@ fn main() {
             }
         }
         i += 1;
+    }
+
+    if usage_requested {
+        show_usage(session_id.as_deref(), usage_baseline.as_ref());
+        return;
     }
 
     let prompt = prompt_parts.join(" ");

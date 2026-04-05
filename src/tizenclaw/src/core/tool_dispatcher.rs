@@ -425,7 +425,12 @@ impl ToolDispatcher {
     }
 
     /// Execute a tool call.
-    pub async fn execute(&self, tool_name: &str, args: &Value) -> Value {
+    pub async fn execute(
+        &self,
+        tool_name: &str,
+        args: &Value,
+        workdir: Option<&std::path::Path>,
+    ) -> Value {
         let decl = match self.tools.get(tool_name) {
             Some(d) => d,
             None => return json!({"error": format!("Unknown tool: {}", tool_name)}),
@@ -488,7 +493,11 @@ impl ToolDispatcher {
         let engine = crate::infra::container_engine::ContainerEngine::new();
         let args_ref: Vec<&str> = exec_args.iter().map(|s| s.as_str()).collect();
 
-        match engine.execute_oneshot(&decl.binary_path, &args_ref).await {
+        let cwd = workdir.map(|path| path.to_string_lossy().to_string());
+        match engine
+            .execute_oneshot(&decl.binary_path, &args_ref, cwd.as_deref())
+            .await
+        {
             Ok(val) => val,
             Err(e) => json!({"error": format!("Failed to execute via IPC: {}", e)}),
         }

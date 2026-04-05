@@ -63,7 +63,7 @@ fi
 
 if command -v ruff &>/dev/null; then
   log "  ruff (Python)..."
-  if ruff check "${PROJECT_DIR}/tools/skills/" 2>&1; then
+  if ruff check "${PROJECT_DIR}/workspace/skills/" 2>&1; then
     ok "  ruff passed"
   else
     warn "  ruff found issues (non-blocking)"

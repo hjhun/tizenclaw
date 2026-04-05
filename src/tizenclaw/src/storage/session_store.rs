@@ -22,7 +22,7 @@
 //! (`.compacted.tmp` → rename) to protect against partial writes on flash.
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -45,6 +45,54 @@ pub struct TokenUsage {
     pub total_cache_read_input_tokens: i64,
     pub total_requests: i64,
     pub entries: Vec<Value>,
+}
+
+impl TokenUsage {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "prompt_tokens": self.total_prompt_tokens,
+            "completion_tokens": self.total_completion_tokens,
+            "cache_creation_input_tokens": self.total_cache_creation_input_tokens,
+            "cache_read_input_tokens": self.total_cache_read_input_tokens,
+            "total_requests": self.total_requests
+        })
+    }
+
+    pub fn from_json(value: Option<&Value>) -> Self {
+        let Some(value) = value else {
+            return Self::default();
+        };
+
+        let read_i64 = |name: &str| value.get(name).and_then(|v| v.as_i64()).unwrap_or(0);
+
+        Self {
+            total_prompt_tokens: read_i64("prompt_tokens"),
+            total_completion_tokens: read_i64("completion_tokens"),
+            total_cache_creation_input_tokens: read_i64("cache_creation_input_tokens"),
+            total_cache_read_input_tokens: read_i64("cache_read_input_tokens"),
+            total_requests: read_i64("total_requests"),
+            entries: Vec::new(),
+        }
+    }
+
+    pub fn diff_from(&self, baseline: &TokenUsage) -> Self {
+        Self {
+            total_prompt_tokens: self
+                .total_prompt_tokens
+                .saturating_sub(baseline.total_prompt_tokens),
+            total_completion_tokens: self
+                .total_completion_tokens
+                .saturating_sub(baseline.total_completion_tokens),
+            total_cache_creation_input_tokens: self
+                .total_cache_creation_input_tokens
+                .saturating_sub(baseline.total_cache_creation_input_tokens),
+            total_cache_read_input_tokens: self
+                .total_cache_read_input_tokens
+                .saturating_sub(baseline.total_cache_read_input_tokens),
+            total_requests: self.total_requests.saturating_sub(baseline.total_requests),
+            entries: Vec::new(),
+        }
+    }
 }
 
 // ─── SessionStore ─────────────────────────────────────────────────────────────
@@ -139,9 +187,21 @@ impl SessionStore {
             .join(format!("{}.md", today_date_str()))
     }
 
+    /// Structured transcript file used by benchmark-style evaluators.
+    fn transcript_path(&self, session_id: &str) -> PathBuf {
+        self.session_dir(session_id).join("transcript.jsonl")
+    }
+
     /// Compaction snapshot: `sessions/{session_id}/compacted.md`
     fn compacted_path(&self, session_id: &str) -> PathBuf {
         self.session_dir(session_id).join("compacted.md")
+    }
+
+    /// Session-scoped working directory for file-oriented tasks.
+    pub fn session_workdir(&self, session_id: &str) -> PathBuf {
+        let dir = self.base_dir.join("workdirs").join(session_id);
+        let _ = fs::create_dir_all(&dir);
+        dir
     }
 
     // ── Session lifecycle ─────────────────────────────────────────────────────
@@ -150,6 +210,7 @@ impl SessionStore {
     pub fn ensure_session(&self, session_id: &str) {
         let dir = self.session_dir(session_id);
         let _ = fs::create_dir_all(&dir);
+        let _ = fs::create_dir_all(self.base_dir.join("workdirs").join(session_id));
 
         let path = self.session_file_today(session_id);
         if !path.exists() {
@@ -195,6 +256,84 @@ impl SessionStore {
             let block = format!("## {}\n{}\n\n", role, normalized);
             let _ = file.write_all(block.as_bytes());
         }
+    }
+
+    pub fn add_structured_user_message(&self, session_id: &str, content: &str) {
+        let Some(normalized) = normalize_markdown_block(content) else {
+            return;
+        };
+        self.append_structured_event(
+            session_id,
+            &json!({
+                "type": "message",
+                "message": {
+                    "role": "user",
+                    "content": [normalized]
+                }
+            }),
+        );
+    }
+
+    pub fn add_structured_assistant_text_message(&self, session_id: &str, content: &str) {
+        let Some(normalized) = normalize_markdown_block(content) else {
+            return;
+        };
+        self.append_structured_event(
+            session_id,
+            &json!({
+                "type": "message",
+                "message": {
+                    "role": "assistant",
+                    "content": [{
+                        "type": "text",
+                        "text": normalized
+                    }]
+                }
+            }),
+        );
+    }
+
+    pub fn add_structured_tool_call_message(&self, session_id: &str, content: Vec<Value>) {
+        if content.is_empty() {
+            return;
+        }
+        self.append_structured_event(
+            session_id,
+            &json!({
+                "type": "message",
+                "message": {
+                    "role": "assistant",
+                    "content": content
+                }
+            }),
+        );
+    }
+
+    pub fn add_structured_tool_result_message(
+        &self,
+        session_id: &str,
+        tool_name: &str,
+        tool_call_id: &str,
+        result: &Value,
+    ) {
+        let rendered = if let Some(text) = result.as_str() {
+            text.to_string()
+        } else {
+            result.to_string()
+        };
+
+        self.append_structured_event(
+            session_id,
+            &json!({
+                "type": "message",
+                "message": {
+                    "role": "toolResult",
+                    "tool_name": tool_name,
+                    "tool_call_id": tool_call_id,
+                    "content": [rendered]
+                }
+            }),
+        );
     }
 
     // ── Context loading (primary API) ────────────────────────────────────────
@@ -445,6 +584,16 @@ impl SessionStore {
         }
 
         Ok(())
+    }
+
+    fn append_structured_event(&self, session_id: &str, event: &Value) {
+        self.ensure_session(session_id);
+        let path = self.transcript_path(session_id);
+        let _g = self.lock.write().unwrap();
+        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
+            let _ = file.write_all(event.to_string().as_bytes());
+            let _ = file.write_all(b"\n");
+        }
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
@@ -832,5 +981,83 @@ mod tests {
         assert_eq!(usage.total_cache_creation_input_tokens, 300);
         assert_eq!(usage.total_cache_read_input_tokens, 368);
         assert_eq!(usage.total_requests, 2);
+    }
+
+    #[test]
+    fn test_session_workdir_is_created_per_session() {
+        let tmp = tempdir().unwrap();
+        let store = make_store(tmp.path());
+
+        let workdir = store.session_workdir("bench_s1");
+
+        assert!(workdir.exists());
+        assert!(workdir.ends_with("workdirs/bench_s1"));
+    }
+
+    #[test]
+    fn test_structured_transcript_writes_jsonl_events() {
+        let tmp = tempdir().unwrap();
+        let store = make_store(tmp.path());
+
+        store.add_structured_user_message("bench_s2", "hello");
+        store.add_structured_assistant_text_message("bench_s2", "world");
+        store.add_structured_tool_call_message(
+            "bench_s2",
+            vec![json!({
+                "type": "toolCall",
+                "name": "read_file",
+                "params": {"path": "notes.md"}
+            })],
+        );
+        store.add_structured_tool_result_message(
+            "bench_s2",
+            "read_file",
+            "call_1",
+            &json!({"content": "demo"}),
+        );
+
+        let transcript = tmp
+            .path()
+            .join("sessions")
+            .join("bench_s2")
+            .join("transcript.jsonl");
+        let lines: Vec<&str> = std::fs::read_to_string(transcript)
+            .unwrap()
+            .lines()
+            .collect();
+
+        assert_eq!(lines.len(), 4);
+        assert!(lines[0].contains("\"role\":\"user\""));
+        assert!(lines[1].contains("\"role\":\"assistant\""));
+        assert!(lines[2].contains("\"toolCall\""));
+        assert!(lines[3].contains("\"role\":\"toolResult\""));
+    }
+
+    #[test]
+    fn test_token_usage_diff_subtracts_baseline() {
+        let current = TokenUsage {
+            total_prompt_tokens: 120,
+            total_completion_tokens: 40,
+            total_cache_creation_input_tokens: 80,
+            total_cache_read_input_tokens: 20,
+            total_requests: 3,
+            entries: Vec::new(),
+        };
+        let baseline = TokenUsage {
+            total_prompt_tokens: 100,
+            total_completion_tokens: 10,
+            total_cache_creation_input_tokens: 50,
+            total_cache_read_input_tokens: 5,
+            total_requests: 1,
+            entries: Vec::new(),
+        };
+
+        let diff = current.diff_from(&baseline);
+
+        assert_eq!(diff.total_prompt_tokens, 20);
+        assert_eq!(diff.total_completion_tokens, 30);
+        assert_eq!(diff.total_cache_creation_input_tokens, 30);
+        assert_eq!(diff.total_cache_read_input_tokens, 15);
+        assert_eq!(diff.total_requests, 2);
     }
 }

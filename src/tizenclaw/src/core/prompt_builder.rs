@@ -122,7 +122,7 @@ impl SystemPromptBuilder {
             lines.push(format!("Active Backend: {}", ctx.active_model.trim()));
         }
         if !ctx.working_dir.trim().is_empty() {
-            lines.push(format!("Working Data Dir: {}", ctx.working_dir.trim()));
+            lines.push(format!("Working Directory: {}", ctx.working_dir.trim()));
         }
         if !ctx.current_time.trim().is_empty() {
             lines.push(format!("Current Time: {}", ctx.current_time.trim()));
@@ -266,7 +266,7 @@ mod tests {
         assert!(!prompt.contains("Current Time: 2024-04-01 12:00:00"));
         assert!(dynamic.contains("Platform: Ubuntu"));
         assert!(dynamic.contains("Active Backend: Claude 3.5"));
-        assert!(dynamic.contains("Working Data Dir: /home/user"));
+        assert!(dynamic.contains("Working Directory: /home/user"));
         assert!(dynamic.contains("Current Time: 2024-04-01 12:00:00"));
     }
 
