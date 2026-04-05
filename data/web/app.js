@@ -554,6 +554,17 @@
     // --- Tasks ---
     let taskDateNav = null;
     let allTasks = null;
+    let currentTaskFile = null;
+    let selectedTaskIds = new Set();
+
+    const taskSelectAllBtn =
+        document.getElementById('task-select-all');
+    const taskDeleteSelectedBtn =
+        document.getElementById('task-delete-selected');
+    const taskSelectionMeta =
+        document.getElementById('task-selection-meta');
+    const taskDeleteCurrentBtn =
+        document.getElementById('task-delete-current');
 
     async function loadTasks(filterDate) {
         const data = await apiFetch('tasks');
@@ -563,8 +574,16 @@
             document.getElementById('task-viewer');
         viewer.style.display = 'none';
         list.style.display = '';
+        currentTaskFile = null;
 
         allTasks = data || [];
+        const availableTaskIds = new Set(
+            allTasks.map(t => t.id).filter(Boolean));
+        selectedTaskIds.forEach(id => {
+            if (!availableTaskIds.has(id)) {
+                selectedTaskIds.delete(id);
+            }
+        });
 
         // Init date nav once
         if (!taskDateNav) {
@@ -580,6 +599,7 @@
             [...new Set(dates)]);
 
         renderTasks(filterDate || null);
+        formatTaskSelectionMeta();
     }
 
     function renderTasks(filterDate) {
@@ -612,9 +632,16 @@
             const modified = t.modified ?
                 new Date(t.modified * 1000)
                     .toLocaleString() : '';
-            return '<div class="card-item ' +
+            const checked = selectedTaskIds
+                .has(t.id) ? ' checked' : '';
+            return '<div class="card-item task-card-item ' +
                 'clickable" data-task-file="' +
-                escHtml(t.file) + '">' +
+                escHtml(t.file) + '" data-task-id="' +
+                escHtml(t.id) + '">' +
+                '<label class="chat-session-check">' +
+                '<input type="checkbox" data-task-select="' +
+                escHtml(t.id) + '"' + checked + ' />' +
+                '<span></span></label>' +
                 '<div class="card-item-title">' +
                 escHtml(t.title || t.file) + '</div>' +
                 '<div class="card-item-meta">' +
@@ -629,11 +656,28 @@
         list.querySelectorAll('.card-item')
             .forEach(card => {
                 card.addEventListener(
-                    'click', () => {
+                    'click', (event) => {
+                        if (event.target.closest(
+                            '[data-task-select]')) {
+                            return;
+                        }
                         showTaskDetail(
                             card.dataset
                                 .taskFile);
                     });
+            });
+        list.querySelectorAll('[data-task-select]')
+            .forEach(input => {
+                input.addEventListener('change', () => {
+                    const id = input.dataset.taskSelect;
+                    if (!id) return;
+                    if (input.checked) {
+                        selectedTaskIds.add(id);
+                    } else {
+                        selectedTaskIds.delete(id);
+                    }
+                    formatTaskSelectionMeta();
+                });
             });
     }
 
@@ -651,6 +695,7 @@
         viewer.style.display = '';
         title.textContent = file;
         content.textContent = 'Loading...';
+        currentTaskFile = file;
 
         const resp =
             await apiFetch('tasks/' + file);
@@ -662,6 +707,56 @@
         }
     }
 
+    function formatTaskSelectionMeta() {
+        if (!taskSelectionMeta) return;
+        const count = selectedTaskIds.size;
+        taskSelectionMeta.textContent = count
+            ? ('선택된 작업 ' + count + '개')
+            : '선택된 작업 없음';
+    }
+
+    async function deleteTasks(ids) {
+        const filteredIds = (ids || [])
+            .filter(Boolean);
+        if (!filteredIds.length) return;
+        if (!window.confirm(
+            '선택한 작업을 삭제할까요?')) {
+            return;
+        }
+
+        let resp = null;
+        if (filteredIds.length === 1) {
+            resp = await apiDelete(
+                'tasks/' +
+                encodeURIComponent(filteredIds[0]));
+        } else {
+            resp = await apiDelete(
+                'tasks', {
+                    ids: filteredIds
+                });
+        }
+
+        if (!resp || !resp.deleted_ids) {
+            window.alert('작업 삭제에 실패했습니다.');
+            return;
+        }
+
+        resp.deleted_ids.forEach(id => {
+            selectedTaskIds.delete(id);
+            if (currentTaskFile === id ||
+                currentTaskFile === id + '.md') {
+                currentTaskFile = null;
+                document.getElementById('task-viewer')
+                    .style.display = 'none';
+                document.getElementById('task-list')
+                    .style.display = '';
+            }
+        });
+        await loadTasks(taskDateNav
+            ? taskDateNav.getFilter()
+            : null);
+    }
+
     document.getElementById('task-back')
         .addEventListener('click', () => {
             document.getElementById('task-viewer')
@@ -669,6 +764,43 @@
             document.getElementById('task-list')
                 .style.display = '';
         });
+    if (taskSelectAllBtn) {
+        taskSelectAllBtn.addEventListener(
+            'click', () => {
+                const taskIds = (allTasks || [])
+                    .map(task => task.id)
+                    .filter(Boolean);
+                if (selectedTaskIds.size ===
+                    taskIds.length) {
+                    selectedTaskIds.clear();
+                } else {
+                    selectedTaskIds =
+                        new Set(taskIds);
+                }
+                renderTasks(taskDateNav
+                    ? taskDateNav.getFilter()
+                    : null);
+                formatTaskSelectionMeta();
+            });
+    }
+    if (taskDeleteSelectedBtn) {
+        taskDeleteSelectedBtn.addEventListener(
+            'click', async () => {
+                await deleteTasks(Array.from(
+                    selectedTaskIds));
+            });
+    }
+    if (taskDeleteCurrentBtn) {
+        taskDeleteCurrentBtn.addEventListener(
+            'click', async () => {
+                if (!currentTaskFile) return;
+                const taskId = currentTaskFile
+                    .endsWith('.md')
+                    ? currentTaskFile.slice(0, -3)
+                    : currentTaskFile;
+                await deleteTasks([taskId]);
+            });
+    }
 
     // --- Logs ---
     let logDateNav = null;

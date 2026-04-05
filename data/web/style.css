@@ -510,6 +510,17 @@ body {
     color: var(--text-muted);
 }
 
+.task-card-item {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 12px;
+}
+
+.task-card-item .card-item-title,
+.task-card-item .card-item-meta {
+    grid-column: 2;
+}
+
 .empty-state {
     text-align: center;
     color: var(--text-muted);
@@ -532,6 +543,7 @@ body {
 .btn-back { flex-shrink: 0; }
 
 .viewer-title {
+    flex: 1;
     font-weight: 600;
     font-size: 0.9rem;
     color: var(--text-primary);

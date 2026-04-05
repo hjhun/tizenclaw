@@ -261,6 +261,11 @@
         <div class="page-header">
           <h2 class="page-title">Scheduled Tasks</h2>
         </div>
+        <div class="chat-bulk-actions">
+          <button id="task-select-all" class="btn-outline">전체 선택</button>
+          <button id="task-delete-selected" class="btn-outline btn-danger-outline">선택 삭제</button>
+        </div>
+        <div class="chat-selection-meta" id="task-selection-meta">선택된 작업 없음</div>
         <div class="date-nav" id="task-date-nav"></div>
         <div class="card-list" id="task-list">
           <p class="empty-state">Loading...</p>
@@ -269,6 +274,7 @@
           <div class="viewer-header">
             <button class="btn-outline btn-back" id="task-back">← Back</button>
             <span class="viewer-title" id="task-viewer-title"></span>
+            <button class="btn-outline btn-danger-outline" id="task-delete-current">이 작업 삭제</button>
           </div>
           <pre class="viewer-content" id="task-viewer-content"></pre>
         </div>

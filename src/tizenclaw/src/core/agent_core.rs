@@ -749,6 +749,66 @@ fn manage_generated_code_tool(operation: &str, name: Option<&str>, base_dir: &Pa
     }
 }
 
+fn task_scheduler_dir(base_dir: &Path) -> std::path::PathBuf {
+    base_dir.join("tasks")
+}
+
+fn list_tasks_tool(base_dir: &Path) -> Value {
+    let task_dir = task_scheduler_dir(base_dir);
+    match crate::core::task_scheduler::TaskScheduler::list_tasks_from_dir(&task_dir) {
+        Ok(tasks) => json!({
+            "status": "success",
+            "count": tasks.len(),
+            "tasks": tasks.into_iter().map(|task| json!({
+                "id": task.id,
+                "name": task.name,
+                "session_id": task.session_id,
+                "interval_secs": task.interval_secs,
+                "schedule": task.schedule_expr,
+                "one_shot": task.one_shot,
+                "enabled": task.enabled,
+                "prompt": task.prompt,
+            })).collect::<Vec<_>>(),
+        }),
+        Err(err) => json!({ "error": err }),
+    }
+}
+
+fn create_task_tool(base_dir: &Path, schedule: &str, prompt: &str) -> Value {
+    let task_dir = task_scheduler_dir(base_dir);
+    match crate::core::task_scheduler::TaskScheduler::create_task_file(&task_dir, schedule, prompt)
+    {
+        Ok(task) => json!({
+            "status": "success",
+            "task": {
+                "id": task.id,
+                "name": task.name,
+                "session_id": task.session_id,
+                "interval_secs": task.interval_secs,
+                "schedule": task.schedule_expr,
+                "one_shot": task.one_shot,
+                "enabled": task.enabled,
+                "prompt": task.prompt,
+            }
+        }),
+        Err(err) => json!({ "error": err }),
+    }
+}
+
+fn cancel_task_tool(base_dir: &Path, task_id: &str) -> Value {
+    let task_dir = task_scheduler_dir(base_dir);
+    match crate::core::task_scheduler::TaskScheduler::delete_task_file(&task_dir, task_id) {
+        Ok(true) => json!({
+            "status": "success",
+            "task_id": task_id.trim(),
+        }),
+        Ok(false) => json!({
+            "error": format!("Task '{}' was not found", task_id.trim()),
+        }),
+        Err(err) => json!({ "error": err }),
+    }
+}
+
 async fn run_generated_code_tool(
     runtime: &str,
     name: Option<&str>,
@@ -2340,6 +2400,18 @@ impl AgentCore {
                             let operation = tc_args.get("operation").and_then(|v| v.as_str()).unwrap_or("");
                             let name = tc_args.get("name").and_then(|v| v.as_str());
                             manage_generated_code_tool(operation, name, &session_workdir)
+                        } else if tc_name == "list_tasks" {
+                            let base_dir = self.platform.paths.data_dir.clone();
+                            list_tasks_tool(&base_dir)
+                        } else if tc_name == "create_task" {
+                            let schedule = tc_args.get("schedule").and_then(|v| v.as_str()).unwrap_or("");
+                            let prompt = tc_args.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
+                            let base_dir = self.platform.paths.data_dir.clone();
+                            create_task_tool(&base_dir, schedule, prompt)
+                        } else if tc_name == "cancel_task" {
+                            let task_id = tc_args.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
+                            let base_dir = self.platform.paths.data_dir.clone();
+                            cancel_task_tool(&base_dir, task_id)
                         } else if tc_name == "generate_image" {
                             let prompt = tc_args.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
                             let path = tc_args.get("path").and_then(|v| v.as_str()).unwrap_or("");

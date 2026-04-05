@@ -258,8 +258,11 @@ async fn main() {
             get(api_session_detail).delete(api_session_delete),
         )
         .route("/api/tasks/dates", get(api_task_dates))
-        .route("/api/tasks", get(api_tasks))
-        .route("/api/tasks/:id", get(api_task_detail))
+        .route("/api/tasks", get(api_tasks).delete(api_tasks_delete))
+        .route(
+            "/api/tasks/:id",
+            get(api_task_detail).delete(api_task_delete),
+        )
         .route("/api/logs/dates", get(api_log_dates))
         .route("/api/logs", get(api_logs))
         .route("/api/auth/login", post(api_auth_login))
@@ -782,6 +785,20 @@ async fn api_task_detail(
         Ok(content) => Ok(Json(json!({"file": fname, "content": content}))),
         Err(_) => Err(json_error(StatusCode::NOT_FOUND, "Task not found")),
     }
+}
+
+async fn api_task_delete(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    delete_task_files(&state.data_dir, &[id])
+}
+
+async fn api_tasks_delete(
+    State(state): State<AppState>,
+    Json(payload): Json<SessionDeletePayload>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    delete_task_files(&state.data_dir, &payload.ids)
 }
 
 #[derive(serde::Deserialize)]
@@ -1379,6 +1396,30 @@ fn collect_task_summaries(dir: &std::path::Path) -> Vec<TaskSummary> {
 
     entries.sort_by(|left, right| right.modified.cmp(&left.modified));
     entries
+}
+
+fn delete_task_files(
+    data_dir: &std::path::Path,
+    ids: &[String],
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let mut deleted = Vec::new();
+    for id in ids {
+        if id.contains("..") || id.contains('/') || id.trim().is_empty() {
+            return Err(json_error(StatusCode::BAD_REQUEST, "Invalid task id"));
+        }
+
+        let file_name = if id.ends_with(".md") {
+            id.clone()
+        } else {
+            format!("{}.md", id)
+        };
+        let path = data_dir.join("tasks").join(&file_name);
+        if path.is_file() && std::fs::remove_file(&path).is_ok() {
+            deleted.push(file_name.trim_end_matches(".md").to_string());
+        }
+    }
+
+    Ok(Json(json!({"status": "ok", "deleted_ids": deleted})))
 }
 
 fn parse_task_markdown_summary(file: &str, content: &str) -> (String, String) {
