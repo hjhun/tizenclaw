@@ -27,6 +27,7 @@ use crate::core::context_engine::{
     ContextEngine, SizedContextEngine, DEFAULT_TOOL_RESULT_BUDGET_CHARS,
 };
 use crate::core::fallback_parser::FallbackParser;
+use crate::core::feature_tools;
 use crate::core::llm_config_store;
 use crate::core::registration_store::{self, RegisteredPaths, RegistrationKind};
 use crate::core::textual_skill_scanner::TextualSkill;
@@ -2144,8 +2145,10 @@ impl AgentCore {
                     ..Default::default()
                 });
 
-                let canonical_tool_calls: Vec<Value> =
-                    detected_tool_calls.iter().map(canonical_tool_trace).collect();
+                let canonical_tool_calls: Vec<Value> = detected_tool_calls
+                    .iter()
+                    .map(canonical_tool_trace)
+                    .collect();
                 let canonical_tool_names: HashMap<String, String> = detected_tool_calls
                     .iter()
                     .zip(canonical_tool_calls.iter())
@@ -2176,6 +2179,9 @@ impl AgentCore {
                     .lock()
                     .ok()
                     .and_then(|ms| ms.as_ref().cloned());
+                let llm_doc = llm_config_store::load(&self.platform.paths.config_dir)
+                    .unwrap_or_else(|_| llm_config_store::default_document());
+                let search_config_dir = self.platform.paths.config_dir.clone();
 
                 for tc in detected_tool_calls.iter() {
                     let skills_dir = self.platform.paths.skills_dir.clone();
@@ -2188,6 +2194,8 @@ impl AgentCore {
                     let bridge_ref = &self.action_bridge;
                     let ms_clone = mem_store_opt.clone();
                     let session_workdir = session_workdir.clone();
+                    let llm_doc = llm_doc.clone();
+                    let search_config_dir = search_config_dir.clone();
 
                     // ── Phase 11: SafetyCheck per tool ───────────────────
                     let block_reason = if let Ok(tp) = self.tool_policy.lock() {
@@ -2332,6 +2340,62 @@ impl AgentCore {
                             let operation = tc_args.get("operation").and_then(|v| v.as_str()).unwrap_or("");
                             let name = tc_args.get("name").and_then(|v| v.as_str());
                             manage_generated_code_tool(operation, name, &session_workdir)
+                        } else if tc_name == "generate_image" {
+                            let prompt = tc_args.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
+                            let path = tc_args.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                            let size = tc_args.get("size").and_then(|v| v.as_str());
+                            let background = tc_args.get("background").and_then(|v| v.as_str());
+                            feature_tools::generate_image(
+                                prompt,
+                                path,
+                                size,
+                                background,
+                                &session_workdir,
+                                &llm_doc,
+                            ).await
+                        } else if tc_name == "extract_document_text" {
+                            let path = tc_args.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                            let output_path = tc_args.get("output_path").and_then(|v| v.as_str());
+                            let max_chars = tc_args
+                                .get("max_chars")
+                                .and_then(|v| v.as_u64())
+                                .map(|value| value as usize);
+                            feature_tools::extract_document_text(
+                                path,
+                                output_path,
+                                max_chars,
+                                &session_workdir,
+                            ).await
+                        } else if tc_name == "inspect_tabular_data" {
+                            let path = tc_args.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                            let preview_rows = tc_args
+                                .get("preview_rows")
+                                .and_then(|v| v.as_u64())
+                                .map(|value| value as usize)
+                                .unwrap_or(5);
+                            feature_tools::inspect_tabular_data(
+                                path,
+                                preview_rows,
+                                &session_workdir,
+                            ).await
+                        } else if tc_name == "validate_web_search" {
+                            let engine = tc_args.get("engine").and_then(|v| v.as_str());
+                            feature_tools::validate_web_search(&search_config_dir, engine)
+                        } else if tc_name == "web_search" {
+                            let query = tc_args.get("query").and_then(|v| v.as_str()).unwrap_or("");
+                            let engine = tc_args.get("engine").and_then(|v| v.as_str());
+                            let limit = tc_args
+                                .get("limit")
+                                .and_then(|v| v.as_u64())
+                                .map(|value| value as usize)
+                                .unwrap_or(5);
+                            feature_tools::web_search(
+                                query,
+                                engine,
+                                limit,
+                                &session_workdir,
+                                &search_config_dir,
+                            ).await
                         } else if tc_name == "remember" {
                             if let Some(store) = ms_clone {
                                 let key = tc_args.get("key").and_then(|v| v.as_str()).unwrap_or("");

@@ -66,6 +66,16 @@ pub fn default_document() -> Value {
                 "model": "llama3",
                 "endpoint": "http://localhost:11434"
             }
+        },
+        "features": {
+            "image_generation": {
+                "provider": "openai",
+                "api_key": "",
+                "model": "gpt-image-1",
+                "endpoint": "https://api.openai.com/v1",
+                "size": "1024x1024",
+                "background": "auto"
+            }
         }
     })
 }

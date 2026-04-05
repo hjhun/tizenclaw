@@ -11,6 +11,8 @@
 
 use super::{Channel, ChannelConfig};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 pub struct WebDashboard {
     name: String,
@@ -19,7 +21,9 @@ pub struct WebDashboard {
     web_root: PathBuf,
     config_dir: PathBuf,
     data_dir: PathBuf,
-    child: Option<std::process::Child>,
+    child_pid: Option<u32>,
+    running: Arc<AtomicBool>,
+    monitor: Option<std::thread::JoinHandle<()>>,
 }
 
 impl WebDashboard {
@@ -52,7 +56,9 @@ impl WebDashboard {
             web_root,
             config_dir,
             data_dir,
-            child: None,
+            child_pid: None,
+            running: Arc::new(AtomicBool::new(false)),
+            monitor: None,
         }
     }
 
@@ -79,6 +85,8 @@ impl Channel for WebDashboard {
             return true;
         }
 
+        self.cleanup_monitor();
+
         let bin = Self::find_binary();
         let mut cmd = std::process::Command::new(&bin);
         cmd.arg("--port")
@@ -98,12 +106,29 @@ impl Channel for WebDashboard {
 
         match cmd.spawn() {
             Ok(child) => {
+                let pid = child.id();
+                let running = Arc::clone(&self.running);
+                running.store(true, Ordering::SeqCst);
+                let monitor = std::thread::spawn(move || {
+                    let mut child = child;
+                    let status = child.wait();
+                    running.store(false, Ordering::SeqCst);
+                    match status {
+                        Ok(status) => {
+                            log::info!("WebDashboard process exited with status {}", status);
+                        }
+                        Err(err) => {
+                            log::warn!("WebDashboard process wait failed: {}", err);
+                        }
+                    }
+                });
                 log::info!(
                     "WebDashboard process started (pid {}, port {})",
-                    child.id(),
+                    pid,
                     self.port
                 );
-                self.child = Some(child);
+                self.child_pid = Some(pid);
+                self.monitor = Some(monitor);
                 true
             }
             Err(e) => {
@@ -118,41 +143,53 @@ impl Channel for WebDashboard {
     }
 
     fn stop(&mut self) {
-        if let Some(mut child) = self.child.take() {
+        if let Some(pid) = self.child_pid.take() {
             // Send SIGTERM for graceful shutdown
             unsafe {
-                libc::kill(child.id() as libc::pid_t, libc::SIGTERM);
+                libc::kill(pid as libc::pid_t, libc::SIGTERM);
             }
             // Give the process up to 3 seconds, then force-kill
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
             loop {
-                match child.try_wait() {
-                    Ok(Some(_)) => break,
-                    _ => {}
+                if !self.running.load(Ordering::SeqCst) {
+                    break;
                 }
                 if std::time::Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    unsafe {
+                        libc::kill(pid as libc::pid_t, libc::SIGKILL);
+                    }
                     break;
                 }
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
+            self.running.store(false, Ordering::SeqCst);
+            self.cleanup_monitor();
             log::info!("WebDashboard process stopped");
         }
     }
 
     fn is_running(&self) -> bool {
-        match &self.child {
-            Some(child) => {
-                let pid = child.id() as libc::pid_t;
-                // kill(pid, 0) returns 0 if the process exists, -1 otherwise
-                unsafe { libc::kill(pid, 0) == 0 }
-            }
-            None => false,
+        if !self.running.load(Ordering::SeqCst) {
+            return false;
         }
+
+        let Some(pid) = self.child_pid else {
+            return false;
+        };
+
+        // kill(pid, 0) returns 0 if the process exists, -1 otherwise
+        unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
     }
 
     fn send_message(&self, _msg: &str) -> Result<(), String> {
         Ok(()) // pull-based; no push support needed
+    }
+}
+
+impl WebDashboard {
+    fn cleanup_monitor(&mut self) {
+        if let Some(handle) = self.monitor.take() {
+            let _ = handle.join();
+        }
     }
 }

@@ -39,6 +39,7 @@ LEGACY_HOST_BIN_DIR="${HOME}/.local/bin"
 DOCS_SRC="${PROJECT_DIR}/data/docs"
 EMBEDDED_TOOLS_SRC="${PROJECT_DIR}/tools/embedded"
 WEB_SRC="${PROJECT_DIR}/data/web"
+BUNDLED_CONFIG_DIR="${PROJECT_DIR}/data/config"
 BASHRC_PATH="${HOME}/.bashrc"
 PATH_EXPORT='export PATH="$HOME/.tizenclaw/bin:$PATH"'
 
@@ -86,6 +87,69 @@ run() {
     return 0
   fi
   "$@"
+}
+
+process_report() {
+  ps -eo pid,ppid,stat,cmd \
+    | grep -E "(${INSTALL_DIR}/${PKG_NAME}|${INSTALL_DIR}/${TOOL_EXECUTOR_NAME}|${INSTALL_DIR}/${WEB_DASHBOARD_NAME}|(^|/| )${PKG_NAME}($| )|(^|/| )${TOOL_EXECUTOR_NAME}($| )|(^|/| )${WEB_DASHBOARD_NAME}($| ))" \
+    | grep -v -E "grep -E|deploy_host.sh" || true
+}
+
+dashboard_port() {
+  python3 - <<'PY' "${CONFIG_DIR}/channel_config.json"
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1])
+port = 9090
+try:
+    if path.exists():
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for channel in data.get("channels", []):
+            if channel.get("name") == "web_dashboard":
+                port = int(channel.get("settings", {}).get("port", 9090))
+                break
+except Exception:
+    port = 9090
+print(port)
+PY
+}
+
+port_report() {
+  local port="$1"
+  ss -ltnp "( sport = :${port} )" 2>/dev/null | sed '1d' || true
+}
+
+warn_if_dashboard_port_busy() {
+  local port="$1"
+  local listeners
+  listeners="$(port_report "${port}")"
+  if [ -n "${listeners}" ]; then
+    warn "Dashboard port ${port} is already in use before startup:"
+    printf '%s\n' "${listeners}"
+    warn "The dashboard may exit immediately until the port is freed or reconfigured."
+    return 0
+  fi
+  ok "Dashboard port ${port} is available"
+}
+
+wait_for_process_name_exit() {
+  local label="$1"
+  local binary_name="$2"
+  local timeout_secs="${3:-5}"
+  local waited=0
+  local current_uid
+  current_uid="$(id -u)"
+
+  while pgrep -u "${current_uid}" -x "${binary_name}" >/dev/null 2>&1 \
+    || pgrep -u "${current_uid}" -f "${INSTALL_DIR}/${binary_name}([[:space:]]|$)" >/dev/null 2>&1; do
+    if [ "${waited}" -ge "${timeout_secs}" ]; then
+      warn "${label} still appears to be alive after ${timeout_secs}s"
+      return 1
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+
+  return 0
 }
 
 # ─────────────────────────────────────────────
@@ -278,6 +342,12 @@ do_build() {
 do_test() {
   header "Running Tests (Host — Generic Linux)"
 
+  log "Stopping running host processes before test cycle"
+  stop_daemon
+  if [ "${DRY_RUN}" = false ]; then
+    process_report || true
+  fi
+
   log "Running: cargo test --offline"
   cd "${PROJECT_DIR}"
 
@@ -349,6 +419,19 @@ do_install() {
     run mkdir -p "${DATA_DIR}/docs"
     run cp -r "${DOCS_SRC}/." "${DATA_DIR}/docs/"
     ok "Docs installed"
+  fi
+
+  if [ -d "${BUNDLED_CONFIG_DIR}" ]; then
+    log "Seeding default config files into ${CONFIG_DIR} when missing"
+    while IFS= read -r config_path; do
+      local file_name
+      file_name="$(basename "${config_path}")"
+      local target_path="${CONFIG_DIR}/${file_name}"
+      if [ ! -f "${target_path}" ]; then
+        run install -m 644 "${config_path}" "${target_path}"
+      fi
+    done < <(find "${BUNDLED_CONFIG_DIR}" -maxdepth 1 -type f ! -name '*.sample' | sort)
+    ok "Default config seeding complete"
   fi
 
   if [ -d "${EMBEDDED_TOOLS_SRC}" ]; then
@@ -432,6 +515,21 @@ stop_daemon() {
   if pgrep -x "${WEB_DASHBOARD_NAME}" &>/dev/null; then
     run pkill -x "${WEB_DASHBOARD_NAME}" || true
   fi
+
+  wait_for_process_name_exit "tizenclaw-tool-executor" "${TOOL_EXECUTOR_NAME}" 5 || true
+  wait_for_process_name_exit "tizenclaw" "${PKG_NAME}" 5 || true
+  wait_for_process_name_exit "tizenclaw-web-dashboard" "${WEB_DASHBOARD_NAME}" 5 || true
+
+  if [ "${DRY_RUN}" = false ]; then
+    local remaining
+    remaining="$(process_report)"
+    if [ -n "${remaining}" ]; then
+      warn "Remaining host process entries detected after stop:"
+      printf '%s\n' "${remaining}"
+    else
+      ok "All known host processes were stopped"
+    fi
+  fi
 }
 
 remove_installation() {
@@ -482,6 +580,8 @@ remove_installation() {
 
 show_status() {
   header "Daemon Status"
+  local host_dashboard_port
+  host_dashboard_port="$(dashboard_port)"
 
   if [ -f "${PID_FILE}" ]; then
     local pid
@@ -505,6 +605,28 @@ show_status() {
     fi
   fi
 
+  if pgrep -f "${INSTALL_DIR}/${WEB_DASHBOARD_NAME}" >/dev/null 2>&1 || pgrep -x "${WEB_DASHBOARD_NAME}" >/dev/null 2>&1; then
+    ok "tizenclaw-web-dashboard is running"
+  else
+    warn "tizenclaw-web-dashboard is not running"
+  fi
+
+  local dashboard_listeners
+  dashboard_listeners="$(port_report "${host_dashboard_port}")"
+  if [ -n "${dashboard_listeners}" ]; then
+    log "Port ${host_dashboard_port} listeners:"
+    printf '%s\n' "${dashboard_listeners}"
+  else
+    log "Port ${host_dashboard_port} has no active listeners"
+  fi
+
+  local dashboard_zombies
+  dashboard_zombies="$(ps -eo pid,ppid,stat,cmd | grep '\[tizenclaw-web-d\] <defunct>' | grep -v grep || true)"
+  if [ -n "${dashboard_zombies}" ]; then
+    warn "Detected defunct dashboard process entries:"
+    printf '%s\n' "${dashboard_zombies}"
+  fi
+
   if [ -f "${LOG_DIR}/tizenclaw.log" ]; then
     echo ""
     log "Recent logs (last 20 lines):"
@@ -523,6 +645,8 @@ follow_log() {
 
 do_run() {
   header "Step 3/3: Start Host Daemon"
+  local host_dashboard_port
+  host_dashboard_port="$(dashboard_port)"
 
   # If a custom llm_config.json was specified, wire it up via TIZENCLAW_DATA_DIR
   if [ -n "${LLM_CONFIG}" ]; then
@@ -539,6 +663,10 @@ do_run() {
 
   # Stop existing instance if running
   stop_daemon
+  if [ "${DRY_RUN}" = false ]; then
+    process_report || true
+  fi
+  warn_if_dashboard_port_busy "${host_dashboard_port}"
 
   # Start tool-executor in background
   log "Starting tizenclaw-tool-executor..."

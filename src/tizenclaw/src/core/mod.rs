@@ -38,6 +38,7 @@ pub mod context_engine;
 pub mod context_fusion_engine;
 pub mod device_profiler;
 pub mod fallback_parser;
+pub mod feature_tools;
 pub mod perception_engine;
 pub mod proactive_advisor;
 pub mod swarm_manager;

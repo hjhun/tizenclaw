@@ -1021,10 +1021,8 @@ mod tests {
             .join("sessions")
             .join("bench_s2")
             .join("transcript.jsonl");
-        let lines: Vec<&str> = std::fs::read_to_string(transcript)
-            .unwrap()
-            .lines()
-            .collect();
+        let transcript_text = std::fs::read_to_string(transcript).unwrap();
+        let lines: Vec<&str> = transcript_text.lines().collect();
 
         assert_eq!(lines.len(), 4);
         assert!(lines[0].contains("\"role\":\"user\""));

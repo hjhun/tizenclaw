@@ -1430,6 +1430,7 @@ version = "1.0.0"
 dependencies = [
  "async-trait",
  "axum",
+ "base64",
  "futures-util",
  "libc",
  "libloading",

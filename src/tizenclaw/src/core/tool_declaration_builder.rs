@@ -2,6 +2,7 @@
 
 use crate::llm::backend::LlmToolDecl;
 use serde_json::{json, Value};
+use std::collections::HashSet;
 
 pub struct ToolDeclarationBuilder;
 
@@ -73,6 +74,56 @@ impl ToolDeclarationBuilder {
         {
             Self::push_agent_tools(tools);
         }
+
+        // 7. Research / Search Intent
+        if p.contains("search")
+            || p.contains("research")
+            || p.contains("weather")
+            || p.contains("stock")
+            || p.contains("news")
+            || p.contains("conference")
+            || p.contains("market")
+            || p.contains("웹")
+            || p.contains("검색")
+            || p.contains("조사")
+        {
+            Self::push_research_tools(tools);
+        }
+
+        // 8. Document / Data Intent
+        if p.contains(".pdf")
+            || p.contains(".csv")
+            || p.contains(".xlsx")
+            || p.contains("spreadsheet")
+            || p.contains("excel")
+            || p.contains("table")
+            || p.contains("document")
+            || p.contains("summary")
+            || p.contains("pdf")
+            || p.contains("엑셀")
+            || p.contains("문서")
+            || p.contains("표")
+        {
+            Self::push_document_tools(tools);
+        }
+
+        // 9. Image Intent
+        if p.contains("image")
+            || p.contains("png")
+            || p.contains("jpg")
+            || p.contains("jpeg")
+            || p.contains("draw")
+            || p.contains("illustration")
+            || p.contains("photo")
+            || p.contains("그림")
+            || p.contains("이미지")
+            || p.contains("사진")
+        {
+            Self::push_image_tools(tools);
+        }
+
+        let mut seen = HashSet::new();
+        tools.retain(|tool| seen.insert(tool.name.clone()));
     }
 
     fn push_meta_tools(tools: &mut Vec<LlmToolDecl>) {
@@ -417,6 +468,79 @@ impl ToolDeclarationBuilder {
                     "max_iterations": {"type": "integer"}
                 },
                 "required": ["name", "system_prompt"]
+            }),
+        });
+    }
+
+    fn push_research_tools(tools: &mut Vec<LlmToolDecl>) {
+        tools.push(LlmToolDecl {
+            name: "web_search".into(),
+            description: "Search the web using the configured search provider stack and return normalized result snippets.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                    "engine": {"type": "string", "description": "Optional engine override"},
+                    "limit": {"type": "integer", "description": "Maximum number of results to keep", "minimum": 1, "maximum": 10}
+                },
+                "required": ["query"]
+            }),
+        });
+        tools.push(LlmToolDecl {
+            name: "validate_web_search".into(),
+            description: "Inspect search configuration and report which engines are ready to use."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "engine": {"type": "string", "description": "Optional engine name to validate"}
+                },
+                "required": []
+            }),
+        });
+    }
+
+    fn push_document_tools(tools: &mut Vec<LlmToolDecl>) {
+        tools.push(LlmToolDecl {
+            name: "extract_document_text".into(),
+            description: "Extract readable text from a local document such as TXT, Markdown, JSON, CSV, or PDF.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Document path to read"},
+                    "output_path": {"type": "string", "description": "Optional text output file path"},
+                    "max_chars": {"type": "integer", "description": "Optional maximum number of characters to return inline", "minimum": 1}
+                },
+                "required": ["path"]
+            }),
+        });
+        tools.push(LlmToolDecl {
+            name: "inspect_tabular_data".into(),
+            description: "Inspect CSV or XLSX files and return sheet, header, row count, and preview information.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Tabular file path"},
+                    "preview_rows": {"type": "integer", "description": "Preview row count per sheet", "minimum": 1, "maximum": 20}
+                },
+                "required": ["path"]
+            }),
+        });
+    }
+
+    fn push_image_tools(tools: &mut Vec<LlmToolDecl>) {
+        tools.push(LlmToolDecl {
+            name: "generate_image".into(),
+            description: "Generate an image from a text prompt and save it into the active workdir.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "Image prompt"},
+                    "path": {"type": "string", "description": "Relative or absolute output path for the image file"},
+                    "size": {"type": "string", "description": "Optional image size such as 1024x1024"},
+                    "background": {"type": "string", "description": "Optional background preference"}
+                },
+                "required": ["prompt", "path"]
             }),
         });
     }
