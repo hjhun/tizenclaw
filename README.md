@@ -5,10 +5,11 @@
 <h1 align="center">TizenClaw</h1>
 
 <p align="center">
-  <strong>An autonomous Rust agent daemon for Tizen and embedded Linux.</strong><br>
-  TizenClaw turns an embedded device into a persistent AI runtime with IPC,
-  multi-channel delivery, dashboard access, plugin-driven extensions, and
-  Tizen-aware system integration.
+  <strong>A persistent Rust AI agent runtime for Tizen and embedded Linux.</strong><br>
+  TizenClaw turns a device into an always-on agent system with Tizen-aware
+  integration, multi-surface access, plugin-ready boundaries, and a Telegram
+  coding workflow that can drive local <code>codex</code>, <code>gemini</code>,
+  and <code>claude</code> CLIs remotely.
 </p>
 
 <p align="center">
@@ -19,110 +20,193 @@
 </p>
 
 <p align="center">
-  <a href="#overview">Overview</a> •
-  <a href="#capabilities">Capabilities</a> •
-  <a href="#quick-start">Quick Start</a> •
-  <a href="#workspace">Workspace</a> •
-  <a href="#documentation">Documentation</a>
+  <a href="#why-tizenclaw">Why TizenClaw</a> •
+  <a href="#at-a-glance">At a Glance</a> •
+  <a href="#telegram-coding-over-chat">Telegram Coding Over Chat</a> •
+  <a href="#install-on-ubuntu-or-wsl">Install on Ubuntu or WSL</a> •
+  <a href="#deploy-to-a-tizen-target">Deploy to a Tizen Target</a>
 </p>
 
 ---
 
-## Overview
-
-TizenClaw is a long-running AI agent daemon built in Rust for devices that
-need more than a chat wrapper. It is designed for Tizen and adjacent embedded
-Linux environments where the agent must stay alive, manage constrained system
-resources, communicate over multiple interfaces, and integrate with platform
-services through carefully bounded FFI.
-
-The project combines a Tokio-based daemon, an IPC-accessible CLI, a standalone
-web dashboard, a dedicated tool-execution sidecar, and plugin metadata crates
-that make it possible to extend the runtime without collapsing everything into
-one binary. The result is an agent platform that is easier to reason about in
-embedded deployments: orchestration in Rust, platform boundaries kept explicit,
-and deployment handled through the Tizen build pipeline instead of ad hoc local
-build steps.
-
-This repository is the Rust edition of TizenClaw. It focuses on persistent
-operation, safe concurrency, runtime adaptability, and deployment to emulator
-or device targets through the repository's `deploy.sh` workflow.
-
 ## Why TizenClaw
 
-Embedded agent runtimes have different requirements from desktop assistants or
-cloud-only gateways. They must survive process restarts, fit within a device
-budget, expose observable services, and cooperate with platform APIs that may
-or may not be available at runtime.
+TizenClaw is not a one-shot assistant wrapper. It is a long-running agent
+daemon built for devices that need to stay alive, react to platform events,
+expose stable control surfaces, and survive the messy reality of embedded
+Linux deployments.
 
-TizenClaw is organized around those constraints:
+The project is designed around the constraints that matter on Tizen-class
+systems:
 
-- The main daemon owns orchestration, scheduling, channel lifecycle, IPC, and
-  agent behavior.
-- Tizen-specific access is isolated behind crates and adapters instead of being
-  spread throughout the codebase.
-- Shared libraries are loaded dynamically when needed, which lets the runtime
-  degrade more safely across target environments.
-- Deployment is centered on the actual Tizen packaging path, not on a separate
-  host-only development story that diverges from production.
+- a persistent runtime instead of a fire-and-forget script
+- explicit Tizen and generic-Linux boundaries instead of hidden platform
+  assumptions
+- dynamic loading for platform libraries that may differ by image or firmware
+- deploy-first validation through the real Tizen packaging path
+- host workflows that still reuse the same workspace and runtime model
 
-## Capabilities
+If you want an agent that feels closer to an embedded control plane than a
+demo chatbot, this is what TizenClaw is for.
 
-### Persistent Agent Runtime
+## At a Glance
 
-- Runs as a daemon instead of a single-shot command.
-- Initializes logging, storage paths, channels, IPC, scheduler, and discovery
-  during boot.
-- Keeps the agent available for CLI requests, dashboard requests, background
-  tasks, and outbound notifications.
+| Area | What TizenClaw Provides |
+| --- | --- |
+| Runtime model | A persistent Tokio-based daemon with IPC, scheduling, storage, and background automation |
+| Platform focus | Tizen-first behavior with generic Linux fallbacks where device APIs are unavailable |
+| Access surfaces | CLI, web dashboard, Telegram, webhook, Slack, Discord, MCP, and other channel layers present in the workspace |
+| Coding workflow | Telegram can switch into coding mode and drive local `codex`, `gemini`, or `claude` CLIs on the host |
+| Extensibility | Dedicated tool executor, metadata plugins, C-facing library, and dynamic `.so` loading |
+| Deployment story | `deploy.sh` for emulator/device packaging and deployment, `deploy_host.sh` for Ubuntu/WSL host runs |
 
-### Multi-Surface Access
+## What Makes It Strong
 
-- IPC access through the `tizenclaw-cli` client.
-- Web dashboard process for browser-based interaction and administration.
-- Channel framework with built-in support for dashboard, webhook, Slack,
-  Discord, voice, MCP, and related transport layers found in the workspace.
+### Built for real device runtimes
 
-### Multi-Backend Model Support
+TizenClaw keeps orchestration, concurrency, IPC, and state management in Rust,
+which makes the system easier to reason about when the process has to stay up
+for long periods on constrained hardware.
 
-- Built-in LLM backends in the daemon source include OpenAI, Anthropic,
-  Gemini, Ollama, and plugin-managed backends.
-- Configuration is kept outside the binary so deployments can adapt to the
-  target environment and provider mix.
+### Tizen-aware without hard-wiring the whole system to Tizen
 
-### Embedded-Friendly Extensibility
+Tizen-specific integrations live behind dedicated crates and adapters. Generic
+Linux infrastructure is available in parallel, so the runtime can remain useful
+on host Linux while still speaking to device-oriented services where they exist.
 
-- `tizenclaw-tool-executor` isolates tool execution into a dedicated service.
-- Metadata plugin crates provide extension points for CLI, skill, and LLM
-  backend plugins.
-- `libtizenclaw` and `libtizenclaw-core` keep FFI ownership explicit for
-  consumers that need C-facing integration.
+### Remote coding from Telegram
 
-### Tizen-Aware Integration
+One of the most distinctive pieces of the project is the Telegram coding mode:
+you can chat with the device over Telegram, switch the chat into coding mode,
+choose a local coding-agent CLI backend, point that chat at a project
+directory, and receive progress and result messages back in Telegram while the
+host executes the request.
 
-- Runtime path handling for device-oriented data, config, and web roots.
-- Platform-specific adapters under `src/tizenclaw/src/tizen` and generic
-  Linux fallbacks under `src/tizenclaw/src/generic`.
-- Dynamic shared library loading through `libloading` where platform features
-  must be discovered at runtime instead of assumed at link time.
+### Clean boundaries for plugins and external consumers
 
-## Quick Start
+The repository includes `libtizenclaw`, `libtizenclaw-core`, and metadata
+plugin crates so runtime extensions and C-facing integrations do not have to be
+bolted onto the daemon as afterthoughts.
 
-### Prerequisites
+## Telegram Coding Over Chat
 
-Before you deploy TizenClaw, make sure the following are available:
+TizenClaw can use Telegram as a remote control surface for coding workflows.
+This is not just "send a prompt to the daemon" behavior. The Telegram channel
+can switch into a host-backed coding mode that runs real coding-agent CLIs.
 
-- Tizen Studio tooling, including `sdb`
-- Tizen GBS build environment
-- A reachable Tizen emulator or device
-- A Linux environment capable of running the repository scripts
+### Supported flow
 
-The repository's operational workflow is centered on `deploy.sh`, which drives
-build, package, deploy, and service restart steps for the target.
+1. Switch the chat into coding mode with `/select coding`
+2. Choose a backend with `/cli_backend codex`, `/cli_backend gemini`, or
+   `/cli_backend claude`
+3. Bind the chat to a repository with `/project /path/to/repo`
+4. Choose execution style with `/mode plan` or `/mode fast`
+5. Toggle auto-approval where supported with `/auto_approve on`
+6. Inspect the current state with `/status` or start fresh with
+   `/new_session`
 
-### Build and Deploy
+### What you get
 
-For the standard x86_64 emulator-oriented workflow:
+- Per-chat backend selection
+- Per-chat project directory overrides
+- Separate chat and coding sessions
+- Progress updates while the CLI is still running
+- Usage tracking for the selected backend
+- Host-auth hints when a CLI has not been logged in yet
+
+### Backend examples
+
+TizenClaw maps Telegram coding requests onto the real installed CLIs:
+
+| Backend | Example execution shape |
+| --- | --- |
+| Codex | `codex exec --json --full-auto -C <project> <prompt>` |
+| Gemini | `gemini --prompt <prompt> --output-format text --approval-mode auto_edit` |
+| Claude | `claude --print --output-format text --permission-mode auto <prompt>` |
+
+This makes TizenClaw useful as a mobile coding bridge: Telegram becomes the
+control surface, while the actual code work happens through the local CLI tools
+you already trust on the host.
+
+## Architecture Snapshot
+
+```text
+Telegram / CLI / Dashboard / Channels
+                |
+                v
+        +-------------------+
+        | TizenClaw Daemon  |
+        | Tokio runtime     |
+        | IPC + scheduling  |
+        | storage + routing |
+        +---------+---------+
+                  |
+      +-----------+--------------------+
+      |           |                    |
+      v           v                    v
+  Tizen adapters  Generic Linux        LLM backends
+  and dynloaded   infrastructure        and plugins
+  platform APIs   fallbacks
+      |
+      +-------------------------------+
+                                      |
+                                      v
+                         Tool executor / C API / metadata plugins
+
+Telegram coding mode can also invoke:
+  codex / gemini / claude
+on the host and stream progress back into chat.
+```
+
+## Install on Ubuntu or WSL
+
+If you want to try TizenClaw on host Linux first, the repository now includes a
+GitHub-friendly bootstrap script that installs prerequisites, clones or updates
+the repository, and delegates the actual host install to `deploy_host.sh`.
+
+### One-line bootstrap
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hjhun/tizenclaw/develRust/install.sh | bash
+```
+
+Useful variants:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hjhun/tizenclaw/develRust/install.sh | bash -s -- --build-only
+curl -fsSL https://raw.githubusercontent.com/hjhun/tizenclaw/develRust/install.sh | bash -s -- --ref develRust
+curl -fsSL https://raw.githubusercontent.com/hjhun/tizenclaw/develRust/install.sh | bash -s -- --dir "$HOME/src/tizenclaw"
+```
+
+What the bootstrap does:
+
+- installs Ubuntu packages needed for host builds
+- installs Rust through `rustup` when missing
+- clones or updates `https://github.com/hjhun/tizenclaw.git`
+- checks out the requested Git ref, defaulting to `develRust`
+- runs `deploy_host.sh` to build, install, and optionally start the host tools
+
+### Manual host flow
+
+```bash
+git clone https://github.com/hjhun/tizenclaw.git
+cd tizenclaw
+./deploy_host.sh
+```
+
+Useful host commands:
+
+```bash
+./deploy_host.sh -b
+./deploy_host.sh --status
+./deploy_host.sh --log
+./deploy_host.sh -s
+```
+
+## Deploy to a Tizen Target
+
+For the emulator or device-oriented workflow, use the repository's Tizen deploy
+pipeline:
 
 ```bash
 ./deploy.sh -a x86_64
@@ -136,100 +220,33 @@ Useful variants:
 ./deploy.sh -a x86_64 -s
 ```
 
-What this gives you:
-
-- Tizen package build through the project pipeline
-- Device deployment through `sdb`
-- Service restart for the daemon and related components
-
-### Talk to the Daemon
-
-Once deployed, the CLI can send prompts over the daemon IPC interface:
-
-```bash
-tizenclaw-cli "Summarize the current device state"
-tizenclaw-cli --stream "Explain the active channels"
-tizenclaw-cli dashboard status
-```
-
-### Open the Dashboard
-
-The standalone dashboard process uses port `9090` on Tizen targets and `9091`
-on non-Tizen host environments by default. After deployment, the dashboard can
-be reached through the forwarded or device-exposed port configured in your
-environment.
+This path is the canonical Tizen validation flow. It handles build, packaging,
+deployment, and service restart on the target.
 
 ## Workspace
 
-TizenClaw is a Rust workspace rather than a single crate. The main members are:
+TizenClaw is a Rust workspace with clearly separated runtime roles:
 
-- `src/tizenclaw`: the primary daemon binary
-- `src/tizenclaw-cli`: IPC client for prompt and dashboard control
-- `src/tizenclaw-web-dashboard`: standalone web UI and HTTP API
-- `src/tizenclaw-tool-executor`: sidecar for controlled tool execution
-- `src/libtizenclaw-core`: shared core framework, loader, and plugin support
-- `src/libtizenclaw`: C-facing library for external integration
-- `src/tizenclaw-metadata-*`: plugin metadata crates for skills, CLI, and LLM
+- `src/tizenclaw`: main daemon
+- `src/tizenclaw-cli`: IPC client and operational CLI
+- `src/tizenclaw-web-dashboard`: standalone web dashboard
+- `src/tizenclaw-tool-executor`: isolated tool-execution sidecar
+- `src/libtizenclaw-core`: shared framework and plugin/runtime support
+- `src/libtizenclaw`: C-facing client library
+- `src/tizenclaw-metadata-*`: metadata plugin crates for skills, CLI, and LLM
   backend extensions
-
-At runtime, the daemon brings together core orchestration, storage, network
-discovery, model backends, channel management, scheduler behavior, and Tizen or
-generic infrastructure adapters.
-
-## Architecture Snapshot
-
-At a high level, the repository works like this:
-
-```text
-CLI / Dashboard / Channels
-          |
-          v
-    TizenClaw Daemon
-          |
-          +-- Core agent orchestration
-          +-- Scheduling and background tasks
-          +-- Storage and session state
-          +-- LLM backend routing
-          +-- Channel lifecycle management
-          +-- Tizen and generic infrastructure adapters
-          |
-          +-- Tool Executor Sidecar
-          +-- Plugin Metadata Crates
-          +-- C/FFI Bridge Libraries
-```
-
-The daemon keeps orchestration in Rust, while platform boundaries are isolated
-to the crates and adapters that need them. That split is especially important
-for Tizen deployments where shared library availability and device services can
-vary by image, emulator, or firmware configuration.
 
 ## Documentation
 
-Additional project documentation is available in this repository:
+Additional repository docs:
 
 - [Structure Guide](docs/STRUCTURE.md)
 - [Usage Guide](docs/USAGE.md)
 
-These guides explain how the workspace is organized, what each major component
-is responsible for, and how to operate the project through its supported build,
-deploy, and runtime entry points.
+## Status
 
-## Status and Scope
-
-This repository is actively focused on the Rust-based TizenClaw runtime and its
-embedded deployment story. Some subsystems are clearly under active evolution,
-but the project already exposes a substantial operational surface: daemon boot,
-IPC, dashboard service, model backends, storage, plugin metadata, and Tizen
-integration layers.
-
-If you want to understand the codebase quickly, start with:
-
-1. `src/tizenclaw/src/main.rs`
-2. `src/tizenclaw/src/core/`
-3. `src/tizenclaw-web-dashboard/src/main.rs`
-4. `deploy.sh`
-5. `docs/STRUCTURE.md`
-
-## License
-
-Apache License 2.0. See [LICENSE](LICENSE).
+The project is actively evolving, but the central direction is already clear:
+TizenClaw aims to be a serious autonomous agent runtime for Tizen and embedded
+Linux, not just a sample app. Its strengths are persistence, explicit platform
+boundaries, flexible access surfaces, and unusually practical remote coding
+control through Telegram plus local coding-agent CLIs.
