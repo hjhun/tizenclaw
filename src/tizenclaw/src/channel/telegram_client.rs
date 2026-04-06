@@ -15,6 +15,7 @@ use tokio::io::AsyncBufReadExt;
 
 const MAX_CONCURRENT_HANDLERS: i32 = 3;
 const DEFAULT_CLI_TIMEOUT_SECS: u64 = 900;
+const CLI_CHAT_ACTION_UPDATE_SECS: u64 = 4;
 const CLI_PROGRESS_UPDATE_SECS: u64 = 15;
 const CLI_PROGRESS_MIN_PARTIAL_CHARS: usize = 80;
 const DEFAULT_GEMINI_CLI_MODEL: &str = "gemini-2.5-flash";
@@ -281,6 +282,11 @@ impl TelegramOutgoingMessage {
 enum TelegramCliStreamEvent {
     StdoutLine(String),
     StderrLine(String),
+}
+
+struct TelegramCliExecutionResult {
+    response_text: String,
+    send_followup: bool,
 }
 
 pub struct TelegramClient {
@@ -706,6 +712,33 @@ impl TelegramClient {
         payload.to_string()
     }
 
+    fn build_edit_message_payload(
+        chat_id: i64,
+        message_id: i64,
+        text: &str,
+        reply_markup: Option<Value>,
+    ) -> String {
+        let mut payload = json!({
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": text
+        });
+
+        if let Some(reply_markup) = reply_markup {
+            payload["reply_markup"] = reply_markup;
+        }
+
+        payload.to_string()
+    }
+
+    fn build_chat_action_payload(chat_id: i64, action: &str) -> String {
+        json!({
+            "chat_id": chat_id,
+            "action": action
+        })
+        .to_string()
+    }
+
     fn command_menu_entries() -> Vec<(&'static str, &'static str)> {
         vec![
             ("select", "Switch between chat and coding mode"),
@@ -786,6 +819,95 @@ impl TelegramClient {
             Ok(_) => log::info!("Telegram bot commands registered"),
             Err(err) => log::warn!("Telegram setMyCommands failed: {}", err),
         }
+    }
+
+    async fn post_telegram_api(
+        bot_token: &str,
+        method: &str,
+        payload: String,
+    ) -> Result<Value, String> {
+        if bot_token.is_empty() {
+            return Err("Telegram bot token is empty.".to_string());
+        }
+
+        let url = format!("https://api.telegram.org/bot{}/{}", bot_token, method);
+        let client = crate::infra::http_client::HttpClient::new();
+        let response = client
+            .post(&url, &payload)
+            .await
+            .map_err(|err| format!("Telegram {} failed: {}", method, err))?;
+        let value = serde_json::from_str::<Value>(&response.body)
+            .map_err(|err| format!("Telegram {} returned invalid JSON: {}", method, err))?;
+
+        if value.get("ok").and_then(Value::as_bool) == Some(false) {
+            let description = value
+                .get("description")
+                .and_then(Value::as_str)
+                .unwrap_or("Telegram API request failed.");
+            return Err(description.to_string());
+        }
+
+        Ok(value)
+    }
+
+    fn extract_telegram_message_id(body: &str) -> Option<i64> {
+        serde_json::from_str::<Value>(body)
+            .ok()
+            .and_then(|value| Self::telegram_message_id_from_value(&value))
+    }
+
+    fn telegram_message_id_from_value(value: &Value) -> Option<i64> {
+        value
+            .get("result")
+            .and_then(|result| result.get("message_id"))
+            .and_then(Value::as_i64)
+    }
+
+    async fn send_telegram_message_and_get_id(
+        bot_token: &str,
+        chat_id: i64,
+        message: &TelegramOutgoingMessage,
+    ) -> Result<i64, String> {
+        let safe_text = Self::truncate_chars(&message.text, 4000);
+        let payload =
+            Self::build_send_message_payload(chat_id, &safe_text, message.reply_markup.clone());
+        let value = Self::post_telegram_api(bot_token, "sendMessage", payload).await?;
+
+        Self::telegram_message_id_from_value(&value)
+            .or_else(|| Self::extract_telegram_message_id(&value.to_string()))
+            .ok_or_else(|| "Telegram sendMessage response did not include message_id.".to_string())
+    }
+
+    async fn edit_telegram_message(
+        bot_token: &str,
+        chat_id: i64,
+        message_id: i64,
+        message: &TelegramOutgoingMessage,
+    ) -> Result<(), String> {
+        let safe_text = Self::truncate_chars(&message.text, 4000);
+        let payload = Self::build_edit_message_payload(
+            chat_id,
+            message_id,
+            &safe_text,
+            message.reply_markup.clone(),
+        );
+
+        match Self::post_telegram_api(bot_token, "editMessageText", payload).await {
+            Ok(_) => Ok(()),
+            Err(err) if err.contains("message is not modified") => Ok(()),
+            Err(err) => Err(err),
+        }
+    }
+
+    async fn send_telegram_chat_action(
+        bot_token: &str,
+        chat_id: i64,
+        action: &str,
+    ) -> Result<(), String> {
+        let payload = Self::build_chat_action_payload(chat_id, action);
+        Self::post_telegram_api(bot_token, "sendChatAction", payload)
+            .await
+            .map(|_| ())
     }
 
     // Static so it can be called inside spawned async tasks easily
@@ -1719,47 +1841,40 @@ User request:\n{}",
         Ok((binary, args))
     }
 
-    fn build_cli_started_message(
+    fn build_cli_streaming_message(
         state: &TelegramChatState,
         backend: TelegramCliBackend,
         effective_cli_workdir: &Path,
-    ) -> String {
-        format!(
-            "Started `{}` coding request.\nSession: `{}`.\nProject directory: `{}`.\nI will post progress updates while it runs.",
-            backend.as_str(),
-            state.session_label_for(TelegramInteractionMode::Coding),
-            effective_cli_workdir.display()
-        )
-    }
-
-    fn build_cli_progress_message(
-        backend: TelegramCliBackend,
-        effective_cli_workdir: &Path,
+        phase: &str,
         elapsed_secs: u64,
         last_output_secs: Option<u64>,
+        output_text: Option<&str>,
     ) -> String {
+        let phase_text = match phase {
+            "running" => "is running".to_string(),
+            "completed" | "failed" => phase.to_string(),
+            other if other.starts_with("timed out") => other.to_string(),
+            other => format!("is {}", other),
+        };
         let activity = last_output_secs.map_or_else(
-            || "No CLI output has been observed yet.".to_string(),
+            || "Waiting for CLI output...".to_string(),
             |secs| format!("Last CLI output observed `{}` second(s) ago.", secs),
         );
+        let latest_output = output_text
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(|text| Self::truncate_chars(text, 2600))
+            .unwrap_or_else(|| "Waiting for CLI output...".to_string());
 
         format!(
-            "`{}` is still running.\nElapsed: `{}` second(s).\nProject directory: `{}`.\n{}",
+            "`{}` coding request {}.\nSession: `{}`.\nProject directory: `{}`.\nElapsed: `{}` second(s).\n{}\n\nLatest output:\n{}",
             backend.as_str(),
-            elapsed_secs,
+            phase_text,
+            state.session_label_for(TelegramInteractionMode::Coding),
             effective_cli_workdir.display(),
-            activity
-        )
-    }
-
-    fn build_cli_partial_response_message(
-        backend: TelegramCliBackend,
-        partial_text: &str,
-    ) -> String {
-        format!(
-            "Partial `{}` response:\n\n{}",
-            backend.as_str(),
-            Self::truncate_chars(partial_text.trim(), 2800)
+            elapsed_secs,
+            activity,
+            latest_output
         )
     }
 
@@ -2115,7 +2230,7 @@ User request:\n{}",
         cli_backend_models: Arc<HashMap<TelegramCliBackend, String>>,
         chat_states: Arc<Mutex<HashMap<i64, TelegramChatState>>>,
         state_path: Arc<PathBuf>,
-    ) -> String {
+    ) -> TelegramCliExecutionResult {
         let state = Self::load_chat_state_snapshot(&chat_states, chat_id);
         let backend = state.cli_backend;
         let started_at = Self::current_timestamp_millis();
@@ -2130,7 +2245,12 @@ User request:\n{}",
             text,
         ) {
             Ok(invocation) => invocation,
-            Err(err) => return err,
+            Err(err) => {
+                return TelegramCliExecutionResult {
+                    response_text: err,
+                    send_followup: true,
+                }
+            }
         };
 
         let snapshot = match chat_states.lock() {
@@ -2142,7 +2262,10 @@ User request:\n{}",
                 states.clone()
             }
             Err(err) => {
-                return format!("State update failed before CLI execution: {}", err);
+                return TelegramCliExecutionResult {
+                    response_text: format!("State update failed before CLI execution: {}", err),
+                    send_followup: true,
+                };
             }
         };
         Self::persist_chat_states(&state_path, &snapshot);
@@ -2176,46 +2299,106 @@ User request:\n{}",
                 if !snapshot.is_empty() {
                     Self::persist_chat_states(&state_path, &snapshot);
                 }
-                return format!("Failed to start `{}`: {}", backend.as_str(), err);
+                return TelegramCliExecutionResult {
+                    response_text: format!("Failed to start `{}`: {}", backend.as_str(), err),
+                    send_followup: true,
+                };
             }
         };
 
-        Self::send_telegram_message(
-            bot_token,
-            chat_id,
-            &TelegramOutgoingMessage::plain(Self::build_cli_started_message(
-                &state,
-                backend,
-                &effective_cli_workdir,
-            )),
-        );
+        let initial_progress = TelegramOutgoingMessage::plain(Self::build_cli_streaming_message(
+            &state,
+            backend,
+            &effective_cli_workdir,
+            "running",
+            0,
+            None,
+            None,
+        ));
+        let initial_message_id =
+            match Self::send_telegram_message_and_get_id(bot_token, chat_id, &initial_progress)
+                .await
+            {
+                Ok(message_id) => Some(message_id),
+                Err(err) => {
+                    log::warn!(
+                        "TelegramClient: failed to create streaming progress message: {}",
+                        err
+                    );
+                    None
+                }
+            };
+        if initial_message_id.is_some() {
+            let _ = Self::send_telegram_chat_action(bot_token, chat_id, "typing").await;
+        }
 
         let Some(stdout_reader) = child.stdout.take() else {
-            return format!("Failed to capture `{}` stdout.", backend.as_str());
+            let response_text = format!("Failed to capture `{}` stdout.", backend.as_str());
+            if let Some(message_id) = initial_message_id {
+                let message = TelegramOutgoingMessage::plain(Self::build_cli_streaming_message(
+                    &state,
+                    backend,
+                    &effective_cli_workdir,
+                    "failed",
+                    0,
+                    None,
+                    Some(&response_text),
+                ));
+                let _ = Self::edit_telegram_message(bot_token, chat_id, message_id, &message).await;
+            }
+            return TelegramCliExecutionResult {
+                response_text,
+                send_followup: initial_message_id.is_none(),
+            };
         };
         let Some(stderr_reader) = child.stderr.take() else {
-            return format!("Failed to capture `{}` stderr.", backend.as_str());
+            let response_text = format!("Failed to capture `{}` stderr.", backend.as_str());
+            if let Some(message_id) = initial_message_id {
+                let message = TelegramOutgoingMessage::plain(Self::build_cli_streaming_message(
+                    &state,
+                    backend,
+                    &effective_cli_workdir,
+                    "failed",
+                    0,
+                    None,
+                    Some(&response_text),
+                ));
+                let _ = Self::edit_telegram_message(bot_token, chat_id, message_id, &message).await;
+            }
+            return TelegramCliExecutionResult {
+                response_text,
+                send_followup: initial_message_id.is_none(),
+            };
         };
 
         let started = Instant::now();
+        let progress_state = state.clone();
+        let progress_workdir = effective_cli_workdir.clone();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         tokio::spawn(Self::read_cli_stream(stdout_reader, true, tx.clone()));
         tokio::spawn(Self::read_cli_stream(stderr_reader, false, tx));
 
-        let execution = async {
+        let execution = async move {
             let mut child = child;
             let wait_fut = child.wait();
             tokio::pin!(wait_fut);
-            let mut heartbeat =
+            let mut progress_heartbeat =
                 tokio::time::interval(Duration::from_secs(CLI_PROGRESS_UPDATE_SECS));
-            heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-            heartbeat.tick().await;
+            progress_heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            progress_heartbeat.tick().await;
+            let mut typing_heartbeat =
+                tokio::time::interval(Duration::from_secs(CLI_CHAT_ACTION_UPDATE_SECS));
+            typing_heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            typing_heartbeat.tick().await;
 
             let mut stdout = String::new();
             let mut stderr = String::new();
             let mut last_partial_text = String::new();
+            let mut latest_output_text = None::<String>;
             let mut last_output_at = None::<Instant>;
             let mut child_status = None;
+            let mut streaming_message_id = initial_message_id;
+            let mut stream_message_usable = streaming_message_id.is_some();
 
             loop {
                 tokio::select! {
@@ -2245,45 +2428,107 @@ User request:\n{}",
                             }
                         }
 
-                        if let Some(partial) = Self::extract_incremental_cli_response(
-                            backend,
-                            &stdout,
-                            &stderr,
-                            &last_partial_text,
-                        ) {
-                            Self::send_telegram_message(
-                                bot_token,
-                                chat_id,
-                                &TelegramOutgoingMessage::plain(
-                                    Self::build_cli_partial_response_message(
-                                        backend,
-                                        &partial,
-                                    ),
-                                ),
-                            );
-                            if let Some(current_text) =
-                                Self::extract_cli_response_text(backend, &stdout, &stderr)
+                        if let Some(current_text) =
+                            Self::extract_cli_response_text(backend, &stdout, &stderr)
+                        {
+                            let current_text = current_text.trim().to_string();
+                            if !current_text.is_empty() {
+                                latest_output_text = Some(current_text);
+                            }
+                        }
+
+                        if stream_message_usable
+                            && Self::extract_incremental_cli_response(
+                                backend,
+                                &stdout,
+                                &stderr,
+                                &last_partial_text,
+                            )
+                            .is_some()
+                        {
+                            if let (Some(message_id), Some(current_text)) =
+                                (streaming_message_id, latest_output_text.as_deref())
                             {
-                                last_partial_text = current_text.trim().to_string();
+                                let elapsed_secs = started.elapsed().as_secs();
+                                let last_output_secs =
+                                    last_output_at.map(|instant| instant.elapsed().as_secs());
+                                let message = TelegramOutgoingMessage::plain(
+                                    Self::build_cli_streaming_message(
+                                        &progress_state,
+                                        backend,
+                                        &progress_workdir,
+                                        "running",
+                                        elapsed_secs,
+                                        last_output_secs,
+                                        Some(current_text),
+                                    ),
+                                );
+                                match Self::edit_telegram_message(
+                                    bot_token,
+                                    chat_id,
+                                    message_id,
+                                    &message,
+                                )
+                                .await
+                                {
+                                    Ok(_) => {
+                                        last_partial_text = current_text.to_string();
+                                    }
+                                    Err(err) => {
+                                        log::warn!(
+                                            "TelegramClient: failed to edit streaming message: {}",
+                                            err
+                                        );
+                                        streaming_message_id = None;
+                                        stream_message_usable = false;
+                                    }
+                                }
                             }
                         }
                     }
-                    _ = heartbeat.tick() => {
-                        if child_status.is_none() {
-                            let elapsed_secs = started.elapsed().as_secs();
-                            let last_output_secs = last_output_at.map(|instant| instant.elapsed().as_secs());
-                            Self::send_telegram_message(
-                                bot_token,
-                                chat_id,
-                                &TelegramOutgoingMessage::plain(
-                                    Self::build_cli_progress_message(
+                    _ = progress_heartbeat.tick() => {
+                        if child_status.is_none() && stream_message_usable {
+                            if let Some(message_id) = streaming_message_id {
+                                let elapsed_secs = started.elapsed().as_secs();
+                                let last_output_secs =
+                                    last_output_at.map(|instant| instant.elapsed().as_secs());
+                                let message = TelegramOutgoingMessage::plain(
+                                    Self::build_cli_streaming_message(
+                                        &progress_state,
                                         backend,
-                                        &effective_cli_workdir,
+                                        &progress_workdir,
+                                        "running",
                                         elapsed_secs,
                                         last_output_secs,
+                                        latest_output_text.as_deref(),
                                     ),
-                                ),
-                            );
+                                );
+                                if let Err(err) = Self::edit_telegram_message(
+                                    bot_token,
+                                    chat_id,
+                                    message_id,
+                                    &message,
+                                )
+                                .await
+                                {
+                                    log::warn!(
+                                        "TelegramClient: failed to refresh streaming message: {}",
+                                        err
+                                    );
+                                    streaming_message_id = None;
+                                    stream_message_usable = false;
+                                }
+                            }
+                        }
+                    }
+                    _ = typing_heartbeat.tick() => {
+                        if child_status.is_none() {
+                            let _ = Self::send_telegram_chat_action(
+                                bot_token,
+                                chat_id,
+                                "typing",
+                            )
+                            .await;
                         }
                     }
                 }
@@ -2293,14 +2538,30 @@ User request:\n{}",
                 Some(status) => status?,
                 None => wait_fut.await?,
             };
-            Ok::<_, std::io::Error>((output, stdout, stderr))
+            Ok::<_, std::io::Error>((
+                output,
+                stdout,
+                stderr,
+                last_output_at,
+                latest_output_text,
+                streaming_message_id,
+                stream_message_usable,
+            ))
         };
 
         let timed_output =
             tokio::time::timeout(Duration::from_secs(cli_timeout_secs), execution).await;
 
         match timed_output {
-            Ok(Ok((status, stdout, stderr))) => {
+            Ok(Ok((
+                status,
+                stdout,
+                stderr,
+                last_output_at,
+                latest_output_text,
+                streaming_message_id,
+                stream_message_usable,
+            ))) => {
                 let duration_ms = started.elapsed().as_millis() as u64;
                 let exit_code = status.code().unwrap_or(-1);
                 let success = status.success();
@@ -2331,7 +2592,43 @@ User request:\n{}",
                     Self::persist_chat_states(&state_path, &snapshot);
                 }
 
-                Self::format_cli_result(backend, exit_code, duration_ms, &stdout, &stderr)
+                let response_text =
+                    Self::format_cli_result(backend, exit_code, duration_ms, &stdout, &stderr);
+                let mut send_followup = streaming_message_id.is_none() || !stream_message_usable;
+
+                if let Some(message_id) = streaming_message_id {
+                    let phase = if success { "completed" } else { "failed" };
+                    let last_output_secs =
+                        last_output_at.map(|instant| instant.elapsed().as_secs());
+                    let final_output = latest_output_text
+                        .as_deref()
+                        .filter(|text| !text.trim().is_empty())
+                        .unwrap_or(response_text.as_str());
+                    let message =
+                        TelegramOutgoingMessage::plain(Self::build_cli_streaming_message(
+                            &state,
+                            backend,
+                            &effective_cli_workdir,
+                            phase,
+                            started.elapsed().as_secs(),
+                            last_output_secs,
+                            Some(final_output),
+                        ));
+                    if let Err(err) =
+                        Self::edit_telegram_message(bot_token, chat_id, message_id, &message).await
+                    {
+                        log::warn!(
+                            "TelegramClient: failed to finalize streaming message: {}",
+                            err
+                        );
+                        send_followup = true;
+                    }
+                }
+
+                TelegramCliExecutionResult {
+                    response_text,
+                    send_followup,
+                }
             }
             Ok(Err(err)) => {
                 let snapshot = match chat_states.lock() {
@@ -2348,11 +2645,45 @@ User request:\n{}",
                 if !snapshot.is_empty() {
                     Self::persist_chat_states(&state_path, &snapshot);
                 }
-                format!(
+
+                let response_text = format!(
                     "`{}` failed while waiting for output: {}",
                     backend.as_str(),
                     err
-                )
+                );
+                if let Some(message_id) = initial_message_id {
+                    let message =
+                        TelegramOutgoingMessage::plain(Self::build_cli_streaming_message(
+                            &state,
+                            backend,
+                            &effective_cli_workdir,
+                            "failed",
+                            started.elapsed().as_secs(),
+                            None,
+                            Some(&response_text),
+                        ));
+                    if let Err(edit_err) =
+                        Self::edit_telegram_message(bot_token, chat_id, message_id, &message).await
+                    {
+                        log::warn!(
+                            "TelegramClient: failed to report execution error in streaming message: {}",
+                            edit_err
+                        );
+                        return TelegramCliExecutionResult {
+                            response_text,
+                            send_followup: true,
+                        };
+                    }
+                    return TelegramCliExecutionResult {
+                        response_text,
+                        send_followup: false,
+                    };
+                }
+
+                TelegramCliExecutionResult {
+                    response_text,
+                    send_followup: true,
+                }
             }
             Err(_) => {
                 let snapshot = match chat_states.lock() {
@@ -2370,11 +2701,44 @@ User request:\n{}",
                     Self::persist_chat_states(&state_path, &snapshot);
                 }
 
-                format!(
+                let response_text = format!(
                     "`{}` timed out after `{}` seconds.",
                     backend.as_str(),
                     cli_timeout_secs
-                )
+                );
+                if let Some(message_id) = initial_message_id {
+                    let message =
+                        TelegramOutgoingMessage::plain(Self::build_cli_streaming_message(
+                            &state,
+                            backend,
+                            &effective_cli_workdir,
+                            &format!("timed out after `{}` second(s)", cli_timeout_secs),
+                            cli_timeout_secs,
+                            None,
+                            Some(&response_text),
+                        ));
+                    if let Err(err) =
+                        Self::edit_telegram_message(bot_token, chat_id, message_id, &message).await
+                    {
+                        log::warn!(
+                            "TelegramClient: failed to report timeout in streaming message: {}",
+                            err
+                        );
+                        return TelegramCliExecutionResult {
+                            response_text,
+                            send_followup: true,
+                        };
+                    }
+                    return TelegramCliExecutionResult {
+                        response_text,
+                        send_followup: false,
+                    };
+                }
+
+                TelegramCliExecutionResult {
+                    response_text,
+                    send_followup: true,
+                }
             }
         }
     }
@@ -2439,7 +2803,7 @@ User request:\n{}",
                 replies
             }
             TelegramInteractionMode::Coding => {
-                let response = Self::execute_cli_request(
+                let execution = Self::execute_cli_request(
                     bot_token,
                     chat_id,
                     text,
@@ -2456,9 +2820,11 @@ User request:\n{}",
                     TelegramInteractionMode::Coding,
                     &state,
                     text,
-                    &response,
+                    &execution.response_text,
                 );
-                replies.push(TelegramOutgoingMessage::plain(response));
+                if execution.send_followup {
+                    replies.push(TelegramOutgoingMessage::plain(execution.response_text));
+                }
                 replies
             }
         }
@@ -2982,39 +3348,52 @@ mod tests {
     }
 
     #[test]
-    fn cli_started_message_mentions_session_and_project() {
-        let state = TelegramChatState::default();
-        let message = TelegramClient::build_cli_started_message(
-            &state,
-            TelegramCliBackend::Codex,
-            std::path::Path::new("/tmp/project"),
-        );
+    fn telegram_message_id_is_extracted_from_send_message_response() {
+        let body = r#"{"ok":true,"result":{"message_id":77,"text":"hello"}}"#;
 
-        assert!(message.contains("Started `codex` coding request."));
-        assert!(message.contains("Session: `coding-0001`."));
-        assert!(message.contains("Project directory: `/tmp/project`."));
+        assert_eq!(TelegramClient::extract_telegram_message_id(body), Some(77));
     }
 
     #[test]
-    fn cli_progress_message_reports_output_state() {
-        let idle = TelegramClient::build_cli_progress_message(
+    fn cli_streaming_message_mentions_progress_and_project() {
+        let state = TelegramChatState::default();
+        let message = TelegramClient::build_cli_streaming_message(
+            &state,
             TelegramCliBackend::Codex,
             std::path::Path::new("/tmp/project"),
+            "running",
             15,
             None,
+            None,
         );
-        assert!(idle.contains("`codex` is still running."));
-        assert!(idle.contains("Elapsed: `15` second(s)."));
-        assert!(idle.contains("No CLI output has been observed yet."));
 
-        let active = TelegramClient::build_cli_progress_message(
+        assert!(message.contains("`codex` coding request is running."));
+        assert!(message.contains("Session: `coding-0001`."));
+        assert!(message.contains("Project directory: `/tmp/project`."));
+        assert!(message.contains("Elapsed: `15` second(s)."));
+        assert!(message.contains("Waiting for CLI output"));
+    }
+
+    #[test]
+    fn cli_streaming_message_includes_latest_output_summary() {
+        let state = TelegramChatState {
+            interaction_mode: TelegramInteractionMode::Coding,
+            ..TelegramChatState::default()
+        };
+        let message = TelegramClient::build_cli_streaming_message(
+            &state,
             TelegramCliBackend::Claude,
             std::path::Path::new("/tmp/project"),
+            "completed",
             22,
             Some(3),
+            Some("Third line extends the response"),
         );
-        assert!(active.contains("`claude` is still running."));
-        assert!(active.contains("Last CLI output observed `3` second(s) ago."));
+
+        assert!(message.contains("`claude` coding request completed."));
+        assert!(message.contains("Last CLI output observed `3` second(s) ago."));
+        assert!(message.contains("Latest output:"));
+        assert!(message.contains("Third line extends the response"));
     }
 
     #[test]
