@@ -1504,17 +1504,33 @@ impl AgentCore {
             return json!({"error": format!("Failed to write manifest.json: {}", err)});
         }
 
+        let is_tizen = std::path::Path::new("/etc/tizen-release").exists();
         let launched = self.launch_generated_web_app(app_id);
+        let message = if is_tizen {
+            if launched {
+                format!(
+                    "Web app created and launched at http://localhost:9090/apps/{}/",
+                    app_id
+                )
+            } else {
+                format!(
+                    "Web app created. Access at http://localhost:9090/apps/{}/",
+                    app_id
+                )
+            }
+        } else {
+            format!(
+                "Web app created. Open http://localhost:9090/apps/{}/ on the host.",
+                app_id
+            )
+        };
         json!({
             "status": "ok",
             "app_id": app_id,
             "title": title,
             "url": format!("/apps/{}/", app_id),
             "webview_launched": launched,
-            "message": format!(
-                "Web app created. Access at http://localhost:9090/apps/{}/",
-                app_id
-            ),
+            "message": message,
             "assets": manifest["assets"].clone(),
         })
     }
@@ -1525,19 +1541,26 @@ impl AgentCore {
         }
 
         let app_url = format!("http://localhost:9090/apps/{}/", app_id);
+        if self.launch_app_with_bundle("QvaPeQ7RDA.tizenclawbridge", &[("url", app_url.as_str())]) {
+            return true;
+        }
+        if self.launch_app_open("QvaPeQ7RDA.tizenclawbridge") {
+            return true;
+        }
+        if self.launch_app_with_bundle(
+            "org.tizen.tizenclaw-webview",
+            &[("__APP_SVC_URI__", app_url.as_str())],
+        ) {
+            return true;
+        }
+        if self.launch_app_open("org.tizen.tizenclaw-webview") {
+            return true;
+        }
         if self.launch_app_with_request(
             "QvaPeQ7RDA.tizenclawbridge",
             &app_url,
             &[("url", app_url.as_str())],
         ) {
-            return true;
-        }
-        if self
-            .platform
-            .app_control
-            .launch_app("QvaPeQ7RDA.tizenclawbridge")
-            .is_ok()
-        {
             return true;
         }
         if self.launch_app_with_request(
@@ -1551,6 +1574,45 @@ impl AgentCore {
             .app_control
             .launch_app("org.tizen.tizenclaw-webview")
             .is_ok()
+    }
+
+    fn launch_app_with_bundle(&self, app_id: &str, extras: &[(&str, &str)]) -> bool {
+        unsafe {
+            use libtizenclaw_core::tizen_sys::{aul::*, bundle::*};
+
+            let Ok(app_id) = std::ffi::CString::new(app_id) else {
+                return false;
+            };
+            let bundle = bundle_create();
+            if bundle.is_null() {
+                return false;
+            }
+
+            for (key, value) in extras {
+                let Ok(key) = std::ffi::CString::new(*key) else {
+                    continue;
+                };
+                let Ok(value) = std::ffi::CString::new(*value) else {
+                    continue;
+                };
+                let _ = bundle_add_str(bundle, key.as_ptr(), value.as_ptr());
+            }
+
+            let result = aul_launch_app(app_id.as_ptr(), bundle.cast());
+            let _ = bundle_free(bundle);
+            result >= 0
+        }
+    }
+
+    fn launch_app_open(&self, app_id: &str) -> bool {
+        unsafe {
+            use libtizenclaw_core::tizen_sys::aul::aul_open_app;
+
+            let Ok(app_id) = std::ffi::CString::new(app_id) else {
+                return false;
+            };
+            aul_open_app(app_id.as_ptr()) >= 0
+        }
     }
 
     fn launch_app_with_request(&self, app_id: &str, uri: &str, extras: &[(&str, &str)]) -> bool {
