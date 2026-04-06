@@ -154,7 +154,7 @@ impl ToolDeclarationBuilder {
         });
         tools.push(LlmToolDecl {
             name: "run_generated_code".into(),
-            description: "Write generated Python, Node.js, or Bash code under the device-owned codes directory and execute it immediately. Use this when the user asks you to generate code and run it.".into(),
+            description: "Write generated Python, Node.js, or Bash code under the device-owned codes directory and execute it immediately. Use this for executable scripts only. Do not use it for HTML/CSS/JS browser apps or webview content; use generate_web_app for those.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {

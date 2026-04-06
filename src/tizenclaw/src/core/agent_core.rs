@@ -1385,6 +1385,8 @@ impl AgentCore {
             return json!({"error": "html is required"});
         }
 
+        let html = Self::inject_generated_web_app_assets(html, !css.is_empty(), !js.is_empty());
+
         let apps_dir = self.platform.paths.web_root.join("apps");
         let app_dir = apps_dir.join(app_id);
         if let Err(err) = std::fs::create_dir_all(&app_dir) {
@@ -1533,6 +1535,34 @@ impl AgentCore {
             "message": message,
             "assets": manifest["assets"].clone(),
         })
+    }
+
+    fn inject_generated_web_app_assets(html: &str, has_css: bool, has_js: bool) -> String {
+        let mut rendered = html.to_string();
+
+        if has_css && !html.contains("style.css") {
+            let link_tag = r#"<link rel="stylesheet" href="style.css">"#;
+            if let Some(index) = rendered.find("</head>") {
+                rendered.insert_str(index, &format!("    {}\n", link_tag));
+            } else if let Some(index) = rendered.find("<body") {
+                rendered.insert_str(index, &format!("{}\n", link_tag));
+            } else {
+                rendered.push_str(&format!("\n{}\n", link_tag));
+            }
+        }
+
+        if has_js && !html.contains("app.js") {
+            let script_tag = r#"<script src="app.js"></script>"#;
+            if let Some(index) = rendered.rfind("</body>") {
+                rendered.insert_str(index, &format!("    {}\n", script_tag));
+            } else if let Some(index) = rendered.rfind("</html>") {
+                rendered.insert_str(index, &format!("{}\n", script_tag));
+            } else {
+                rendered.push_str(&format!("\n{}\n", script_tag));
+            }
+        }
+
+        rendered
     }
 
     fn launch_generated_web_app(&self, app_id: &str) -> bool {
