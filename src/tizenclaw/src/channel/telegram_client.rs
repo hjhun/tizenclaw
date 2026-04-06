@@ -125,6 +125,20 @@ impl TelegramExecutionMode {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+struct TelegramCliActualUsage {
+    input_tokens: i64,
+    output_tokens: i64,
+    total_tokens: i64,
+    cached_input_tokens: i64,
+    cache_creation_input_tokens: i64,
+    cache_read_input_tokens: i64,
+    thought_tokens: i64,
+    tool_tokens: i64,
+    model: Option<String>,
+    session_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 struct TelegramCliUsageStats {
     requests: u64,
     successes: u64,
@@ -133,6 +147,16 @@ struct TelegramCliUsageStats {
     last_started_at_ms: Option<u64>,
     last_completed_at_ms: Option<u64>,
     last_exit_code: Option<i32>,
+    total_cli_input_tokens: i64,
+    total_cli_output_tokens: i64,
+    total_cli_tokens: i64,
+    total_cli_cached_input_tokens: i64,
+    total_cli_cache_creation_input_tokens: i64,
+    total_cli_cache_read_input_tokens: i64,
+    total_cli_thought_tokens: i64,
+    total_cli_tool_tokens: i64,
+    last_actual_usage: Option<TelegramCliActualUsage>,
+    last_actual_usage_at_ms: Option<u64>,
 }
 
 impl TelegramCliUsageStats {
@@ -142,6 +166,31 @@ impl TelegramCliUsageStats {
         } else {
             self.total_duration_ms / self.requests
         }
+    }
+
+    fn record_actual_usage(&mut self, usage: TelegramCliActualUsage, completed_at_ms: u64) {
+        self.total_cli_input_tokens = self
+            .total_cli_input_tokens
+            .saturating_add(usage.input_tokens);
+        self.total_cli_output_tokens = self
+            .total_cli_output_tokens
+            .saturating_add(usage.output_tokens);
+        self.total_cli_tokens = self.total_cli_tokens.saturating_add(usage.total_tokens);
+        self.total_cli_cached_input_tokens = self
+            .total_cli_cached_input_tokens
+            .saturating_add(usage.cached_input_tokens);
+        self.total_cli_cache_creation_input_tokens = self
+            .total_cli_cache_creation_input_tokens
+            .saturating_add(usage.cache_creation_input_tokens);
+        self.total_cli_cache_read_input_tokens = self
+            .total_cli_cache_read_input_tokens
+            .saturating_add(usage.cache_read_input_tokens);
+        self.total_cli_thought_tokens = self
+            .total_cli_thought_tokens
+            .saturating_add(usage.thought_tokens);
+        self.total_cli_tool_tokens = self.total_cli_tool_tokens.saturating_add(usage.tool_tokens);
+        self.last_actual_usage = Some(usage);
+        self.last_actual_usage_at_ms = Some(completed_at_ms);
     }
 }
 
@@ -660,10 +709,10 @@ impl TelegramClient {
     fn command_menu_entries() -> Vec<(&'static str, &'static str)> {
         vec![
             ("select", "Switch between chat and coding mode"),
-            ("agent_cli", "Choose codex, gemini, or claude"),
+            ("coding_agent", "Choose codex, gemini, or claude"),
             ("project", "Set the project directory for coding mode"),
             ("new_session", "Start a fresh chat or coding session"),
-            ("usage", "Show local usage for the selected CLI"),
+            ("usage", "Show chat tokens or coding-agent tokens"),
             ("mode", "Set coding mode to plan or fast"),
             ("status", "Show the current Telegram channel state"),
             ("auto_approve", "Toggle automatic approval when supported"),
@@ -709,7 +758,11 @@ impl TelegramClient {
     }
 
     fn cli_backend_keyboard() -> Value {
-        Self::build_reply_keyboard(&[&["/agent_cli codex"], &["/agent_cli gemini"], &["/agent_cli claude"]])
+        Self::build_reply_keyboard(&[
+            &["/coding_agent codex"],
+            &["/coding_agent gemini"],
+            &["/coding_agent claude"],
+        ])
     }
 
     fn mode_keyboard() -> Value {
@@ -759,11 +812,11 @@ impl TelegramClient {
         [
             "Telegram coding-agent commands:",
             "/select <chat|coding> - switch between normal chat and local CLI coding mode",
-            "/agent_cli <codex|gemini|claude> - choose the coding-agent backend",
+            "/coding_agent <codex|gemini|claude> - choose the coding-agent backend",
             "/project <path> - set the project directory used by coding mode",
             "/project reset - clear the per-chat project override",
             "/new_session - start a fresh session for the current mode",
-            "/usage - show locally tracked usage for the selected CLI backend",
+            "/usage - show chat token usage or the latest coding-agent token usage",
             "/mode <plan|fast> - switch planning style for coding mode prompts",
             "/status - show the current Telegram channel control state",
             "/auto_approve <on|off> - toggle backend auto approval when supported",
@@ -780,16 +833,16 @@ impl TelegramClient {
                 "`codex exec --json --dangerously-bypass-approvals-and-sandbox -C <project> <prompt>`"
             }
             (TelegramCliBackend::Gemini, false) => {
-                "`gemini --model <model> --prompt <prompt> --output-format text --approval-mode auto_edit`"
+                "`gemini --model <model> --prompt <prompt> --output-format json --approval-mode auto_edit`"
             }
             (TelegramCliBackend::Gemini, true) => {
-                "`gemini --model <model> --prompt <prompt> --output-format text -y --approval-mode yolo`"
+                "`gemini --model <model> --prompt <prompt> --output-format json -y --approval-mode yolo`"
             }
             (TelegramCliBackend::Claude, false) => {
-                "`claude --print --output-format text --permission-mode auto <prompt>`"
+                "`claude --print --output-format json --permission-mode auto <prompt>`"
             }
             (TelegramCliBackend::Claude, true) => {
-                "`claude --print --output-format text --permission-mode bypassPermissions <prompt>`"
+                "`claude --print --output-format json --permission-mode bypassPermissions <prompt>`"
             }
         }
     }
@@ -1140,35 +1193,202 @@ impl TelegramClient {
         TelegramOutgoingMessage::plain(reply)
     }
 
-    fn format_usage_text(state: &TelegramChatState, backend: TelegramCliBackend) -> String {
-        let usage = state.usage_for(backend);
+    fn chat_session_id(chat_id: i64, state: &TelegramChatState) -> String {
         format!(
-            "Local usage for `{}` via Telegram:\n\
-requests: {}\n\
-successes: {}\n\
-failures: {}\n\
-avg duration: {} ms\n\
-last exit code: {}\n\
-last started: {}\n\
-last completed: {}",
-            backend.as_str(),
-            usage.requests,
-            usage.successes,
-            usage.failures,
-            usage.average_duration_ms(),
+            "tg_{}_{}",
+            chat_id,
+            state.session_label_for(TelegramInteractionMode::Chat)
+        )
+    }
+
+    fn format_chat_usage_report(session_id: &str, usage: &Value) -> String {
+        let read = |name: &str| usage.get(name).and_then(Value::as_i64).unwrap_or(0);
+        format!(
+            "Chat token usage for `{}`:\n\
+prompt tokens: `{}`\n\
+completion tokens: `{}`\n\
+cache creation input tokens: `{}`\n\
+cache read input tokens: `{}`\n\
+total requests: `{}`",
+            session_id,
+            read("prompt_tokens"),
+            read("completion_tokens"),
+            read("cache_creation_input_tokens"),
+            read("cache_read_input_tokens"),
+            read("total_requests")
+        )
+    }
+
+    fn format_coding_usage_report(
+        state: &TelegramChatState,
+        backend: TelegramCliBackend,
+    ) -> String {
+        let usage = state.usage_for(backend);
+        let mut lines = vec![
+            format!(
+                "Coding-agent usage for `{}` via Telegram:",
+                backend.as_str()
+            ),
+            format!(
+                "session: `{}`",
+                state.session_label_for(TelegramInteractionMode::Coding)
+            ),
+        ];
+
+        if let Some(actual) = &usage.last_actual_usage {
+            lines.push(format!(
+                "latest CLI session: `{}`",
+                actual.session_id.as_deref().unwrap_or("-")
+            ));
+            lines.push(format!(
+                "latest model: `{}`",
+                actual.model.as_deref().unwrap_or("-")
+            ));
+            lines.push(format!("latest input tokens: `{}`", actual.input_tokens));
+            lines.push(format!("latest output tokens: `{}`", actual.output_tokens));
+            lines.push(format!("latest total tokens: `{}`", actual.total_tokens));
+            if actual.cached_input_tokens > 0 {
+                lines.push(format!(
+                    "latest cached input tokens: `{}`",
+                    actual.cached_input_tokens
+                ));
+            }
+            if actual.cache_creation_input_tokens > 0 {
+                lines.push(format!(
+                    "latest cache creation input tokens: `{}`",
+                    actual.cache_creation_input_tokens
+                ));
+            }
+            if actual.cache_read_input_tokens > 0 {
+                lines.push(format!(
+                    "latest cache read input tokens: `{}`",
+                    actual.cache_read_input_tokens
+                ));
+            }
+            if actual.thought_tokens > 0 {
+                lines.push(format!(
+                    "latest thought tokens: `{}`",
+                    actual.thought_tokens
+                ));
+            }
+            if actual.tool_tokens > 0 {
+                lines.push(format!("latest tool tokens: `{}`", actual.tool_tokens));
+            }
+            lines.push(format!(
+                "latest usage updated: `{}`",
+                usage
+                    .last_actual_usage_at_ms
+                    .map(|ts| ts.to_string())
+                    .unwrap_or_else(|| "-".to_string())
+            ));
+        } else {
+            lines.push("latest CLI tokens: `not reported yet`".to_string());
+        }
+
+        lines.push(format!(
+            "cumulative input tokens: `{}`",
+            usage.total_cli_input_tokens
+        ));
+        lines.push(format!(
+            "cumulative output tokens: `{}`",
+            usage.total_cli_output_tokens
+        ));
+        lines.push(format!(
+            "cumulative total tokens: `{}`",
+            usage.total_cli_tokens
+        ));
+        if usage.total_cli_cached_input_tokens > 0 {
+            lines.push(format!(
+                "cumulative cached input tokens: `{}`",
+                usage.total_cli_cached_input_tokens
+            ));
+        }
+        if usage.total_cli_cache_creation_input_tokens > 0 {
+            lines.push(format!(
+                "cumulative cache creation input tokens: `{}`",
+                usage.total_cli_cache_creation_input_tokens
+            ));
+        }
+        if usage.total_cli_cache_read_input_tokens > 0 {
+            lines.push(format!(
+                "cumulative cache read input tokens: `{}`",
+                usage.total_cli_cache_read_input_tokens
+            ));
+        }
+        if usage.total_cli_thought_tokens > 0 {
+            lines.push(format!(
+                "cumulative thought tokens: `{}`",
+                usage.total_cli_thought_tokens
+            ));
+        }
+        if usage.total_cli_tool_tokens > 0 {
+            lines.push(format!(
+                "cumulative tool tokens: `{}`",
+                usage.total_cli_tool_tokens
+            ));
+        }
+
+        lines.push(format!("local requests: `{}`", usage.requests));
+        lines.push(format!("local successes: `{}`", usage.successes));
+        lines.push(format!("local failures: `{}`", usage.failures));
+        lines.push(format!(
+            "local avg duration: `{}` ms",
+            usage.average_duration_ms()
+        ));
+        lines.push(format!(
+            "last exit code: `{}`",
             usage
                 .last_exit_code
                 .map(|code| code.to_string())
-                .unwrap_or_else(|| "-".to_string()),
+                .unwrap_or_else(|| "-".to_string())
+        ));
+        lines.push(format!(
+            "last started: `{}`",
             usage
                 .last_started_at_ms
                 .map(|ts| ts.to_string())
-                .unwrap_or_else(|| "-".to_string()),
+                .unwrap_or_else(|| "-".to_string())
+        ));
+        lines.push(format!(
+            "last completed: `{}`",
             usage
                 .last_completed_at_ms
                 .map(|ts| ts.to_string())
                 .unwrap_or_else(|| "-".to_string())
-        )
+        ));
+
+        lines.join("\n")
+    }
+
+    fn format_usage_text(
+        chat_id: i64,
+        state: &TelegramChatState,
+        backend: TelegramCliBackend,
+        agent: Option<&crate::core::agent_core::AgentCore>,
+    ) -> String {
+        match state.interaction_mode {
+            TelegramInteractionMode::Chat => {
+                let session_id = Self::chat_session_id(chat_id, state);
+                let Some(agent) = agent else {
+                    return format!(
+                        "Chat token usage is unavailable because AgentCore is not attached.\nSession: `{}`",
+                        session_id
+                    );
+                };
+                let Some(session_store) = agent.get_session_store() else {
+                    return format!(
+                        "Chat token usage is unavailable because the session store is not ready.\nSession: `{}`",
+                        session_id
+                    );
+                };
+                let usage = session_store
+                    .store()
+                    .load_token_usage(&session_id)
+                    .to_json();
+                Self::format_chat_usage_report(&session_id, &usage)
+            }
+            TelegramInteractionMode::Coding => Self::format_coding_usage_report(state, backend),
+        }
     }
 
     fn format_status_text(
@@ -1225,6 +1445,7 @@ backend failures: `{}`",
     fn handle_command(
         chat_id: i64,
         text: &str,
+        agent: Option<&crate::core::agent_core::AgentCore>,
         chat_states: &Arc<Mutex<HashMap<i64, TelegramChatState>>>,
         state_path: &Path,
         cli_backend_paths: &HashMap<TelegramCliBackend, String>,
@@ -1236,7 +1457,8 @@ backend failures: `{}`",
         let reply = match command.as_str() {
             "start" | "help" => TelegramOutgoingMessage::plain(Self::supported_commands_text()),
             "select" => Self::set_interaction_mode(chat_states, state_path, chat_id, &args),
-            "agent-cli" | "agent_cli" | "cli-backend" | "cli_backend" => {
+            "coding-agent" | "coding_agent" | "agent-cli" | "agent_cli" | "cli-backend"
+            | "cli_backend" => {
                 Self::set_cli_backend(chat_states, state_path, chat_id, &args, cli_backend_paths)
             }
             "project" => {
@@ -1249,7 +1471,12 @@ backend failures: `{}`",
             }
             "usage" => {
                 let state = Self::load_chat_state_snapshot(chat_states, chat_id);
-                TelegramOutgoingMessage::plain(Self::format_usage_text(&state, state.cli_backend))
+                TelegramOutgoingMessage::plain(Self::format_usage_text(
+                    chat_id,
+                    &state,
+                    state.cli_backend,
+                    agent,
+                ))
             }
             "status" => {
                 let state = Self::load_chat_state_snapshot(chat_states, chat_id);
@@ -1290,7 +1517,10 @@ backend failures: `{}`",
                 }
             }
             Err(err) => {
-                log::warn!("TelegramClient: state lock poisoned while ensuring chat state: {}", err);
+                log::warn!(
+                    "TelegramClient: state lock poisoned while ensuring chat state: {}",
+                    err
+                );
                 (TelegramChatState::default(), None, false)
             }
         };
@@ -1379,8 +1609,12 @@ backend failures: `{}`",
             }
         };
         let session_label = state.session_label_for(TelegramInteractionMode::Coding);
-        let recent_context =
-            Self::read_recent_session_excerpt(chat_id, TelegramInteractionMode::Coding, state, 5000);
+        let recent_context = Self::read_recent_session_excerpt(
+            chat_id,
+            TelegramInteractionMode::Coding,
+            state,
+            5000,
+        );
         let history_block = if recent_context.trim().is_empty() {
             String::new()
         } else {
@@ -1466,12 +1700,12 @@ User request:\n{}",
                 args.push("--prompt".to_string());
                 args.push(prompt);
                 args.push("--output-format".to_string());
-                args.push("text".to_string());
+                args.push("json".to_string());
             }
             TelegramCliBackend::Claude => {
                 args.push("--print".to_string());
                 args.push("--output-format".to_string());
-                args.push("text".to_string());
+                args.push("json".to_string());
                 args.push("--permission-mode".to_string());
                 args.push(if state.auto_approve {
                     "bypassPermissions".to_string()
@@ -1566,6 +1800,171 @@ User request:\n{}",
         }
     }
 
+    fn extract_json_value(text: &str) -> Option<Value> {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            serde_json::from_str::<Value>(trimmed).ok()
+        }
+    }
+
+    fn extract_non_json_text(text: &str) -> Option<String> {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        if (trimmed.starts_with('{') || trimmed.starts_with('['))
+            && Self::extract_json_value(trimmed).is_none()
+        {
+            return None;
+        }
+        Some(trimmed.to_string())
+    }
+
+    fn extract_codex_json_usage(stdout: &str) -> Option<TelegramCliActualUsage> {
+        let mut latest = None;
+
+        for line in stdout.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let Ok(value) = serde_json::from_str::<Value>(trimmed) else {
+                continue;
+            };
+            if value.get("type").and_then(Value::as_str) != Some("turn.completed") {
+                continue;
+            }
+            let Some(usage) = value.get("usage") else {
+                continue;
+            };
+            let input_tokens = usage
+                .get("input_tokens")
+                .and_then(Value::as_i64)
+                .unwrap_or(0);
+            let output_tokens = usage
+                .get("output_tokens")
+                .and_then(Value::as_i64)
+                .unwrap_or(0);
+            latest = Some(TelegramCliActualUsage {
+                input_tokens,
+                output_tokens,
+                total_tokens: input_tokens.saturating_add(output_tokens),
+                cached_input_tokens: usage
+                    .get("cached_input_tokens")
+                    .and_then(Value::as_i64)
+                    .unwrap_or(0),
+                ..TelegramCliActualUsage::default()
+            });
+        }
+
+        latest
+    }
+
+    fn extract_gemini_json_response(stdout: &str) -> Option<String> {
+        Self::extract_json_value(stdout)?
+            .get("response")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(ToString::to_string)
+    }
+
+    fn extract_gemini_json_usage(stdout: &str) -> Option<TelegramCliActualUsage> {
+        let doc = Self::extract_json_value(stdout)?;
+        let models = doc.get("stats")?.get("models")?.as_object()?;
+        let (model_name, model_doc) = models.iter().next()?;
+        let tokens = model_doc.get("tokens")?;
+
+        let input_tokens = tokens
+            .get("input")
+            .and_then(Value::as_i64)
+            .or_else(|| tokens.get("prompt").and_then(Value::as_i64))
+            .unwrap_or(0);
+        let output_tokens = tokens
+            .get("candidates")
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
+
+        Some(TelegramCliActualUsage {
+            input_tokens,
+            output_tokens,
+            total_tokens: tokens
+                .get("total")
+                .and_then(Value::as_i64)
+                .unwrap_or_else(|| input_tokens.saturating_add(output_tokens)),
+            cached_input_tokens: tokens.get("cached").and_then(Value::as_i64).unwrap_or(0),
+            thought_tokens: tokens.get("thoughts").and_then(Value::as_i64).unwrap_or(0),
+            tool_tokens: tokens.get("tool").and_then(Value::as_i64).unwrap_or(0),
+            model: Some(model_name.to_string()),
+            session_id: doc
+                .get("session_id")
+                .and_then(Value::as_str)
+                .map(ToString::to_string),
+            ..TelegramCliActualUsage::default()
+        })
+    }
+
+    fn extract_claude_json_response(stdout: &str) -> Option<String> {
+        Self::extract_json_value(stdout)?
+            .get("result")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(ToString::to_string)
+    }
+
+    fn extract_claude_json_usage(stdout: &str) -> Option<TelegramCliActualUsage> {
+        let doc = Self::extract_json_value(stdout)?;
+        let usage = doc.get("usage")?;
+        let input_tokens = usage
+            .get("input_tokens")
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
+        let output_tokens = usage
+            .get("output_tokens")
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
+        let model = doc
+            .get("modelUsage")
+            .and_then(Value::as_object)
+            .and_then(|models| models.keys().next().cloned());
+
+        Some(TelegramCliActualUsage {
+            input_tokens,
+            output_tokens,
+            total_tokens: input_tokens.saturating_add(output_tokens),
+            cache_creation_input_tokens: usage
+                .get("cache_creation_input_tokens")
+                .and_then(Value::as_i64)
+                .unwrap_or(0),
+            cache_read_input_tokens: usage
+                .get("cache_read_input_tokens")
+                .and_then(Value::as_i64)
+                .unwrap_or(0),
+            model,
+            session_id: doc
+                .get("session_id")
+                .and_then(Value::as_str)
+                .map(ToString::to_string),
+            ..TelegramCliActualUsage::default()
+        })
+    }
+
+    fn extract_cli_actual_usage(
+        backend: TelegramCliBackend,
+        stdout: &str,
+        _stderr: &str,
+    ) -> Option<TelegramCliActualUsage> {
+        match backend {
+            TelegramCliBackend::Codex => Self::extract_codex_json_usage(stdout),
+            TelegramCliBackend::Gemini => Self::extract_gemini_json_usage(stdout),
+            TelegramCliBackend::Claude => Self::extract_claude_json_usage(stdout),
+        }
+    }
+
     fn extract_cli_response_text(
         backend: TelegramCliBackend,
         stdout: &str,
@@ -1581,15 +1980,18 @@ User request:\n{}",
                     let text = stderr.trim();
                     (!text.is_empty()).then(|| text.to_string())
                 }),
-            TelegramCliBackend::Gemini | TelegramCliBackend::Claude => {
-                let text = stdout.trim();
-                if !text.is_empty() {
-                    Some(text.to_string())
-                } else {
+            TelegramCliBackend::Gemini => Self::extract_gemini_json_response(stdout)
+                .or_else(|| Self::extract_non_json_text(stdout))
+                .or_else(|| {
                     let text = stderr.trim();
                     (!text.is_empty()).then(|| text.to_string())
-                }
-            }
+                }),
+            TelegramCliBackend::Claude => Self::extract_claude_json_response(stdout)
+                .or_else(|| Self::extract_non_json_text(stdout))
+                .or_else(|| {
+                    let text = stderr.trim();
+                    (!text.is_empty()).then(|| text.to_string())
+                }),
         }
     }
 
@@ -1719,26 +2121,22 @@ User request:\n{}",
         let started_at = Self::current_timestamp_millis();
         let effective_cli_workdir = state.effective_cli_workdir(&cli_workdir);
 
-        let invocation =
-            match Self::build_cli_invocation(
-                chat_id,
-                &state,
-                &effective_cli_workdir,
-                &cli_backend_paths,
-                &cli_backend_models,
-                text,
-            ) {
-                Ok(invocation) => invocation,
-                Err(err) => return err,
-            };
+        let invocation = match Self::build_cli_invocation(
+            chat_id,
+            &state,
+            &effective_cli_workdir,
+            &cli_backend_paths,
+            &cli_backend_models,
+            text,
+        ) {
+            Ok(invocation) => invocation,
+            Err(err) => return err,
+        };
 
         let snapshot = match chat_states.lock() {
             Ok(mut states) => {
                 let state = states.entry(chat_id).or_default();
-                let usage = state
-                    .usage
-                    .entry(backend.as_str().to_string())
-                    .or_default();
+                let usage = state.usage.entry(backend.as_str().to_string()).or_default();
                 usage.requests = usage.requests.saturating_add(1);
                 usage.last_started_at_ms = Some(started_at);
                 states.clone()
@@ -1767,10 +2165,7 @@ User request:\n{}",
                 let snapshot = match chat_states.lock() {
                     Ok(mut states) => {
                         let state = states.entry(chat_id).or_default();
-                        let usage = state
-                            .usage
-                            .entry(backend.as_str().to_string())
-                            .or_default();
+                        let usage = state.usage.entry(backend.as_str().to_string()).or_default();
                         usage.failures = usage.failures.saturating_add(1);
                         usage.last_exit_code = Some(-1);
                         usage.last_completed_at_ms = Some(Self::current_timestamp_millis());
@@ -1901,21 +2296,21 @@ User request:\n{}",
             Ok::<_, std::io::Error>((output, stdout, stderr))
         };
 
-        let timed_output = tokio::time::timeout(Duration::from_secs(cli_timeout_secs), execution).await;
+        let timed_output =
+            tokio::time::timeout(Duration::from_secs(cli_timeout_secs), execution).await;
 
         match timed_output {
             Ok(Ok((status, stdout, stderr))) => {
                 let duration_ms = started.elapsed().as_millis() as u64;
                 let exit_code = status.code().unwrap_or(-1);
                 let success = status.success();
+                let completed_at_ms = Self::current_timestamp_millis();
+                let actual_cli_usage = Self::extract_cli_actual_usage(backend, &stdout, &stderr);
 
                 let snapshot = match chat_states.lock() {
                     Ok(mut states) => {
                         let state = states.entry(chat_id).or_default();
-                        let usage = state
-                            .usage
-                            .entry(backend.as_str().to_string())
-                            .or_default();
+                        let usage = state.usage.entry(backend.as_str().to_string()).or_default();
                         if success {
                             usage.successes = usage.successes.saturating_add(1);
                         } else {
@@ -1924,7 +2319,10 @@ User request:\n{}",
                         usage.total_duration_ms =
                             usage.total_duration_ms.saturating_add(duration_ms);
                         usage.last_exit_code = Some(exit_code);
-                        usage.last_completed_at_ms = Some(Self::current_timestamp_millis());
+                        usage.last_completed_at_ms = Some(completed_at_ms);
+                        if let Some(actual_cli_usage) = actual_cli_usage {
+                            usage.record_actual_usage(actual_cli_usage, completed_at_ms);
+                        }
                         states.clone()
                     }
                     Err(_) => HashMap::new(),
@@ -1939,10 +2337,7 @@ User request:\n{}",
                 let snapshot = match chat_states.lock() {
                     Ok(mut states) => {
                         let state = states.entry(chat_id).or_default();
-                        let usage = state
-                            .usage
-                            .entry(backend.as_str().to_string())
-                            .or_default();
+                        let usage = state.usage.entry(backend.as_str().to_string()).or_default();
                         usage.failures = usage.failures.saturating_add(1);
                         usage.last_exit_code = Some(-1);
                         usage.last_completed_at_ms = Some(Self::current_timestamp_millis());
@@ -1953,16 +2348,17 @@ User request:\n{}",
                 if !snapshot.is_empty() {
                     Self::persist_chat_states(&state_path, &snapshot);
                 }
-                format!("`{}` failed while waiting for output: {}", backend.as_str(), err)
+                format!(
+                    "`{}` failed while waiting for output: {}",
+                    backend.as_str(),
+                    err
+                )
             }
             Err(_) => {
                 let snapshot = match chat_states.lock() {
                     Ok(mut states) => {
                         let state = states.entry(chat_id).or_default();
-                        let usage = state
-                            .usage
-                            .entry(backend.as_str().to_string())
-                            .or_default();
+                        let usage = state.usage.entry(backend.as_str().to_string()).or_default();
                         usage.failures = usage.failures.saturating_add(1);
                         usage.last_exit_code = Some(-2);
                         usage.last_completed_at_ms = Some(Self::current_timestamp_millis());
@@ -2006,6 +2402,7 @@ User request:\n{}",
         if let Some(reply) = Self::handle_command(
             chat_id,
             text,
+            agent.as_deref(),
             &chat_states,
             &state_path,
             &cli_backend_paths,
@@ -2282,8 +2679,8 @@ impl Channel for TelegramClient {
 #[cfg(test)]
 mod tests {
     use super::{
-        TelegramCliBackend, TelegramChatState, TelegramExecutionMode, TelegramInteractionMode,
-        TelegramClient,
+        TelegramChatState, TelegramCliActualUsage, TelegramCliBackend, TelegramCliUsageStats,
+        TelegramClient, TelegramExecutionMode, TelegramInteractionMode,
     };
     use std::collections::{HashMap, HashSet};
     use std::sync::{Arc, Mutex};
@@ -2301,8 +2698,14 @@ mod tests {
             TelegramInteractionMode::parse("coding-agent"),
             Some(TelegramInteractionMode::Coding)
         );
-        assert_eq!(TelegramExecutionMode::parse("fast"), Some(TelegramExecutionMode::Fast));
-        assert_eq!(TelegramCliBackend::parse("claude-code"), Some(TelegramCliBackend::Claude));
+        assert_eq!(
+            TelegramExecutionMode::parse("fast"),
+            Some(TelegramExecutionMode::Fast)
+        );
+        assert_eq!(
+            TelegramCliBackend::parse("claude-code"),
+            Some(TelegramCliBackend::Claude)
+        );
     }
 
     #[test]
@@ -2312,7 +2715,10 @@ mod tests {
         assert_eq!(state.cli_backend, TelegramCliBackend::Codex);
         assert_eq!(state.execution_mode, TelegramExecutionMode::Plan);
         assert!(!state.auto_approve);
-        assert_eq!(state.session_label_for(TelegramInteractionMode::Chat), "chat-0001");
+        assert_eq!(
+            state.session_label_for(TelegramInteractionMode::Chat),
+            "chat-0001"
+        );
         assert_eq!(
             state.session_label_for(TelegramInteractionMode::Coding),
             "coding-0001"
@@ -2321,8 +2727,7 @@ mod tests {
 
     #[test]
     fn send_message_payload_is_plain_text_json() {
-        let payload =
-            TelegramClient::build_send_message_payload(123, "value_with`markdown`", None);
+        let payload = TelegramClient::build_send_message_payload(123, "value_with`markdown`", None);
         let json: serde_json::Value = serde_json::from_str(&payload).unwrap();
         assert_eq!(json["chat_id"], 123);
         assert_eq!(json["text"], "value_with`markdown`");
@@ -2331,12 +2736,14 @@ mod tests {
     }
 
     #[test]
-    fn supported_commands_text_uses_agent_cli_name() {
+    fn supported_commands_text_uses_coding_agent_name() {
         let help = TelegramClient::supported_commands_text();
-        assert!(help.contains("/agent_cli <codex|gemini|claude>"));
+        assert!(help.contains("/coding_agent <codex|gemini|claude>"));
+        assert!(help.contains("/usage - show chat token usage"));
         assert!(help.contains("/auto_approve <on|off>"));
         assert!(help.contains("/project <path>"));
         assert!(help.contains("/new_session - start a fresh session for the current mode"));
+        assert!(!help.contains("/agent_cli <codex|gemini|claude>"));
         assert!(!help.contains("/cli_backend <codex|gemini|claude>"));
         assert!(!help.contains("/cli-backend <codex|gemini|claude>"));
         assert!(!help.contains("/auto-approve <on|off>"));
@@ -2356,7 +2763,7 @@ mod tests {
             names,
             vec![
                 "select",
-                "agent_cli",
+                "coding_agent",
                 "project",
                 "new_session",
                 "usage",
@@ -2383,11 +2790,11 @@ mod tests {
     }
 
     #[test]
-    fn agent_cli_keyboard_uses_new_command_name() {
+    fn coding_agent_keyboard_uses_new_command_name() {
         let keyboard = TelegramClient::cli_backend_keyboard();
-        assert_eq!(keyboard["keyboard"][0][0], "/agent_cli codex");
-        assert_eq!(keyboard["keyboard"][1][0], "/agent_cli gemini");
-        assert_eq!(keyboard["keyboard"][2][0], "/agent_cli claude");
+        assert_eq!(keyboard["keyboard"][0][0], "/coding_agent codex");
+        assert_eq!(keyboard["keyboard"][1][0], "/coding_agent gemini");
+        assert_eq!(keyboard["keyboard"][2][0], "/coding_agent claude");
     }
 
     #[test]
@@ -2402,7 +2809,9 @@ mod tests {
     #[test]
     fn startup_message_mentions_current_mode() {
         let message = TelegramClient::build_startup_message(&TelegramChatState::default());
-        assert!(message.text.contains("TizenClaw device started and Telegram channel is online."));
+        assert!(message
+            .text
+            .contains("TizenClaw device started and Telegram channel is online."));
         assert!(message.text.contains("Current session: `chat-0001`"));
         assert!(message.reply_markup.is_none());
     }
@@ -2418,6 +2827,7 @@ mod tests {
         let reply = TelegramClient::handle_command(
             77,
             "/select",
+            None,
             &chat_states,
             &state_path,
             &HashMap::new(),
@@ -2427,8 +2837,14 @@ mod tests {
         .unwrap();
 
         assert!(reply.text.contains("Choose the interaction mode"));
-        assert_eq!(reply.reply_markup.as_ref().unwrap()["keyboard"][0][0], "/select chat");
-        assert_eq!(reply.reply_markup.as_ref().unwrap()["keyboard"][0][1], "/select coding");
+        assert_eq!(
+            reply.reply_markup.as_ref().unwrap()["keyboard"][0][0],
+            "/select chat"
+        );
+        assert_eq!(
+            reply.reply_markup.as_ref().unwrap()["keyboard"][0][1],
+            "/select coding"
+        );
     }
 
     #[test]
@@ -2442,6 +2858,7 @@ mod tests {
         let reply = TelegramClient::handle_command(
             77,
             "/project",
+            None,
             &chat_states,
             &state_path,
             &HashMap::new(),
@@ -2468,6 +2885,7 @@ mod tests {
         let reply = TelegramClient::handle_command(
             77,
             &command,
+            None,
             &chat_states,
             &state_path,
             &HashMap::new(),
@@ -2483,28 +2901,24 @@ mod tests {
             .unwrap()
             .to_string_lossy()
             .to_string();
-        assert_eq!(
-            state.project_dir.as_deref(),
-            Some(expected.as_str())
-        );
+        assert_eq!(state.project_dir.as_deref(), Some(expected.as_str()));
     }
 
     #[test]
-    fn agent_cli_command_and_legacy_alias_both_route_to_backend_selection() {
+    fn coding_agent_command_and_legacy_aliases_route_to_backend_selection() {
         let chat_states = Arc::new(Mutex::new(HashMap::new()));
         let state_path = std::env::temp_dir().join(format!(
-            "telegram_agent_cli_state_{}_{}.json",
+            "telegram_coding_agent_state_{}_{}.json",
             std::process::id(),
             TelegramClient::current_timestamp_millis()
         ));
-        let backend_paths = HashMap::from([(
-            TelegramCliBackend::Claude,
-            "/usr/bin/claude".to_string(),
-        )]);
+        let backend_paths =
+            HashMap::from([(TelegramCliBackend::Claude, "/usr/bin/claude".to_string())]);
 
         let new_reply = TelegramClient::handle_command(
             77,
-            "/agent_cli claude",
+            "/coding_agent claude",
+            None,
             &chat_states,
             &state_path,
             &backend_paths,
@@ -2517,6 +2931,7 @@ mod tests {
         let legacy_reply = TelegramClient::handle_command(
             77,
             "/cli_backend codex",
+            None,
             &chat_states,
             &state_path,
             &HashMap::new(),
@@ -2525,6 +2940,21 @@ mod tests {
         )
         .unwrap();
         assert!(legacy_reply.text.contains("CLI backend set to `codex`."));
+
+        let older_alias_reply = TelegramClient::handle_command(
+            77,
+            "/agent_cli claude",
+            None,
+            &chat_states,
+            &state_path,
+            &backend_paths,
+            std::path::Path::new("/tmp"),
+            0,
+        )
+        .unwrap();
+        assert!(older_alias_reply
+            .text
+            .contains("CLI backend set to `claude`."));
     }
 
     #[test]
@@ -2539,6 +2969,16 @@ mod tests {
             TelegramClient::extract_codex_json_response(output).as_deref(),
             Some("HELLO")
         );
+    }
+
+    #[test]
+    fn extract_codex_json_usage_reads_turn_completed_usage() {
+        let output = "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":12,\"cached_input_tokens\":3,\"output_tokens\":4}}\n";
+        let usage = TelegramClient::extract_codex_json_usage(output).unwrap();
+        assert_eq!(usage.input_tokens, 12);
+        assert_eq!(usage.cached_input_tokens, 3);
+        assert_eq!(usage.output_tokens, 4);
+        assert_eq!(usage.total_tokens, 16);
     }
 
     #[test]
@@ -2615,10 +3055,8 @@ mod tests {
             coding_session_index: 1,
             usage: HashMap::new(),
         };
-        let backend_paths = HashMap::from([(
-            TelegramCliBackend::Codex,
-            "/usr/bin/codex".to_string(),
-        )]);
+        let backend_paths =
+            HashMap::from([(TelegramCliBackend::Codex, "/usr/bin/codex".to_string())]);
         let (binary, args) = TelegramClient::build_cli_invocation(
             77,
             &state,
@@ -2649,14 +3087,10 @@ mod tests {
             coding_session_index: 1,
             usage: HashMap::new(),
         };
-        let backend_paths = HashMap::from([(
-            TelegramCliBackend::Gemini,
-            "/snap/bin/gemini".to_string(),
-        )]);
-        let backend_models = HashMap::from([(
-            TelegramCliBackend::Gemini,
-            "gemini-2.5-flash".to_string(),
-        )]);
+        let backend_paths =
+            HashMap::from([(TelegramCliBackend::Gemini, "/snap/bin/gemini".to_string())]);
+        let backend_models =
+            HashMap::from([(TelegramCliBackend::Gemini, "gemini-2.5-flash".to_string())]);
 
         let (binary, args) = TelegramClient::build_cli_invocation(
             77,
@@ -2673,6 +3107,120 @@ mod tests {
         assert_eq!(args[model_index + 1], "gemini-2.5-flash");
         assert!(args.iter().any(|arg| arg == "--prompt"));
         assert!(args.iter().any(|arg| arg == "--output-format"));
+        let output_index = args
+            .iter()
+            .position(|arg| arg == "--output-format")
+            .unwrap();
+        assert_eq!(args[output_index + 1], "json");
+    }
+
+    #[test]
+    fn gemini_json_response_and_usage_are_parsed() {
+        let output = r#"{
+  "session_id": "gemini-session",
+  "response": "OK",
+  "stats": {
+    "models": {
+      "gemini-2.5-flash": {
+        "tokens": {
+          "input": 10,
+          "prompt": 10,
+          "candidates": 2,
+          "total": 15,
+          "cached": 1,
+          "thoughts": 3,
+          "tool": 4
+        }
+      }
+    }
+  }
+}"#;
+
+        assert_eq!(
+            TelegramClient::extract_gemini_json_response(output).as_deref(),
+            Some("OK")
+        );
+        let usage = TelegramClient::extract_gemini_json_usage(output).unwrap();
+        assert_eq!(usage.session_id.as_deref(), Some("gemini-session"));
+        assert_eq!(usage.model.as_deref(), Some("gemini-2.5-flash"));
+        assert_eq!(usage.input_tokens, 10);
+        assert_eq!(usage.output_tokens, 2);
+        assert_eq!(usage.total_tokens, 15);
+        assert_eq!(usage.cached_input_tokens, 1);
+        assert_eq!(usage.thought_tokens, 3);
+        assert_eq!(usage.tool_tokens, 4);
+    }
+
+    #[test]
+    fn claude_json_response_and_usage_are_parsed() {
+        let output = r#"{
+  "result": "DONE",
+  "session_id": "claude-session",
+  "usage": {
+    "input_tokens": 5,
+    "output_tokens": 7,
+    "cache_creation_input_tokens": 11,
+    "cache_read_input_tokens": 13
+  },
+  "modelUsage": {
+    "claude-sonnet-4-6": {
+      "inputTokens": 5
+    }
+  }
+}"#;
+
+        assert_eq!(
+            TelegramClient::extract_claude_json_response(output).as_deref(),
+            Some("DONE")
+        );
+        let usage = TelegramClient::extract_claude_json_usage(output).unwrap();
+        assert_eq!(usage.session_id.as_deref(), Some("claude-session"));
+        assert_eq!(usage.model.as_deref(), Some("claude-sonnet-4-6"));
+        assert_eq!(usage.input_tokens, 5);
+        assert_eq!(usage.output_tokens, 7);
+        assert_eq!(usage.total_tokens, 12);
+        assert_eq!(usage.cache_creation_input_tokens, 11);
+        assert_eq!(usage.cache_read_input_tokens, 13);
+    }
+
+    #[test]
+    fn coding_usage_report_includes_actual_cli_tokens() {
+        let mut state = TelegramChatState {
+            interaction_mode: TelegramInteractionMode::Coding,
+            cli_backend: TelegramCliBackend::Gemini,
+            execution_mode: TelegramExecutionMode::Plan,
+            auto_approve: false,
+            project_dir: None,
+            chat_session_index: 1,
+            coding_session_index: 2,
+            usage: HashMap::new(),
+        };
+        let mut usage = TelegramCliUsageStats::default();
+        usage.requests = 2;
+        usage.successes = 2;
+        usage.total_duration_ms = 120;
+        usage.record_actual_usage(
+            TelegramCliActualUsage {
+                input_tokens: 10,
+                output_tokens: 2,
+                total_tokens: 15,
+                cached_input_tokens: 1,
+                thought_tokens: 3,
+                model: Some("gemini-2.5-flash".to_string()),
+                session_id: Some("gemini-session".to_string()),
+                ..TelegramCliActualUsage::default()
+            },
+            123456,
+        );
+        state
+            .usage
+            .insert(TelegramCliBackend::Gemini.as_str().to_string(), usage);
+
+        let report = TelegramClient::format_coding_usage_report(&state, TelegramCliBackend::Gemini);
+        assert!(report.contains("Coding-agent usage for `gemini`"));
+        assert!(report.contains("latest CLI session: `gemini-session`"));
+        assert!(report.contains("latest total tokens: `15`"));
+        assert!(report.contains("cumulative thought tokens: `3`"));
     }
 
     #[test]
@@ -2724,7 +3272,9 @@ mod tests {
         assert_eq!(targets.len(), 1);
         assert_eq!(targets[0].0, 12345);
         assert_eq!(
-            targets[0].1.session_label_for(TelegramInteractionMode::Chat),
+            targets[0]
+                .1
+                .session_label_for(TelegramInteractionMode::Chat),
             "chat-0001"
         );
     }
@@ -2739,7 +3289,9 @@ mod tests {
         let chat_states = Arc::new(Mutex::new(HashMap::new()));
 
         let first = TelegramClient::start_new_session(&chat_states, &state_path, 77);
-        assert!(first.text.contains("Started a new `chat` session: `chat-0002`."));
+        assert!(first
+            .text
+            .contains("Started a new `chat` session: `chat-0002`."));
 
         {
             let mut states = chat_states.lock().unwrap();

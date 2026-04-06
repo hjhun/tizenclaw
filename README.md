@@ -97,8 +97,8 @@ can switch into a host-backed coding mode that runs real coding-agent CLIs.
 ### Supported flow
 
 1. Switch the chat into coding mode with `/select coding`
-2. Choose a backend with `/cli_backend codex`, `/cli_backend gemini`, or
-   `/cli_backend claude`
+2. Choose a backend with `/coding_agent codex`,
+   `/coding_agent gemini`, or `/coding_agent claude`
 3. Bind the chat to a repository with `/project /path/to/repo`
 4. Choose execution style with `/mode plan` or `/mode fast`
 5. Toggle auto-approval where supported with `/auto_approve on`
@@ -111,7 +111,7 @@ can switch into a host-backed coding mode that runs real coding-agent CLIs.
 - Per-chat project directory overrides
 - Separate chat and coding sessions
 - Progress updates while the CLI is still running
-- Usage tracking for the selected backend
+- Chat token usage plus backend-reported CLI token usage
 - Host-auth hints when a CLI has not been logged in yet
 
 ### Backend examples
@@ -121,8 +121,8 @@ TizenClaw maps Telegram coding requests onto the real installed CLIs:
 | Backend | Example execution shape |
 | --- | --- |
 | Codex | `codex exec --json --full-auto -C <project> <prompt>` |
-| Gemini | `gemini --model <model> --prompt <prompt> --output-format text --approval-mode auto_edit` |
-| Claude | `claude --print --output-format text --permission-mode auto <prompt>` |
+| Gemini | `gemini --model <model> --prompt <prompt> --output-format json --approval-mode auto_edit` |
+| Claude | `claude --print --output-format json --permission-mode auto <prompt>` |
 
 This makes TizenClaw useful as a mobile coding bridge: Telegram becomes the
 control surface, while the actual code work happens through the local CLI tools
