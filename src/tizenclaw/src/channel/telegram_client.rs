@@ -401,6 +401,14 @@ impl TelegramClient {
         format!("{}\n...(truncated)", truncated)
     }
 
+    fn build_send_message_payload(chat_id: i64, text: &str) -> String {
+        json!({
+            "chat_id": chat_id,
+            "text": text
+        })
+        .to_string()
+    }
+
     // Static so it can be called inside spawned async tasks easily
     fn send_telegram_message(bot_token: &str, chat_id: i64, text: &str) {
         if bot_token.is_empty() {
@@ -410,22 +418,12 @@ impl TelegramClient {
         let safe_text = Self::truncate_chars(text, 4000);
 
         let url = format!("https://api.telegram.org/bot{}/sendMessage", bot_token);
-        let payload = json!({
-            "chat_id": chat_id,
-            "text": safe_text,
-            "parse_mode": "Markdown"
-        })
-        .to_string();
+        let payload = Self::build_send_message_payload(chat_id, &safe_text);
 
         let client = crate::infra::http_client::HttpClient::new();
         tokio::spawn(async move {
-            match client.post(&url, &payload).await {
-                Ok(resp) if resp.status_code >= 400 => {
-                    let plain = json!({"chat_id": chat_id, "text": safe_text}).to_string();
-                    let _ = client.post(&url, &plain).await;
-                }
-                Err(e) => log::error!("Telegram sendMessage failed: {}", e),
-                _ => {}
+            if let Err(e) = client.post(&url, &payload).await {
+                log::error!("Telegram sendMessage failed: {}", e);
             }
         });
     }
@@ -1230,5 +1228,14 @@ mod tests {
         assert_eq!(state.cli_backend, TelegramCliBackend::Codex);
         assert_eq!(state.execution_mode, TelegramExecutionMode::Plan);
         assert!(!state.auto_approve);
+    }
+
+    #[test]
+    fn send_message_payload_is_plain_text_json() {
+        let payload = TelegramClient::build_send_message_payload(123, "value_with`markdown`");
+        let json: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(json["chat_id"], 123);
+        assert_eq!(json["text"], "value_with`markdown`");
+        assert!(json.get("parse_mode").is_none());
     }
 }
