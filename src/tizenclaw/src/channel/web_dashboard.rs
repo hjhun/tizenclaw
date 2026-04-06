@@ -10,6 +10,7 @@
 //!   is_running() → libc::kill(pid, 0)
 
 use super::{Channel, ChannelConfig};
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -27,6 +28,8 @@ pub struct WebDashboard {
 }
 
 impl WebDashboard {
+    const PROCESS_COMM_NAME: &'static str = "tizenclaw-web-d";
+
     pub fn new(config: &ChannelConfig) -> Self {
         let port = config
             .settings
@@ -73,6 +76,18 @@ impl WebDashboard {
         }
         PathBuf::from("tizenclaw-web-dashboard")
     }
+
+    fn cleanup_stale_processes() {
+        // `pkill` matches the kernel comm name by default, which is
+        // truncated to 15 characters on Linux.
+        let _ = std::process::Command::new("pkill")
+            .args(["-TERM", "-x", Self::PROCESS_COMM_NAME])
+            .status();
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        let _ = std::process::Command::new("pkill")
+            .args(["-KILL", "-x", Self::PROCESS_COMM_NAME])
+            .status();
+    }
 }
 
 impl Channel for WebDashboard {
@@ -86,6 +101,7 @@ impl Channel for WebDashboard {
         }
 
         self.cleanup_monitor();
+        Self::cleanup_stale_processes();
 
         let bin = Self::find_binary();
         let mut cmd = std::process::Command::new(&bin);
@@ -99,6 +115,14 @@ impl Channel for WebDashboard {
             .arg(&self.data_dir);
         if self.localhost_only {
             cmd.arg("--localhost-only");
+        }
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
         }
         // Inherit stdout/stderr so logs flow to the same terminal / journal
         cmd.stdout(std::process::Stdio::inherit())
@@ -144,9 +168,10 @@ impl Channel for WebDashboard {
 
     fn stop(&mut self) {
         if let Some(pid) = self.child_pid.take() {
+            let pgid = -(pid as libc::pid_t);
             // Send SIGTERM for graceful shutdown
             unsafe {
-                libc::kill(pid as libc::pid_t, libc::SIGTERM);
+                libc::kill(pgid, libc::SIGTERM);
             }
             // Give the process up to 3 seconds, then force-kill
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
@@ -156,7 +181,7 @@ impl Channel for WebDashboard {
                 }
                 if std::time::Instant::now() >= deadline {
                     unsafe {
-                        libc::kill(pid as libc::pid_t, libc::SIGKILL);
+                        libc::kill(pgid, libc::SIGKILL);
                     }
                     break;
                 }

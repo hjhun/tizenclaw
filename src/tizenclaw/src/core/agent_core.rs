@@ -23,6 +23,7 @@ static THINK_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?s)<think>(.*?)</think>").unwrap());
 
 use crate::core::agent_loop_state::{AgentLoopState, AgentPhase, EvalVerdict};
+use crate::core::agent_role::{AgentRole, AgentRoleRegistry};
 use crate::core::context_engine::{
     ContextEngine, SizedContextEngine, DEFAULT_TOOL_RESULT_BUDGET_CHARS,
 };
@@ -42,6 +43,16 @@ const CONTEXT_TOKEN_BUDGET: usize = 256_000;
 const CONTEXT_COMPACT_THRESHOLD: f32 = 0.90;
 const MAX_TOOL_RETRY: usize = 3;
 const MAX_PREFETCHED_SKILLS: usize = 3;
+
+#[derive(Clone, Debug, Default)]
+struct SessionPromptProfile {
+    role_name: Option<String>,
+    role_description: Option<String>,
+    system_prompt: Option<String>,
+    allowed_tools: Option<Vec<String>>,
+    prompt_mode: Option<PromptMode>,
+    reasoning_policy: Option<ReasoningPolicy>,
+}
 
 fn normalize_text_block(text: &str) -> Option<String> {
     let mut lines = Vec::new();
@@ -281,7 +292,11 @@ fn build_skill_prefetch_message(skills: &[TextualSkill]) -> Option<String> {
         "These skills look relevant to the current request. Read the full skill only if you need its exact workflow.".to_string(),
     ];
     for skill in skills {
-        lines.push(format!("- {}: {}", skill.file_name, skill.description));
+        lines.push(format!(
+            "- {}: {}",
+            skill.file_name,
+            format_skill_summary(skill)
+        ));
     }
 
     Some(lines.join("\n"))
@@ -396,6 +411,53 @@ fn reasoning_policy_from_doc(doc: &Value, backend_name: &str) -> ReasoningPolicy
             _ => ReasoningPolicy::Native,
         },
     }
+}
+
+fn prompt_mode_from_str(value: Option<&str>) -> Option<PromptMode> {
+    match value.map(str::trim) {
+        Some("full") => Some(PromptMode::Full),
+        Some("minimal") => Some(PromptMode::Minimal),
+        _ => None,
+    }
+}
+
+fn reasoning_policy_from_str(value: Option<&str>) -> Option<ReasoningPolicy> {
+    match value.map(str::trim) {
+        Some("native") => Some(ReasoningPolicy::Native),
+        Some("tagged") => Some(ReasoningPolicy::Tagged),
+        _ => None,
+    }
+}
+
+fn format_skill_summary(skill: &TextualSkill) -> String {
+    let mut parts = vec![skill.description.clone()];
+    if !skill.openclaw_requires.is_empty() {
+        parts.push(format!("requires: {}", skill.openclaw_requires.join(", ")));
+    }
+    if !skill.openclaw_install.is_empty() {
+        parts.push(format!("install: {}", skill.openclaw_install.join(" | ")));
+    }
+    parts.join(" | ")
+}
+
+fn list_known_sessions(paths: &libtizenclaw_core::framework::paths::PlatformPaths) -> Vec<String> {
+    let root = paths.data_dir.join("sessions");
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Vec::new();
+    };
+
+    let mut sessions = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .filter_map(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.to_string())
+        })
+        .collect::<Vec<_>>();
+    sessions.sort();
+    sessions
 }
 
 fn parse_shell_like_args(args: &str) -> Vec<String> {
@@ -1062,6 +1124,8 @@ pub struct AgentCore {
     tool_policy: Mutex<crate::core::tool_policy::ToolPolicy>,
     memory_store: Mutex<Option<crate::storage::memory_store::MemoryStore>>,
     workflow_engine: tokio::sync::RwLock<crate::core::workflow_engine::WorkflowEngine>,
+    agent_roles: RwLock<AgentRoleRegistry>,
+    session_profiles: Mutex<HashMap<String, SessionPromptProfile>>,
     /// Hash of the last system_prompt sent to the backend.
     /// Used to detect when the prompt changes so that the server-side
     /// cached content can be refreshed (e.g. Gemini CachedContent API).
@@ -1088,6 +1152,8 @@ impl AgentCore {
             workflow_engine: tokio::sync::RwLock::new(
                 crate::core::workflow_engine::WorkflowEngine::new(),
             ),
+            agent_roles: RwLock::new(AgentRoleRegistry::new()),
+            session_profiles: Mutex::new(HashMap::new()),
             prompt_hash: tokio::sync::RwLock::new(0),
         }
     }
@@ -1099,6 +1165,79 @@ impl AgentCore {
         let mut h = std::collections::hash_map::DefaultHasher::new();
         s.hash(&mut h);
         h.finish()
+    }
+
+    fn role_file_path(&self) -> PathBuf {
+        self.platform.paths.config_dir.join("agent_roles.json")
+    }
+
+    fn resolve_session_profile(&self, session_id: &str) -> Option<SessionPromptProfile> {
+        self.session_profiles
+            .lock()
+            .ok()
+            .and_then(|profiles| profiles.get(session_id).cloned())
+    }
+
+    fn role_registry_snapshot(&self) -> Vec<AgentRole> {
+        self.agent_roles
+            .read()
+            .map(|registry| {
+                registry
+                    .get_role_names()
+                    .into_iter()
+                    .filter_map(|name| registry.get_role(&name).cloned())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn build_session_profile(
+        &self,
+        role_name: Option<&str>,
+        system_prompt: Option<&str>,
+        prompt_mode: Option<PromptMode>,
+        reasoning_policy: Option<ReasoningPolicy>,
+        allowed_tools: Option<Vec<String>>,
+        description: Option<&str>,
+    ) -> Result<SessionPromptProfile, String> {
+        let mut profile = SessionPromptProfile::default();
+
+        if let Some(role_name) = role_name.filter(|name| !name.trim().is_empty()) {
+            let role = self
+                .agent_roles
+                .read()
+                .ok()
+                .and_then(|registry| registry.get_role(role_name).cloned())
+                .ok_or_else(|| format!("Unknown agent role '{}'", role_name))?;
+            profile.role_name = Some(role.name.clone());
+            profile.role_description = Some(role.description.clone());
+            if !role.system_prompt.trim().is_empty() {
+                profile.system_prompt = Some(role.system_prompt);
+            }
+            if !role.allowed_tools.is_empty() {
+                profile.allowed_tools = Some(role.allowed_tools);
+            }
+            profile.prompt_mode = role.prompt_mode;
+            profile.reasoning_policy = role.reasoning_policy;
+        }
+
+        if let Some(system_prompt) = system_prompt.filter(|value| !value.trim().is_empty()) {
+            profile.system_prompt = Some(system_prompt.trim().to_string());
+        }
+        if let Some(prompt_mode) = prompt_mode {
+            profile.prompt_mode = Some(prompt_mode);
+        }
+        if let Some(reasoning_policy) = reasoning_policy {
+            profile.reasoning_policy = Some(reasoning_policy);
+        }
+        if let Some(allowed_tools) = allowed_tools.filter(|items| !items.is_empty()) {
+            profile.allowed_tools = Some(allowed_tools);
+        }
+        if let Some(description) = description.filter(|value| !value.trim().is_empty()) {
+            profile.role_description = Some(description.trim().to_string());
+        }
+
+        Ok(profile)
     }
 
     pub async fn initialize(&self) -> bool {
@@ -1134,6 +1273,12 @@ impl AgentCore {
             if let Ok(mut sc) = self.soul_content.write() {
                 *sc = Some(soul);
             }
+        }
+
+        if let Ok(mut roles) = self.agent_roles.write() {
+            roles.ensure_builtin_roles();
+            let role_path = self.role_file_path();
+            let _ = roles.load_roles(&role_path.to_string_lossy());
         }
 
         // Load LLM config (supports multi-backend + fallback)
@@ -1766,6 +1911,7 @@ impl AgentCore {
         let textual_skills = crate::core::textual_skill_scanner::scan_textual_skills_from_roots(
             skill_roots.iter().map(|root| root.as_str()),
         );
+        let session_profile = self.resolve_session_profile(session_id);
         let skill_reference_docs =
             crate::core::skill_support::list_skill_reference_docs(&self.platform.paths.docs_dir);
         let prefetched_skills =
@@ -1793,6 +1939,12 @@ impl AgentCore {
         if let Ok(bridge) = self.action_bridge.lock() {
             tools.extend(bridge.get_action_declarations());
         }
+        if let Some(allowed_tools) = session_profile
+            .as_ref()
+            .and_then(|profile| profile.allowed_tools.as_ref())
+        {
+            tools.retain(|tool| allowed_tools.iter().any(|name| name == &tool.name));
+        }
 
         // Add search_tools meta-tool for Two-Tier router
         tools.push(crate::llm::backend::LlmToolDecl {
@@ -1813,7 +1965,12 @@ impl AgentCore {
                 .unwrap_or_else(|_| llm_config_store::default_document());
             let mut builder = crate::core::prompt_builder::SystemPromptBuilder::new()
                 .add_available_tools(tools.clone()); // XML Inject
-            if let Ok(base) = self.system_prompt.read() {
+            if let Some(role_prompt) = session_profile
+                .as_ref()
+                .and_then(|profile| profile.system_prompt.clone())
+            {
+                builder = builder.set_base_prompt(role_prompt);
+            } else if let Ok(base) = self.system_prompt.read() {
                 builder = builder.set_base_prompt(base.clone());
             }
             if let Ok(soul_lock) = self.soul_content.read() {
@@ -1824,7 +1981,10 @@ impl AgentCore {
 
             let formatted_skills = textual_skills
                 .into_iter()
-                .map(|s| (s.absolute_path, s.description))
+                .map(|s| {
+                    let summary = format_skill_summary(&s);
+                    (s.absolute_path, summary)
+                })
                 .collect();
             builder = builder.add_available_skills(formatted_skills);
             let formatted_skill_references = skill_reference_docs
@@ -1838,8 +1998,18 @@ impl AgentCore {
                 (*bn).clone()
             };
             builder = builder
-                .set_prompt_mode(prompt_mode_from_doc(&prompt_doc, &model_name))
-                .set_reasoning_policy(reasoning_policy_from_doc(&prompt_doc, &model_name));
+                .set_prompt_mode(
+                    session_profile
+                        .as_ref()
+                        .and_then(|profile| profile.prompt_mode)
+                        .unwrap_or_else(|| prompt_mode_from_doc(&prompt_doc, &model_name)),
+                )
+                .set_reasoning_policy(
+                    session_profile
+                        .as_ref()
+                        .and_then(|profile| profile.reasoning_policy)
+                        .unwrap_or_else(|| reasoning_policy_from_doc(&prompt_doc, &model_name)),
+                );
             let platform_name = self.platform.platform_name().to_string();
             let data_dir = session_workdir.to_string_lossy().to_string();
             let now = std::time::SystemTime::now()
@@ -1858,6 +2028,20 @@ impl AgentCore {
 
         if let Some(dynamic_context) = dynamic_context.as_ref() {
             inject_context_message(&mut messages, dynamic_context.clone());
+        }
+        if let Some(profile) = session_profile.as_ref() {
+            let role_name = profile.role_name.as_deref().unwrap_or("custom");
+            let description = profile
+                .role_description
+                .as_deref()
+                .unwrap_or("No role description provided.");
+            inject_context_message(
+                &mut messages,
+                format!(
+                    "## Active Role Profile\nRole: {}\nDescription: {}",
+                    role_name, description
+                ),
+            );
         }
         inject_context_message(
             &mut messages,
@@ -2393,12 +2577,23 @@ impl AgentCore {
                                     match resolve_skill_file(&skill_roots, &normalized_name) {
                                         Some(skill_md_path) => {
                                             match std::fs::read_to_string(&skill_md_path) {
-                                                Ok(content) => serde_json::json!({
-                                                    "status": "success",
-                                                    "name": normalized_name,
-                                                    "path": skill_md_path.to_string_lossy().to_string(),
-                                                    "content": content
-                                                }),
+                                                Ok(content) => {
+                                                    let metadata = crate::core::textual_skill_scanner::scan_textual_skills_from_roots(
+                                                        skill_roots.iter().map(|root| root.as_str()),
+                                                    )
+                                                    .into_iter()
+                                                    .find(|skill| skill.file_name == normalized_name);
+                                                    serde_json::json!({
+                                                        "status": "success",
+                                                        "name": normalized_name,
+                                                        "path": skill_md_path.to_string_lossy().to_string(),
+                                                        "content": content,
+                                                        "openclaw": {
+                                                            "requires": metadata.as_ref().map(|skill| skill.openclaw_requires.clone()).unwrap_or_default(),
+                                                            "install": metadata.as_ref().map(|skill| skill.openclaw_install.clone()).unwrap_or_default(),
+                                                        }
+                                                    })
+                                                }
                                                 Err(e) => serde_json::json!({"error": format!("Failed to read skill '{}': {}", normalized_name, e)})
                                             }
                                         }
@@ -2433,6 +2628,162 @@ impl AgentCore {
                                 }),
                                 Err(err) => serde_json::json!({"error": err}),
                             }
+                        } else if tc_name == "list_agent_roles" {
+                            let roles = self.role_registry_snapshot();
+                            serde_json::json!({
+                                "status": "success",
+                                "roles": roles.into_iter().map(|role| serde_json::json!({
+                                    "name": role.name,
+                                    "description": role.description,
+                                    "max_iterations": role.max_iterations,
+                                    "allowed_tools": role.allowed_tools,
+                                    "prompt_mode": role.prompt_mode.map(|mode| match mode {
+                                        PromptMode::Full => "full",
+                                        PromptMode::Minimal => "minimal",
+                                    }),
+                                    "reasoning_policy": role.reasoning_policy.map(|policy| match policy {
+                                        ReasoningPolicy::Native => "native",
+                                        ReasoningPolicy::Tagged => "tagged",
+                                    }),
+                                })).collect::<Vec<_>>()
+                            })
+                        } else if tc_name == "spawn_agent" {
+                            let name = tc_args.get("name").and_then(|v| v.as_str()).unwrap_or("").trim();
+                            let system_prompt = tc_args.get("system_prompt").and_then(|v| v.as_str()).unwrap_or("").trim();
+                            if name.is_empty() || system_prompt.is_empty() {
+                                serde_json::json!({"error": "Missing name or system_prompt"})
+                            } else {
+                                let allowed_tools = tc_args
+                                    .get("allowed_tools")
+                                    .and_then(|v| v.as_array())
+                                    .map(|items| items.iter().filter_map(|value| value.as_str().map(|value| value.to_string())).collect::<Vec<_>>())
+                                    .unwrap_or_default();
+                                let role = AgentRole {
+                                    name: name.to_string(),
+                                    system_prompt: system_prompt.to_string(),
+                                    allowed_tools,
+                                    max_iterations: tc_args.get("max_iterations").and_then(|v| v.as_u64()).unwrap_or(6) as usize,
+                                    description: tc_args.get("description").and_then(|v| v.as_str()).unwrap_or("Dynamic role").to_string(),
+                                    prompt_mode: prompt_mode_from_str(tc_args.get("prompt_mode").and_then(|v| v.as_str())),
+                                    reasoning_policy: reasoning_policy_from_str(tc_args.get("reasoning_policy").and_then(|v| v.as_str())),
+                                };
+                                if let Ok(mut registry) = self.agent_roles.write() {
+                                    registry.add_dynamic_role(role.clone());
+                                }
+                                serde_json::json!({
+                                    "status": "success",
+                                    "role": role.name,
+                                    "prompt_mode": role.prompt_mode.map(|mode| match mode {
+                                        PromptMode::Full => "full",
+                                        PromptMode::Minimal => "minimal",
+                                    }),
+                                    "reasoning_policy": role.reasoning_policy.map(|policy| match policy {
+                                        ReasoningPolicy::Native => "native",
+                                        ReasoningPolicy::Tagged => "tagged",
+                                    }),
+                                })
+                            }
+                        } else if tc_name == "create_session" {
+                            let name = tc_args.get("name").and_then(|v| v.as_str()).unwrap_or("").trim();
+                            if name.is_empty() {
+                                serde_json::json!({"error": "Missing session name"})
+                            } else {
+                                let role_name = tc_args.get("role").and_then(|v| v.as_str());
+                                match self.build_session_profile(
+                                    role_name,
+                                    tc_args.get("system_prompt").and_then(|v| v.as_str()),
+                                    prompt_mode_from_str(tc_args.get("prompt_mode").and_then(|v| v.as_str())),
+                                    reasoning_policy_from_str(tc_args.get("reasoning_policy").and_then(|v| v.as_str())),
+                                    None,
+                                    None,
+                                ) {
+                                    Ok(profile) => {
+                                        let base_prompt = profile
+                                            .system_prompt
+                                            .clone()
+                                            .unwrap_or_else(|| "You are a TizenClaw sub-session.".into());
+                                        let session_id = crate::core::agent_factory::AgentFactory::create_agent_session(name, &base_prompt);
+                                        if let Ok(ss) = self.session_store.lock() {
+                                            if let Some(store) = ss.as_ref() {
+                                                store.ensure_session(&session_id);
+                                            }
+                                        }
+                                        if let Ok(mut profiles) = self.session_profiles.lock() {
+                                            profiles.insert(session_id.clone(), profile.clone());
+                                        }
+                                        serde_json::json!({
+                                            "status": "success",
+                                            "session_id": session_id,
+                                            "role": profile.role_name,
+                                            "prompt_mode": profile.prompt_mode.map(|mode| match mode {
+                                                PromptMode::Full => "full",
+                                                PromptMode::Minimal => "minimal",
+                                            }),
+                                            "reasoning_policy": profile.reasoning_policy.map(|policy| match policy {
+                                                ReasoningPolicy::Native => "native",
+                                                ReasoningPolicy::Tagged => "tagged",
+                                            }),
+                                        })
+                                    }
+                                    Err(err) => serde_json::json!({"error": err}),
+                                }
+                            }
+                        } else if tc_name == "list_sessions" {
+                            let known_sessions = list_known_sessions(&self.platform.paths);
+                            let profile_snapshot = self
+                                .session_profiles
+                                .lock()
+                                .ok()
+                                .map(|profiles| profiles.clone())
+                                .unwrap_or_default();
+                            serde_json::json!({
+                                "status": "success",
+                                "sessions": known_sessions.into_iter().map(|session_id| {
+                                    let profile = profile_snapshot.get(&session_id);
+                                    serde_json::json!({
+                                        "session_id": session_id,
+                                        "role": profile.and_then(|profile| profile.role_name.clone()),
+                                        "prompt_mode": profile.and_then(|profile| profile.prompt_mode).map(|mode| match mode {
+                                            PromptMode::Full => "full",
+                                            PromptMode::Minimal => "minimal",
+                                        }),
+                                        "reasoning_policy": profile.and_then(|profile| profile.reasoning_policy).map(|policy| match policy {
+                                            ReasoningPolicy::Native => "native",
+                                            ReasoningPolicy::Tagged => "tagged",
+                                        }),
+                                    })
+                                }).collect::<Vec<_>>()
+                            })
+                        } else if tc_name == "send_to_session" {
+                            let target_session = tc_args.get("target_session").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                            let message = tc_args.get("message").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                            if target_session.is_empty() || message.is_empty() {
+                                serde_json::json!({"error": "Missing target_session or message"})
+                            } else {
+                                let reply = Box::pin(self.process_prompt(&target_session, &message, None)).await;
+                                serde_json::json!({
+                                    "status": "success",
+                                    "session_id": target_session,
+                                    "response": reply
+                                })
+                            }
+                        } else if tc_name == "run_supervisor" {
+                            let goal = tc_args.get("goal").and_then(|v| v.as_str()).unwrap_or("").trim();
+                            let strategy = tc_args.get("strategy").and_then(|v| v.as_str()).unwrap_or("sequential");
+                            let roles = self.role_registry_snapshot()
+                                .into_iter()
+                                .map(|role| serde_json::json!({
+                                    "name": role.name,
+                                    "description": role.description,
+                                }))
+                                .collect::<Vec<_>>();
+                            serde_json::json!({
+                                "status": "success",
+                                "goal": goal,
+                                "strategy": strategy,
+                                "message": "Supervisor planning is available. Use list_agent_roles to choose a role, create_session to allocate a role-bound session, and send_to_session to delegate work.",
+                                "roles": roles,
+                            })
                         } else if tc_name == "run_generated_code" {
                             let runtime = tc_args.get("runtime").and_then(|v| v.as_str()).unwrap_or("");
                             let name = tc_args.get("name").and_then(|v| v.as_str());
@@ -3132,11 +3483,15 @@ mod tests {
                 file_name: "battery_monitor".into(),
                 absolute_path: "/tmp/battery/SKILL.md".into(),
                 description: "Inspect battery and power telemetry".into(),
+                openclaw_requires: Vec::new(),
+                openclaw_install: Vec::new(),
             },
             TextualSkill {
                 file_name: "calendar_sync".into(),
                 absolute_path: "/tmp/calendar/SKILL.md".into(),
                 description: "Handle schedule sync tasks".into(),
+                openclaw_requires: Vec::new(),
+                openclaw_install: Vec::new(),
             },
         ];
 
@@ -3152,12 +3507,15 @@ mod tests {
             file_name: "battery_monitor".into(),
             absolute_path: "/tmp/battery/SKILL.md".into(),
             description: "Inspect battery and power telemetry".into(),
+            openclaw_requires: vec!["upower".into()],
+            openclaw_install: vec!["apt install upower".into()],
         }];
 
         let message = build_skill_prefetch_message(&skills).unwrap_or_default();
 
         assert!(message.contains("Prefetched Skill Snapshot"));
         assert!(message.contains("battery_monitor"));
+        assert!(message.contains("requires: upower"));
     }
 
     #[test]

@@ -290,14 +290,17 @@ impl ToolDeclarationBuilder {
     fn push_session_tools(tools: &mut Vec<LlmToolDecl>) {
         tools.push(LlmToolDecl {
             name: "create_session".into(),
-            description: "Create a new agent session with a custom system prompt.".into(),
+            description: "Create a new agent session with a custom system prompt or an existing role profile.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
                     "name": {"type": "string", "description": "Short name for the session"},
-                    "system_prompt": {"type": "string", "description": "Custom system prompt"}
+                    "system_prompt": {"type": "string", "description": "Custom system prompt"},
+                    "role": {"type": "string", "description": "Optional built-in or dynamic role name"},
+                    "prompt_mode": {"type": "string", "enum": ["full", "minimal"]},
+                    "reasoning_policy": {"type": "string", "enum": ["native", "tagged"]}
                 },
-                "required": ["name", "system_prompt"]
+                "required": ["name"]
             }),
         });
         tools.push(LlmToolDecl {
@@ -458,14 +461,19 @@ impl ToolDeclarationBuilder {
         });
         tools.push(LlmToolDecl {
             name: "spawn_agent".into(),
-            description: "Create a new specialized agent with a custom role definition.".into(),
+            description:
+                "Create a new specialized agent role definition that can be used by new sessions."
+                    .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
                     "name": {"type": "string", "description": "Unique name"},
                     "system_prompt": {"type": "string", "description": "System prompt"},
                     "allowed_tools": {"type": "array", "items": {"type": "string"}},
-                    "max_iterations": {"type": "integer"}
+                    "max_iterations": {"type": "integer"},
+                    "description": {"type": "string"},
+                    "prompt_mode": {"type": "string", "enum": ["full", "minimal"]},
+                    "reasoning_policy": {"type": "string", "enum": ["native", "tagged"]}
                 },
                 "required": ["name", "system_prompt"]
             }),

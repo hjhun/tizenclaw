@@ -204,6 +204,6 @@ async fn main() {
     task_scheduler.stop();
     ipc.stop();
     let _ = ipc_handle.join();
-    agent.shutdown();
+    agent.shutdown().await;
     log::info!("TizenClaw daemon stopped.");
 }

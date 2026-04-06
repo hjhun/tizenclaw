@@ -7,6 +7,8 @@ pub struct TextualSkill {
     pub file_name: String,
     pub absolute_path: String,
     pub description: String,
+    pub openclaw_requires: Vec<String>,
+    pub openclaw_install: Vec<String>,
 }
 
 /// Scans a directory for Anthropic's OpenClaw-style Textual Skills.
@@ -36,12 +38,14 @@ pub fn scan_textual_skills(skills_dir: &str) -> Vec<TextualSkill> {
 
                     let absolute_path = skill_md_path.to_string_lossy().to_string();
                     let content = fs::read_to_string(&skill_md_path).unwrap_or_default();
-                    let description = extract_description(&content, &skill_name);
+                    let metadata = extract_skill_metadata(&content, &skill_name);
 
                     skills.push(TextualSkill {
                         file_name: skill_name,
                         absolute_path,
-                        description,
+                        description: metadata.description,
+                        openclaw_requires: metadata.openclaw_requires,
+                        openclaw_install: metadata.openclaw_install,
                     });
                 }
             }
@@ -63,30 +67,101 @@ where
     deduped.into_values().collect()
 }
 
-/// Extract 'description:' from YAML frontmatter strictly as supported by Anthropic OpenClaw.
-/// Does NOT implement custom specs or random heading fallbacks.
-fn extract_description(content: &str, skill_name: &str) -> String {
-    let mut in_yaml = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "---" {
-            in_yaml = !in_yaml;
+#[derive(Default)]
+struct SkillMetadata {
+    description: String,
+    openclaw_requires: Vec<String>,
+    openclaw_install: Vec<String>,
+}
+
+fn extract_skill_metadata(content: &str, skill_name: &str) -> SkillMetadata {
+    let yaml = extract_frontmatter(content);
+    let mut metadata = SkillMetadata {
+        description: format!("Custom skill: {}", skill_name),
+        ..Default::default()
+    };
+
+    let mut section_stack: Vec<(usize, String)> = Vec::new();
+    let mut active_list: Option<String> = None;
+
+    for raw_line in yaml.lines() {
+        let indent = raw_line.chars().take_while(|c| c.is_whitespace()).count();
+        let trimmed = raw_line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        if in_yaml && trimmed.starts_with("description:") {
-            let val = trimmed
-                .trim_start_matches("description:")
+
+        if let Some(rest) = trimmed.strip_prefix("- ") {
+            let item = rest.trim().trim_matches('"').trim_matches('\'').to_string();
+            match active_list.as_deref() {
+                Some("metadata.openclaw.requires") if !item.is_empty() => {
+                    metadata.openclaw_requires.push(item)
+                }
+                Some("metadata.openclaw.install") if !item.is_empty() => {
+                    metadata.openclaw_install.push(item)
+                }
+                _ => {}
+            }
+            continue;
+        }
+
+        active_list = None;
+
+        while let Some((stack_indent, _)) = section_stack.last() {
+            if *stack_indent >= indent {
+                section_stack.pop();
+            } else {
+                break;
+            }
+        }
+
+        if let Some((key, raw_value)) = trimmed.split_once(':') {
+            let key = key.trim().to_string();
+            let value = raw_value
                 .trim()
                 .trim_matches('"')
-                .trim_matches('\'');
-            if !val.is_empty() {
-                return val.to_string();
+                .trim_matches('\'')
+                .to_string();
+            let mut path = section_stack
+                .iter()
+                .map(|(_, name)| name.as_str())
+                .collect::<Vec<_>>();
+            path.push(key.as_str());
+            let full_key = path.join(".");
+
+            if value.is_empty() {
+                section_stack.push((indent, key));
+                if full_key == "metadata.openclaw.requires"
+                    || full_key == "metadata.openclaw.install"
+                {
+                    active_list = Some(full_key);
+                }
+                continue;
+            }
+
+            if full_key == "description" {
+                metadata.description = value;
             }
         }
     }
 
-    // If no description exists in YAML, return a generic fallback matching the skill name
-    format!("Custom skill: {}", skill_name)
+    metadata
+}
+
+fn extract_frontmatter(content: &str) -> String {
+    let mut lines = content.lines();
+    if !matches!(lines.next().map(str::trim), Some("---")) {
+        return String::new();
+    }
+
+    let mut yaml_lines = Vec::new();
+    for line in lines {
+        if line.trim() == "---" {
+            break;
+        }
+        yaml_lines.push(line.to_string());
+    }
+    yaml_lines.join("\n")
 }
 
 #[cfg(test)]
@@ -108,6 +183,7 @@ mod tests {
         assert_eq!(skills.len(), 1);
         assert_eq!(skills[0].file_name, "hello_world");
         assert_eq!(skills[0].description, "A test skill");
+        assert!(skills[0].openclaw_requires.is_empty());
     }
 
     #[test]
@@ -134,6 +210,22 @@ mod tests {
         let skills = scan_textual_skills(&dir.path().to_string_lossy());
         assert_eq!(skills.len(), 1);
         assert_eq!(skills[0].description, "Custom skill: no_desc");
+    }
+
+    #[test]
+    fn test_extracts_openclaw_metadata_lists() {
+        let dir = tempfile::tempdir().unwrap();
+        let skill_dir = dir.path().join("metadata_skill");
+        fs::create_dir_all(&skill_dir).unwrap();
+        let skill_file = skill_dir.join("SKILL.md");
+
+        let content = "---\ndescription: Metadata skill\nmetadata:\n  openclaw:\n    requires:\n      - uv\n      - node\n    install:\n      - uv sync\n      - npm install\n---\n# Skill";
+        fs::write(&skill_file, content).unwrap();
+
+        let skills = scan_textual_skills(&dir.path().to_string_lossy());
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].openclaw_requires, vec!["uv", "node"]);
+        assert_eq!(skills[0].openclaw_install, vec!["uv sync", "npm install"]);
     }
 
     #[test]

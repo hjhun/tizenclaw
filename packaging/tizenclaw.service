@@ -8,6 +8,8 @@ EnvironmentFile=-/run/tizen-system-env
 EnvironmentFile=-/run/xdg-root-env
 Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/5000/dbus/user_bus_socket"
 ExecStart=/usr/bin/tizenclaw
+ExecStopPost=-/usr/bin/pkill -TERM -x tizenclaw-web-d
+ExecStopPost=-/bin/sh -c 'sleep 1; /usr/bin/pkill -KILL -x tizenclaw-web-d || true'
 Restart=on-failure
 User=root
 AmbientCapabilities=CAP_SYS_ADMIN CAP_MAC_ADMIN CAP_NET_ADMIN CAP_SYS_PTRACE CAP_SETUID CAP_SETGID CAP_SYS_CHROOT
