@@ -356,6 +356,7 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
                 Authenticated
               </span>
+              <p class="admin-toolbar-copy">Open any item to review structured fields and raw JSON in a focused editor.</p>
             </div>
             <div class="admin-toolbar-right">
               <button id="admin-change-pw-btn" class="btn-outline">Change Password</button>
@@ -375,6 +376,41 @@
 
           <div class="config-list" id="config-list">
             <p class="empty-state">Loading configurations...</p>
+          </div>
+
+          <div id="config-modal" class="config-modal">
+            <div id="config-modal-backdrop" class="config-modal-backdrop"></div>
+            <div class="config-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="config-modal-title">
+              <div class="config-modal-header">
+                <div>
+                  <h3 id="config-modal-title">Configuration</h3>
+                  <p class="config-modal-file" id="config-modal-name">config.json</p>
+                </div>
+                <button id="config-modal-close" class="btn-outline">Close</button>
+              </div>
+              <div class="config-modal-meta">
+                <span id="config-modal-status" class="config-chip">Active</span>
+                <span id="config-modal-format" class="config-chip neutral">JSON</span>
+              </div>
+              <div class="config-modal-tabs">
+                <button id="config-tab-structured" class="config-tab active" type="button">Structured</button>
+                <button id="config-tab-raw" class="config-tab" type="button">Raw</button>
+              </div>
+              <div id="config-modal-structured" class="config-modal-body">
+                <p id="config-modal-helper" class="config-modal-helper"></p>
+                <div id="config-modal-fields" class="config-fields"></div>
+              </div>
+              <div id="config-modal-raw-wrap" class="config-modal-body" style="display:none">
+                <textarea id="config-modal-raw" class="config-editor" spellcheck="false"></textarea>
+              </div>
+              <div class="config-modal-footer">
+                <p id="config-modal-msg" class="config-modal-msg"></p>
+                <div class="config-modal-actions">
+                  <button id="config-modal-reload" class="btn-outline" type="button">Reload</button>
+                  <button id="config-modal-save" class="btn-primary" type="button">Save</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -402,7 +438,7 @@
   <!-- Toast container -->
   <div id="toast-container" class="toast-container"></div>
 
-  <script src="/app.js?v=20260405d"></script>
+  <script src="/app.js?v=20260406a"></script>
 </body>
 
 </html>

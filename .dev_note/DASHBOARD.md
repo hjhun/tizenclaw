@@ -1,6 +1,11 @@
 # TizenClaw Dashboard
 
 ## Current Task
+- Improve the web dashboard admin workflow
+- Change the Linux host dashboard default port to `8080`
+- Allow `tizenclaw-cli dashboard start --port <n>`
+- Replace inline admin JSON editing with a popup editor
+- Fix admin page recovery when revisiting after login
 - Restore the generated web app flow
 - Reconnect `tools/embedded/generate_web_app.md` to live Rust execution
 - Match legacy `tizenclaw-cpp` behavior and `tizenclaw-webview` launch path
@@ -12,6 +17,12 @@
 ## Stage 1: Planning
 - Status: Complete
 - Goal:
+  - Capture the web dashboard admin refresh scope in `.dev_note/docs/`
+  - Keep Tizen runtime default port at `9090` while using `8080` on host
+  - Support dashboard runtime port overrides from `tizenclaw-cli`
+  - Fix login-session restore when the user revisits the admin page
+  - Replace always-open raw JSON editing with a modal-based editor flow
+  - Planning doc: `.dev_note/docs/web_dashboard_admin_refresh_planning.md`
   - Recover the legacy generated web app lifecycle in Rust
   - Support app file generation under `/web/apps/<app_id>`
   - Restore dashboard-side app listing/detail/delete and Bridge API access
@@ -25,6 +36,14 @@
 ## Stage 2: Design
 - Status: Complete
 - Planned changes:
+  - Add a runtime-aware `default_dashboard_port()` helper
+  - Thread optional `settings` into `start_channel` so the dashboard can
+    accept CLI port overrides
+  - Add `GET /api/auth/session` and signed admin tokens to restore
+    authenticated views after dashboard page revisits or process restart
+  - Redesign the admin configuration UI into summary cards plus a modal
+    with structured and raw editing modes
+  - Design doc: `.dev_note/docs/web_dashboard_admin_refresh_design.md`
   - Add `generate_web_app` builtin declaration to workflow tools
   - Implement web app generation in `AgentCore` with manifest/assets support
   - Add IPC methods so `tizenclaw-web-dashboard` can execute bridge tools
@@ -40,6 +59,14 @@
 ## Stage 3: Development
 - Status: Complete
 - Implemented:
+  - Added host-aware dashboard default port resolution and runtime channel
+    configuration plumbing for custom port overrides
+  - Added admin session validation endpoints and restart-stable signed
+    dashboard tokens
+  - Replaced inline admin config editing with summary cards and
+    a modal editor workflow
+  - Added localStorage-backed admin token restore and modal UX updates in
+    English for global maintainability
   - Added `generate_web_app` builtin declaration back into workflow tools
   - Restored Rust-side web app generation in `AgentCore`
   - Added manifest writing, optional asset download, and app listing metadata
@@ -57,6 +84,12 @@
   - `./deploy.sh -a x86_64 -d emulator-26101`
   - `~/samba/github/tizenclaw-webview/deploy.sh -d emulator-26101`
 - Results:
+  - Updated dashboard/admin changes built successfully through GBS
+  - Device deployment succeeded on `emulator-26101`
+  - Dashboard frontend assets were pushed to
+    `/opt/usr/share/tizenclaw/web`
+  - Service restart succeeded and the dashboard child process relaunched
+    on device
   - GBS build succeeded
   - Device deployment succeeded
   - Service restart succeeded
@@ -69,11 +102,28 @@
 ## Stage 5: Test & Review
 - Status: Complete
 - Build-time test proof:
+  - `node --check data/web/app.js` passed locally for SPA syntax
   - `cargo test --release --offline -- --test-threads=1` ran inside
     the deploy pipeline
   - Main test suite passed: `182 passed; 0 failed`
   - `git diff --check` passed after edits
 - Runtime verification:
+  - Confirmed `GET /api/status` on device returns
+    `{"channels":"active","status":"running","version":"1.0.0"}`
+  - Confirmed `GET /api/config/list` without auth returns `401
+    Unauthorized`
+  - Confirmed admin login on device returns a bearer token from
+    `POST /api/auth/login`
+  - Confirmed that bearer token succeeds on both `GET /api/auth/session`
+    and `GET /api/config/list`
+  - Confirmed `tizenclaw-cli dashboard stop` followed by
+    `tizenclaw-cli dashboard start --port 9091` relaunches the dashboard
+    process with `--port 9091`
+  - Confirmed the same bearer token remains valid after dashboard
+    process restart via `GET /api/auth/session`, proving the
+    revisit/login-recovery fix survives process reset
+  - Restored the dashboard child process to device default port `9090`
+    and confirmed `GET /api/status` works again on `127.0.0.1:9090`
   - Created `webtest_demo` through direct daemon `bridge_tool` IPC
     using `generate_web_app`
   - Confirmed app files under `/opt/usr/share/tizenclaw/web/apps/webtest_demo`
@@ -129,6 +179,15 @@
   - `tizenclaw-tool-executor.socket`: active (listening)
 
 ## Supervisor Gate Log
+- Stage 1 PASS: Admin refresh planning scope recorded in dashboard and
+  planning doc added under `.dev_note/docs/`
+- Stage 2 PASS: Admin refresh design captured before implementation
+- Stage 3 PASS: Admin refresh implementation completed without local
+  cargo build/test usage
+- Stage 4 PASS: Updated dashboard/admin flow built and deployed on
+  `emulator-26101`
+- Stage 5 PASS: Admin auth restore, CLI port override, and runtime
+  dashboard responses verified on device
 - Stage 1 PASS: Web app restoration scope recorded in dashboard
 - Stage 2 PASS: Rust/CPP parity design captured before edits
 - Stage 3 PASS: Rust web app generation and bridge routes restored
@@ -145,6 +204,13 @@
 ## Stage 6: Commit & Push
 - Status: Complete
 - Notes:
+  - Workspace cleaned with `.agent/scripts/cleanup_workspace.sh`
+  - Added ignored `.dev_note/docs/web_dashboard_admin_refresh_*` files
+    with `git add -f` so the stage artifacts are preserved in history
+  - Prepared commit message in `.tmp/commit_msg.txt` for
+    `git commit -F .tmp/commit_msg.txt`
+  - Commit captures the dashboard admin refresh, auth restore, and CLI
+    dashboard port override updates
   - Previous restoration commit: `e57fb0da`
     `Restore generated web app bridge flow`
   - Workspace cleaned with `.agent/scripts/cleanup_workspace.sh`

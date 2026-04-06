@@ -26,6 +26,9 @@ pub trait Channel: Send {
     fn stop(&mut self);
     fn is_running(&self) -> bool;
     fn send_message(&self, text: &str) -> Result<(), String>;
+    fn configure(&mut self, _settings: &Value) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// Registry of active channels.
@@ -84,11 +87,17 @@ impl ChannelRegistry {
     }
 
     /// Start a specific channel by name regardless of its auto_start flag.
-    pub fn start_channel(&mut self, name: &str) -> Result<(), String> {
+    pub fn start_channel(&mut self, name: &str, settings: Option<&Value>) -> Result<(), String> {
         for ch in &mut self.channels {
             if ch.name() == name {
-                if ch.is_running() {
+                if ch.is_running() && settings.is_none() {
                     return Ok(());
+                }
+                if ch.is_running() {
+                    ch.stop();
+                }
+                if let Some(settings) = settings {
+                    ch.configure(settings)?;
                 }
                 if ch.start() {
                     log::info!("Channel '{}' started on demand", name);

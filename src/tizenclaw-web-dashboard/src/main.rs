@@ -4,7 +4,7 @@
 //! tizenclaw daemon via IPC (Unix abstract socket) for chat requests.
 //!
 //! Usage:
-//!   tizenclaw-web-dashboard [--port 9090] [--web-root PATH]
+//!   tizenclaw-web-dashboard [--port 8080] [--web-root PATH]
 //!                           [--config-dir PATH] [--data-dir PATH]
 //!                           [--localhost-only]
 
@@ -74,13 +74,24 @@ fn default_data_dir() -> PathBuf {
     if let Ok(path) = std::env::var("TIZENCLAW_DATA_DIR") {
         return PathBuf::from(path);
     }
-    if std::path::Path::new("/etc/tizen-release").exists()
-        || std::path::Path::new("/opt/usr/share/tizenclaw").exists()
-    {
+    if is_tizen_runtime() {
         return PathBuf::from("/opt/usr/share/tizenclaw");
     }
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     PathBuf::from(home).join(".tizenclaw")
+}
+
+fn is_tizen_runtime() -> bool {
+    std::path::Path::new("/etc/tizen-release").exists()
+        || std::path::Path::new("/opt/usr/share/tizenclaw").exists()
+}
+
+fn default_dashboard_port() -> u16 {
+    if is_tizen_runtime() {
+        9090
+    } else {
+        8080
+    }
 }
 
 // ─── Config ───────────────────────────────────────────────────
@@ -166,7 +177,7 @@ async fn main() {
     }
 
     let args: Vec<String> = std::env::args().collect();
-    let mut port: u16 = 9090;
+    let mut port: u16 = default_dashboard_port();
     let mut localhost_only = false;
     let mut web_root_str = String::new();
     let mut config_dir_str = String::new();
@@ -176,7 +187,7 @@ async fn main() {
     while i < args.len() {
         match args[i].as_str() {
             "--port" if i + 1 < args.len() => {
-                port = args[i + 1].parse().unwrap_or(9090);
+                port = args[i + 1].parse().unwrap_or(default_dashboard_port());
                 i += 2;
             }
             "--web-root" if i + 1 < args.len() => {
@@ -272,6 +283,8 @@ async fn main() {
         .route("/api/logs/dates", get(api_log_dates))
         .route("/api/logs", get(api_logs))
         .route("/api/auth/login", post(api_auth_login))
+        .route("/api/auth/logout", post(api_auth_logout))
+        .route("/api/auth/session", get(api_auth_session))
         .route("/api/auth/change_password", post(api_auth_change_password))
         .route("/api/config/list", get(api_config_list))
         .route(
@@ -568,16 +581,23 @@ fn truncate_chars(text: &str, max_chars: usize) -> String {
 }
 
 async fn validate_token(headers: &HeaderMap, state: &AppState) -> bool {
+    let stored = state
+        .admin_pw_hash
+        .lock()
+        .map(|h| h.clone())
+        .unwrap_or_default();
+
     headers
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
         .and_then(|h| h.strip_prefix("Bearer "))
         .map(|token| {
-            state
+            let in_memory = state
                 .active_tokens
                 .lock()
                 .map(|t| t.contains(token))
-                .unwrap_or(false)
+                .unwrap_or(false);
+            in_memory || validate_auth_token(token, &stored)
         })
         .unwrap_or(false)
 }
@@ -866,7 +886,7 @@ async fn api_auth_login(
         .map(|h| h.clone())
         .unwrap_or_default();
     if hash == stored {
-        let token = generate_token();
+        let token = generate_auth_token(&stored);
         if let Ok(mut t) = state.active_tokens.lock() {
             t.insert(token.clone());
         }
@@ -874,6 +894,42 @@ async fn api_auth_login(
     } else {
         Err(json_error(StatusCode::UNAUTHORIZED, "Invalid password"))
     }
+}
+
+async fn api_auth_logout(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let token = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|h| h.strip_prefix("Bearer "))
+        .unwrap_or("")
+        .to_string();
+
+    if token.is_empty() {
+        return Err(json_error(StatusCode::UNAUTHORIZED, "Unauthorized"));
+    }
+
+    if let Ok(mut tokens) = state.active_tokens.lock() {
+        tokens.remove(&token);
+    }
+
+    Ok(Json(json!({"status": "ok"})))
+}
+
+async fn api_auth_session(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    if !validate_token(&headers, &state).await {
+        return Err(json_error(StatusCode::UNAUTHORIZED, "Unauthorized"));
+    }
+
+    Ok(Json(json!({
+        "status": "ok",
+        "authenticated": true,
+    })))
 }
 
 async fn api_auth_change_password(
@@ -1599,12 +1655,39 @@ fn sha256_hex(input: &str) -> String {
     format!("{:016x}{:016x}", h1, h2)
 }
 
-fn generate_token() -> String {
+fn generate_auth_token(password_hash: &str) -> String {
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
-        .as_nanos();
-    format!("{:032x}", ts)
+        .as_secs();
+    let expires_at = ts + 60 * 60 * 12;
+    let signature = sha256_hex(&format!("{}:{}", password_hash, expires_at));
+    format!("v1.{}.{}", expires_at, signature)
+}
+
+fn validate_auth_token(token: &str, password_hash: &str) -> bool {
+    let mut parts = token.split('.');
+    let version = parts.next().unwrap_or("");
+    let expires_at = parts
+        .next()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0);
+    let signature = parts.next().unwrap_or("");
+
+    if version != "v1" || signature.is_empty() || parts.next().is_some() {
+        return false;
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    if expires_at <= now {
+        return false;
+    }
+
+    let expected = sha256_hex(&format!("{}:{}", password_hash, expires_at));
+    signature == expected
 }
 
 fn load_admin_password(path: &str) -> Option<String> {

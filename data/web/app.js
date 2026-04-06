@@ -6,7 +6,20 @@
 
     // --- Auth State ---
     let authToken =
+        localStorage.getItem('admin_token') ||
         sessionStorage.getItem('admin_token');
+
+    function persistAdminToken(token) {
+        authToken = token;
+        localStorage.setItem('admin_token', token);
+        sessionStorage.setItem('admin_token', token);
+    }
+
+    function clearAdminToken() {
+        authToken = null;
+        localStorage.removeItem('admin_token');
+        sessionStorage.removeItem('admin_token');
+    }
 
     function getAuthHeaders() {
         return authToken
@@ -64,7 +77,13 @@
             const res = await fetch(
                 API + '/api/' + endpoint,
                 Object.assign({}, opts, { headers }));
-            return await res.json();
+            const data = await res.json();
+            data.__http_status = res.status;
+            if (res.status === 401) {
+                handleAdminUnauthorized(
+                    data.error || 'Session expired');
+            }
+            return data;
         } catch (e) {
             console.error('API error:', e);
             return null;
@@ -1221,20 +1240,40 @@
         'tunnel_config.json': 'Tunnel Configuration',
         'web_search_config.json': 'Web Search'
     };
+    const CONFIG_DESCRIPTIONS = {
+        'llm_config.json': 'Manage model backends, token limits, and sampling options.',
+        'telegram_config.json': 'Configure the Telegram bot token and channel bindings.',
+        'slack_config.json': 'Configure Slack app tokens, bot tokens, and channel bindings.',
+        'discord_config.json': 'Adjust Discord bot credentials and connection settings.',
+        'webhook_config.json': 'Control webhook endpoints and routing policies.',
+        'tool_policy.json': 'Manage allowed tools and execution policies.',
+        'agent_roles.json': 'Define agent roles and prompt routing behavior.',
+        'tunnel_config.json': 'Manage tunnel endpoints and authentication tokens.',
+        'web_search_config.json': 'Configure search providers and search options.'
+    };
+    let adminConfigsCache = [];
+    let activeConfigName = null;
+    let activeConfigParsed = null;
 
-    function loadAdmin() {
-        if (authToken) {
-            showAdminPanel();
-        } else {
+    async function loadAdmin() {
+        if (!authToken) {
             showLoginForm();
+            return;
+        }
+        if (await ensureAdminSession()) {
+            showAdminPanel();
         }
     }
 
-    function showLoginForm() {
+    function showLoginForm(message) {
         document.getElementById('admin-login')
             .style.display = '';
         document.getElementById('admin-panel')
             .style.display = 'none';
+        closeConfigModal();
+        document.getElementById(
+            'login-error').textContent =
+            message || '';
     }
 
     function showAdminPanel() {
@@ -1243,6 +1282,17 @@
         document.getElementById('admin-panel')
             .style.display = '';
         loadConfigs();
+    }
+
+    function handleAdminUnauthorized(message) {
+        clearAdminToken();
+        showLoginForm(message || 'Session expired');
+    }
+
+    async function ensureAdminSession() {
+        if (!authToken) return false;
+        const resp = await apiFetch('auth/session');
+        return !!(resp && resp.status === 'ok');
     }
 
     // --- Login ---
@@ -1269,12 +1319,12 @@
             'auth/login', { password: pw });
 
         if (resp && resp.status === 'ok') {
-            authToken = resp.token;
-            sessionStorage.setItem(
-                'admin_token', authToken);
+            persistAdminToken(resp.token);
             document.getElementById(
                 'admin-password').value = '';
             showAdminPanel();
+            showToast('Admin session ready',
+                'success');
         } else {
             errEl.textContent =
                 (resp && resp.error) ||
@@ -1284,9 +1334,9 @@
 
     // --- Logout ---
     document.getElementById('admin-logout-btn')
-        .addEventListener('click', () => {
-            authToken = null;
-            sessionStorage.removeItem('admin_token');
+        .addEventListener('click', async () => {
+            await apiPost('auth/logout', {});
+            clearAdminToken();
             showLoginForm();
         });
 
@@ -1359,141 +1409,409 @@
             return;
         }
 
+        adminConfigsCache = data.configs.slice();
         list.innerHTML = data.configs.map(c => {
             const label =
                 CONFIG_LABELS[c.name] || c.name;
             const statusClass =
-                c.exists ? 'exists' : '';
+                c.exists ? 'exists' : 'missing';
             const statusText =
-                c.exists ? '● Active' : '○ Not configured';
+                c.exists ? '● Active' : '○ Sample';
 
-            return '<div class="config-card"' +
+            return '<button type="button" class="config-card"' +
                 ' data-config="' + escHtml(c.name) + '">' +
                 '<div class="config-card-header">' +
+                '<div class="config-card-copy">' +
                 '<span class="config-card-title">' +
                 escHtml(label) + '</span>' +
+                '<p class="config-card-desc">' +
+                escHtml(CONFIG_DESCRIPTIONS[c.name] ||
+                    'Configuration editor') + '</p>' +
+                '</div>' +
+                '<div class="config-card-side">' +
                 '<span class="config-card-status ' +
                 statusClass + '">' +
                 statusText + '</span>' +
-                '</div>' +
-                '<div class="config-card-body"' +
-                ' id="config-body-' +
-                escHtml(c.name) + '">' +
-                '<textarea class="config-editor"' +
-                ' id="config-editor-' +
-                escHtml(c.name) + '">' +
-                'Loading...</textarea>' +
-                '<div class="config-actions">' +
-                '<button class="btn-outline config-reload"' +
-                ' data-config="' + escHtml(c.name) +
-                '">Reload</button>' +
-                '<button class="btn-send config-save"' +
-                ' data-config="' + escHtml(c.name) +
-                '">Save</button></div>' +
-                '<p class="config-msg"' +
-                ' id="config-msg-' +
-                escHtml(c.name) + '"></p>' +
-                '</div></div>';
+                '<span class="config-card-open">Open</span>' +
+                '</div></div></button>';
         }).join('');
 
-        // Toggle body on header click
-        list.querySelectorAll(
-            '.config-card-header').forEach(hdr => {
-                hdr.addEventListener('click', () => {
-                    const name = hdr.parentElement
-                        .dataset.config;
-                    const body = document.getElementById(
-                        'config-body-' + name);
-                    const isOpen =
-                        body.classList.contains('open');
-                    if (!isOpen) {
-                        body.classList.add('open');
-                        loadConfigContent(name);
-                    } else {
-                        body.classList.remove('open');
-                    }
-                });
-            });
-
-        // Save buttons
-        list.querySelectorAll('.config-save')
-            .forEach(btn => {
-                btn.addEventListener('click', () => {
-                    saveConfig(btn.dataset.config);
-                });
-            });
-
-        // Reload buttons
-        list.querySelectorAll('.config-reload')
-            .forEach(btn => {
-                btn.addEventListener('click', () => {
-                    loadConfigContent(btn.dataset.config);
+        list.querySelectorAll('.config-card')
+            .forEach(card => {
+                card.addEventListener('click', () => {
+                    openConfigModal(
+                        card.dataset.config);
                 });
             });
     }
 
-    async function loadConfigContent(name) {
-        const editor = document.getElementById(
-            'config-editor-' + name);
-        const msg = document.getElementById(
-            'config-msg-' + name);
-        msg.textContent = '';
-        msg.className = 'config-msg';
-
+    async function fetchConfigContent(name) {
         const resp = await apiFetch(
             'config/' + name);
 
         if (resp && resp.status === 'ok') {
-            editor.value = resp.content;
-        } else if (resp && resp.sample) {
-            editor.value = resp.sample;
-            msg.textContent =
-                'No config found — showing sample';
-            msg.className = 'config-msg error';
-        } else {
-            editor.value = '';
-            msg.textContent =
-                (resp && resp.error) || 'Load failed';
-            msg.className = 'config-msg error';
+            return {
+                ok: true,
+                exists: true,
+                content: resp.content
+            };
+        }
+        if (resp && resp.sample) {
+            return {
+                ok: true,
+                exists: false,
+                content: resp.sample,
+                message: 'No config found — sample loaded'
+            };
+        }
+        return {
+            ok: false,
+            error: (resp && resp.error) ||
+                'Load failed'
+        };
+    }
+
+    function tryParseJson(content) {
+        try {
+            return JSON.parse(content);
+        } catch (e) {
+            return null;
         }
     }
 
-    async function saveConfig(name) {
-        const editor = document.getElementById(
-            'config-editor-' + name);
-        const msg = document.getElementById(
-            'config-msg-' + name);
-        const content = editor.value;
+    function renderConfigField(key, value) {
+        const type = Array.isArray(value)
+            ? 'array'
+            : value === null
+                ? 'null'
+                : typeof value;
 
-        // Validate JSON (except system_prompt)
-        if (name !== 'system_prompt') {
+        if (type === 'boolean') {
+            return '<label class="config-field">' +
+                '<span class="config-field-label">' +
+                escHtml(key) + '</span>' +
+                '<select class="config-field-input"' +
+                ' data-config-key="' + escHtml(key) + '"' +
+                ' data-config-type="boolean">' +
+                '<option value="true"' +
+                (value ? ' selected' : '') +
+                '>true</option>' +
+                '<option value="false"' +
+                (!value ? ' selected' : '') +
+                '>false</option></select></label>';
+        }
+
+        if (type === 'number') {
+            return '<label class="config-field">' +
+                '<span class="config-field-label">' +
+                escHtml(key) + '</span>' +
+                '<input type="number" class="config-field-input"' +
+                ' data-config-key="' + escHtml(key) + '"' +
+                ' data-config-type="number" value="' +
+                escHtml(String(value)) + '"></label>';
+        }
+
+        if (type === 'object' || type === 'array') {
+            return '<label class="config-field">' +
+                '<span class="config-field-label">' +
+                escHtml(key) + '</span>' +
+                '<textarea class="config-field-input config-field-code"' +
+                ' data-config-key="' + escHtml(key) + '"' +
+                ' data-config-type="json">' +
+                escHtml(JSON.stringify(value, null, 2)) +
+                '</textarea></label>';
+        }
+
+        return '<label class="config-field">' +
+            '<span class="config-field-label">' +
+            escHtml(key) + '</span>' +
+            '<textarea class="config-field-input"' +
+            ' data-config-key="' + escHtml(key) + '"' +
+            ' data-config-type="string">' +
+            escHtml(value === null ? '' : String(value)) +
+            '</textarea></label>';
+    }
+
+    function renderConfigStructuredEditor() {
+        const fields = document.getElementById(
+            'config-modal-fields');
+        const helper = document.getElementById(
+            'config-modal-helper');
+
+        if (!activeConfigParsed ||
+            typeof activeConfigParsed !== 'object' ||
+            Array.isArray(activeConfigParsed)) {
+            fields.innerHTML =
+                '<p class="empty-state">Structured editing is available only for JSON objects.</p>';
+            helper.textContent =
+                'Use the raw editor to update the full document.';
+            return;
+        }
+
+        const entries =
+            Object.entries(activeConfigParsed);
+        helper.textContent =
+            'Update top-level fields here, then save the configuration.';
+        fields.innerHTML = entries.length
+            ? entries.map(([key, value]) =>
+                renderConfigField(key, value)).join('')
+            : '<p class="empty-state">No editable fields were found.</p>';
+    }
+
+    function setConfigModalMode(mode) {
+        const structured = document.getElementById(
+            'config-modal-structured');
+        const raw = document.getElementById(
+            'config-modal-raw-wrap');
+        const structuredTab = document.getElementById(
+            'config-tab-structured');
+        const rawTab = document.getElementById(
+            'config-tab-raw');
+        const canUseStructured = !!(
+            activeConfigParsed &&
+            typeof activeConfigParsed === 'object' &&
+            !Array.isArray(activeConfigParsed));
+
+        if (mode === 'structured' &&
+            !canUseStructured) {
+            mode = 'raw';
+        }
+
+        if (mode === 'raw' &&
+            structuredTab.classList.contains(
+                'active')) {
             try {
-                JSON.parse(content);
+                document.getElementById(
+                    'config-modal-raw').value =
+                    collectStructuredConfig();
             } catch (e) {
-                msg.textContent =
-                    'Invalid JSON: ' + e.message;
-                msg.className = 'config-msg error';
+                document.getElementById(
+                    'config-modal-msg').textContent =
+                    'Unable to switch to raw view: ' +
+                    e.message;
+                document.getElementById(
+                    'config-modal-msg').className =
+                    'config-modal-msg error';
                 return;
             }
         }
 
+        if (mode === 'structured' &&
+            rawTab.classList.contains('active')) {
+            const parsed = tryParseJson(
+                document.getElementById(
+                    'config-modal-raw').value);
+            if (!parsed ||
+                typeof parsed !== 'object' ||
+                Array.isArray(parsed)) {
+                document.getElementById(
+                    'config-modal-msg').textContent =
+                    'Structured view requires a JSON object.';
+                document.getElementById(
+                    'config-modal-msg').className =
+                    'config-modal-msg error';
+                return;
+            }
+            activeConfigParsed = parsed;
+            renderConfigStructuredEditor();
+        }
+
+        structured.style.display =
+            mode === 'structured' ? '' : 'none';
+        raw.style.display =
+            mode === 'raw' ? '' : 'none';
+        structuredTab.classList.toggle(
+            'active', mode === 'structured');
+        rawTab.classList.toggle(
+            'active', mode === 'raw');
+        structuredTab.disabled =
+            !canUseStructured;
+    }
+
+    async function openConfigModal(name) {
+        const modal = document.getElementById(
+            'config-modal');
+        const msg = document.getElementById(
+            'config-modal-msg');
+        const title = document.getElementById(
+            'config-modal-title');
+        const file = document.getElementById(
+            'config-modal-name');
+        const status = document.getElementById(
+            'config-modal-status');
+        const format = document.getElementById(
+            'config-modal-format');
+        const raw = document.getElementById(
+            'config-modal-raw');
+
+        activeConfigName = name;
+        title.textContent =
+            CONFIG_LABELS[name] || name;
+        file.textContent = name;
+        msg.textContent = 'Loading...';
+        msg.className = 'config-modal-msg';
+        modal.classList.add('open');
+        document.body.classList.add('modal-open');
+
+        const loaded = await fetchConfigContent(name);
+        if (!loaded.ok) {
+            msg.textContent = loaded.error;
+            msg.className =
+                'config-modal-msg error';
+            return;
+        }
+
+        raw.value = loaded.content || '';
+        activeConfigParsed = tryParseJson(raw.value);
+        status.textContent = loaded.exists
+            ? 'Active'
+            : 'Sample';
+        status.className = 'config-chip ' +
+            (loaded.exists ? 'success' :
+                'warning');
+        format.textContent = activeConfigParsed
+            ? 'JSON'
+            : 'TEXT';
+        renderConfigStructuredEditor();
+        setConfigModalMode('structured');
+
+        if (loaded.message) {
+            msg.textContent = loaded.message;
+            msg.className =
+                'config-modal-msg warning';
+        } else {
+            msg.textContent = '';
+            msg.className =
+                'config-modal-msg';
+        }
+    }
+
+    function closeConfigModal() {
+        const modal = document.getElementById(
+            'config-modal');
+        if (modal) {
+            modal.classList.remove('open');
+        }
+        document.body.classList.remove('modal-open');
+        activeConfigName = null;
+        activeConfigParsed = null;
+    }
+
+    function collectStructuredConfig() {
+        const next = {};
+        const inputs = document.querySelectorAll(
+            '#config-modal-fields [data-config-key]');
+
+        for (const input of inputs) {
+            const key = input.dataset.configKey;
+            const type = input.dataset.configType;
+            let value = input.value;
+
+            if (type === 'boolean') {
+                value = value === 'true';
+            } else if (type === 'number') {
+                if (value.trim() === '' ||
+                    Number.isNaN(Number(value))) {
+                    throw new Error(
+                        key + ' must be numeric');
+                }
+                value = Number(value);
+            } else if (type === 'json') {
+                value = JSON.parse(value);
+            }
+
+            next[key] = value;
+        }
+
+        return JSON.stringify(next, null, 2);
+    }
+
+    async function saveConfig(name) {
+        const msg = document.getElementById(
+            'config-modal-msg');
+        const structuredTab = document.getElementById(
+            'config-tab-structured');
+        const rawEditor = document.getElementById(
+            'config-modal-raw');
+        let content = rawEditor.value;
+
+        try {
+            if (structuredTab.classList.contains(
+                'active')) {
+                content = collectStructuredConfig();
+            } else if (tryParseJson(content)) {
+                content = JSON.stringify(
+                    JSON.parse(content), null, 2);
+            }
+        } catch (e) {
+            msg.textContent =
+                'Invalid config: ' + e.message;
+            msg.className =
+                'config-modal-msg error';
+            return;
+        }
+
         msg.textContent = 'Saving...';
-        msg.className = 'config-msg';
+        msg.className = 'config-modal-msg';
 
         const resp = await apiPost(
             'config/' + name, { content: content });
 
         if (resp && resp.status === 'ok') {
-            msg.textContent = 'Saved successfully!';
-            msg.className = 'config-msg success';
-            // Refresh header status
-            loadConfigs();
+            rawEditor.value = content;
+            activeConfigParsed =
+                tryParseJson(content);
+            msg.textContent =
+                'Saved successfully!';
+            msg.className =
+                'config-modal-msg success';
+            await loadConfigs();
+            showToast(
+                (CONFIG_LABELS[name] || name) +
+                ' saved',
+                'success'
+            );
         } else {
             msg.textContent =
                 (resp && resp.error) || 'Save failed';
-            msg.className = 'config-msg error';
+            msg.className =
+                'config-modal-msg error';
         }
     }
+
+    document.getElementById('config-modal-close')
+        .addEventListener('click',
+            closeConfigModal);
+    document.getElementById(
+        'config-modal-backdrop')
+        .addEventListener('click',
+            closeConfigModal);
+    document.getElementById(
+        'config-tab-structured')
+        .addEventListener('click', () => {
+            setConfigModalMode('structured');
+        });
+    document.getElementById('config-tab-raw')
+        .addEventListener('click', () => {
+            setConfigModalMode('raw');
+        });
+    document.getElementById('config-modal-reload')
+        .addEventListener('click', () => {
+            if (activeConfigName) {
+                openConfigModal(activeConfigName);
+            }
+        });
+    document.getElementById('config-modal-save')
+        .addEventListener('click', () => {
+            if (activeConfigName) {
+                saveConfig(activeConfigName);
+            }
+        });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            closeConfigModal();
+        }
+    });
 
     // ==========================
     // OTA Updates

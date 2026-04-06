@@ -460,8 +460,9 @@ impl IpcServer {
                     return json!({"jsonrpc":"2.0","error":{"code":-32602,"message":"Missing 'name'"},"id":req_id})
                         .to_string();
                 }
+                let settings = params.get("settings");
                 match registry.lock() {
-                    Ok(mut reg) => match reg.start_channel(name) {
+                    Ok(mut reg) => match reg.start_channel(name, settings) {
                         Ok(()) => json!({"status": "ok", "name": name}),
                         Err(e) => {
                             return json!({"jsonrpc":"2.0","error":{"code":-32000,"message":e},"id":req_id})

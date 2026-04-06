@@ -153,7 +153,7 @@ async fn main() {
                 channel_type: "web_dashboard".into(),
                 enabled: true,
                 settings: serde_json::json!({
-                    "port": 9090,
+                    "port": core::runtime_paths::default_dashboard_port(),
                     "localhost_only": false,
                     "web_root": web_root
                 }),
@@ -162,7 +162,10 @@ async fn main() {
                 channel::channel_factory::create_channel(&dashboard_config, Some(agent.clone()))
             {
                 reg.register(ch, true);
-                log::info!("[Boot] WebDashboard registered (port 9090, auto_start=true)");
+                log::info!(
+                    "[Boot] WebDashboard registered (port {}, auto_start=true)",
+                    core::runtime_paths::default_dashboard_port()
+                );
             }
         }
 

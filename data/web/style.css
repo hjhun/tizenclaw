@@ -1008,6 +1008,12 @@ body {
     box-shadow: var(--shadow-card);
 }
 
+.admin-toolbar-left {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
 .admin-toolbar-right { display: flex; gap: 8px; }
 
 .admin-badge {
@@ -1021,6 +1027,13 @@ body {
     font-size: 0.77rem;
     font-weight: 500;
     border: 1px solid rgba(5,150,105,0.15);
+}
+
+.admin-toolbar-copy {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    max-width: 540px;
 }
 
 .pw-change-form {
@@ -1055,27 +1068,37 @@ body {
 }
 
 .config-card {
+    appearance: none;
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    overflow: hidden;
-    transition: border-color 0.15s;
+    transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
     box-shadow: var(--shadow-card);
+    width: 100%;
+    padding: 0;
+    text-align: left;
+    cursor: pointer;
 }
 
-.config-card:hover { border-color: rgba(99,102,241,0.2); }
+.config-card:hover {
+    border-color: rgba(99,102,241,0.25);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-pop);
+}
 
 .config-card-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    padding: 12px 17px;
-    cursor: pointer;
-    user-select: none;
-    transition: background 0.15s;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 16px 18px;
 }
 
-.config-card-header:hover { background: #f9fafb; }
+.config-card-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
 
 .config-card-title {
     font-weight: 600;
@@ -1083,15 +1106,37 @@ body {
     color: var(--text-primary);
 }
 
-.config-card-status       { font-size: 0.71rem; color: var(--text-muted); }
-.config-card-status.exists { color: var(--success); }
+.config-card-desc {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    line-height: 1.5;
+}
 
-.config-card-body         { display: none; padding: 0 17px 13px; }
-.config-card-body.open    { display: block; }
+.config-card-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+}
+
+.config-card-status {
+    font-size: 0.71rem;
+    color: var(--text-muted);
+}
+
+.config-card-status.exists { color: var(--success); }
+.config-card-status.missing { color: var(--warning); }
+
+.config-card-open {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--accent-strong);
+}
 
 .config-editor {
     width: 100%;
-    min-height: 170px;
+    min-height: 220px;
     background: #f9fafb;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
@@ -1108,16 +1153,198 @@ body {
 
 .config-editor:focus { border-color: var(--border-active); }
 
-.config-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-top: 9px;
+.config-modal {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 4000;
 }
 
-.config-msg       { font-size: 0.75rem; margin-top: 6px; min-height: 1em; }
-.config-msg.success { color: var(--success); }
-.config-msg.error   { color: var(--danger); }
+.config-modal.open { display: flex; }
+
+.config-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.56);
+    backdrop-filter: blur(3px);
+}
+
+.config-modal-dialog {
+    position: relative;
+    width: min(880px, calc(100vw - 32px));
+    max-height: calc(100vh - 48px);
+    overflow: auto;
+    background: var(--bg-card);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 20px;
+    box-shadow: var(--shadow-pop);
+    padding: 22px;
+}
+
+.config-modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.config-modal-header h3 {
+    margin: 0;
+    font-size: 1.02rem;
+}
+
+.config-modal-file {
+    margin: 6px 0 0;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.config-modal-meta {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.config-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    border: 1px solid transparent;
+}
+
+.config-chip.success {
+    color: var(--success);
+    background: rgba(5,150,105,0.1);
+    border-color: rgba(5,150,105,0.16);
+}
+
+.config-chip.warning {
+    color: var(--warning);
+    background: rgba(217,119,6,0.1);
+    border-color: rgba(217,119,6,0.16);
+}
+
+.config-chip.neutral {
+    color: var(--text-secondary);
+    background: rgba(148,163,184,0.12);
+    border-color: rgba(148,163,184,0.2);
+}
+
+.config-modal-tabs {
+    display: inline-flex;
+    gap: 8px;
+    margin-top: 16px;
+    padding: 4px;
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+}
+
+.config-tab {
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.config-tab.active {
+    background: white;
+    color: var(--text-primary);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
+.config-tab:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.config-modal-body {
+    margin-top: 16px;
+}
+
+.config-modal-helper {
+    margin: 0 0 12px;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.config-fields {
+    display: grid;
+    gap: 12px;
+}
+
+.config-field {
+    display: grid;
+    gap: 7px;
+}
+
+.config-field-label {
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.config-field-input {
+    width: 100%;
+    background: #f9fafb;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    font-family: inherit;
+    outline: none;
+    resize: vertical;
+}
+
+.config-field-input:focus {
+    border-color: var(--border-active);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.config-field-code {
+    min-height: 130px;
+    font-family: 'JetBrains Mono', monospace;
+    line-height: 1.55;
+}
+
+.config-modal-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-top: 18px;
+    flex-wrap: wrap;
+}
+
+.config-modal-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.config-modal-msg {
+    font-size: 0.78rem;
+    min-height: 1.1em;
+    margin: 0;
+}
+
+.config-modal-msg.success { color: var(--success); }
+.config-modal-msg.error { color: var(--danger); }
+.config-modal-msg.warning { color: var(--warning); }
+
+body.modal-open {
+    overflow: hidden;
+}
 
 /* ─── OTA Updates ─────────────────────────────────────────── */
 

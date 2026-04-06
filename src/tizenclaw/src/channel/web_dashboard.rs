@@ -35,7 +35,8 @@ impl WebDashboard {
             .settings
             .get("port")
             .and_then(|v| v.as_u64())
-            .unwrap_or(9090) as u16;
+            .unwrap_or(crate::core::runtime_paths::default_dashboard_port() as u64)
+            as u16;
         let localhost_only = config
             .settings
             .get("localhost_only")
@@ -208,6 +209,26 @@ impl Channel for WebDashboard {
 
     fn send_message(&self, _msg: &str) -> Result<(), String> {
         Ok(()) // pull-based; no push support needed
+    }
+
+    fn configure(&mut self, settings: &serde_json::Value) -> Result<(), String> {
+        if let Some(port) = settings.get("port") {
+            let port = port
+                .as_u64()
+                .ok_or_else(|| "Dashboard port must be a number".to_string())?;
+            if !(1..=65535).contains(&port) {
+                return Err("Dashboard port must be between 1 and 65535".to_string());
+            }
+            self.port = port as u16;
+        }
+
+        if let Some(localhost_only) = settings.get("localhost_only") {
+            self.localhost_only = localhost_only
+                .as_bool()
+                .ok_or_else(|| "localhost_only must be a boolean".to_string())?;
+        }
+
+        Ok(())
     }
 }
 

@@ -5,6 +5,7 @@
 //!   tizenclaw-cli -s my_session "Run a skill"
 //!   tizenclaw-cli --stream "Tell me about Tizen"
 //!   tizenclaw-cli dashboard start
+//!   tizenclaw-cli dashboard start --port 8080
 //!   tizenclaw-cli dashboard stop
 //!   tizenclaw-cli dashboard status
 //!   tizenclaw-cli   (interactive mode)
@@ -218,28 +219,67 @@ fn send_prompt(session_id: &str, prompt: &str, stream: bool) -> Result<String, S
     Ok(resolved_session_id)
 }
 
-/// Handle `tizenclaw-cli dashboard <action>`.
-fn cmd_dashboard(action: &str) {
-    match action {
-        "start" => match send_jsonrpc("start_channel", json!({"name": "web_dashboard"})) {
-            Ok((resp, _)) => {
-                if resp.get("result").is_some() {
-                    println!("Dashboard started.");
-                } else if let Some(err) = resp.get("error") {
-                    eprintln!(
-                        "Error: {}",
-                        err.get("message")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown")
-                    );
+fn parse_dashboard_command(input: &str) -> (String, Option<u16>) {
+    let mut parts = input.split_whitespace();
+    let action = parts.next().unwrap_or("").to_string();
+    let mut port = None;
+
+    while let Some(part) = parts.next() {
+        if part == "--port" {
+            let value = parts.next().unwrap_or("");
+            match value.parse::<u16>() {
+                Ok(parsed) if parsed > 0 => port = Some(parsed),
+                _ => {
+                    eprintln!("Error: invalid dashboard port '{}'", value);
                     std::process::exit(1);
                 }
             }
-            Err(e) => {
-                eprintln!("{}", e);
-                std::process::exit(1);
+        } else {
+            eprintln!(
+                "Unknown dashboard option '{}'. Use: start [--port N] | stop | status",
+                part
+            );
+            std::process::exit(1);
+        }
+    }
+
+    (action, port)
+}
+
+/// Handle `tizenclaw-cli dashboard <action> [--port N]`.
+fn cmd_dashboard(command: &str) {
+    let (action, port) = parse_dashboard_command(command);
+
+    match action.as_str() {
+        "start" => {
+            let mut params = json!({"name": "web_dashboard"});
+            if let Some(port) = port {
+                params["settings"] = json!({ "port": port });
             }
-        },
+            match send_jsonrpc("start_channel", params) {
+                Ok((resp, _)) => {
+                    if resp.get("result").is_some() {
+                        if let Some(port) = port {
+                            println!("Dashboard started on port {}.", port);
+                        } else {
+                            println!("Dashboard started.");
+                        }
+                    } else if let Some(err) = resp.get("error") {
+                        eprintln!(
+                            "Error: {}",
+                            err.get("message")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown")
+                        );
+                        std::process::exit(1);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
         "stop" => match send_jsonrpc("stop_channel", json!({"name": "web_dashboard"})) {
             Ok((resp, _)) => {
                 if resp.get("result").is_some() {
@@ -284,7 +324,7 @@ fn cmd_dashboard(action: &str) {
         },
         _ => {
             eprintln!(
-                "Unknown dashboard action '{}'. Use: start | stop | status",
+                "Unknown dashboard action '{}'. Use: start [--port N] | stop | status",
                 action
             );
             std::process::exit(1);
@@ -319,7 +359,7 @@ fn interactive_mode(explicit_session_id: Option<&str>, stream: bool) {
             "/help" => {
                 println!("Commands:");
                 println!("  /usage            Show token usage");
-                println!("  /dashboard start  Start web dashboard");
+                println!("  /dashboard start [--port N] Start web dashboard");
                 println!("  /dashboard stop   Stop web dashboard");
                 println!("  /dashboard status Show dashboard status");
                 println!("  -s <id>           Re-run CLI with a fixed session");
@@ -508,7 +548,8 @@ fn print_usage() {
     eprintln!("  --usage-baseline  JSON baseline for usage delta");
     eprintln!("  -h, --help        Show this help\n");
     eprintln!("Dashboard commands:");
-    eprintln!("  tizenclaw-cli dashboard start   Start the web dashboard");
+    eprintln!("  tizenclaw-cli dashboard start [--port N]");
+    eprintln!("                                   Start the web dashboard");
     eprintln!("  tizenclaw-cli dashboard stop    Stop the web dashboard");
     eprintln!("  tizenclaw-cli dashboard status  Show dashboard status\n");
     eprintln!("Registration commands:");
@@ -638,7 +679,14 @@ fn main() {
             }
             "dashboard" if i + 1 < args.len() => {
                 i += 1;
-                cmd_dashboard(&args[i]);
+                let mut command = args[i].clone();
+                i += 1;
+                while i < args.len() {
+                    command.push(' ');
+                    command.push_str(&args[i]);
+                    i += 1;
+                }
+                cmd_dashboard(&command);
                 return;
             }
             "register" if i + 2 < args.len() => {
@@ -658,7 +706,7 @@ fn main() {
                 return;
             }
             "dashboard" => {
-                eprintln!("Usage: tizenclaw-cli dashboard <start|stop|status>");
+                eprintln!("Usage: tizenclaw-cli dashboard <start [--port N]|stop|status>");
                 std::process::exit(1);
             }
             "register" => {
