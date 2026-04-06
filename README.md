@@ -168,15 +168,15 @@ wizard.
 ### One-line bootstrap
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hjhun/tizenclaw/develRust/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/hjhun/tizenclaw/main/install.sh | bash
 ```
 
 Useful variants:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hjhun/tizenclaw/develRust/install.sh | bash -s -- --version v1.0.0
-curl -fsSL https://raw.githubusercontent.com/hjhun/tizenclaw/develRust/install.sh | bash -s -- --skip-setup
-curl -fsSL https://raw.githubusercontent.com/hjhun/tizenclaw/develRust/install.sh | bash -s -- --source-install --ref develRust
+curl -fsSL https://raw.githubusercontent.com/hjhun/tizenclaw/main/install.sh | bash -s -- --version v1.0.0
+curl -fsSL https://raw.githubusercontent.com/hjhun/tizenclaw/main/install.sh | bash -s -- --skip-setup
+curl -fsSL https://raw.githubusercontent.com/hjhun/tizenclaw/main/install.sh | bash -s -- --source-install --ref main
 ```
 
 What the bootstrap does:
@@ -201,7 +201,7 @@ If you are actively developing TizenClaw and want a full repository checkout,
 switch the installer into source mode:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hjhun/tizenclaw/develRust/install.sh | bash -s -- --source-install --ref develRust
+curl -fsSL https://raw.githubusercontent.com/hjhun/tizenclaw/main/install.sh | bash -s -- --source-install --ref main
 ```
 
 Or run the classic manual flow:
