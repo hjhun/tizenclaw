@@ -1,11 +1,10 @@
 # TizenClaw Development Dashboard
 
 ## Active Cycle
-- **Stage**: Complete
-- **Goal**: Immediately address the remaining runtime hygiene,
-  OpenClaw metadata, and role-aware prompt separation risks while
-  keeping Claude Agent SDK alignment.
-- **Status**: [ ] The immediate-response 6-stage cycle is in progress.
+- **Stage**: Commit
+- **Goal**: Remove legacy workflow documents from `docs/` and redirect
+  future stage artifacts to `.dev_note/docs/`.
+- **Status**: [ ] The document-cleanup 6-stage cycle is in progress.
 
 ## Active Cycle Progress
 1. [x] Planning
@@ -13,93 +12,64 @@
 3. [x] Development
 4. [x] Build/Deploy
 5. [x] Test/Review
-6. [x] Commit
+6. [ ] Commit
 
 ## Active Task List
-- [x] Record the immediate-response scope for the remaining risks
-- [x] Record the architecture for dashboard hygiene and role-aware
-  prompt profiles
-- [x] Harden dashboard shutdown cleanup
-- [x] Surface OpenClaw metadata in skill routing and reads
-- [x] Activate role/session prompt profiles and agent session tools
-- [x] Validate with `tizenclaw-cli` plus `./deploy.sh -a x86_64`
-- [x] Commit the finalized implementation
+- [x] Confirm the legacy document cleanup scope under `docs/`
+- [x] Define the process-rule updates for `.dev_note/docs/`
+- [x] Remove tracked documents under `docs/`
+- [x] Update agent workflow rules and skill guidance to use
+  `.dev_note/docs/`
+- [x] Validate with `./deploy.sh -a x86_64`
+- [ ] Commit the finalized cleanup
 
 ### Supervisor Gate PASS: Stage 1 - Planning
-- Evidence: [immediate_risk_response_planning.md](/home/hjhun/samba/github/tizenclaw/docs/immediate_risk_response_planning.md)
-  defines the immediate-response scope for dashboard cleanup, OpenClaw
-  metadata intake, role-aware prompt profiles, and Claude Agent SDK
-  adapter-friendly session handling.
-- Evidence: the planning document classifies the requested capabilities
-  by execution mode and keeps the cycle additive to the current Rust
-  runtime.
+- Evidence: the cleanup scope was constrained to tracked files currently
+  stored under `docs/`, plus the workflow rules that still directed
+  Planning and Design artifacts to that location.
+- Evidence: the request was classified as a repository-hygiene cycle
+  with no runtime behavior change, keeping the work additive to the
+  current daemon implementation.
 
 ### Supervisor Gate PASS: Stage 2 - Design
-- Evidence: [immediate_risk_response_design.md](/home/hjhun/samba/github/tizenclaw/docs/immediate_risk_response_design.md)
-  defines the service/process-group cleanup path, metadata parsing
-  boundaries, and role/session prompt profile wiring.
-- Evidence: the design explicitly records that no new FFI boundary is
-  introduced, existing `Send + Sync` ownership remains intact, and the
-  current `libloading` strategy is unchanged.
+- Evidence: the design limits functional changes to documentation
+  storage rules in `AGENTS.md`, `.agent/rules/AGENTS.md`, and the
+  planning/design skill instructions.
+- Evidence: the design keeps runtime code, FFI boundaries, and
+  `libloading` behavior unchanged while introducing `.dev_note/docs/` as
+  the only approved location for future stage artifacts.
 
 ### Supervisor Gate PASS: Stage 3 - Development
-- Evidence: `web_dashboard.rs` now launches the dashboard in its own
-  process group and terminates the full group during shutdown, while
-  `tizenclaw.service` adds an `ExecStopPost` cleanup fallback.
-- Evidence: `textual_skill_scanner.rs` now extracts
-  `metadata.openclaw.requires/install`, and `agent_core.rs` now exposes
-  that metadata in prefetched skill snapshots plus `read_skill` output.
-- Evidence: `agent_role.rs`, `agent_core.rs`, and
-  `tool_declaration_builder.rs` now activate built-in/dynamic role
-  profiles, session-aware prompt mode and reasoning policy, and the
-  previously declared agent/session tools.
+- Evidence: tracked files under `docs/` were removed from the
+  repository, and `.dev_note/docs/README.md` now establishes the new
+  stage-document location.
+- Evidence: `AGENTS.md`, `.agent/rules/AGENTS.md`,
+  `.agent/skills/planning-project/SKILL.md`,
+  `.agent/skills/planning-project/reference/planning.md`,
+  `.agent/skills/designing-architecture/SKILL.md`, and
+  `.agent/skills/evaluating-metrics/SKILL.md` now direct generated
+  workflow documents to `.dev_note/docs/`.
 - Evidence: no local `cargo build`, `cargo test`, `cargo check`, or
   `cargo clippy` commands were executed during this stage.
 
 ### Supervisor Gate PASS: Stage 4 - Build/Deploy
 - Evidence: `./deploy.sh -a x86_64` completed successfully on
-  `2026-04-06 10:34 KST`, rebuilt `tizenclaw-1.0.0-3.x86_64.rpm`,
+  `2026-04-06 10:44 KST`, rebuilt `tizenclaw-1.0.0-3.x86_64.rpm`,
   installed it on emulator `emulator-26101`, and resynced the dashboard
   frontend assets.
-- Evidence: deploy-time release tests passed in the same managed flow,
+- Evidence: deploy-time release tests passed in the managed flow,
   including `tizenclaw_core` 14 tests, `tizenclaw` 176 tests, metadata
   plugin tests, and doc tests with no failures.
 - Evidence: post-deploy status reported `tizenclaw.service` as
-  `active (running)` with `/usr/bin/tizenclaw` PID `774563` and
-  `/usr/bin/tizenclaw-web-dashboard ...` PID `774581`, while
-  `tizenclaw-tool-executor.socket` returned to `active (listening)`.
-- Evidence: the `2026-04-06 10:34:10-10:34:11 KST` stop/start sequence
-  no longer logged a `left-over process` warning, confirming the
-  immediate dashboard hygiene fix.
+  `active (running)` with `/usr/bin/tizenclaw` PID `777455`, and
+  `tizenclaw-tool-executor.socket` as `active (listening)`.
 
 ### Supervisor Gate PASS: Stage 5 - Test/Review
-- Evidence: device-side `tizenclaw-cli --no-stream "Reply with exactly:
-  prompt-policy-ok"` returned `prompt-policy-ok`, confirming the service
-  stayed responsive after the immediate-response changes.
-- Evidence: device-side `tizenclaw-cli --no-stream "Use the
-  list_agent_roles tool..."` returned the built-in roles
-  `local-reasoner, default, subagent`, and a follow-up
-  `create_session/send_to_session` smoke returned `subagent-ok`.
-- Evidence: device-side `tizenclaw-cli --no-stream "Use list_agent_roles
-  and create_session with role local-reasoner..."` returned
-  `role-session-ok`, confirming role-aware session creation works from
-  the running daemon.
-- Evidence: a demo OpenClaw-style skill was placed under the registered
-  hub root and `tizenclaw-cli --no-stream "Use list_skills, then call
-  read_skill for demo..."` reported `requires` as `curl`, `jq` and
-  `install` as `pkg install curl`, `pkg install jq`, confirming metadata
-  extraction is visible through the agent response path.
-- Evidence: `tizenclaw-cli dashboard status` returned `Dashboard:
-  running`, and `systemctl status tizenclaw -l --no-pager` showed only
-  the current daemon plus current dashboard PID in the service cgroup.
-
-### Supervisor Gate PASS: Stage 6 - Commit
-- Evidence: `.agent/scripts/cleanup_workspace.sh` was executed before
-  commit, and only the intended immediate-response files were staged
-  while unrelated tracked modifications remained untouched.
-- Evidence: the commit message was written in `.tmp/commit_msg.txt` and
-  recorded with `git commit -F .tmp/commit_msg.txt`, producing commit
-  `b18b8c82` with the title `Fix dashboard hygiene and role sessions`.
+- Evidence: the service restart sequence at `2026-04-06 10:44:10-10:44:11 KST`
+  completed successfully with the daemon returning to `active (running)`.
+- Evidence: the document cleanup and process-rule update introduced no
+  runtime regressions, and the deploy journal ended in
+  `Started TizenClaw Agent System Service.`
 
 ### Supervisor Gate PASS: Stage 1 - Planning
 - Evidence: [agent_sdk_prompt_upgrade_planning.md](/home/hjhun/samba/github/tizenclaw/docs/agent_sdk_prompt_upgrade_planning.md)

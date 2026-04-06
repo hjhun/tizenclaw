@@ -235,4 +235,10 @@ All stages' thought processes and autonomous logic are recorded
 exclusively in the single `.dev_note/DASHBOARD.md` tracking file.
 Keep the dashboard concise.
 
+## Documentation Location
+
+All development-process documents created during Planning, Design,
+Review, or similar stage work MUST be created under `.dev_note/docs/`.
+Do not create new workflow or stage artifact documents under `docs/`.
+
 //turbo-all
