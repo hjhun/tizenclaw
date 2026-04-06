@@ -13,6 +13,7 @@
 //! Thread-safety: uses fine-grained internal locking so callers can
 //! share `Arc<AgentCore>` without an outer Mutex.
 
+use futures_util::future::join_all;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::Write;
@@ -50,6 +51,9 @@ struct SessionPromptProfile {
     role_description: Option<String>,
     system_prompt: Option<String>,
     allowed_tools: Option<Vec<String>>,
+    max_iterations: Option<usize>,
+    role_type: Option<String>,
+    can_delegate_to: Option<Vec<String>>,
     prompt_mode: Option<PromptMode>,
     reasoning_policy: Option<ReasoningPolicy>,
 }
@@ -280,6 +284,60 @@ fn select_relevant_skills(
         .take(limit)
         .map(|(_, skill)| skill)
         .collect()
+}
+
+fn role_relevance_score(goal: &str, role: &AgentRole) -> usize {
+    let goal_lower = goal.to_lowercase();
+    let searchable = format!(
+        "{} {} {}",
+        role.name.to_lowercase(),
+        role.description.to_lowercase(),
+        role.system_prompt.to_lowercase()
+    );
+
+    let mut score = 0;
+    if goal_lower.len() >= 3 && searchable.contains(&goal_lower) {
+        score += 5;
+    }
+
+    for token in goal_lower.split(|c: char| !c.is_alphanumeric()) {
+        if token.len() >= 2 && searchable.contains(token) {
+            score += 1;
+        }
+    }
+
+    score
+}
+
+fn select_delegate_roles(goal: &str, roles: &[AgentRole], limit: usize) -> Vec<AgentRole> {
+    let mut scored: Vec<(usize, AgentRole)> = roles
+        .iter()
+        .cloned()
+        .map(|role| (role_relevance_score(goal, &role), role))
+        .collect();
+
+    scored.sort_by(|(left_score, left_role), (right_score, right_role)| {
+        right_score
+            .cmp(left_score)
+            .then_with(|| left_role.name.cmp(&right_role.name))
+    });
+
+    let mut selected: Vec<AgentRole> = scored
+        .iter()
+        .filter(|(score, _)| *score > 0)
+        .take(limit)
+        .map(|(_, role)| role.clone())
+        .collect();
+
+    if selected.is_empty() {
+        selected = scored
+            .into_iter()
+            .take(limit.max(1))
+            .map(|(_, role)| role)
+            .collect();
+    }
+
+    selected
 }
 
 fn build_skill_prefetch_message(skills: &[TextualSkill]) -> Option<String> {
@@ -1217,6 +1275,11 @@ impl AgentCore {
             if !role.allowed_tools.is_empty() {
                 profile.allowed_tools = Some(role.allowed_tools);
             }
+            profile.max_iterations = Some(role.max_iterations);
+            profile.role_type = Some(role.role_type);
+            if !role.can_delegate_to.is_empty() {
+                profile.can_delegate_to = Some(role.can_delegate_to);
+            }
             profile.prompt_mode = role.prompt_mode;
             profile.reasoning_policy = role.reasoning_policy;
         }
@@ -1912,6 +1975,12 @@ impl AgentCore {
             skill_roots.iter().map(|root| root.as_str()),
         );
         let session_profile = self.resolve_session_profile(session_id);
+        if let Some(max_iterations) = session_profile
+            .as_ref()
+            .and_then(|profile| profile.max_iterations)
+        {
+            loop_state.max_tool_rounds = max_iterations.max(1);
+        }
         let skill_reference_docs =
             crate::core::skill_support::list_skill_reference_docs(&self.platform.paths.docs_dir);
         let prefetched_skills =
@@ -2635,11 +2704,14 @@ impl AgentCore {
                                 "roles": roles.into_iter().map(|role| serde_json::json!({
                                     "name": role.name,
                                     "description": role.description,
-                                    "max_iterations": role.max_iterations,
-                                    "allowed_tools": role.allowed_tools,
-                                    "prompt_mode": role.prompt_mode.map(|mode| match mode {
-                                        PromptMode::Full => "full",
-                                        PromptMode::Minimal => "minimal",
+                                "max_iterations": role.max_iterations,
+                                "allowed_tools": role.allowed_tools,
+                                "type": role.role_type,
+                                "auto_start": role.auto_start,
+                                "can_delegate_to": role.can_delegate_to,
+                                "prompt_mode": role.prompt_mode.map(|mode| match mode {
+                                    PromptMode::Full => "full",
+                                    PromptMode::Minimal => "minimal",
                                     }),
                                     "reasoning_policy": role.reasoning_policy.map(|policy| match policy {
                                         ReasoningPolicy::Native => "native",
@@ -2664,6 +2736,13 @@ impl AgentCore {
                                     allowed_tools,
                                     max_iterations: tc_args.get("max_iterations").and_then(|v| v.as_u64()).unwrap_or(6) as usize,
                                     description: tc_args.get("description").and_then(|v| v.as_str()).unwrap_or("Dynamic role").to_string(),
+                                    role_type: tc_args.get("type").and_then(|v| v.as_str()).unwrap_or("worker").to_string(),
+                                    auto_start: tc_args.get("auto_start").and_then(|v| v.as_bool()).unwrap_or(false),
+                                    can_delegate_to: tc_args
+                                        .get("can_delegate_to")
+                                        .and_then(|v| v.as_array())
+                                        .map(|items| items.iter().filter_map(|value| value.as_str().map(|value| value.to_string())).collect::<Vec<_>>())
+                                        .unwrap_or_default(),
                                     prompt_mode: prompt_mode_from_str(tc_args.get("prompt_mode").and_then(|v| v.as_str())),
                                     reasoning_policy: reasoning_policy_from_str(tc_args.get("reasoning_policy").and_then(|v| v.as_str())),
                                 };
@@ -2673,6 +2752,9 @@ impl AgentCore {
                                 serde_json::json!({
                                     "status": "success",
                                     "role": role.name,
+                                    "type": role.role_type,
+                                    "auto_start": role.auto_start,
+                                    "can_delegate_to": role.can_delegate_to,
                                     "prompt_mode": role.prompt_mode.map(|mode| match mode {
                                         PromptMode::Full => "full",
                                         PromptMode::Minimal => "minimal",
@@ -2770,20 +2852,136 @@ impl AgentCore {
                         } else if tc_name == "run_supervisor" {
                             let goal = tc_args.get("goal").and_then(|v| v.as_str()).unwrap_or("").trim();
                             let strategy = tc_args.get("strategy").and_then(|v| v.as_str()).unwrap_or("sequential");
-                            let roles = self.role_registry_snapshot()
-                                .into_iter()
-                                .map(|role| serde_json::json!({
-                                    "name": role.name,
-                                    "description": role.description,
-                                }))
-                                .collect::<Vec<_>>();
-                            serde_json::json!({
-                                "status": "success",
-                                "goal": goal,
-                                "strategy": strategy,
-                                "message": "Supervisor planning is available. Use list_agent_roles to choose a role, create_session to allocate a role-bound session, and send_to_session to delegate work.",
-                                "roles": roles,
-                            })
+                            if goal.is_empty() {
+                                serde_json::json!({"error": "Missing goal"})
+                            } else {
+                                let current_profile = self.resolve_session_profile(session_id);
+                                let delegated_role_names = current_profile
+                                    .as_ref()
+                                    .and_then(|profile| profile.can_delegate_to.clone())
+                                    .unwrap_or_default();
+                                let mut candidate_roles = self
+                                    .role_registry_snapshot()
+                                    .into_iter()
+                                    .filter(|role| !role.is_supervisor())
+                                    .filter(|role| !matches!(role.name.as_str(), "default" | "subagent" | "local-reasoner"))
+                                    .collect::<Vec<_>>();
+                                if !delegated_role_names.is_empty() {
+                                    candidate_roles.retain(|role| {
+                                        delegated_role_names.iter().any(|name| name == &role.name)
+                                    });
+                                }
+
+                                let selected_roles = select_delegate_roles(
+                                    goal,
+                                    &candidate_roles,
+                                    if strategy == "parallel" { 3 } else { 2 },
+                                );
+
+                                if selected_roles.is_empty() {
+                                    serde_json::json!({
+                                        "error": "No worker roles are available for supervisor delegation"
+                                    })
+                                } else {
+                                    let supervisor_hint = format!(
+                                        "Supervisor goal from session '{}': {}\nReturn concise role-specific findings and actions only.",
+                                        session_id,
+                                        goal
+                                    );
+
+                                    let mut delegated_sessions = Vec::new();
+                                    for role in &selected_roles {
+                                        if let Ok(profile) = self.build_session_profile(
+                                            Some(&role.name),
+                                            None,
+                                            None,
+                                            None,
+                                            None,
+                                            None,
+                                        ) {
+                                            let base_prompt = profile
+                                                .system_prompt
+                                                .clone()
+                                                .unwrap_or_else(|| "You are a TizenClaw sub-session.".into());
+                                            let session_name = format!("{}_delegate", role.name);
+                                            let delegated_session_id =
+                                                crate::core::agent_factory::AgentFactory::create_agent_session(
+                                                    &session_name,
+                                                    &base_prompt,
+                                                );
+                                            if let Ok(ss) = self.session_store.lock() {
+                                                if let Some(store) = ss.as_ref() {
+                                                    store.ensure_session(&delegated_session_id);
+                                                }
+                                            }
+                                            if let Ok(mut profiles) = self.session_profiles.lock() {
+                                                profiles.insert(delegated_session_id.clone(), profile);
+                                            }
+                                            delegated_sessions.push((role.clone(), delegated_session_id));
+                                        }
+                                    }
+
+                                    if delegated_sessions.is_empty() {
+                                        serde_json::json!({
+                                            "error": "Failed to create delegated sessions for supervisor execution"
+                                        })
+                                    } else {
+                                        let results = if strategy == "parallel" {
+                                            join_all(delegated_sessions.iter().map(|(role, delegated_session_id)| {
+                                                let supervisor_hint = supervisor_hint.clone();
+                                                async move {
+                                                let response = Box::pin(self.process_prompt(
+                                                    delegated_session_id,
+                                                    &supervisor_hint,
+                                                    None,
+                                                ))
+                                                .await;
+                                                serde_json::json!({
+                                                    "role": role.name.clone(),
+                                                    "session_id": delegated_session_id,
+                                                    "response": response,
+                                                })
+                                            }}))
+                                            .await
+                                        } else {
+                                            let mut sequential_results = Vec::new();
+                                            for (role, delegated_session_id) in &delegated_sessions {
+                                                let response = Box::pin(self.process_prompt(
+                                                    delegated_session_id,
+                                                    &supervisor_hint,
+                                                    None,
+                                                ))
+                                                .await;
+                                                sequential_results.push(serde_json::json!({
+                                                    "role": role.name.clone(),
+                                                    "session_id": delegated_session_id,
+                                                    "response": response,
+                                                }));
+                                            }
+                                            sequential_results
+                                        };
+
+                                        let summary = results
+                                            .iter()
+                                            .map(|item| {
+                                                let role = item.get("role").and_then(|v| v.as_str()).unwrap_or("unknown");
+                                                let response = item.get("response").and_then(|v| v.as_str()).unwrap_or("");
+                                                format!("[{}] {}", role, response.trim())
+                                            })
+                                            .collect::<Vec<_>>()
+                                            .join("\n\n");
+
+                                        serde_json::json!({
+                                            "status": "success",
+                                            "goal": goal,
+                                            "strategy": strategy,
+                                            "delegated_count": results.len(),
+                                            "results": results,
+                                            "summary": summary,
+                                        })
+                                    }
+                                }
+                            }
                         } else if tc_name == "run_generated_code" {
                             let runtime = tc_args.get("runtime").and_then(|v| v.as_str()).unwrap_or("");
                             let name = tc_args.get("name").and_then(|v| v.as_str());
@@ -3431,8 +3629,8 @@ mod tests {
         build_progress_marker, build_skill_prefetch_message, extract_final_text,
         generated_code_runtime_spec, generated_code_script_path, manage_generated_code_tool,
         normalize_conversation_log_text, parse_shell_like_args, prompt_mode_from_doc,
-        reasoning_policy_from_doc, sanitize_generated_code_name, select_relevant_skills,
-        utf8_safe_preview,
+        reasoning_policy_from_doc, role_relevance_score, sanitize_generated_code_name,
+        select_delegate_roles, select_relevant_skills, utf8_safe_preview, AgentRole,
     };
     use crate::core::prompt_builder::{PromptMode, ReasoningPolicy};
     use crate::core::textual_skill_scanner::TextualSkill;
@@ -3654,5 +3852,44 @@ mod tests {
             reasoning_policy_from_doc(&doc, "anthropic"),
             ReasoningPolicy::Native
         );
+    }
+
+    fn sample_agent_role(name: &str, desc: &str) -> AgentRole {
+        AgentRole {
+            name: name.into(),
+            system_prompt: format!("You are {}.", name),
+            allowed_tools: Vec::new(),
+            max_iterations: 4,
+            description: desc.into(),
+            role_type: "worker".into(),
+            auto_start: false,
+            can_delegate_to: Vec::new(),
+            prompt_mode: Some(PromptMode::Minimal),
+            reasoning_policy: Some(ReasoningPolicy::Native),
+        }
+    }
+
+    #[test]
+    fn role_relevance_score_prefers_matching_roles() {
+        let role = sample_agent_role(
+            "device_monitor",
+            "Monitor battery temperature cpu memory and storage",
+        );
+
+        assert!(role_relevance_score("battery temperature status", &role) > 0);
+        assert_eq!(role_relevance_score("calendar sync", &role), 0);
+    }
+
+    #[test]
+    fn select_delegate_roles_falls_back_when_no_keyword_matches() {
+        let roles = vec![
+            sample_agent_role("device_monitor", "Monitor device health"),
+            sample_agent_role("knowledge_retriever", "Search documents"),
+        ];
+
+        let selected = select_delegate_roles("completely unrelated request", &roles, 1);
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].name, "device_monitor");
     }
 }

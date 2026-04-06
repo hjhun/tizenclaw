@@ -1,11 +1,10 @@
-Record formatting-only Rust cleanup
+Implement prompt and role runtime delegation
 
-Separate the leftover Rust layout cleanups from the earlier
-document-only commit.
+Align role loading with the deployed agent configuration and
+wire runtime role metadata into delegated sessions.
 
-- Keep the reviewed formatting changes in task_scheduler,
-  container_engine, and gemini without changing behavior.
-- Record the planning, design, deploy, and review evidence for this
-  follow-up cycle in the dashboard.
-- Validate the tree with ./deploy.sh -a x86_64 and confirm the
-  deployed service and socket returned to active state.
+- Accept both `agents` and legacy `roles` schemas
+- Preserve role type, delegation, and loop budget metadata
+- Execute `run_supervisor` with real delegated sessions
+- Package `agent_roles.json` and `system_prompt.txt`
+- Verify deploy, managed tests, and service restart on x86_64

@@ -73,6 +73,10 @@ INSTALL(PROGRAMS "${CMAKE_SOURCE_DIR}/target/release/tizenclaw-web-dashboard"
 INSTALL(FILES "${CMAKE_SOURCE_DIR}/data/sample/tunnel_config.json.sample"
         DESTINATION "${APP_DATA_DIR}/config"
         RENAME "tunnel_config.json")
+INSTALL(FILES
+        "${CMAKE_SOURCE_DIR}/data/config/agent_roles.json"
+        "${CMAKE_SOURCE_DIR}/data/config/system_prompt.txt"
+        DESTINATION "${APP_DATA_DIR}/config")
 
 
 

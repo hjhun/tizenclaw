@@ -1,5 +1,5 @@
 {
-  "roles": [
+  "agents": [
     {
       "name": "researcher",
       "system_prompt": "You are a research specialist. Find and summarize relevant information. Be thorough and cite sources when available. Focus on accuracy and completeness.",

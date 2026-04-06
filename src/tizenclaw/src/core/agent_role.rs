@@ -11,6 +11,9 @@ pub struct AgentRole {
     pub allowed_tools: Vec<String>,
     pub max_iterations: usize,
     pub description: String,
+    pub role_type: String,
+    pub auto_start: bool,
+    pub can_delegate_to: Vec<String>,
     pub prompt_mode: Option<PromptMode>,
     pub reasoning_policy: Option<ReasoningPolicy>,
 }
@@ -43,13 +46,25 @@ impl AgentRoleRegistry {
             Ok(v) => v,
             Err(_) => return false,
         };
-        if let Some(roles) = config["roles"].as_array() {
+        let role_entries = config
+            .get("agents")
+            .and_then(Value::as_array)
+            .or_else(|| config.get("roles").and_then(Value::as_array));
+        if let Some(roles) = role_entries {
             for r in roles {
                 let name = r["name"].as_str().unwrap_or("").to_string();
                 if name.is_empty() {
                     continue;
                 }
                 let allowed: Vec<String> = r["allowed_tools"]
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let can_delegate_to: Vec<String> = r["can_delegate_to"]
                     .as_array()
                     .map(|a| {
                         a.iter()
@@ -65,6 +80,9 @@ impl AgentRoleRegistry {
                         allowed_tools: allowed,
                         max_iterations: r["max_iterations"].as_u64().unwrap_or(10) as usize,
                         description: r["description"].as_str().unwrap_or("").to_string(),
+                        role_type: r["type"].as_str().unwrap_or("worker").to_string(),
+                        auto_start: r["auto_start"].as_bool().unwrap_or(false),
+                        can_delegate_to,
                         prompt_mode: parse_prompt_mode(r.get("prompt_mode")),
                         reasoning_policy: parse_reasoning_policy(r.get("reasoning_policy")),
                     },
@@ -105,6 +123,12 @@ impl AgentRoleRegistry {
     }
 }
 
+impl AgentRole {
+    pub fn is_supervisor(&self) -> bool {
+        self.role_type.eq_ignore_ascii_case("supervisor")
+    }
+}
+
 fn parse_prompt_mode(value: Option<&Value>) -> Option<PromptMode> {
     match value.and_then(Value::as_str).map(|value| value.trim()) {
         Some("full") => Some(PromptMode::Full),
@@ -130,6 +154,9 @@ fn builtin_roles() -> Vec<AgentRole> {
             allowed_tools: Vec::new(),
             max_iterations: 10,
             description: "Balanced default role for general requests.".into(),
+            role_type: "worker".into(),
+            auto_start: false,
+            can_delegate_to: Vec::new(),
             prompt_mode: Some(PromptMode::Full),
             reasoning_policy: Some(ReasoningPolicy::Native),
         },
@@ -140,6 +167,9 @@ fn builtin_roles() -> Vec<AgentRole> {
             allowed_tools: Vec::new(),
             max_iterations: 6,
             description: "Focused role for delegated or background tasks.".into(),
+            role_type: "worker".into(),
+            auto_start: false,
+            can_delegate_to: Vec::new(),
             prompt_mode: Some(PromptMode::Minimal),
             reasoning_policy: Some(ReasoningPolicy::Native),
         },
@@ -150,6 +180,9 @@ fn builtin_roles() -> Vec<AgentRole> {
             allowed_tools: Vec::new(),
             max_iterations: 6,
             description: "Minimal profile optimized for local or constrained backends.".into(),
+            role_type: "worker".into(),
+            auto_start: false,
+            can_delegate_to: Vec::new(),
             prompt_mode: Some(PromptMode::Minimal),
             reasoning_policy: Some(ReasoningPolicy::Tagged),
         },
@@ -167,6 +200,9 @@ mod tests {
             allowed_tools: vec!["test_tool".into()],
             max_iterations: 10,
             description: format!("{} role", name),
+            role_type: "worker".into(),
+            auto_start: false,
+            can_delegate_to: Vec::new(),
             prompt_mode: Some(PromptMode::Minimal),
             reasoning_policy: Some(ReasoningPolicy::Tagged),
         }
@@ -228,5 +264,48 @@ mod tests {
         assert!(reg.get_role("default").is_some());
         assert!(reg.get_role("subagent").is_some());
         assert!(reg.get_role("local-reasoner").is_some());
+    }
+
+    #[test]
+    fn test_load_roles_accepts_agents_schema() {
+        let unique = format!(
+            "tizenclaw-agent-role-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let path = std::env::temp_dir().join(unique);
+        std::fs::write(
+            &path,
+            r#"{
+  "agents": [
+    {
+      "name": "orchestrator",
+      "type": "supervisor",
+      "description": "Coordinates workers",
+      "system_prompt": "Route work.",
+      "allowed_tools": ["run_supervisor"],
+      "max_iterations": 4,
+      "auto_start": true,
+      "can_delegate_to": ["device_monitor"],
+      "prompt_mode": "full",
+      "reasoning_policy": "native"
+    }
+  ]
+}"#,
+        )
+        .unwrap();
+
+        let mut reg = AgentRoleRegistry::new();
+        assert!(reg.load_roles(path.to_str().unwrap()));
+
+        let role = reg.get_role("orchestrator").unwrap();
+        assert_eq!(role.role_type, "supervisor");
+        assert!(role.auto_start);
+        assert_eq!(role.can_delegate_to, vec!["device_monitor".to_string()]);
+        assert_eq!(role.max_iterations, 4);
+
+        let _ = std::fs::remove_file(path);
     }
 }

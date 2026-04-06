@@ -472,6 +472,9 @@ impl ToolDeclarationBuilder {
                     "allowed_tools": {"type": "array", "items": {"type": "string"}},
                     "max_iterations": {"type": "integer"},
                     "description": {"type": "string"},
+                    "type": {"type": "string", "enum": ["worker", "supervisor"]},
+                    "auto_start": {"type": "boolean"},
+                    "can_delegate_to": {"type": "array", "items": {"type": "string"}},
                     "prompt_mode": {"type": "string", "enum": ["full", "minimal"]},
                     "reasoning_policy": {"type": "string", "enum": ["native", "tagged"]}
                 },

@@ -1,10 +1,12 @@
 # TizenClaw Development Dashboard
 
 ## Active Cycle
-- **Stage**: Commit
-- **Goal**: Review the uncommitted Rust formatting-only diffs, confirm
-  they should remain, and commit them through the full 6-stage cycle.
-- **Status**: [x] The formatting-cleanup 6-stage cycle is complete.
+- **Stage**: Complete
+- **Goal**: Review whether the system prompt pipeline and
+  `agent_roles.json` driven agents actually operate at runtime, and fix
+  the missing implementation required for production readiness.
+- **Status**: [x] The prompt and agent role runtime fix cycle is
+  complete.
 
 ## Active Cycle Progress
 1. [x] Planning
@@ -15,12 +17,140 @@
 6. [x] Commit
 
 ## Active Task List
-- [x] Confirm the remaining uncommitted Rust diffs are formatting-only
-- [x] Record the formatting-cleanup scope in `.dev_note/docs/`
-- [x] Preserve only the necessary formatting adjustments
-- [x] Validate the tree with `./deploy.sh -a x86_64`
-- [x] Review runtime logs and service health after deployment
-- [x] Commit the verified formatting cleanup
+- [x] Record the runtime fix scope in `.dev_note/docs/`
+- [x] Design the role/supervisor/runtime packaging changes
+- [x] Implement the role loader, session budget, and supervisor fixes
+- [x] Validate the fixed tree with `./deploy.sh -a x86_64`
+- [x] Capture device runtime logs for the fixed cycle
+- [x] Commit the verified fix set
+
+### Supervisor Gate PASS: Stage 1 - Planning
+- Evidence:
+  [prompt_agent_roles_fix_planning.md](/home/hjhun/samba/github/tizenclaw/.dev_note/docs/prompt_agent_roles_fix_planning.md)
+  defines the role loader, session budget, supervisor execution, and
+  packaged config install scope for the fix cycle.
+- Evidence: the planning document keeps validation limited to
+  `./deploy.sh -a x86_64` and introduces no new daemon domain outside
+  the reviewed prompt/role runtime path.
+
+### Supervisor Gate PASS: Stage 2 - Design
+- Evidence:
+  [prompt_agent_roles_fix_design.md](/home/hjhun/samba/github/tizenclaw/.dev_note/docs/prompt_agent_roles_fix_design.md)
+  defines the additive design for registry compatibility, delegated
+  session execution, loop-budget binding, and packaged config install.
+- Evidence: the design explicitly preserves existing `Send + Sync`
+  ownership and the current `libloading` strategy while adding no new
+  FFI boundary.
+
+### Supervisor Gate PASS: Stage 3 - Development
+- Evidence:
+  [prompt_agent_roles_fix.md](/home/hjhun/samba/github/tizenclaw/.dev_note/docs/prompt_agent_roles_fix.md)
+  records the implementation scope for the registry, supervisor,
+  session-budget, and packaging fixes.
+- Evidence: `agent_role.rs` now accepts both `agents` and `roles`
+  schema variants and preserves `type`, `auto_start`, and
+  `can_delegate_to` metadata for runtime use.
+- Evidence: `agent_core.rs` now binds role `max_iterations` to the
+  session loop budget and implements real `run_supervisor` delegation
+  with aggregated role results.
+- Evidence: `CMakeLists.txt` now installs `agent_roles.json` and
+  `system_prompt.txt` into the target config directory.
+- Evidence: no local `cargo build`, `cargo test`, `cargo check`, or
+  `cargo clippy` commands were executed during this stage.
+
+### Supervisor Gate PASS: Stage 4 - Build/Deploy
+- Evidence: `./deploy.sh -a x86_64` completed successfully on
+  `2026-04-06 12:01 KST`, rebuilt `tizenclaw-1.0.0-3.x86_64.rpm`,
+  installed it on emulator `emulator-26101`, and resynced the web
+  dashboard assets.
+- Evidence: deploy-time managed tests passed in the release flow,
+  including `tizenclaw_core` 14 tests, `tizenclaw` 179 tests, metadata
+  plugin tests, and doc tests with no failures.
+- Evidence: packaging now installs `system_prompt.txt`, and the target
+  install also emitted `agent_roles.json.rpmnew`, proving the new config
+  payload is packaged even when an existing device config is preserved.
+
+### Supervisor Gate PASS: Stage 5 - Test/Review
+- Evidence: `systemctl status tizenclaw -l --no-pager` reported
+  `active (running)` since `2026-04-06 12:01:05 KST` with
+  `/usr/bin/tizenclaw` PID `798877` and the web dashboard child process
+  attached to the service.
+- Evidence: `systemctl status tizenclaw-tool-executor.socket -l
+  --no-pager` reported `active (listening)` since
+  `2026-04-06 12:01:04 KST`.
+- Evidence: device config inspection confirmed
+  `/opt/usr/share/tizenclaw/config/system_prompt.txt` is present, the
+  active `/opt/usr/share/tizenclaw/config/agent_roles.json` still uses
+  the `agents` schema, and the updated runtime now accepts that schema.
+- Residual risk: RPM upgrade keeps the pre-existing
+  `agent_roles.json` in place and writes the packaged refresh to
+  `agent_roles.json.rpmnew`; this is runtime-safe after the loader fix,
+  but future config migrations should remain backward compatible.
+
+### Supervisor Gate PASS: Stage 6 - Commit
+- Evidence: workspace cleanup completed via
+  `bash .agent/scripts/cleanup_workspace.sh` before staging and commit.
+- Evidence: the verified fix set is committed with
+  `git commit -F .tmp/commit_msg.txt`, satisfying the no-`-m` rule for
+  this repository workflow.
+
+### Supervisor Gate PASS: Stage 1 - Planning
+- Evidence:
+  [prompt_agent_roles_review_planning.md](/home/hjhun/samba/github/tizenclaw/.dev_note/docs/prompt_agent_roles_review_planning.md)
+  defines the prompt bootstrap review, role registry review,
+  delegation-path review, and x86_64 deployment validation.
+- Evidence: the planning document classifies the review work as
+  one-shot inspection plus target deployment validation and keeps the
+  cycle additive with no new daemon behavior.
+
+### Supervisor Gate PASS: Stage 2 - Design
+- Evidence:
+  [prompt_agent_roles_review_design.md](/home/hjhun/samba/github/tizenclaw/.dev_note/docs/prompt_agent_roles_review_design.md)
+  defines the verification topology for prompt, role, and supervisor
+  execution paths.
+- Evidence: the design explicitly records that no new FFI boundary is
+  introduced, existing `Send + Sync` ownership remains unchanged, and
+  the current `libloading` dynamic loading strategy is preserved.
+
+### Supervisor Gate PASS: Stage 3 - Development
+- Evidence:
+  [prompt_agent_roles_review.md](/home/hjhun/samba/github/tizenclaw/.dev_note/docs/prompt_agent_roles_review.md)
+  records the runtime review findings for prompt bootstrap, role
+  loading, and supervisor execution.
+- Evidence: the review confirms that `agent_roles.json` currently uses
+  a top-level `agents` key while the runtime loader only reads `roles`,
+  that `run_supervisor` presently returns planning guidance instead of
+  executing delegation, and that packaging currently omits the reviewed
+  role/prompt config files from target installation.
+- Evidence: no local `cargo build`, `cargo test`, `cargo check`, or
+  `cargo clippy` commands were executed during this stage.
+
+### Supervisor Gate PASS: Stage 4 - Build/Deploy
+- Evidence: `./deploy.sh -a x86_64` completed successfully on
+  `2026-04-06 11:07 KST`, rebuilt `tizenclaw-1.0.0-3.x86_64.rpm`,
+  installed it on emulator `emulator-26101`, and resynced the web
+  dashboard assets.
+- Evidence: deploy-time managed tests passed, including
+  `tizenclaw_core` 14 tests, `tizenclaw` 176 tests, metadata plugin
+  tests, and doc tests with no failures.
+- Evidence: the packaging/install log showed `tunnel_config.json`
+  installation but no installation entries for `agent_roles.json`,
+  `system_prompt.txt`, or `SOUL.md`, which is now recorded as a review
+  finding rather than a build failure.
+
+### Supervisor Gate PASS: Stage 5 - Test/Review
+- Evidence: `systemctl status tizenclaw -l --no-pager` reported
+  `active (running)` since `2026-04-06 11:07:31 KST` with
+  `/usr/bin/tizenclaw` PID `784222` and the web dashboard child process
+  attached to the service.
+- Evidence: `systemctl status tizenclaw-tool-executor.socket -l --no-pager`
+  reported `active (listening)` since `2026-04-06 11:07:30 KST`.
+- Evidence: `journalctl -u tizenclaw -n 12 --no-pager` captured the
+  `2026-04-06 11:07:30-11:07:31 KST` stop/start cycle ending in
+  `Started TizenClaw Agent System Service.`
+- Residual risk: the existing SDB client/server version mismatch notice
+  remains visible during deploy and status commands, but it did not
+  block the review validation cycle.
 
 ### Supervisor Gate PASS: Stage 1 - Planning
 - Evidence:
