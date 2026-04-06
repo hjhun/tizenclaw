@@ -171,6 +171,28 @@ impl TelegramChatState {
     }
 }
 
+#[derive(Clone, Debug)]
+struct TelegramOutgoingMessage {
+    text: String,
+    reply_markup: Option<Value>,
+}
+
+impl TelegramOutgoingMessage {
+    fn plain(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            reply_markup: None,
+        }
+    }
+
+    fn with_markup(text: impl Into<String>, reply_markup: Value) -> Self {
+        Self {
+            text: text.into(),
+            reply_markup: Some(reply_markup),
+        }
+    }
+}
+
 pub struct TelegramClient {
     name: String,
     bot_token: String,
@@ -401,12 +423,17 @@ impl TelegramClient {
         format!("{}\n...(truncated)", truncated)
     }
 
-    fn build_send_message_payload(chat_id: i64, text: &str) -> String {
-        json!({
+    fn build_send_message_payload(chat_id: i64, text: &str, reply_markup: Option<Value>) -> String {
+        let mut payload = json!({
             "chat_id": chat_id,
             "text": text
-        })
-        .to_string()
+        });
+
+        if let Some(reply_markup) = reply_markup {
+            payload["reply_markup"] = reply_markup;
+        }
+
+        payload.to_string()
     }
 
     fn command_menu_entries() -> Vec<(&'static str, &'static str)> {
@@ -437,6 +464,47 @@ impl TelegramClient {
         .to_string()
     }
 
+    fn build_reply_keyboard(rows: &[&[&str]]) -> Value {
+        let keyboard: Vec<Vec<Value>> = rows
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .map(|entry| Value::String((*entry).to_string()))
+                    .collect()
+            })
+            .collect();
+
+        json!({
+            "keyboard": keyboard,
+            "resize_keyboard": true,
+            "one_time_keyboard": true
+        })
+    }
+
+    fn top_level_keyboard() -> Value {
+        Self::build_reply_keyboard(&[
+            &["/select", "/cli_backend"],
+            &["/mode", "/status"],
+            &["/usage", "/auto_approve"],
+        ])
+    }
+
+    fn select_keyboard() -> Value {
+        Self::build_reply_keyboard(&[&["/select chat", "/select coding"]])
+    }
+
+    fn cli_backend_keyboard() -> Value {
+        Self::build_reply_keyboard(&[&["/cli_backend codex"], &["/cli_backend gemini"], &["/cli_backend claude"]])
+    }
+
+    fn mode_keyboard() -> Value {
+        Self::build_reply_keyboard(&[&["/mode plan", "/mode fast"]])
+    }
+
+    fn auto_approve_keyboard() -> Value {
+        Self::build_reply_keyboard(&[&["/auto_approve on", "/auto_approve off"]])
+    }
+
     fn register_bot_commands(bot_token: &str) {
         if bot_token.is_empty() {
             return;
@@ -453,15 +521,16 @@ impl TelegramClient {
     }
 
     // Static so it can be called inside spawned async tasks easily
-    fn send_telegram_message(bot_token: &str, chat_id: i64, text: &str) {
+    fn send_telegram_message(bot_token: &str, chat_id: i64, message: &TelegramOutgoingMessage) {
         if bot_token.is_empty() {
             return;
         }
 
-        let safe_text = Self::truncate_chars(text, 4000);
+        let safe_text = Self::truncate_chars(&message.text, 4000);
 
         let url = format!("https://api.telegram.org/bot{}/sendMessage", bot_token);
-        let payload = Self::build_send_message_payload(chat_id, &safe_text);
+        let payload =
+            Self::build_send_message_payload(chat_id, &safe_text, message.reply_markup.clone());
 
         let client = crate::infra::http_client::HttpClient::new();
         tokio::spawn(async move {
@@ -547,22 +616,33 @@ impl TelegramClient {
         state_path: &Path,
         chat_id: i64,
         args: &[String],
-    ) -> String {
+    ) -> TelegramOutgoingMessage {
         let Some(mode_raw) = args.first() else {
-            return "Usage: /select <chat|coding>".to_string();
+            return TelegramOutgoingMessage::with_markup(
+                "Choose the interaction mode for this chat.",
+                Self::select_keyboard(),
+            );
         };
         let Some(mode) = TelegramInteractionMode::parse(mode_raw) else {
-            return "Invalid mode. Use /select chat or /select coding".to_string();
+            return TelegramOutgoingMessage::with_markup(
+                "Invalid mode. Choose `chat` or `coding` from the menu.",
+                Self::select_keyboard(),
+            );
         };
 
-        Self::mutate_chat_state(chat_states, state_path, chat_id, move |state| {
-            state.interaction_mode = mode;
-            format!(
-                "Interaction mode set to `{}`.\nSelected CLI backend remains `{}`.",
-                mode.as_str(),
-                state.cli_backend.as_str()
-            )
-        })
+        TelegramOutgoingMessage::plain(Self::mutate_chat_state(
+            chat_states,
+            state_path,
+            chat_id,
+            move |state| {
+                state.interaction_mode = mode;
+                format!(
+                    "Interaction mode set to `{}`.\nSelected CLI backend remains `{}`.",
+                    mode.as_str(),
+                    state.cli_backend.as_str()
+                )
+            },
+        ))
     }
 
     fn set_cli_backend(
@@ -571,12 +651,18 @@ impl TelegramClient {
         chat_id: i64,
         args: &[String],
         cli_backend_paths: &HashMap<TelegramCliBackend, String>,
-    ) -> String {
+    ) -> TelegramOutgoingMessage {
         let Some(backend_raw) = args.first() else {
-            return "Usage: /cli_backend <codex|gemini|claude>".to_string();
+            return TelegramOutgoingMessage::with_markup(
+                "Choose the CLI backend for coding mode.",
+                Self::cli_backend_keyboard(),
+            );
         };
         let Some(backend) = TelegramCliBackend::parse(backend_raw) else {
-            return "Invalid CLI backend. Use codex, gemini, or claude".to_string();
+            return TelegramOutgoingMessage::with_markup(
+                "Invalid CLI backend. Choose `codex`, `gemini`, or `claude`.",
+                Self::cli_backend_keyboard(),
+            );
         };
 
         let availability = cli_backend_paths
@@ -586,14 +672,19 @@ impl TelegramClient {
                 "Warning: backend binary was not found on PATH. You can still keep it selected, but execution will fail until the binary is installed or configured.".to_string()
             });
 
-        Self::mutate_chat_state(chat_states, state_path, chat_id, move |state| {
-            state.cli_backend = backend;
-            format!(
-                "CLI backend set to `{}`.\n{}",
-                backend.as_str(),
-                availability
-            )
-        })
+        TelegramOutgoingMessage::plain(Self::mutate_chat_state(
+            chat_states,
+            state_path,
+            chat_id,
+            move |state| {
+                state.cli_backend = backend;
+                format!(
+                    "CLI backend set to `{}`.\n{}",
+                    backend.as_str(),
+                    availability
+                )
+            },
+        ))
     }
 
     fn set_execution_mode(
@@ -601,21 +692,32 @@ impl TelegramClient {
         state_path: &Path,
         chat_id: i64,
         args: &[String],
-    ) -> String {
+    ) -> TelegramOutgoingMessage {
         let Some(mode_raw) = args.first() else {
-            return "Usage: /mode <plan|fast>".to_string();
+            return TelegramOutgoingMessage::with_markup(
+                "Choose the coding execution mode.",
+                Self::mode_keyboard(),
+            );
         };
         let Some(mode) = TelegramExecutionMode::parse(mode_raw) else {
-            return "Invalid execution mode. Use /mode plan or /mode fast".to_string();
+            return TelegramOutgoingMessage::with_markup(
+                "Invalid execution mode. Choose `plan` or `fast`.",
+                Self::mode_keyboard(),
+            );
         };
 
-        Self::mutate_chat_state(chat_states, state_path, chat_id, move |state| {
-            state.execution_mode = mode;
-            format!(
-                "Execution mode set to `{}` for Telegram coding-agent prompts.",
-                mode.as_str()
-            )
-        })
+        TelegramOutgoingMessage::plain(Self::mutate_chat_state(
+            chat_states,
+            state_path,
+            chat_id,
+            move |state| {
+                state.execution_mode = mode;
+                format!(
+                    "Execution mode set to `{}` for Telegram coding-agent prompts.",
+                    mode.as_str()
+                )
+            },
+        ))
     }
 
     fn set_auto_approve(
@@ -623,24 +725,37 @@ impl TelegramClient {
         state_path: &Path,
         chat_id: i64,
         args: &[String],
-    ) -> String {
+    ) -> TelegramOutgoingMessage {
         let Some(value_raw) = args.first() else {
-            return "Usage: /auto_approve <on|off>".to_string();
+            return TelegramOutgoingMessage::with_markup(
+                "Choose whether approvals should be automatic.",
+                Self::auto_approve_keyboard(),
+            );
         };
         let enabled = match value_raw.trim().to_ascii_lowercase().as_str() {
             "on" | "true" | "yes" | "1" => true,
             "off" | "false" | "no" | "0" => false,
-            _ => return "Invalid value. Use /auto_approve on or /auto_approve off".to_string(),
+            _ => {
+                return TelegramOutgoingMessage::with_markup(
+                    "Invalid value. Choose `on` or `off`.",
+                    Self::auto_approve_keyboard(),
+                )
+            }
         };
 
-        Self::mutate_chat_state(chat_states, state_path, chat_id, move |state| {
-            state.auto_approve = enabled;
-            format!(
-                "Auto-approve is now `{}` for the `{}` backend.",
-                if enabled { "on" } else { "off" },
-                state.cli_backend.as_str()
-            )
-        })
+        TelegramOutgoingMessage::plain(Self::mutate_chat_state(
+            chat_states,
+            state_path,
+            chat_id,
+            move |state| {
+                state.auto_approve = enabled;
+                format!(
+                    "Auto-approve is now `{}` for the `{}` backend.",
+                    if enabled { "on" } else { "off" },
+                    state.cli_backend.as_str()
+                )
+            },
+        ))
     }
 
     fn format_usage_text(state: &TelegramChatState, backend: TelegramCliBackend) -> String {
@@ -722,11 +837,14 @@ backend failures: `{}`",
         cli_backend_paths: &HashMap<TelegramCliBackend, String>,
         cli_workdir: &Path,
         active_handlers: i32,
-    ) -> Option<String> {
+    ) -> Option<TelegramOutgoingMessage> {
         let (command, args) = Self::parse_command(text)?;
 
         let reply = match command.as_str() {
-            "start" | "help" => Self::supported_commands_text(),
+            "start" | "help" => TelegramOutgoingMessage::with_markup(
+                Self::supported_commands_text(),
+                Self::top_level_keyboard(),
+            ),
             "select" => Self::set_interaction_mode(chat_states, state_path, chat_id, &args),
             "cli-backend" | "cli_backend" => {
                 Self::set_cli_backend(chat_states, state_path, chat_id, &args, cli_backend_paths)
@@ -737,26 +855,68 @@ backend failures: `{}`",
             }
             "usage" => {
                 let state = Self::load_chat_state_snapshot(chat_states, chat_id);
-                Self::format_usage_text(&state, state.cli_backend)
+                TelegramOutgoingMessage::plain(Self::format_usage_text(&state, state.cli_backend))
             }
             "status" => {
                 let state = Self::load_chat_state_snapshot(chat_states, chat_id);
-                Self::format_status_text(
+                TelegramOutgoingMessage::plain(Self::format_status_text(
                     chat_id,
                     &state,
                     cli_workdir,
                     cli_backend_paths,
                     active_handlers,
-                )
+                ))
             }
-            _ => format!(
-                "Unknown command `/{}`.\n\n{}",
-                command,
-                Self::supported_commands_text()
+            _ => TelegramOutgoingMessage::with_markup(
+                format!(
+                    "Unknown command `/{}`.\n\n{}",
+                    command,
+                    Self::supported_commands_text()
+                ),
+                Self::top_level_keyboard(),
             ),
         };
 
         Some(reply)
+    }
+
+    fn ensure_chat_state(
+        chat_states: &Arc<Mutex<HashMap<i64, TelegramChatState>>>,
+        state_path: &Path,
+        chat_id: i64,
+    ) -> (TelegramChatState, bool) {
+        let (state, snapshot, is_new) = match chat_states.lock() {
+            Ok(mut states) => {
+                if let Some(state) = states.get(&chat_id).cloned() {
+                    (state, None, false)
+                } else {
+                    let state = TelegramChatState::default();
+                    states.insert(chat_id, state.clone());
+                    (state, Some(states.clone()), true)
+                }
+            }
+            Err(err) => {
+                log::warn!("TelegramClient: state lock poisoned while ensuring chat state: {}", err);
+                (TelegramChatState::default(), false.then_some(HashMap::new()), false)
+            }
+        };
+
+        if let Some(snapshot) = snapshot {
+            Self::persist_chat_states(state_path, &snapshot);
+        }
+
+        (state, is_new)
+    }
+
+    fn build_connected_message(state: &TelegramChatState) -> TelegramOutgoingMessage {
+        TelegramOutgoingMessage::with_markup(
+            format!(
+                "Telegram mobile connected.\nCurrent interaction mode: `{}`.\nSelected CLI backend: `{}`.",
+                state.interaction_mode.as_str(),
+                state.cli_backend.as_str()
+            ),
+            Self::top_level_keyboard(),
+        )
     }
 
     fn build_cli_prompt(
@@ -1048,7 +1208,14 @@ User request:\n{}",
         chat_states: Arc<Mutex<HashMap<i64, TelegramChatState>>>,
         state_path: Arc<PathBuf>,
         active_handlers: i32,
-    ) -> String {
+    ) -> Vec<TelegramOutgoingMessage> {
+        let (state, is_new_chat) = Self::ensure_chat_state(&chat_states, &state_path, chat_id);
+        let mut replies = Vec::new();
+
+        if is_new_chat {
+            replies.push(Self::build_connected_message(&state));
+        }
+
         if let Some(reply) = Self::handle_command(
             chat_id,
             text,
@@ -1058,20 +1225,28 @@ User request:\n{}",
             &cli_workdir,
             active_handlers,
         ) {
-            return reply;
+            replies.push(reply);
+            return replies;
         }
 
         let state = Self::load_chat_state_snapshot(&chat_states, chat_id);
         match state.interaction_mode {
             TelegramInteractionMode::Chat => {
                 let Some(agent_core) = agent else {
-                    return "AgentCore is not available for chat mode.".to_string();
+                    replies.push(TelegramOutgoingMessage::plain(
+                        "AgentCore is not available for chat mode.",
+                    ));
+                    return replies;
                 };
                 let session_id = format!("tg_{}", chat_id);
-                agent_core.process_prompt(&session_id, text, None).await
+                replies.push(TelegramOutgoingMessage::plain(
+                    agent_core.process_prompt(&session_id, text, None).await,
+                ));
+                replies
             }
             TelegramInteractionMode::Coding => {
-                Self::execute_cli_request(
+                replies.push(TelegramOutgoingMessage::plain(
+                    Self::execute_cli_request(
                     chat_id,
                     text,
                     cli_workdir,
@@ -1080,7 +1255,9 @@ User request:\n{}",
                     chat_states,
                     state_path,
                 )
-                .await
+                    .await,
+                ));
+                replies
             }
         }
     }
@@ -1200,7 +1377,7 @@ impl Channel for TelegramClient {
                         let chat_state_path_clone = chat_state_path.clone();
 
                         tokio::spawn(async move {
-                            let result = TelegramClient::route_message(
+                            let results = TelegramClient::route_message(
                                 chat_id,
                                 &text_clone,
                                 agent_clone,
@@ -1212,7 +1389,13 @@ impl Channel for TelegramClient {
                                 current_handlers + 1,
                             )
                             .await;
-                            TelegramClient::send_telegram_message(&bot_token_clone, chat_id, &result);
+                            for result in results {
+                                TelegramClient::send_telegram_message(
+                                    &bot_token_clone,
+                                    chat_id,
+                                    &result,
+                                );
+                            }
                             active_handlers_clone.fetch_sub(1, Ordering::SeqCst);
                         });
                     }
@@ -1231,7 +1414,11 @@ impl Channel for TelegramClient {
 
     fn send_message(&self, msg: &str) -> Result<(), String> {
         for chat_id in self.allowed_chat_ids.iter() {
-            Self::send_telegram_message(&self.bot_token, *chat_id, msg);
+            Self::send_telegram_message(
+                &self.bot_token,
+                *chat_id,
+                &TelegramOutgoingMessage::plain(msg),
+            );
         }
         Ok(())
     }
@@ -1276,11 +1463,13 @@ mod tests {
 
     #[test]
     fn send_message_payload_is_plain_text_json() {
-        let payload = TelegramClient::build_send_message_payload(123, "value_with`markdown`");
+        let payload =
+            TelegramClient::build_send_message_payload(123, "value_with`markdown`", None);
         let json: serde_json::Value = serde_json::from_str(&payload).unwrap();
         assert_eq!(json["chat_id"], 123);
         assert_eq!(json["text"], "value_with`markdown`");
         assert!(json.get("parse_mode").is_none());
+        assert!(json.get("reply_markup").is_none());
     }
 
     #[test]
@@ -1313,5 +1502,28 @@ mod tests {
                 "auto_approve"
             ]
         );
+    }
+
+    #[test]
+    fn build_send_message_payload_can_include_reply_markup() {
+        let payload = TelegramClient::build_send_message_payload(
+            123,
+            "pick one",
+            Some(TelegramClient::mode_keyboard()),
+        );
+        let json: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(json["chat_id"], 123);
+        assert_eq!(json["text"], "pick one");
+        assert_eq!(json["reply_markup"]["one_time_keyboard"], true);
+        assert_eq!(json["reply_markup"]["keyboard"][0][0], "/mode plan");
+        assert_eq!(json["reply_markup"]["keyboard"][0][1], "/mode fast");
+    }
+
+    #[test]
+    fn connected_message_mentions_current_mode() {
+        let message = TelegramClient::build_connected_message(&TelegramChatState::default());
+        assert!(message.text.contains("Telegram mobile connected."));
+        assert!(message.text.contains("Current interaction mode: `chat`"));
+        assert!(message.reply_markup.is_some());
     }
 }
