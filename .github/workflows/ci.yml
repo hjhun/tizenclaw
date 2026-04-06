@@ -2,71 +2,126 @@ name: TizenClaw CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - develRust
+      - main
   pull_request:
-    branches: [main]
+    branches:
+      - develRust
+      - main
 
 jobs:
-  lint-cpp:
-    name: C++ Static Analysis
+  script-sanity:
+    name: Workflow And Script Sanity
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install cppcheck
-        run: sudo apt-get update && sudo apt-get install -y cppcheck
-
-      - name: Run cppcheck
+      - name: Fetch repository source
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cppcheck \
-            --enable=warning,style,performance \
-            --std=c++17 \
-            --suppress=missingIncludeSystem \
-            --suppress=unmatchedSuppression \
-            --error-exitcode=1 \
-            --inline-suppr \
-            -I inc/ -I inc/nlohmann/ \
-            src/ inc/
+          set -euo pipefail
+          workdir="${RUNNER_TEMP}/tizenclaw"
+          repo_url="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 
-  lint-python:
-    name: Python Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+          rm -rf "${workdir}"
+          git init "${workdir}"
+          git -C "${workdir}" remote add origin "${repo_url}"
+          git -C "${workdir}" fetch --depth 1 origin "${GITHUB_SHA}"
+          git -C "${workdir}" checkout --detach FETCH_HEAD
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
 
-      - name: Install ruff
-        run: pip install ruff
-
-      - name: Run ruff lint
-        run: ruff check skills/
-
-  check-line-length:
-    name: 80-Column Check (C++)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check line length
+      - name: Validate shell scripts
         run: |
-          VIOLATIONS=0
-          while IFS= read -r file; do
-            if awk -v file="$file" \
-              'length > 80 { printf "%s:%d: line is %d chars (max 80)\n", file, NR, length; found=1 } END { exit found ? 1 : 0 }' \
-              "$file"; then
-              :
-            else
-              VIOLATIONS=1
-            fi
-          done < <(find src/ inc/ -name '*.cc' -o -name '*.hh' | grep -v 'nlohmann')
+          set -euo pipefail
+          cd "${WORKDIR}"
+          bash -n install.sh
+          bash -n deploy_host.sh
+          bash -n deploy.sh
+          bash -n scripts/create_host_release_bundle.sh
 
-          if [ "$VIOLATIONS" -eq 1 ]; then
-            echo ""
-            echo "::error::Lines exceeding 80 columns found. See above for details."
+      - name: Enforce owner-only action policy
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}"
+
+          if grep -REn 'uses:\s+(actions/|dtolnay/|softprops/)' .github/workflows; then
+            echo "Forbidden external GitHub Action dependency detected."
             exit 1
           fi
-          echo "All C++ source files are within 80 columns."
+
+          echo "Workflow action ownership policy check passed."
+
+  host-bundle-smoke:
+    name: Host Bundle Smoke Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Fetch repository source
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          workdir="${RUNNER_TEMP}/tizenclaw"
+          repo_url="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          rm -rf "${workdir}"
+          git init "${workdir}"
+          git -C "${workdir}" remote add origin "${repo_url}"
+          git -C "${workdir}" fetch --depth 1 origin "${GITHUB_SHA}"
+          git -C "${workdir}" checkout --detach FETCH_HEAD
+
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+
+      - name: Install host build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ca-certificates \
+            clang \
+            cmake \
+            curl \
+            git \
+            iproute2 \
+            libssl-dev \
+            make \
+            pkg-config \
+            perl \
+            python3
+
+      - name: Install Rust toolchain
+        run: |
+          set -euo pipefail
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain stable
+          echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
+          "${HOME}/.cargo/bin/rustc" --version
+          "${HOME}/.cargo/bin/cargo" --version
+
+      - name: Build host release bundle
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}"
+          bash scripts/create_host_release_bundle.sh \
+            --version "ci-${GITHUB_SHA::7}" \
+            --output-dir dist
+
+      - name: Verify bundle contents
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}"
+
+          archive="dist/tizenclaw-host-bundle-ci-${GITHUB_SHA::7}-linux-x86_64.tar.gz"
+          checksum="${archive}.sha256"
+
+          test -f "${archive}"
+          test -f "${checksum}"
+
+          tar -tzf "${archive}" | grep -F 'bin/tizenclaw'
+          tar -tzf "${archive}" | grep -F 'bin/tizenclaw-cli'
+          tar -tzf "${archive}" | grep -F 'manage/deploy_host.sh'
+          tar -tzf "${archive}" | grep -F 'bundle-manifest.json'
