@@ -148,6 +148,7 @@ struct TelegramChatState {
     cli_backend: TelegramCliBackend,
     execution_mode: TelegramExecutionMode,
     auto_approve: bool,
+    project_dir: Option<String>,
     chat_session_index: u64,
     coding_session_index: u64,
     usage: HashMap<String, TelegramCliUsageStats>,
@@ -160,6 +161,7 @@ impl Default for TelegramChatState {
             cli_backend: TelegramCliBackend::Codex,
             execution_mode: TelegramExecutionMode::Plan,
             auto_approve: false,
+            project_dir: None,
             chat_session_index: 1,
             coding_session_index: 1,
             usage: HashMap::new(),
@@ -188,6 +190,15 @@ impl TelegramChatState {
 
     fn active_session_label(&self) -> String {
         self.session_label_for(self.interaction_mode)
+    }
+
+    fn effective_cli_workdir(&self, default_cli_workdir: &Path) -> PathBuf {
+        self.project_dir
+            .as_deref()
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| default_cli_workdir.to_path_buf())
     }
 }
 
@@ -568,6 +579,7 @@ impl TelegramClient {
         vec![
             ("select", "Switch between chat and coding mode"),
             ("cli_backend", "Choose codex, gemini, or claude"),
+            ("project", "Set the project directory for coding mode"),
             ("new_session", "Start a fresh chat or coding session"),
             ("usage", "Show local usage for the selected CLI"),
             ("mode", "Set coding mode to plan or fast"),
@@ -666,6 +678,8 @@ impl TelegramClient {
             "Telegram coding-agent commands:",
             "/select <chat|coding> - switch between normal chat and local CLI coding mode",
             "/cli_backend <codex|gemini|claude> - choose the coding-agent backend",
+            "/project <path> - set the project directory used by coding mode",
+            "/project reset - clear the per-chat project override",
             "/new_session - start a fresh session for the current mode",
             "/usage - show locally tracked usage for the selected CLI backend",
             "/mode <plan|fast> - switch planning style for coding mode prompts",
@@ -673,6 +687,43 @@ impl TelegramClient {
             "/auto_approve <on|off> - toggle backend auto approval when supported",
         ]
         .join("\n")
+    }
+
+    fn backend_usage_template(backend: TelegramCliBackend, auto_approve: bool) -> &'static str {
+        match (backend, auto_approve) {
+            (TelegramCliBackend::Codex, false) => {
+                "`codex exec --json --full-auto -C <project> <prompt>`"
+            }
+            (TelegramCliBackend::Codex, true) => {
+                "`codex exec --json --dangerously-bypass-approvals-and-sandbox -C <project> <prompt>`"
+            }
+            (TelegramCliBackend::Gemini, false) => {
+                "`gemini --prompt <prompt> --output-format text --approval-mode auto_edit`"
+            }
+            (TelegramCliBackend::Gemini, true) => {
+                "`gemini --prompt <prompt> --output-format text -y --approval-mode yolo`"
+            }
+            (TelegramCliBackend::Claude, false) => {
+                "`claude --print --output-format text --permission-mode auto <prompt>`"
+            }
+            (TelegramCliBackend::Claude, true) => {
+                "`claude --print --output-format text --permission-mode bypassPermissions <prompt>`"
+            }
+        }
+    }
+
+    fn backend_auth_hint(backend: TelegramCliBackend) -> &'static str {
+        match backend {
+            TelegramCliBackend::Codex => {
+                "Codex CLI must already be logged in on the host."
+            }
+            TelegramCliBackend::Gemini => {
+                "Gemini CLI must be authenticated on the host before Telegram can use it non-interactively."
+            }
+            TelegramCliBackend::Claude => {
+                "Claude Code must already be authenticated on the host."
+            }
+        }
     }
 
     fn parse_command(text: &str) -> Option<(String, Vec<String>)> {
@@ -801,9 +852,104 @@ impl TelegramClient {
             move |state| {
                 state.cli_backend = backend;
                 format!(
-                    "CLI backend set to `{}`.\n{}",
+                    "CLI backend set to `{}`.\n{}\nUsage: {}\n{}",
                     backend.as_str(),
-                    availability
+                    availability,
+                    Self::backend_usage_template(backend, state.auto_approve),
+                    Self::backend_auth_hint(backend)
+                )
+            },
+        ))
+    }
+
+    fn resolve_project_directory(
+        requested: &str,
+        default_cli_workdir: &Path,
+        state: &TelegramChatState,
+    ) -> Result<PathBuf, String> {
+        let trimmed = requested.trim();
+        if trimmed.is_empty() {
+            return Err("Project path cannot be empty.".to_string());
+        }
+
+        let effective_base = state.effective_cli_workdir(default_cli_workdir);
+        let candidate = PathBuf::from(trimmed);
+        let resolved = if candidate.is_absolute() {
+            candidate
+        } else {
+            effective_base.join(candidate)
+        };
+
+        let canonical = std::fs::canonicalize(&resolved).map_err(|err| {
+            format!(
+                "Project directory '{}' could not be resolved: {}",
+                resolved.display(),
+                err
+            )
+        })?;
+        if !canonical.is_dir() {
+            return Err(format!(
+                "Project directory '{}' is not a directory.",
+                canonical.display()
+            ));
+        }
+
+        Ok(canonical)
+    }
+
+    fn set_project_directory(
+        chat_states: &Arc<Mutex<HashMap<i64, TelegramChatState>>>,
+        state_path: &Path,
+        chat_id: i64,
+        args: &[String],
+        default_cli_workdir: &Path,
+    ) -> TelegramOutgoingMessage {
+        if args.is_empty() {
+            let state = Self::load_chat_state_snapshot(chat_states, chat_id);
+            let effective = state.effective_cli_workdir(default_cli_workdir);
+            return TelegramOutgoingMessage::plain(format!(
+                "Current project directory: `{}`.\nUse `/project <path>` to change it or `/project reset` to return to the default directory.",
+                effective.display()
+            ));
+        }
+
+        let requested = args.join(" ");
+        match requested.trim().to_ascii_lowercase().as_str() {
+            "reset" | "clear" | "default" => {
+                let default_display = default_cli_workdir.display().to_string();
+                return TelegramOutgoingMessage::plain(Self::mutate_chat_state(
+                    chat_states,
+                    state_path,
+                    chat_id,
+                    move |state| {
+                        state.project_dir = None;
+                        format!(
+                            "Project directory reset.\nCoding mode will use the default CLI workdir: `{}`.",
+                            default_display
+                        )
+                    },
+                ));
+            }
+            _ => {}
+        }
+
+        let state = Self::load_chat_state_snapshot(chat_states, chat_id);
+        let project_dir =
+            match Self::resolve_project_directory(&requested, default_cli_workdir, &state) {
+                Ok(path) => path,
+                Err(err) => return TelegramOutgoingMessage::plain(err),
+            };
+        let project_dir_text = project_dir.display().to_string();
+
+        TelegramOutgoingMessage::plain(Self::mutate_chat_state(
+            chat_states,
+            state_path,
+            chat_id,
+            move |state| {
+                state.project_dir = Some(project_dir_text.clone());
+                format!(
+                    "Project directory set to `{}`.\nCoding mode will run inside this directory for this chat.",
+                    project_dir_text
                 )
             },
         ))
@@ -950,6 +1096,7 @@ last completed: {}",
         cli_backend_paths: &HashMap<TelegramCliBackend, String>,
         active_handlers: i32,
     ) -> String {
+        let effective_workdir = state.effective_cli_workdir(cli_workdir);
         let backend_path = cli_backend_paths
             .get(&state.cli_backend)
             .map(|path| path.as_str())
@@ -967,7 +1114,9 @@ cli backend: `{}`\n\
 execution mode: `{}`\n\
 auto approve: `{}`\n\
 cli binary: `{}`\n\
-cli workdir: `{}`\n\
+project directory: `{}`\n\
+backend usage: {}\n\
+backend auth: {}\n\
 active handlers: `{}`\n\
 backend requests: `{}`\n\
 backend successes: `{}`\n\
@@ -981,7 +1130,9 @@ backend failures: `{}`",
             state.execution_mode.as_str(),
             if state.auto_approve { "on" } else { "off" },
             backend_path,
-            cli_workdir.display(),
+            effective_workdir.display(),
+            Self::backend_usage_template(state.cli_backend, state.auto_approve),
+            Self::backend_auth_hint(state.cli_backend),
             active_handlers,
             usage.requests,
             usage.successes,
@@ -1005,6 +1156,9 @@ backend failures: `{}`",
             "select" => Self::set_interaction_mode(chat_states, state_path, chat_id, &args),
             "cli-backend" | "cli_backend" => {
                 Self::set_cli_backend(chat_states, state_path, chat_id, &args, cli_backend_paths)
+            }
+            "project" => {
+                Self::set_project_directory(chat_states, state_path, chat_id, &args, cli_workdir)
             }
             "new_session" => Self::start_new_session(chat_states, state_path, chat_id),
             "mode" => Self::set_execution_mode(chat_states, state_path, chat_id, &args),
@@ -1159,7 +1313,7 @@ backend failures: `{}`",
 \n\
 Selected backend: {}\n\
 Session: {}\n\
-Workspace: {}\n\
+Project directory: {}\n\
 \n\
 {}\
 User request:\n{}",
@@ -1175,7 +1329,7 @@ User request:\n{}",
     fn build_cli_invocation(
         chat_id: i64,
         state: &TelegramChatState,
-        cli_workdir: &Path,
+        effective_cli_workdir: &Path,
         cli_backend_paths: &HashMap<TelegramCliBackend, String>,
         text: &str,
     ) -> Result<(String, Vec<String>), String> {
@@ -1194,7 +1348,7 @@ User request:\n{}",
             &state,
             state.execution_mode,
             state.cli_backend,
-            cli_workdir,
+            effective_cli_workdir,
             text,
         );
         let mut args = Vec::new();
@@ -1202,13 +1356,14 @@ User request:\n{}",
         match state.cli_backend {
             TelegramCliBackend::Codex => {
                 args.push("exec".to_string());
+                args.push("--json".to_string());
                 if state.auto_approve {
                     args.push("--dangerously-bypass-approvals-and-sandbox".to_string());
                 } else {
                     args.push("--full-auto".to_string());
                 }
                 args.push("-C".to_string());
-                args.push(cli_workdir.to_string_lossy().to_string());
+                args.push(effective_cli_workdir.to_string_lossy().to_string());
                 args.push("--skip-git-repo-check".to_string());
                 args.push(prompt);
             }
@@ -1219,10 +1374,12 @@ User request:\n{}",
                     args.push("yolo".to_string());
                 } else {
                     args.push("--approval-mode".to_string());
-                    args.push("default".to_string());
+                    args.push("auto_edit".to_string());
                 }
                 args.push("--prompt".to_string());
                 args.push(prompt);
+                args.push("--output-format".to_string());
+                args.push("text".to_string());
             }
             TelegramCliBackend::Claude => {
                 args.push("--print".to_string());
@@ -1232,13 +1389,77 @@ User request:\n{}",
                 args.push(if state.auto_approve {
                     "bypassPermissions".to_string()
                 } else {
-                    "default".to_string()
+                    "auto".to_string()
                 });
                 args.push(prompt);
             }
         }
 
         Ok((binary, args))
+    }
+
+    fn extract_codex_json_response(stdout: &str) -> Option<String> {
+        let mut messages = Vec::new();
+
+        for line in stdout.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let Ok(value) = serde_json::from_str::<Value>(trimmed) else {
+                continue;
+            };
+            if value.get("type").and_then(Value::as_str) != Some("item.completed") {
+                continue;
+            }
+            let Some(item) = value.get("item") else {
+                continue;
+            };
+            if item.get("type").and_then(Value::as_str) != Some("agent_message") {
+                continue;
+            }
+            let Some(text) = item.get("text").and_then(Value::as_str) else {
+                continue;
+            };
+            let text = text.trim();
+            if !text.is_empty() {
+                messages.push(text.to_string());
+            }
+        }
+
+        if messages.is_empty() {
+            None
+        } else {
+            Some(messages.join("\n\n"))
+        }
+    }
+
+    fn extract_cli_response_text(
+        backend: TelegramCliBackend,
+        stdout: &str,
+        stderr: &str,
+    ) -> Option<String> {
+        match backend {
+            TelegramCliBackend::Codex => Self::extract_codex_json_response(stdout)
+                .or_else(|| {
+                    let text = stdout.trim();
+                    (!text.is_empty()).then(|| text.to_string())
+                })
+                .or_else(|| {
+                    let text = stderr.trim();
+                    (!text.is_empty()).then(|| text.to_string())
+                }),
+            TelegramCliBackend::Gemini | TelegramCliBackend::Claude => {
+                let text = stdout.trim();
+                if !text.is_empty() {
+                    Some(text.to_string())
+                } else {
+                    let text = stderr.trim();
+                    (!text.is_empty()).then(|| text.to_string())
+                }
+            }
+        }
     }
 
     fn format_cli_result(
@@ -1248,24 +1469,34 @@ User request:\n{}",
         stdout: &str,
         stderr: &str,
     ) -> String {
-        let stdout = stdout.trim();
-        let stderr = stderr.trim();
-        let body = if !stdout.is_empty() {
-            stdout
-        } else if !stderr.is_empty() {
-            stderr
-        } else if exit_code == 0 {
-            "CLI completed successfully with no output."
-        } else {
-            "CLI failed with no output."
-        };
+        if backend == TelegramCliBackend::Gemini {
+            let combined = format!("{}\n{}", stdout, stderr);
+            if combined.contains("Opening authentication page in your browser") {
+                return "Gemini CLI requires interactive host login before Telegram can use it. Run `gemini` once on the host and finish authentication, then retry.".to_string();
+            }
+        }
+
+        if exit_code == 0 {
+            if let Some(text) = Self::extract_cli_response_text(backend, stdout, stderr) {
+                return Self::truncate_chars(text.trim(), 3400);
+            }
+
+            return format!(
+                "`{}` completed successfully in `{}` ms, but no response text was captured.",
+                backend.as_str(),
+                duration_ms
+            );
+        }
+
+        let body = Self::extract_cli_response_text(backend, stdout, stderr)
+            .unwrap_or_else(|| "CLI failed with no output.".to_string());
 
         format!(
             "`{}` finished with exit code `{}` in `{}` ms.\n\n{}",
             backend.as_str(),
             exit_code,
             duration_ms,
-            Self::truncate_chars(body, 3400)
+            Self::truncate_chars(body.trim(), 3400)
         )
     }
 
@@ -1281,12 +1512,13 @@ User request:\n{}",
         let state = Self::load_chat_state_snapshot(&chat_states, chat_id);
         let backend = state.cli_backend;
         let started_at = Self::current_timestamp_millis();
+        let effective_cli_workdir = state.effective_cli_workdir(&cli_workdir);
 
         let invocation =
             match Self::build_cli_invocation(
                 chat_id,
                 &state,
-                &cli_workdir,
+                &effective_cli_workdir,
                 &cli_backend_paths,
                 text,
             ) {
@@ -1314,10 +1546,13 @@ User request:\n{}",
         let (binary, args) = invocation;
         let mut command = tokio::process::Command::new(&binary);
         command.args(&args);
-        command.current_dir(cli_workdir.as_ref());
+        command.current_dir(&effective_cli_workdir);
         command.env("NO_COLOR", "1");
         command.env("CLICOLOR", "0");
         command.env("TERM", "dumb");
+        command.stdin(std::process::Stdio::null());
+        command.stdout(std::process::Stdio::piped());
+        command.stderr(std::process::Stdio::piped());
         command.kill_on_drop(true);
 
         let child = match command.spawn() {
@@ -1735,6 +1970,7 @@ mod tests {
         let help = TelegramClient::supported_commands_text();
         assert!(help.contains("/cli_backend <codex|gemini|claude>"));
         assert!(help.contains("/auto_approve <on|off>"));
+        assert!(help.contains("/project <path>"));
         assert!(help.contains("/new_session - start a fresh session for the current mode"));
         assert!(!help.contains("/cli-backend <codex|gemini|claude>"));
         assert!(!help.contains("/auto-approve <on|off>"));
@@ -1755,6 +1991,7 @@ mod tests {
             vec![
                 "select",
                 "cli_backend",
+                "project",
                 "new_session",
                 "usage",
                 "mode",
@@ -1818,6 +2055,111 @@ mod tests {
         assert!(reply.text.contains("Choose the interaction mode"));
         assert_eq!(reply.reply_markup.as_ref().unwrap()["keyboard"][0][0], "/select chat");
         assert_eq!(reply.reply_markup.as_ref().unwrap()["keyboard"][0][1], "/select coding");
+    }
+
+    #[test]
+    fn project_without_args_reports_current_directory() {
+        let chat_states = Arc::new(Mutex::new(HashMap::new()));
+        let state_path = std::env::temp_dir().join(format!(
+            "telegram_project_status_{}_{}.json",
+            std::process::id(),
+            TelegramClient::current_timestamp_millis()
+        ));
+        let reply = TelegramClient::handle_command(
+            77,
+            "/project",
+            &chat_states,
+            &state_path,
+            &HashMap::new(),
+            std::path::Path::new("/tmp"),
+            0,
+        )
+        .unwrap();
+
+        assert!(reply.text.contains("Current project directory: `/tmp`"));
+    }
+
+    #[test]
+    fn project_command_updates_chat_state() {
+        let project_dir = std::env::temp_dir();
+        let project_text = project_dir.display().to_string();
+        let chat_states = Arc::new(Mutex::new(HashMap::new()));
+        let state_path = std::env::temp_dir().join(format!(
+            "telegram_project_set_{}_{}.json",
+            std::process::id(),
+            TelegramClient::current_timestamp_millis()
+        ));
+        let command = format!("/project {}", project_text);
+
+        let reply = TelegramClient::handle_command(
+            77,
+            &command,
+            &chat_states,
+            &state_path,
+            &HashMap::new(),
+            std::path::Path::new("/work"),
+            0,
+        )
+        .unwrap();
+
+        assert!(reply.text.contains("Project directory set to"));
+        let state = TelegramClient::load_chat_state_snapshot(&chat_states, 77);
+        let expected = project_dir
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        assert_eq!(
+            state.project_dir.as_deref(),
+            Some(expected.as_str())
+        );
+    }
+
+    #[test]
+    fn extract_codex_json_response_reads_agent_message() {
+        let output = concat!(
+            "{\"type\":\"thread.started\",\"thread_id\":\"abc\"}\n",
+            "{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"HELLO\"}}\n",
+            "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":1}}\n"
+        );
+
+        assert_eq!(
+            TelegramClient::extract_codex_json_response(output).as_deref(),
+            Some("HELLO")
+        );
+    }
+
+    #[test]
+    fn codex_invocation_uses_json_mode_and_project_directory() {
+        let state = TelegramChatState {
+            interaction_mode: TelegramInteractionMode::Coding,
+            cli_backend: TelegramCliBackend::Codex,
+            execution_mode: TelegramExecutionMode::Plan,
+            auto_approve: false,
+            project_dir: None,
+            chat_session_index: 1,
+            coding_session_index: 1,
+            usage: HashMap::new(),
+        };
+        let backend_paths = HashMap::from([(
+            TelegramCliBackend::Codex,
+            "/usr/bin/codex".to_string(),
+        )]);
+        let (binary, args) = TelegramClient::build_cli_invocation(
+            77,
+            &state,
+            std::path::Path::new("/tmp/project"),
+            &backend_paths,
+            "hello",
+        )
+        .unwrap();
+
+        assert_eq!(binary, "/usr/bin/codex");
+        assert!(args.iter().any(|arg| arg == "--json"));
+        assert!(args.iter().any(|arg| arg == "--full-auto"));
+        assert!(args.iter().any(|arg| arg == "--skip-git-repo-check"));
+        let cd_index = args.iter().position(|arg| arg == "-C").unwrap();
+        assert_eq!(args[cd_index + 1], "/tmp/project");
     }
 
     #[test]
