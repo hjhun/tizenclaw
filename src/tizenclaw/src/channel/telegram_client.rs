@@ -8,12 +8,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tokio::io::AsyncBufReadExt;
 
 const MAX_CONCURRENT_HANDLERS: i32 = 3;
 const DEFAULT_CLI_TIMEOUT_SECS: u64 = 900;
+const CLI_PROGRESS_UPDATE_SECS: u64 = 15;
+const CLI_PROGRESS_MIN_PARTIAL_CHARS: usize = 80;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -224,6 +227,12 @@ impl TelegramOutgoingMessage {
     }
 }
 
+#[derive(Debug)]
+enum TelegramCliStreamEvent {
+    StdoutLine(String),
+    StderrLine(String),
+}
+
 pub struct TelegramClient {
     name: String,
     bot_token: String,
@@ -236,6 +245,8 @@ pub struct TelegramClient {
     cli_backend_paths: Arc<HashMap<TelegramCliBackend, String>>,
     chat_states: Arc<Mutex<HashMap<i64, TelegramChatState>>>,
     chat_state_path: Arc<PathBuf>,
+    /// UNIX seconds of the last user message; used for idle-trim scheduling.
+    last_user_input: Arc<AtomicU64>,
 }
 
 impl TelegramClient {
@@ -315,6 +326,10 @@ impl TelegramClient {
         let chat_state_path = Arc::new(config_dir.join("telegram_channel_state.json"));
         let chat_states = Arc::new(Mutex::new(Self::load_chat_states(&chat_state_path)));
 
+        let now_secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         TelegramClient {
             name: config.name.clone(),
             bot_token,
@@ -327,6 +342,7 @@ impl TelegramClient {
             cli_backend_paths,
             chat_states,
             chat_state_path,
+            last_user_input: Arc::new(AtomicU64::new(now_secs)),
         }
     }
 
@@ -1398,6 +1414,50 @@ User request:\n{}",
         Ok((binary, args))
     }
 
+    fn build_cli_started_message(
+        state: &TelegramChatState,
+        backend: TelegramCliBackend,
+        effective_cli_workdir: &Path,
+    ) -> String {
+        format!(
+            "Started `{}` coding request.\nSession: `{}`.\nProject directory: `{}`.\nI will post progress updates while it runs.",
+            backend.as_str(),
+            state.session_label_for(TelegramInteractionMode::Coding),
+            effective_cli_workdir.display()
+        )
+    }
+
+    fn build_cli_progress_message(
+        backend: TelegramCliBackend,
+        effective_cli_workdir: &Path,
+        elapsed_secs: u64,
+        last_output_secs: Option<u64>,
+    ) -> String {
+        let activity = last_output_secs.map_or_else(
+            || "No CLI output has been observed yet.".to_string(),
+            |secs| format!("Last CLI output observed `{}` second(s) ago.", secs),
+        );
+
+        format!(
+            "`{}` is still running.\nElapsed: `{}` second(s).\nProject directory: `{}`.\n{}",
+            backend.as_str(),
+            elapsed_secs,
+            effective_cli_workdir.display(),
+            activity
+        )
+    }
+
+    fn build_cli_partial_response_message(
+        backend: TelegramCliBackend,
+        partial_text: &str,
+    ) -> String {
+        format!(
+            "Partial `{}` response:\n\n{}",
+            backend.as_str(),
+            Self::truncate_chars(partial_text.trim(), 2800)
+        )
+    }
+
     fn extract_codex_json_response(stdout: &str) -> Option<String> {
         let mut messages = Vec::new();
 
@@ -1462,6 +1522,72 @@ User request:\n{}",
         }
     }
 
+    fn extract_incremental_cli_response(
+        backend: TelegramCliBackend,
+        stdout: &str,
+        stderr: &str,
+        last_sent_text: &str,
+    ) -> Option<String> {
+        let current = Self::extract_cli_response_text(backend, stdout, stderr)?;
+        let current = current.trim();
+        if current.is_empty() || current == last_sent_text {
+            return None;
+        }
+
+        let candidate = current
+            .strip_prefix(last_sent_text)
+            .map(str::trim)
+            .filter(|delta| !delta.is_empty())
+            .unwrap_or(current);
+        let candidate_len = candidate.chars().count();
+
+        let should_send = if last_sent_text.is_empty() {
+            candidate_len >= CLI_PROGRESS_MIN_PARTIAL_CHARS
+                || (candidate.contains('\n') && candidate_len >= 20)
+        } else {
+            candidate_len >= 40
+                || (candidate.contains('\n') && candidate_len >= 20)
+                || candidate.matches('\n').count() >= 2
+        };
+
+        should_send.then(|| candidate.to_string())
+    }
+
+    async fn read_cli_stream<R>(
+        reader: R,
+        is_stdout: bool,
+        tx: tokio::sync::mpsc::UnboundedSender<TelegramCliStreamEvent>,
+    ) where
+        R: tokio::io::AsyncRead + Unpin + Send + 'static,
+    {
+        let mut lines = tokio::io::BufReader::new(reader).lines();
+        loop {
+            match lines.next_line().await {
+                Ok(Some(line)) => {
+                    let event = if is_stdout {
+                        TelegramCliStreamEvent::StdoutLine(line)
+                    } else {
+                        TelegramCliStreamEvent::StderrLine(line)
+                    };
+                    if tx.send(event).is_err() {
+                        break;
+                    }
+                }
+                Ok(None) => break,
+                Err(err) => {
+                    let line = format!("stream read failed: {}", err);
+                    let event = if is_stdout {
+                        TelegramCliStreamEvent::StderrLine(line)
+                    } else {
+                        TelegramCliStreamEvent::StderrLine(line)
+                    };
+                    let _ = tx.send(event);
+                    break;
+                }
+            }
+        }
+    }
+
     fn format_cli_result(
         backend: TelegramCliBackend,
         exit_code: i32,
@@ -1501,6 +1627,7 @@ User request:\n{}",
     }
 
     async fn execute_cli_request(
+        bot_token: &str,
         chat_id: i64,
         text: &str,
         cli_workdir: Arc<PathBuf>,
@@ -1555,7 +1682,7 @@ User request:\n{}",
         command.stderr(std::process::Stdio::piped());
         command.kill_on_drop(true);
 
-        let child = match command.spawn() {
+        let mut child = match command.spawn() {
             Ok(child) => child,
             Err(err) => {
                 let snapshot = match chat_states.lock() {
@@ -1579,18 +1706,129 @@ User request:\n{}",
             }
         };
 
-        let started = SystemTime::now();
-        let timed_output =
-            tokio::time::timeout(Duration::from_secs(cli_timeout_secs), child.wait_with_output())
-                .await;
+        Self::send_telegram_message(
+            bot_token,
+            chat_id,
+            &TelegramOutgoingMessage::plain(Self::build_cli_started_message(
+                &state,
+                backend,
+                &effective_cli_workdir,
+            )),
+        );
+
+        let Some(stdout_reader) = child.stdout.take() else {
+            return format!("Failed to capture `{}` stdout.", backend.as_str());
+        };
+        let Some(stderr_reader) = child.stderr.take() else {
+            return format!("Failed to capture `{}` stderr.", backend.as_str());
+        };
+
+        let started = Instant::now();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        tokio::spawn(Self::read_cli_stream(stdout_reader, true, tx.clone()));
+        tokio::spawn(Self::read_cli_stream(stderr_reader, false, tx));
+
+        let execution = async {
+            let mut child = child;
+            let wait_fut = child.wait();
+            tokio::pin!(wait_fut);
+            let mut heartbeat =
+                tokio::time::interval(Duration::from_secs(CLI_PROGRESS_UPDATE_SECS));
+            heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            heartbeat.tick().await;
+
+            let mut stdout = String::new();
+            let mut stderr = String::new();
+            let mut last_partial_text = String::new();
+            let mut last_output_at = None::<Instant>;
+            let mut child_status = None;
+
+            loop {
+                tokio::select! {
+                    status = &mut wait_fut, if child_status.is_none() => {
+                        child_status = Some(status);
+                    }
+                    maybe_event = rx.recv() => {
+                        match maybe_event {
+                            Some(TelegramCliStreamEvent::StdoutLine(line)) => {
+                                if !stdout.is_empty() {
+                                    stdout.push('\n');
+                                }
+                                stdout.push_str(&line);
+                                last_output_at = Some(Instant::now());
+                            }
+                            Some(TelegramCliStreamEvent::StderrLine(line)) => {
+                                if !stderr.is_empty() {
+                                    stderr.push('\n');
+                                }
+                                stderr.push_str(&line);
+                                last_output_at = Some(Instant::now());
+                            }
+                            None => {
+                                if child_status.is_some() {
+                                    break;
+                                }
+                            }
+                        }
+
+                        if let Some(partial) = Self::extract_incremental_cli_response(
+                            backend,
+                            &stdout,
+                            &stderr,
+                            &last_partial_text,
+                        ) {
+                            Self::send_telegram_message(
+                                bot_token,
+                                chat_id,
+                                &TelegramOutgoingMessage::plain(
+                                    Self::build_cli_partial_response_message(
+                                        backend,
+                                        &partial,
+                                    ),
+                                ),
+                            );
+                            if let Some(current_text) =
+                                Self::extract_cli_response_text(backend, &stdout, &stderr)
+                            {
+                                last_partial_text = current_text.trim().to_string();
+                            }
+                        }
+                    }
+                    _ = heartbeat.tick() => {
+                        if child_status.is_none() {
+                            let elapsed_secs = started.elapsed().as_secs();
+                            let last_output_secs = last_output_at.map(|instant| instant.elapsed().as_secs());
+                            Self::send_telegram_message(
+                                bot_token,
+                                chat_id,
+                                &TelegramOutgoingMessage::plain(
+                                    Self::build_cli_progress_message(
+                                        backend,
+                                        &effective_cli_workdir,
+                                        elapsed_secs,
+                                        last_output_secs,
+                                    ),
+                                ),
+                            );
+                        }
+                    }
+                }
+            }
+
+            let output = match child_status {
+                Some(status) => status?,
+                None => wait_fut.await?,
+            };
+            Ok::<_, std::io::Error>((output, stdout, stderr))
+        };
+
+        let timed_output = tokio::time::timeout(Duration::from_secs(cli_timeout_secs), execution).await;
 
         match timed_output {
-            Ok(Ok(output)) => {
-                let duration_ms = started.elapsed().unwrap_or_default().as_millis() as u64;
-                let exit_code = output.status.code().unwrap_or(-1);
-                let success = output.status.success();
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            Ok(Ok((status, stdout, stderr))) => {
+                let duration_ms = started.elapsed().as_millis() as u64;
+                let exit_code = status.code().unwrap_or(-1);
+                let success = status.success();
 
                 let snapshot = match chat_states.lock() {
                     Ok(mut states) => {
@@ -1667,6 +1905,7 @@ User request:\n{}",
     }
 
     async fn route_message(
+        bot_token: &str,
         chat_id: i64,
         text: &str,
         agent: Option<Arc<crate::core::agent_core::AgentCore>>,
@@ -1724,6 +1963,7 @@ User request:\n{}",
             }
             TelegramInteractionMode::Coding => {
                 let response = Self::execute_cli_request(
+                    bot_token,
                     chat_id,
                     text,
                     cli_workdir,
@@ -1780,8 +2020,41 @@ impl Channel for TelegramClient {
         let cli_backend_paths = self.cli_backend_paths.clone();
         let chat_states = self.chat_states.clone();
         let chat_state_path = self.chat_state_path.clone();
+        let last_user_input = self.last_user_input.clone();
 
         Self::broadcast_startup_status(&self.bot_token, &self.allowed_chat_ids, &self.chat_states);
+
+        // Idle-trim background task: when no user input for 3 minutes, release
+        // free heap pages back to the OS via malloc_trim(0).
+        {
+            const IDLE_TRIM_SECS: u64 = 180;
+            const CHECK_INTERVAL_SECS: u64 = 30;
+            let running_trim = running.clone();
+            let last_input_trim = last_user_input.clone();
+            tokio::spawn(async move {
+                let mut trimmed_at: u64 = 0;
+                loop {
+                    tokio::time::sleep(Duration::from_secs(CHECK_INTERVAL_SECS)).await;
+                    if !running_trim.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    let now = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+                    let last = last_input_trim.load(Ordering::Relaxed);
+                    // Trim once per idle window; don't repeat until next message arrives.
+                    if now.saturating_sub(last) >= IDLE_TRIM_SECS && last != trimmed_at {
+                        unsafe { libc::malloc_trim(0) };
+                        trimmed_at = last;
+                        log::info!(
+                            "TelegramClient: idle {}s — malloc_trim(0) executed",
+                            now.saturating_sub(last)
+                        );
+                    }
+                }
+            });
+        }
 
         tokio::spawn(async move {
             log::debug!("TelegramClient async epoll reactor started");
@@ -1852,6 +2125,13 @@ impl Channel for TelegramClient {
 
                         log::debug!("Telegram received from {}: {}", chat_id, text);
 
+                        // Record activity time to reset the idle-trim window.
+                        let now_secs = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs();
+                        last_user_input.store(now_secs, Ordering::Relaxed);
+
                         active_handlers.fetch_add(1, Ordering::SeqCst);
                         let text_clone = text.to_string();
                         let bot_token_clone = bot_token.clone();
@@ -1864,6 +2144,7 @@ impl Channel for TelegramClient {
 
                         tokio::spawn(async move {
                             let results = TelegramClient::route_message(
+                                &bot_token_clone,
                                 chat_id,
                                 &text_clone,
                                 agent_clone,
@@ -2127,6 +2408,68 @@ mod tests {
             TelegramClient::extract_codex_json_response(output).as_deref(),
             Some("HELLO")
         );
+    }
+
+    #[test]
+    fn cli_started_message_mentions_session_and_project() {
+        let state = TelegramChatState::default();
+        let message = TelegramClient::build_cli_started_message(
+            &state,
+            TelegramCliBackend::Codex,
+            std::path::Path::new("/tmp/project"),
+        );
+
+        assert!(message.contains("Started `codex` coding request."));
+        assert!(message.contains("Session: `coding-0001`."));
+        assert!(message.contains("Project directory: `/tmp/project`."));
+    }
+
+    #[test]
+    fn cli_progress_message_reports_output_state() {
+        let idle = TelegramClient::build_cli_progress_message(
+            TelegramCliBackend::Codex,
+            std::path::Path::new("/tmp/project"),
+            15,
+            None,
+        );
+        assert!(idle.contains("`codex` is still running."));
+        assert!(idle.contains("Elapsed: `15` second(s)."));
+        assert!(idle.contains("No CLI output has been observed yet."));
+
+        let active = TelegramClient::build_cli_progress_message(
+            TelegramCliBackend::Claude,
+            std::path::Path::new("/tmp/project"),
+            22,
+            Some(3),
+        );
+        assert!(active.contains("`claude` is still running."));
+        assert!(active.contains("Last CLI output observed `3` second(s) ago."));
+    }
+
+    #[test]
+    fn incremental_cli_response_uses_new_text_delta() {
+        let stdout = "First line of output\nSecond line of output with enough detail";
+        let partial = TelegramClient::extract_incremental_cli_response(
+            TelegramCliBackend::Claude,
+            stdout,
+            "",
+            "",
+        )
+        .unwrap();
+        assert!(partial.contains("First line of output"));
+
+        let next_stdout = format!(
+            "{}\nThird line extends the response with more useful detail",
+            stdout
+        );
+        let partial = TelegramClient::extract_incremental_cli_response(
+            TelegramCliBackend::Claude,
+            &next_stdout,
+            "",
+            stdout,
+        )
+        .unwrap();
+        assert!(partial.contains("Third line extends the response"));
     }
 
     #[test]
