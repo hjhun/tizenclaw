@@ -1,10 +1,10 @@
 {
     "bot_token": "YOUR_TELEGRAM_BOT_TOKEN_HERE",
     "allowed_chat_ids": [],
-    "cli_workdir": "/home/your-user/your-project",
+    "cli_workdir": "$HOME/projects/your-project",
     "cli_backends": {
-        "codex": "/home/your-user/.npm-global/bin/codex",
+        "codex": "$HOME/.npm-global/bin/codex",
         "gemini": "/snap/bin/gemini",
-        "claude": "/home/your-user/.local/bin/claude"
+        "claude": "$HOME/.local/bin/claude"
     }
 }

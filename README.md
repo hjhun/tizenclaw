@@ -121,7 +121,7 @@ TizenClaw maps Telegram coding requests onto the real installed CLIs:
 | Backend | Example execution shape |
 | --- | --- |
 | Codex | `codex exec --json --full-auto -C <project> <prompt>` |
-| Gemini | `gemini --prompt <prompt> --output-format text --approval-mode auto_edit` |
+| Gemini | `gemini --model <model> --prompt <prompt> --output-format text --approval-mode auto_edit` |
 | Claude | `claude --print --output-format text --permission-mode auto <prompt>` |
 
 This makes TizenClaw useful as a mobile coding bridge: Telegram becomes the

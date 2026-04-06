@@ -17,6 +17,7 @@ const MAX_CONCURRENT_HANDLERS: i32 = 3;
 const DEFAULT_CLI_TIMEOUT_SECS: u64 = 900;
 const CLI_PROGRESS_UPDATE_SECS: u64 = 15;
 const CLI_PROGRESS_MIN_PARTIAL_CHARS: usize = 80;
+const DEFAULT_GEMINI_CLI_MODEL: &str = "gemini-2.5-flash";
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -83,7 +84,7 @@ impl TelegramCliBackend {
     fn binary_candidates(&self) -> &'static [&'static str] {
         match self {
             Self::Codex => &["codex"],
-            Self::Gemini => &["gemini"],
+            Self::Gemini => &["gemini", "/snap/bin/gemini"],
             Self::Claude => &["claude", "claude-code"],
         }
     }
@@ -243,6 +244,7 @@ pub struct TelegramClient {
     cli_workdir: Arc<PathBuf>,
     cli_timeout_secs: u64,
     cli_backend_paths: Arc<HashMap<TelegramCliBackend, String>>,
+    cli_backend_models: Arc<HashMap<TelegramCliBackend, String>>,
     chat_states: Arc<Mutex<HashMap<i64, TelegramChatState>>>,
     chat_state_path: Arc<PathBuf>,
     /// UNIX seconds of the last user message; used for idle-trim scheduling.
@@ -288,7 +290,9 @@ impl TelegramClient {
             .and_then(|v| v.as_u64())
             .unwrap_or(DEFAULT_CLI_TIMEOUT_SECS);
         let mut backend_overrides = HashMap::new();
+        let mut backend_models = HashMap::new();
         Self::read_backend_overrides(config.settings.get("cli_backends"), &mut backend_overrides);
+        Self::read_backend_models(config.settings.get("cli_backends"), &mut backend_models);
 
         let config_dir = crate::core::runtime_paths::default_data_dir().join("config");
         let telegram_config = config_dir.join("telegram_config.json");
@@ -319,10 +323,17 @@ impl TelegramClient {
                     cli_timeout_secs = timeout;
                 }
                 Self::read_backend_overrides(json.get("cli_backends"), &mut backend_overrides);
+                Self::read_backend_models(json.get("cli_backends"), &mut backend_models);
             }
         }
 
+        Self::read_backend_models_from_llm_config(&config_dir, &mut backend_models);
+        backend_models
+            .entry(TelegramCliBackend::Gemini)
+            .or_insert_with(|| DEFAULT_GEMINI_CLI_MODEL.to_string());
+
         let cli_backend_paths = Arc::new(Self::resolve_cli_backend_paths(&backend_overrides));
+        let cli_backend_models = Arc::new(backend_models);
         let chat_state_path = Arc::new(config_dir.join("telegram_channel_state.json"));
         let chat_states = Arc::new(Mutex::new(Self::load_chat_states(&chat_state_path)));
 
@@ -340,6 +351,7 @@ impl TelegramClient {
             cli_workdir: Arc::new(cli_workdir),
             cli_timeout_secs,
             cli_backend_paths,
+            cli_backend_models,
             chat_states,
             chat_state_path,
             last_user_input: Arc::new(AtomicU64::new(now_secs)),
@@ -374,6 +386,60 @@ impl TelegramClient {
                 }
             }
         }
+    }
+
+    fn read_backend_models(
+        value: Option<&Value>,
+        models: &mut HashMap<TelegramCliBackend, String>,
+    ) {
+        let Some(value) = value else {
+            return;
+        };
+        let Some(object) = value.as_object() else {
+            return;
+        };
+
+        for backend in TelegramCliBackend::all() {
+            let Some(entry) = object.get(backend.as_str()) else {
+                continue;
+            };
+            let Some(model) = entry.get("model").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let trimmed = model.trim();
+            if !trimmed.is_empty() {
+                models.insert(backend, trimmed.to_string());
+            }
+        }
+    }
+
+    fn read_backend_models_from_llm_config(
+        config_dir: &Path,
+        models: &mut HashMap<TelegramCliBackend, String>,
+    ) {
+        if models.contains_key(&TelegramCliBackend::Gemini) {
+            return;
+        }
+
+        let llm_config = config_dir.join("llm_config.json");
+        let Ok(content) = std::fs::read_to_string(&llm_config) else {
+            return;
+        };
+        let Ok(json) = serde_json::from_str::<Value>(&content) else {
+            return;
+        };
+        let Some(model) = json
+            .get("backends")
+            .and_then(|v| v.get("gemini"))
+            .and_then(|v| v.get("model"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            return;
+        };
+
+        models.insert(TelegramCliBackend::Gemini, model.to_string());
     }
 
     fn resolve_cli_backend_paths(
@@ -714,10 +780,10 @@ impl TelegramClient {
                 "`codex exec --json --dangerously-bypass-approvals-and-sandbox -C <project> <prompt>`"
             }
             (TelegramCliBackend::Gemini, false) => {
-                "`gemini --prompt <prompt> --output-format text --approval-mode auto_edit`"
+                "`gemini --model <model> --prompt <prompt> --output-format text --approval-mode auto_edit`"
             }
             (TelegramCliBackend::Gemini, true) => {
-                "`gemini --prompt <prompt> --output-format text -y --approval-mode yolo`"
+                "`gemini --model <model> --prompt <prompt> --output-format text -y --approval-mode yolo`"
             }
             (TelegramCliBackend::Claude, false) => {
                 "`claude --print --output-format text --permission-mode auto <prompt>`"
@@ -1347,6 +1413,7 @@ User request:\n{}",
         state: &TelegramChatState,
         effective_cli_workdir: &Path,
         cli_backend_paths: &HashMap<TelegramCliBackend, String>,
+        cli_backend_models: &HashMap<TelegramCliBackend, String>,
         text: &str,
     ) -> Result<(String, Vec<String>), String> {
         let binary = cli_backend_paths
@@ -1384,6 +1451,10 @@ User request:\n{}",
                 args.push(prompt);
             }
             TelegramCliBackend::Gemini => {
+                if let Some(model) = cli_backend_models.get(&TelegramCliBackend::Gemini) {
+                    args.push("--model".to_string());
+                    args.push(model.clone());
+                }
                 if state.auto_approve {
                     args.push("-y".to_string());
                     args.push("--approval-mode".to_string());
@@ -1600,6 +1671,12 @@ User request:\n{}",
             if combined.contains("Opening authentication page in your browser") {
                 return "Gemini CLI requires interactive host login before Telegram can use it. Run `gemini` once on the host and finish authentication, then retry.".to_string();
             }
+            if combined.contains("MODEL_CAPACITY_EXHAUSTED")
+                || combined.contains("No capacity available for model")
+                || combined.contains("\"status\": \"RESOURCE_EXHAUSTED\"")
+            {
+                return "Gemini CLI hit a model-capacity limit on the host. Telegram now supports an explicit Gemini model; use a stable model such as `gemini-2.5-flash` in the host config and retry.".to_string();
+            }
         }
 
         if exit_code == 0 {
@@ -1633,6 +1710,7 @@ User request:\n{}",
         cli_workdir: Arc<PathBuf>,
         cli_timeout_secs: u64,
         cli_backend_paths: Arc<HashMap<TelegramCliBackend, String>>,
+        cli_backend_models: Arc<HashMap<TelegramCliBackend, String>>,
         chat_states: Arc<Mutex<HashMap<i64, TelegramChatState>>>,
         state_path: Arc<PathBuf>,
     ) -> String {
@@ -1647,6 +1725,7 @@ User request:\n{}",
                 &state,
                 &effective_cli_workdir,
                 &cli_backend_paths,
+                &cli_backend_models,
                 text,
             ) {
                 Ok(invocation) => invocation,
@@ -1912,6 +1991,7 @@ User request:\n{}",
         cli_workdir: Arc<PathBuf>,
         cli_timeout_secs: u64,
         cli_backend_paths: Arc<HashMap<TelegramCliBackend, String>>,
+        cli_backend_models: Arc<HashMap<TelegramCliBackend, String>>,
         chat_states: Arc<Mutex<HashMap<i64, TelegramChatState>>>,
         state_path: Arc<PathBuf>,
         active_handlers: i32,
@@ -1969,6 +2049,7 @@ User request:\n{}",
                     cli_workdir,
                     cli_timeout_secs,
                     cli_backend_paths,
+                    cli_backend_models,
                     chat_states,
                     state_path,
                 )
@@ -2018,6 +2099,7 @@ impl Channel for TelegramClient {
         let cli_workdir = self.cli_workdir.clone();
         let cli_timeout_secs = self.cli_timeout_secs;
         let cli_backend_paths = self.cli_backend_paths.clone();
+        let cli_backend_models = self.cli_backend_models.clone();
         let chat_states = self.chat_states.clone();
         let chat_state_path = self.chat_state_path.clone();
         let last_user_input = self.last_user_input.clone();
@@ -2139,6 +2221,7 @@ impl Channel for TelegramClient {
                         let active_handlers_clone = active_handlers.clone();
                         let cli_workdir_clone = cli_workdir.clone();
                         let cli_backend_paths_clone = cli_backend_paths.clone();
+                        let cli_backend_models_clone = cli_backend_models.clone();
                         let chat_states_clone = chat_states.clone();
                         let chat_state_path_clone = chat_state_path.clone();
 
@@ -2151,6 +2234,7 @@ impl Channel for TelegramClient {
                                 cli_workdir_clone,
                                 cli_timeout_secs,
                                 cli_backend_paths_clone,
+                                cli_backend_models_clone,
                                 chat_states_clone,
                                 chat_state_path_clone,
                                 current_handlers + 1,
@@ -2540,6 +2624,7 @@ mod tests {
             &state,
             std::path::Path::new("/tmp/project"),
             &backend_paths,
+            &HashMap::new(),
             "hello",
         )
         .unwrap();
@@ -2550,6 +2635,84 @@ mod tests {
         assert!(args.iter().any(|arg| arg == "--skip-git-repo-check"));
         let cd_index = args.iter().position(|arg| arg == "-C").unwrap();
         assert_eq!(args[cd_index + 1], "/tmp/project");
+    }
+
+    #[test]
+    fn gemini_invocation_uses_explicit_model() {
+        let state = TelegramChatState {
+            interaction_mode: TelegramInteractionMode::Coding,
+            cli_backend: TelegramCliBackend::Gemini,
+            execution_mode: TelegramExecutionMode::Plan,
+            auto_approve: false,
+            project_dir: None,
+            chat_session_index: 1,
+            coding_session_index: 1,
+            usage: HashMap::new(),
+        };
+        let backend_paths = HashMap::from([(
+            TelegramCliBackend::Gemini,
+            "/snap/bin/gemini".to_string(),
+        )]);
+        let backend_models = HashMap::from([(
+            TelegramCliBackend::Gemini,
+            "gemini-2.5-flash".to_string(),
+        )]);
+
+        let (binary, args) = TelegramClient::build_cli_invocation(
+            77,
+            &state,
+            std::path::Path::new("/tmp/project"),
+            &backend_paths,
+            &backend_models,
+            "hello",
+        )
+        .unwrap();
+
+        assert_eq!(binary, "/snap/bin/gemini");
+        let model_index = args.iter().position(|arg| arg == "--model").unwrap();
+        assert_eq!(args[model_index + 1], "gemini-2.5-flash");
+        assert!(args.iter().any(|arg| arg == "--prompt"));
+        assert!(args.iter().any(|arg| arg == "--output-format"));
+    }
+
+    #[test]
+    fn gemini_capacity_errors_are_summarized() {
+        let message = TelegramClient::format_cli_result(
+            TelegramCliBackend::Gemini,
+            1,
+            100,
+            "",
+            "No capacity available for model gemini-3-flash-preview",
+        );
+
+        assert!(message.contains("model-capacity limit"));
+        assert!(message.contains("gemini-2.5-flash"));
+    }
+
+    #[test]
+    fn llm_config_gemini_model_is_used_as_fallback() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "telegram_gemini_model_{}_{}",
+            std::process::id(),
+            TelegramClient::current_timestamp_millis()
+        ));
+        std::fs::create_dir_all(&temp_root).unwrap();
+        std::fs::write(
+            temp_root.join("llm_config.json"),
+            r#"{"backends":{"gemini":{"model":"gemini-2.5-pro"}}}"#,
+        )
+        .unwrap();
+
+        let mut models = HashMap::new();
+        TelegramClient::read_backend_models_from_llm_config(&temp_root, &mut models);
+
+        assert_eq!(
+            models.get(&TelegramCliBackend::Gemini).map(String::as_str),
+            Some("gemini-2.5-pro")
+        );
+
+        let _ = std::fs::remove_file(temp_root.join("llm_config.json"));
+        let _ = std::fs::remove_dir(&temp_root);
     }
 
     #[test]
