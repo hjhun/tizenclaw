@@ -22,6 +22,8 @@ pub struct PlatformPaths {
     pub tools_dir: PathBuf,
     /// Textual skills directory
     pub skills_dir: PathBuf,
+    /// Skill hub mount directory containing external OpenClaw-style roots
+    pub skill_hubs_dir: PathBuf,
     /// TizenClaw-owned embedded tool descriptor directory
     pub embedded_tools_dir: PathBuf,
     /// Plugin .so files directory
@@ -74,6 +76,9 @@ impl PlatformPaths {
             .unwrap_or_else(|_| base.join("tools"));
 
         let skills_dir = base.join("workspace/skills");
+        let skill_hubs_dir = std::env::var("TIZENCLAW_SKILL_HUBS_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| base.join("workspace/skill-hubs"));
         let embedded_tools_dir = std::env::var("TIZENCLAW_EMBEDDED_TOOLS_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| base.join("embedded"));
@@ -82,6 +87,7 @@ impl PlatformPaths {
             config_dir: base.join("config"),
             tools_dir,
             skills_dir,
+            skill_hubs_dir,
             embedded_tools_dir,
             plugins_dir: base.join("plugins"),
             docs_dir: base.join("docs"),
@@ -104,6 +110,9 @@ impl PlatformPaths {
             .unwrap_or_else(|_| PathBuf::from(TIZEN_TOOLS_DIR));
 
         let skills_dir = PathBuf::from(TIZEN_DATA_DIR).join("workspace/skills");
+        let skill_hubs_dir = std::env::var("TIZENCLAW_SKILL_HUBS_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from(TIZEN_DATA_DIR).join("workspace/skill-hubs"));
         let embedded_tools_dir = std::env::var("TIZENCLAW_EMBEDDED_TOOLS_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(TIZEN_DATA_DIR).join("embedded"));
@@ -113,6 +122,7 @@ impl PlatformPaths {
             config_dir: PathBuf::from(TIZEN_DATA_DIR).join("config"),
             tools_dir,
             skills_dir,
+            skill_hubs_dir,
             embedded_tools_dir,
             plugins_dir: PathBuf::from(TIZEN_DATA_DIR).join("plugins"),
             docs_dir: PathBuf::from(TIZEN_DATA_DIR).join("docs"),
@@ -140,6 +150,7 @@ impl PlatformPaths {
             &self.config_dir,
             &self.tools_dir,
             &self.skills_dir,
+            &self.skill_hubs_dir,
             &self.embedded_tools_dir,
             &self.plugins_dir,
             &self.docs_dir,
@@ -168,6 +179,24 @@ impl PlatformPaths {
     pub fn app_data_dir(&self) -> PathBuf {
         self.data_dir.clone()
     }
+
+    /// Discover external skill roots mounted under `workspace/skill-hubs`.
+    pub fn discover_skill_hub_roots(&self) -> Vec<PathBuf> {
+        let mut roots = Vec::new();
+        let Ok(entries) = std::fs::read_dir(&self.skill_hubs_dir) else {
+            return roots;
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                roots.push(path);
+            }
+        }
+
+        roots.sort();
+        roots
+    }
 }
 
 /// Check if we're running in a Tizen environment.
@@ -193,6 +222,7 @@ mod tests {
 
         assert_eq!(paths.tools_dir, base.join("tools"));
         assert_eq!(paths.skills_dir, base.join("workspace/skills"));
+        assert_eq!(paths.skill_hubs_dir, base.join("workspace/skill-hubs"));
         assert_eq!(paths.embedded_tools_dir, base.join("embedded"));
         assert_eq!(paths.codes_dir, base.join("codes"));
     }
@@ -211,8 +241,31 @@ mod tests {
 
         paths.ensure_dirs();
 
+        assert!(paths.skill_hubs_dir.exists());
         assert!(paths.embedded_tools_dir.exists());
         assert!(paths.codes_dir.exists());
+
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn discover_skill_hub_roots_lists_child_directories() {
+        let unique = format!(
+            "tizenclaw-skill-hubs-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let base = std::env::temp_dir().join(unique);
+        let paths = PlatformPaths::from_base(base.clone());
+        std::fs::create_dir_all(&paths.skill_hubs_dir).unwrap();
+        std::fs::create_dir_all(paths.skill_hubs_dir.join("openclaw")).unwrap();
+        std::fs::write(paths.skill_hubs_dir.join("README.md"), "ignore").unwrap();
+
+        let roots = paths.discover_skill_hub_roots();
+
+        assert_eq!(roots, vec![paths.skill_hubs_dir.join("openclaw")]);
 
         let _ = std::fs::remove_dir_all(base);
     }

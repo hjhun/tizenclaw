@@ -29,6 +29,7 @@ use crate::core::context_engine::{
 use crate::core::fallback_parser::FallbackParser;
 use crate::core::feature_tools;
 use crate::core::llm_config_store;
+use crate::core::prompt_builder::{PromptMode, ReasoningPolicy};
 use crate::core::registration_store::{self, RegisteredPaths, RegistrationKind};
 use crate::core::textual_skill_scanner::TextualSkill;
 use crate::core::tool_dispatcher::ToolDispatcher;
@@ -296,6 +297,12 @@ fn collect_tool_roots(paths: &libtizenclaw_core::framework::paths::PlatformPaths
 
 fn collect_skill_roots(paths: &libtizenclaw_core::framework::paths::PlatformPaths) -> Vec<String> {
     let mut roots = vec![paths.skills_dir.to_string_lossy().to_string()];
+    roots.extend(
+        paths
+            .discover_skill_hub_roots()
+            .into_iter()
+            .map(|path| path.to_string_lossy().to_string()),
+    );
     roots.extend(RegisteredPaths::load(&paths.config_dir).skill_paths);
     roots.sort();
     roots.dedup();
@@ -337,6 +344,58 @@ fn build_progress_marker(
     }
 
     "<empty-response>".into()
+}
+
+fn extract_final_text(response_text: &str) -> String {
+    if let Some(start) = response_text.find("<final>") {
+        if let Some(end) = response_text.rfind("</final>") {
+            if end > start + 7 {
+                return response_text[start + 7..end].trim().to_string();
+            }
+            return response_text[start + 7..].trim().to_string();
+        }
+        return response_text[start + 7..].trim().to_string();
+    }
+
+    let stripped_think = THINK_RE.replace_all(response_text, "");
+    let normalized = stripped_think.trim();
+    if normalized.is_empty() {
+        response_text.trim().to_string()
+    } else {
+        normalized.to_string()
+    }
+}
+
+fn prompt_mode_from_doc(doc: &Value, backend_name: &str) -> PromptMode {
+    match doc
+        .get("prompt")
+        .and_then(|value| value.get("mode"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("auto")
+    {
+        "full" => PromptMode::Full,
+        "minimal" => PromptMode::Minimal,
+        _ => match backend_name {
+            "ollama" => PromptMode::Minimal,
+            _ => PromptMode::Full,
+        },
+    }
+}
+
+fn reasoning_policy_from_doc(doc: &Value, backend_name: &str) -> ReasoningPolicy {
+    match doc
+        .get("prompt")
+        .and_then(|value| value.get("reasoning_policy"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("auto")
+    {
+        "tagged" => ReasoningPolicy::Tagged,
+        "native" => ReasoningPolicy::Native,
+        _ => match backend_name {
+            "ollama" => ReasoningPolicy::Tagged,
+            _ => ReasoningPolicy::Native,
+        },
+    }
 }
 
 fn parse_shell_like_args(args: &str) -> Vec<String> {
@@ -1750,6 +1809,8 @@ impl AgentCore {
 
         // Build System Prompt
         let (system_prompt, dynamic_context) = {
+            let prompt_doc = llm_config_store::load(&self.platform.paths.config_dir)
+                .unwrap_or_else(|_| llm_config_store::default_document());
             let mut builder = crate::core::prompt_builder::SystemPromptBuilder::new()
                 .add_available_tools(tools.clone()); // XML Inject
             if let Ok(base) = self.system_prompt.read() {
@@ -1776,6 +1837,9 @@ impl AgentCore {
                 let bn = self.backend_name.read().unwrap_or_else(|e| e.into_inner());
                 (*bn).clone()
             };
+            builder = builder
+                .set_prompt_mode(prompt_mode_from_doc(&prompt_doc, &model_name))
+                .set_reasoning_policy(reasoning_policy_from_doc(&prompt_doc, &model_name));
             let platform_name = self.platform.platform_name().to_string();
             let data_dir = session_workdir.to_string_lossy().to_string();
             let now = std::time::SystemTime::now()
@@ -2182,19 +2246,7 @@ impl AgentCore {
                 );
 
                 // Enforce reasoning extraction if not provided by backend
-                let final_text = if let Some(start) = response.text.find("<final>") {
-                    if let Some(end) = response.text.rfind("</final>") {
-                        if end > start + 7 {
-                            response.text[start + 7..end].trim().to_string()
-                        } else {
-                            response.text[start + 7..].trim().to_string()
-                        }
-                    } else {
-                        response.text[start + 7..].trim().to_string()
-                    }
-                } else {
-                    response.text.clone()
-                };
+                let final_text = extract_final_text(&response.text);
 
                 // Add assistant message
                 messages.push(LlmMessage {
@@ -2651,19 +2703,7 @@ impl AgentCore {
                 loop_state.set_follow_up(false);
 
                 // Enforce reasoning extraction for final user response
-                let final_text = if let Some(start) = response.text.find("<final>") {
-                    if let Some(end) = response.text.rfind("</final>") {
-                        if end > start + 7 {
-                            response.text[start + 7..end].trim().to_string()
-                        } else {
-                            response.text[start + 7..].trim().to_string()
-                        }
-                    } else {
-                        response.text[start + 7..].trim().to_string()
-                    }
-                } else {
-                    response.text.clone()
-                };
+                let final_text = extract_final_text(&response.text);
 
                 let text = final_text;
                 if let Ok(ss) = self.session_store.lock() {
@@ -3037,11 +3077,13 @@ impl<'a> SessionStoreRef<'a> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_progress_marker, build_skill_prefetch_message, generated_code_runtime_spec,
-        generated_code_script_path, manage_generated_code_tool, normalize_conversation_log_text,
-        parse_shell_like_args, sanitize_generated_code_name, select_relevant_skills,
+        build_progress_marker, build_skill_prefetch_message, extract_final_text,
+        generated_code_runtime_spec, generated_code_script_path, manage_generated_code_tool,
+        normalize_conversation_log_text, parse_shell_like_args, prompt_mode_from_doc,
+        reasoning_policy_from_doc, sanitize_generated_code_name, select_relevant_skills,
         utf8_safe_preview,
     };
+    use crate::core::prompt_builder::{PromptMode, ReasoningPolicy};
     use crate::core::textual_skill_scanner::TextualSkill;
     use crate::llm::backend::LlmToolCall;
     use serde_json::json;
@@ -3220,5 +3262,39 @@ mod tests {
         assert!(!delete_path.exists());
 
         let _ = std::fs::remove_dir_all(base_dir);
+    }
+
+    #[test]
+    fn extract_final_text_prefers_final_block() {
+        let text = "<think>plan</think>\n<final>Visible answer</final>";
+        assert_eq!(extract_final_text(text), "Visible answer");
+    }
+
+    #[test]
+    fn extract_final_text_strips_think_block_without_final_tag() {
+        let text = "<think>private plan</think>\nVisible answer";
+        assert_eq!(extract_final_text(text), "Visible answer");
+    }
+
+    #[test]
+    fn prompt_policy_auto_selects_ollama_defaults() {
+        let doc = json!({"prompt": {"mode": "auto", "reasoning_policy": "auto"}});
+
+        assert_eq!(prompt_mode_from_doc(&doc, "ollama"), PromptMode::Minimal);
+        assert_eq!(
+            reasoning_policy_from_doc(&doc, "ollama"),
+            ReasoningPolicy::Tagged
+        );
+    }
+
+    #[test]
+    fn prompt_policy_auto_selects_hosted_backend_defaults() {
+        let doc = json!({"prompt": {"mode": "auto", "reasoning_policy": "auto"}});
+
+        assert_eq!(prompt_mode_from_doc(&doc, "anthropic"), PromptMode::Full);
+        assert_eq!(
+            reasoning_policy_from_doc(&doc, "anthropic"),
+            ReasoningPolicy::Native
+        );
     }
 }

@@ -1,3 +1,15 @@
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PromptMode {
+    Full,
+    Minimal,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReasoningPolicy {
+    Tagged,
+    Native,
+}
+
 #[derive(Clone, Debug)]
 pub struct RuntimeContext {
     pub os_info: String,
@@ -10,6 +22,8 @@ pub struct SystemPromptBuilder {
     base_prompt: String,
     runtime_context: Option<RuntimeContext>,
     soul_content: Option<String>,
+    prompt_mode: PromptMode,
+    reasoning_policy: ReasoningPolicy,
     available_skills: Vec<(String, String)>,
     available_skill_references: Vec<(String, String)>,
     available_tools: Vec<crate::llm::backend::LlmToolDecl>,
@@ -22,6 +36,8 @@ impl Default for SystemPromptBuilder {
                 .into(),
             runtime_context: None,
             soul_content: None,
+            prompt_mode: PromptMode::Full,
+            reasoning_policy: ReasoningPolicy::Native,
             available_skills: Vec::new(),
             available_skill_references: Vec::new(),
             available_tools: Vec::new(),
@@ -41,6 +57,16 @@ impl SystemPromptBuilder {
 
     pub fn set_soul_content(mut self, soul: String) -> Self {
         self.soul_content = Some(soul);
+        self
+    }
+
+    pub fn set_prompt_mode(mut self, prompt_mode: PromptMode) -> Self {
+        self.prompt_mode = prompt_mode;
+        self
+    }
+
+    pub fn set_reasoning_policy(mut self, reasoning_policy: ReasoningPolicy) -> Self {
+        self.reasoning_policy = reasoning_policy;
         self
     }
 
@@ -155,15 +181,30 @@ impl SystemPromptBuilder {
         // 2. Reasoning & Tool Call Style
         lines.push("## Reasoning & Tool Interaction".into());
         lines.push("To solve complex tasks, follow this cognitive protocol:".into());
-        lines.push("1. **Reasoning**: Always start your response with a `<think>` block. Outline your plan, evaluate constraints, and decide which tools to call.".into());
-        lines.push("2. **Action**: If you need to call a tool, use the native tool calling schema. Do not narrate routine calls.".into());
-        lines.push("3. **Final Response**: When the task is complete or you need to reply to the user, encapsulate the final answer within `<final>` tags.".into());
+        match self.reasoning_policy {
+            ReasoningPolicy::Tagged => {
+                lines.push("1. **Reasoning**: You may use a `<think>` block to sketch a short plan before calling tools when that helps loop stability.".into());
+                lines.push("2. **Action**: If you need to call a tool, use the native tool calling schema. Do not narrate routine calls.".into());
+                lines.push("3. **Final Response**: Prefer wrapping the user-visible answer in `<final>` tags, but plain final text is also acceptable.".into());
+            }
+            ReasoningPolicy::Native => {
+                lines.push("1. **Reasoning**: Keep chain-of-thought private. Use the backend's native reasoning behavior when available instead of emitting literal reasoning tags.".into());
+                lines.push("2. **Action**: If you need to call a tool, use the native tool calling schema. Do not narrate routine calls.".into());
+                lines.push("3. **Final Response**: Return a direct user-visible answer. `<final>` tags are optional and only needed for compatibility.".into());
+            }
+        }
         lines.push("4. **Budget Awareness**: If a tool result arrives in truncated or summarized form, treat it as a budgeted snapshot and request a narrower follow-up tool call when necessary.".into());
         lines.push("".into());
 
-        if let Some(cat) = tool_catalog {
+        if self.prompt_mode == PromptMode::Full {
+            if let Some(cat) = tool_catalog {
+                lines.push("### Available Tool Catalog".into());
+                lines.push(cat);
+                lines.push("".into());
+            }
+        } else {
             lines.push("### Available Tool Catalog".into());
-            lines.push(cat);
+            lines.push("Native tool schemas are attached separately. In minimal mode, inspect only the tools you actually need.".into());
             lines.push("".into());
         }
 
@@ -177,14 +218,19 @@ impl SystemPromptBuilder {
         lines.push("Before answering anything about prior work, check past memories using available repository tools if any.".into());
         lines.push("Use any prefetched skill snapshot in the conversation as the first routing hint before reading a full skill file.".into());
         lines.push("Textual skills must follow Anthropic's SKILL.md conventions.".into());
-        lines.push("When asked to create or revise a skill, read the most relevant packaged guide with `read_skill_reference` before calling `create_skill`.".into());
-        lines.push("Skill execution is document-driven: read the relevant skill with `read_skill`, then follow its workflow with the available tools.".into());
-        lines.push("Before replying, scan <available_skills> entries below:".into());
-        lines.push("- If exactly one skill clearly applies: read its .md file using the `read_skill` tool, then follow it.".into());
-        lines.push(
-            "- If multiple could apply: choose the most specific one, then read/follow it.".into(),
-        );
-        lines.push("- To create a new repeatable workflow, use `create_skill`; it will save a canonical Anthropic-style `SKILL.md` file.".into());
+        if self.prompt_mode == PromptMode::Full {
+            lines.push("When asked to create or revise a skill, read the most relevant packaged guide with `read_skill_reference` before calling `create_skill`.".into());
+            lines.push("Skill execution is document-driven: read the relevant skill with `read_skill`, then follow its workflow with the available tools.".into());
+            lines.push("Before replying, scan <available_skills> entries below:".into());
+            lines.push("- If exactly one skill clearly applies: read its .md file using the `read_skill` tool, then follow it.".into());
+            lines.push(
+                "- If multiple could apply: choose the most specific one, then read/follow it."
+                    .into(),
+            );
+            lines.push("- To create a new repeatable workflow, use `create_skill`; it will save a canonical Anthropic-style `SKILL.md` file.".into());
+        } else {
+            lines.push("In minimal mode, read a full skill only when the request clearly maps to one workflow.".into());
+        }
         lines.push("".into());
 
         lines.push("<available_skills>".into());
@@ -252,13 +298,12 @@ mod tests {
 
     #[test]
     fn test_runtime_context() {
-        let builder = SystemPromptBuilder::new()
-            .set_runtime_context(
-                "Ubuntu".into(),
-                "Claude 3.5".into(),
-                "/home/user".into(),
-                "2024-04-01 12:00:00".into(),
-            );
+        let builder = SystemPromptBuilder::new().set_runtime_context(
+            "Ubuntu".into(),
+            "Claude 3.5".into(),
+            "/home/user".into(),
+            "2024-04-01 12:00:00".into(),
+        );
         let dynamic = builder.build_dynamic_context().unwrap();
         let prompt = builder.build();
 
@@ -286,8 +331,7 @@ mod tests {
     fn test_reasoning_section_exists() {
         let prompt = SystemPromptBuilder::new().build();
         assert!(prompt.contains("## Reasoning & Tool Interaction"));
-        assert!(prompt.contains("<think>"));
-        assert!(prompt.contains("<final>"));
+        assert!(prompt.contains("chain-of-thought private"));
         assert!(prompt.contains("Budget Awareness"));
     }
 
@@ -311,5 +355,28 @@ mod tests {
         assert!(prompt.contains("`tool_a`"));
         assert!(prompt.contains("`tool_b`"));
         assert!(!prompt.contains("| Tool Name | Description | Parameters |"));
+    }
+
+    #[test]
+    fn test_minimal_mode_skips_tool_preview_list() {
+        let prompt = SystemPromptBuilder::new()
+            .set_prompt_mode(PromptMode::Minimal)
+            .add_available_tools(vec![crate::llm::backend::LlmToolDecl {
+                name: "tool_a".into(),
+                description: "A".into(),
+                parameters: serde_json::json!({"type": "object"}),
+            }])
+            .build();
+        assert!(prompt.contains("In minimal mode"));
+        assert!(!prompt.contains("`tool_a`"));
+    }
+
+    #[test]
+    fn test_tagged_reasoning_policy_mentions_tags() {
+        let prompt = SystemPromptBuilder::new()
+            .set_reasoning_policy(ReasoningPolicy::Tagged)
+            .build();
+        assert!(prompt.contains("<think>"));
+        assert!(prompt.contains("<final>"));
     }
 }

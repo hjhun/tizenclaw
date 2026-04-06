@@ -24,6 +24,10 @@ pub fn default_document() -> Value {
     json!({
         "active_backend": "gemini",
         "fallback_backends": ["openai", "ollama"],
+        "prompt": {
+            "mode": "auto",
+            "reasoning_policy": "auto"
+        },
         "benchmark": {
             "pinchbench": {
                 "actual_tokens": {
