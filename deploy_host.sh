@@ -7,6 +7,7 @@
 #   ./deploy_host.sh                   # Build (release) + install + run
 #   ./deploy_host.sh -d, --debug       # Build in debug mode
 #   ./deploy_host.sh -b, --build-only  # Build only, do not run
+#   ./deploy_host.sh --restart-only    # Restart using installed host files
 #   ./deploy_host.sh -s, --stop        # Stop running daemon
 #   ./deploy_host.sh --status          # Show daemon status
 #   ./deploy_host.sh --log             # Follow daemon logs
@@ -64,6 +65,7 @@ NC='\033[0m'
 BUILD_MODE="release"
 BUILD_ONLY=false
 STOP_DAEMON=false
+RESTART_ONLY=false
 SHOW_STATUS=false
 FOLLOW_LOG=false
 DRY_RUN=false
@@ -227,6 +229,7 @@ ${CYAN}Options:${NC}
   -d, --debug             Build in debug mode (default: release)
   -b, --build-only        Build only, do not install or run
       --test              Build + run cargo tests (offline, vendored)
+      --restart-only      Restart the installed host daemon only
   -s, --stop              Stop the running host daemon
       --remove            Stop host processes and remove ~/.tizenclaw install
       --status            Show current daemon status
@@ -260,6 +263,7 @@ parse_args() {
       -d|--debug)       BUILD_MODE="debug"; shift ;;
       -b|--build-only)  BUILD_ONLY=true; shift ;;
       --test)           RUN_TESTS=true; shift ;;
+      --restart-only)   RESTART_ONLY=true; shift ;;
       -s|--stop)        STOP_DAEMON=true; shift ;;
       --remove)         REMOVE_INSTALL=true; shift ;;
       --status)         SHOW_STATUS=true; shift ;;
@@ -824,6 +828,15 @@ do_run() {
   fi
 }
 
+ensure_existing_install() {
+  if [ ! -x "${INSTALL_DIR}/${PKG_NAME}" ]; then
+    fail "Installed host binary not found: ${INSTALL_DIR}/${PKG_NAME}"
+  fi
+  if [ ! -x "${INSTALL_DIR}/${TOOL_EXECUTOR_NAME}" ]; then
+    fail "Installed tool executor not found: ${INSTALL_DIR}/${TOOL_EXECUTOR_NAME}"
+  fi
+}
+
 # ─────────────────────────────────────────────
 # Summary
 # ─────────────────────────────────────────────
@@ -832,12 +845,15 @@ show_summary() {
   header "Host Deploy Complete!"
   ok "TizenClaw is running on host Linux (Generic Linux mode)."
   echo ""
+  local host_dashboard_port
+  host_dashboard_port="$(dashboard_port)"
   log "Useful commands:"
   log "  Logs (follow)  : ./deploy_host.sh --log"
   log "  Status         : ./deploy_host.sh --status"
   log "  Stop           : ./deploy_host.sh --stop"
   log "  Remove         : ./deploy_host.sh --remove"
   log "  CLI test       : tizenclaw-cli 'hello'"
+  log "  Dashboard URL  : http://localhost:${host_dashboard_port}"
   echo ""
 }
 
@@ -865,6 +881,13 @@ main() {
 
   if [ "${FOLLOW_LOG}" = true ]; then
     follow_log
+    exit 0
+  fi
+
+  if [ "${RESTART_ONLY}" = true ]; then
+    ensure_existing_install
+    do_run
+    show_summary
     exit 0
   fi
 

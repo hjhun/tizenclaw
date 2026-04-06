@@ -5,7 +5,9 @@ REPO_URL="https://github.com/hjhun/tizenclaw.git"
 REPO_REF="develRust"
 INSTALL_DIR="${HOME}/.local/src/tizenclaw"
 SKIP_DEPS=false
+SKIP_SETUP=false
 HOST_ARGS=()
+HOST_BIN_DIR="${HOME}/.tizenclaw/bin"
 
 log() {
   printf '[install] %s\n' "$*"
@@ -32,6 +34,7 @@ Options:
   --ref <git-ref>    Git branch, tag, or commit to checkout
   --dir <path>       Destination directory for the repository clone
   --skip-deps        Skip apt and rustup bootstrap steps
+  --skip-setup       Skip the interactive post-install setup wizard
   --debug            Forward --debug to deploy_host.sh
   --build-only       Forward --build-only to deploy_host.sh
   --test             Forward --test to deploy_host.sh
@@ -65,6 +68,10 @@ parse_args() {
         ;;
       --skip-deps)
         SKIP_DEPS=true
+        shift
+        ;;
+      --skip-setup)
+        SKIP_SETUP=true
         shift
         ;;
       --debug)
@@ -184,6 +191,61 @@ run_host_install() {
   )
 }
 
+host_args_contain() {
+  local wanted="$1"
+  for arg in "${HOST_ARGS[@]}"; do
+    if [[ "${arg}" == "${wanted}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+should_run_setup() {
+  if [[ "${SKIP_SETUP}" == true ]]; then
+    return 1
+  fi
+  for disallowed in "--build-only" "--test" "--status" "--log" "--stop" "--remove" "--restart-only"; do
+    if host_args_contain "${disallowed}"; then
+      return 1
+    fi
+  done
+  return 0
+}
+
+config_fingerprint() {
+  local config_dir="${HOST_BIN_DIR%/bin}/config"
+  if [[ ! -d "${config_dir}" ]]; then
+    return 0
+  fi
+  find "${config_dir}" -maxdepth 1 -type f -name '*config.json' -printf '%f %T@ %s\n' 2>/dev/null | sort
+}
+
+run_setup_wizard() {
+  local cli_bin="${HOST_BIN_DIR}/tizenclaw-cli"
+  local before_fingerprint
+  local after_fingerprint
+  if [[ ! -x "${cli_bin}" ]]; then
+    warn "Skipping setup because ${cli_bin} is not available yet"
+    return 0
+  fi
+
+  before_fingerprint="$(config_fingerprint)"
+  log "Launching the interactive TizenClaw setup wizard"
+  "${cli_bin}" setup
+  after_fingerprint="$(config_fingerprint)"
+
+  if [[ "${before_fingerprint}" != "${after_fingerprint}" ]]; then
+    log "Restarting host services to apply the latest configuration"
+    (
+      cd "${INSTALL_DIR}"
+      ./deploy_host.sh --restart-only
+    )
+  else
+    log "No config changes detected; keeping the current services running"
+  fi
+}
+
 main() {
   parse_args "$@"
 
@@ -195,6 +257,11 @@ main() {
   ensure_rust_in_shell
   prepare_repo
   run_host_install
+  if should_run_setup; then
+    run_setup_wizard
+  else
+    log "Skipping interactive setup wizard"
+  fi
 
   log "TizenClaw host bootstrap complete"
 }

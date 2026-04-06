@@ -185,6 +185,15 @@ What the bootstrap does:
 - clones or updates `https://github.com/hjhun/tizenclaw.git`
 - checks out the requested Git ref, defaulting to `develRust`
 - runs `deploy_host.sh` to build, install, and optionally start the host tools
+- launches `tizenclaw-cli setup` so you can either configure now or defer
+  setup and jump straight to the dashboard
+
+After installation, the setup wizard can help with:
+
+- choosing an LLM backend and entering its API key
+- optional Telegram bot setup for coding mode
+- showing the local dashboard URL and the command to rerun setup later
+- letting you choose "configure later" so you can open the dashboard first
 
 ### Manual host flow
 
@@ -201,7 +210,13 @@ Useful host commands:
 ./deploy_host.sh --status
 ./deploy_host.sh --log
 ./deploy_host.sh -s
+tizenclaw-cli dashboard start
+tizenclaw-cli dashboard status
 ```
+
+The host dashboard defaults to `http://localhost:9091`, and the setup wizard
+prints the active URL again at the end so first-time users can jump in right
+away.
 
 ## Deploy to a Tizen Target
 
