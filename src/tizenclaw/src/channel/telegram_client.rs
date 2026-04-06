@@ -276,6 +276,10 @@ impl TelegramOutgoingMessage {
             reply_markup: Some(reply_markup),
         }
     }
+
+    fn with_removed_keyboard(text: impl Into<String>) -> Self {
+        Self::with_markup(text, TelegramClient::remove_keyboard_markup())
+    }
 }
 
 #[derive(Debug)]
@@ -786,6 +790,12 @@ impl TelegramClient {
         })
     }
 
+    fn remove_keyboard_markup() -> Value {
+        json!({
+            "remove_keyboard": true
+        })
+    }
+
     fn select_keyboard() -> Value {
         Self::build_reply_keyboard(&[&["/select chat", "/select coding"]])
     }
@@ -1060,7 +1070,7 @@ impl TelegramClient {
             );
         };
 
-        TelegramOutgoingMessage::plain(Self::mutate_chat_state(
+        TelegramOutgoingMessage::with_removed_keyboard(Self::mutate_chat_state(
             chat_states,
             state_path,
             chat_id,
@@ -1102,7 +1112,7 @@ impl TelegramClient {
                 "Warning: backend binary was not found on PATH. You can still keep it selected, but execution will fail until the binary is installed or configured.".to_string()
             });
 
-        TelegramOutgoingMessage::plain(Self::mutate_chat_state(
+        TelegramOutgoingMessage::with_removed_keyboard(Self::mutate_chat_state(
             chat_states,
             state_path,
             chat_id,
@@ -1231,7 +1241,7 @@ impl TelegramClient {
             );
         };
 
-        TelegramOutgoingMessage::plain(Self::mutate_chat_state(
+        TelegramOutgoingMessage::with_removed_keyboard(Self::mutate_chat_state(
             chat_states,
             state_path,
             chat_id,
@@ -1268,7 +1278,7 @@ impl TelegramClient {
             }
         };
 
-        TelegramOutgoingMessage::plain(Self::mutate_chat_state(
+        TelegramOutgoingMessage::with_removed_keyboard(Self::mutate_chat_state(
             chat_states,
             state_path,
             chat_id,
@@ -3156,6 +3166,17 @@ mod tests {
     }
 
     #[test]
+    fn removed_keyboard_markup_is_serialized() {
+        let payload = TelegramClient::build_send_message_payload(
+            7,
+            "done",
+            Some(TelegramClient::remove_keyboard_markup()),
+        );
+        let json: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(json["reply_markup"]["remove_keyboard"], true);
+    }
+
+    #[test]
     fn coding_agent_keyboard_uses_new_command_name() {
         let keyboard = TelegramClient::cli_backend_keyboard();
         assert_eq!(keyboard["keyboard"][0][0], "/coding_agent codex");
@@ -3210,6 +3231,33 @@ mod tests {
         assert_eq!(
             reply.reply_markup.as_ref().unwrap()["keyboard"][0][1],
             "/select coding"
+        );
+    }
+
+    #[test]
+    fn select_with_valid_arg_removes_reply_keyboard() {
+        let chat_states = Arc::new(Mutex::new(HashMap::new()));
+        let state_path = std::env::temp_dir().join(format!(
+            "telegram_select_success_{}_{}.json",
+            std::process::id(),
+            TelegramClient::current_timestamp_millis()
+        ));
+        let reply = TelegramClient::handle_command(
+            77,
+            "/select coding",
+            None,
+            &chat_states,
+            &state_path,
+            &HashMap::new(),
+            std::path::Path::new("/tmp"),
+            0,
+        )
+        .unwrap();
+
+        assert!(reply.text.contains("Interaction mode set to `coding`."));
+        assert_eq!(
+            reply.reply_markup.as_ref().unwrap()["remove_keyboard"],
+            true
         );
     }
 
@@ -3293,6 +3341,10 @@ mod tests {
         )
         .unwrap();
         assert!(new_reply.text.contains("CLI backend set to `claude`."));
+        assert_eq!(
+            new_reply.reply_markup.as_ref().unwrap()["remove_keyboard"],
+            true
+        );
 
         let legacy_reply = TelegramClient::handle_command(
             77,
@@ -3306,6 +3358,10 @@ mod tests {
         )
         .unwrap();
         assert!(legacy_reply.text.contains("CLI backend set to `codex`."));
+        assert_eq!(
+            legacy_reply.reply_markup.as_ref().unwrap()["remove_keyboard"],
+            true
+        );
 
         let older_alias_reply = TelegramClient::handle_command(
             77,
@@ -3321,6 +3377,10 @@ mod tests {
         assert!(older_alias_reply
             .text
             .contains("CLI backend set to `claude`."));
+        assert_eq!(
+            older_alias_reply.reply_markup.as_ref().unwrap()["remove_keyboard"],
+            true
+        );
     }
 
     #[test]
