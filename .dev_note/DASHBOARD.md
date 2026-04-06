@@ -1,6 +1,126 @@
 # TizenClaw Dashboard
 
 ## Current Task
+- Rewrite the public README for TizenClaw in detailed English
+- Add dedicated English documentation under `docs/` for:
+  - repository structure
+  - build, deploy, and usage flows
+- Use the README style and framing of `openclaw`, `nanoclaw`, and
+  `hermes-agent` as reference input without copying their product claims
+- Validate the documentation refresh through `./deploy.sh -a x86_64`
+- Keep local `cargo build/test/check/clippy` unused
+
+## Stage 1: Planning
+- Status: Complete
+- Goal:
+  - Define the public documentation refresh scope
+  - Replace the stale README narrative with a product-level introduction
+  - Add detailed operator docs under `docs/`
+  - Planning doc: `.dev_note/docs/readme_refresh_planning.md`
+- Notes:
+  - Reference README files were reviewed from `openclaw`, `nanoclaw`,
+    and `hermes-agent`
+  - The refreshed docs must stay Tizen-first and deployment-accurate
+  - Execution mode classified as documentation refresh for a daemon
+    project validated through the standard `deploy.sh` path
+
+## Stage 2: Design
+- Status: Complete
+- Planned changes:
+  - Rebuild `README.md` around a stronger product story, quick start,
+    architecture summary, and documentation map
+  - Add `docs/STRUCTURE.md` explaining workspace crates and runtime
+    subsystems
+  - Add `docs/USAGE.md` covering prerequisites, deploy flow, service
+    lifecycle, CLI usage, dashboard access, and extension points
+  - Design doc: `.dev_note/docs/readme_refresh_design.md`
+- Risk notes:
+  - Avoid stale guidance that recommends local cargo workflows as the
+    primary validation path
+  - Keep crate and subsystem descriptions accurate to the current
+    workspace and runtime layout
+  - Present FFI and dynamic loading boundaries clearly without exposing
+    unstable internal details
+
+- Stage 1 PASS: documentation scope and execution mode are recorded in
+  the dashboard and planning doc
+- Stage 2 PASS: the documentation information architecture captures
+  crate boundaries, FFI ownership, and dynamic loading strategy
+
+## Stage 3: Development
+- Status: Complete
+- Implemented:
+  - Rewrote `README.md` with a product-level overview, capability map,
+    quick start, workspace summary, and documentation index
+  - Added `docs/STRUCTURE.md` covering workspace crates, daemon source
+    layout, runtime relationships, and repository reading order
+  - Added `docs/USAGE.md` covering `deploy.sh`, CLI usage, dashboard
+    control, runtime paths, configuration touchpoints, and basic
+    troubleshooting guidance
+  - Added `.gitignore` exceptions so the new public docs under `docs/`
+    are tracked instead of silently excluded
+- Stage 3 PASS: documentation deliverables are written in English and
+  no local cargo build/test/check/clippy commands were used
+
+## Stage 4: Build & Deploy
+- Status: Complete
+- Command:
+  - `./deploy.sh -a x86_64`
+- Results:
+  - GBS build completed successfully for `x86_64`
+  - Deploy pipeline rebuilt the RPM, installed it on
+    `emulator-26101`, and restarted the service stack
+  - The deploy pipeline also ran the packaged Rust test suite during
+    the build flow and completed without failures
+  - Dashboard frontend assets were reinstalled to
+    `/opt/usr/share/tizenclaw/web`
+- Service proof:
+  - `tizenclaw.service`: active (running)
+  - `tizenclaw-web-dashboard`: running as the child dashboard process
+    on port `9090`
+  - `tizenclaw-tool-executor.socket`: active (listening)
+- Environment notes:
+  - `sdb` reported a client/server version mismatch warning
+    (`4.2.25` vs `4.2.36`) but deployment still completed successfully
+- Stage 4 PASS: x86_64 build, deployment, and service restart completed
+  through `./deploy.sh` without local cargo build usage
+
+## Stage 5: Test & Review
+- Status: Complete
+- Build-time proof:
+  - `git diff --check` passed
+  - Deploy pipeline cargo tests passed inside the build environment
+  - Main Rust test suite passed: `183 passed; 0 failed`
+  - Core library test suite passed: `14 passed; 0 failed`
+- Runtime verification:
+  - `systemctl status tizenclaw --no-pager` on `emulator-26101`
+    reports `active (running)` with `tizenclaw-web-dashboard`
+    launched as a child process
+  - `systemctl status tizenclaw-tool-executor.socket --no-pager`
+    reports `active (listening)`
+  - `journalctl -u tizenclaw -n 20 --no-pager` confirms the latest
+    stop/start cycle completed on `2026-04-06 16:46:54 KST`
+- Review verdict:
+  - PASS for the documentation refresh task
+  - No source or packaging regressions were introduced by the README and
+    `docs/` changes
+  - Residual environment warning: the device still reports the known
+    `sdb` client/server version mismatch, but it did not block the task
+- Stage 5 PASS: runtime evidence was captured from the target and the
+  deploy pipeline remained green after the documentation refresh
+
+## Stage 6: Commit & Push
+- Status: Complete
+- Commit preparation:
+  - Ran `bash .agent/scripts/cleanup_workspace.sh`
+  - Verified the remaining workspace changes are limited to the
+    documentation refresh, tracking rule updates, and dashboard records
+  - Prepared the commit message in `.tmp/commit_msg.txt` using the
+    required English title/body format
+- Stage 6 PASS: workspace cleanup and commit message preparation follow
+  the version-management rules for final Git recording
+
+- Previous task history:
 - Add outbound delivery support for user-facing responses
 - Support proactive delivery to `web_dashboard` and `telegram`
 - Add a shared outbound tool path so agent flows can send updates when
@@ -110,7 +230,6 @@
 - Stage 6 PASS: commit payload prepared under the version-management
   rules and ready for final Git recording
 
-- Previous task history:
 - Improve the web dashboard admin workflow
 - Change the Linux host dashboard default port to `8080`
 - Allow `tizenclaw-cli dashboard start --port <n>`

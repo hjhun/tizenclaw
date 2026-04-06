@@ -106,6 +106,8 @@ docs/*
 !docs/llm_config_benchmark_design.md
 !docs/llm_cache_telemetry_design.md
 !docs/tizenclaw_cli_pinchbench_guide_ko.md
+!docs/STRUCTURE.md
+!docs/USAGE.md
 !data/docs/
 !data/docs/**
 
