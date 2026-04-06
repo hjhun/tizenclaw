@@ -27,6 +27,9 @@ WEB_DASHBOARD_NAME="tizenclaw-web-dashboard"
 
 HOST_BASE_DIR="${HOME}/.tizenclaw"
 INSTALL_DIR="${HOST_BASE_DIR}/bin"
+LIB_DIR="${HOST_BASE_DIR}/lib"
+INCLUDE_DIR="${HOST_BASE_DIR}/include"
+PKGCONFIG_DIR="${LIB_DIR}/pkgconfig"
 DATA_DIR="${HOST_BASE_DIR}"
 BUILD_ROOT_DIR="${HOST_BASE_DIR}/build"
 CARGO_TARGET_DIR_DEFAULT="${BUILD_ROOT_DIR}/cargo-target"
@@ -309,9 +312,10 @@ do_build() {
     cargo_args+=("--release")
   fi
 
-  # Build daemon + tool-executor + CLI + web-dashboard
+  # Build daemon + tool-executor + CLI + web-dashboard + shared client library
   cargo_args+=(
     "-p" "${PKG_NAME}"
+    "-p" "libtizenclaw"
     "-p" "${TOOL_EXECUTOR_NAME}"
     "-p" "${CLI_NAME}"
     "-p" "${WEB_DASHBOARD_NAME}"
@@ -377,7 +381,8 @@ do_install() {
   migrate_legacy_host_install
 
   log "Preparing host install tree under ${DATA_DIR}"
-  run mkdir -p "${INSTALL_DIR}" "${CONFIG_DIR}" "${TOOLS_DIR}/cli" \
+  run mkdir -p "${INSTALL_DIR}" "${LIB_DIR}" "${INCLUDE_DIR}/tizenclaw" \
+    "${INCLUDE_DIR}/tizenclaw/core" "${PKGCONFIG_DIR}" "${CONFIG_DIR}" "${TOOLS_DIR}/cli" \
     "${WORKSPACE_DIR}/skills" "${TOOLS_DIR}" "${DATA_DIR}/embedded" "${DATA_DIR}/web" \
     "${DATA_DIR}/workflows" "${DATA_DIR}/pipelines" "${DATA_DIR}/codes" \
     "${DATA_DIR}/memory" "${DATA_DIR}/plugins" "${LOG_DIR}"
@@ -406,6 +411,67 @@ do_install() {
     run install -m 755 "${bin_path}" "${INSTALL_DIR}/${bin}"
     ok "Installed: ${bin}"
   done
+
+  local lib_candidates=(
+    "libtizenclaw.so"
+    "libtizenclaw.rlib"
+    "libtizenclaw_core.so"
+    "libtizenclaw_core.rlib"
+  )
+  for lib_name in "${lib_candidates[@]}"; do
+    local lib_path="${build_dir}/${lib_name}"
+    if [ ! -f "${lib_path}" ]; then
+      continue
+    fi
+    log "Installing ${lib_name} → ${LIB_DIR}/${lib_name}"
+    run install -m 755 "${lib_path}" "${LIB_DIR}/${lib_name}"
+    ok "Installed library: ${lib_name}"
+  done
+
+  log "Installing public headers → ${INCLUDE_DIR}/tizenclaw"
+  run install -m 644 "${PROJECT_DIR}/src/libtizenclaw/include/tizenclaw.h" \
+    "${INCLUDE_DIR}/tizenclaw/tizenclaw.h"
+  run install -m 644 "${PROJECT_DIR}/src/libtizenclaw-core/include/tizenclaw_error.h" \
+    "${INCLUDE_DIR}/tizenclaw/tizenclaw_error.h"
+  run install -m 644 "${PROJECT_DIR}/src/libtizenclaw-core/include/tizenclaw_channel.h" \
+    "${INCLUDE_DIR}/tizenclaw/core/tizenclaw_channel.h"
+  run install -m 644 "${PROJECT_DIR}/src/libtizenclaw-core/include/tizenclaw_llm_backend.h" \
+    "${INCLUDE_DIR}/tizenclaw/core/tizenclaw_llm_backend.h"
+  run install -m 644 "${PROJECT_DIR}/src/libtizenclaw-core/include/tizenclaw_curl.h" \
+    "${INCLUDE_DIR}/tizenclaw/core/tizenclaw_curl.h"
+  ok "Headers installed"
+
+  log "Generating host pkg-config metadata"
+  if [ "${DRY_RUN}" = false ]; then
+    cat > "${PKGCONFIG_DIR}/tizenclaw.pc" <<EOF
+prefix=${HOST_BASE_DIR}
+libdir=\${prefix}/lib
+includedir=\${prefix}/include
+
+Name: tizenclaw
+Description: TizenClaw Agent C API library
+Version: 1.0.0
+Libs: -L\${libdir} -Wl,-rpath,\${libdir} -ltizenclaw
+Cflags: -I\${includedir} -I\${includedir}/tizenclaw
+EOF
+
+    cat > "${PKGCONFIG_DIR}/tizenclaw-core.pc" <<EOF
+prefix=${HOST_BASE_DIR}
+libdir=\${prefix}/lib
+includedir=\${prefix}/include
+
+Name: tizenclaw-core
+Description: TizenClaw Plugin SDK
+Version: 1.0.0
+Libs: -L\${libdir} -Wl,-rpath,\${libdir} -ltizenclaw_core
+Cflags: -I\${includedir}/tizenclaw/core -I\${includedir}/tizenclaw
+Requires: tizenclaw, libcurl
+EOF
+  else
+    echo -e "  ${YELLOW}[DRY-RUN]${NC} write ${PKGCONFIG_DIR}/tizenclaw.pc"
+    echo -e "  ${YELLOW}[DRY-RUN]${NC} write ${PKGCONFIG_DIR}/tizenclaw-core.pc"
+  fi
+  ok "pkg-config metadata installed"
 
   # Deploy web dashboard
   if [ -d "${WEB_SRC}" ]; then
@@ -660,6 +726,8 @@ do_run() {
   export TIZENCLAW_DATA_DIR="${DATA_DIR}"
   export TIZENCLAW_TOOLS_DIR="${TOOLS_DIR}"
   export PATH="${INSTALL_DIR}:${PATH}"
+  export LD_LIBRARY_PATH="${LIB_DIR}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+  export PKG_CONFIG_PATH="${PKGCONFIG_DIR}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
 
   # Stop existing instance if running
   stop_daemon

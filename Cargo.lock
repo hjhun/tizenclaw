@@ -1453,9 +1453,7 @@ dependencies = [
 name = "tizenclaw-cli"
 version = "1.0.0"
 dependencies = [
- "libc",
- "libtizenclaw-core",
- "serde",
+ "libtizenclaw",
  "serde_json",
 ]
 

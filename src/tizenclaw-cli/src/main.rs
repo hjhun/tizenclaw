@@ -10,137 +10,29 @@
 //!   tizenclaw-cli dashboard status
 //!   tizenclaw-cli   (interactive mode)
 
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::io::{self, BufRead, Write};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use tizenclaw::api::TizenClaw;
 
 static CLI_SESSION_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
-/// Connect to the daemon's abstract Unix socket.
-fn connect_daemon() -> Result<i32, String> {
-    unsafe {
-        let fd = libc::socket(libc::AF_UNIX, libc::SOCK_STREAM, 0);
-        if fd < 0 {
-            return Err("Failed to create socket".into());
-        }
-
-        let mut addr: libc::sockaddr_un = std::mem::zeroed();
-        addr.sun_family = libc::AF_UNIX as u16;
-        let name = b"tizenclaw.sock";
-        for (i, b) in name.iter().enumerate() {
-            addr.sun_path[1 + i] = *b as libc::c_char;
-        }
-        let addr_len =
-            (std::mem::size_of::<libc::sa_family_t>() + 1 + name.len()) as libc::socklen_t;
-
-        if libc::connect(fd, &addr as *const _ as *const libc::sockaddr, addr_len) < 0 {
-            libc::close(fd);
-            return Err("Failed to connect to daemon. Is tizenclaw running?".into());
-        }
-        Ok(fd)
-    }
+fn create_client() -> Result<TizenClaw, String> {
+    let mut client = TizenClaw::new();
+    client.initialize()?;
+    Ok(client)
 }
 
-/// Send a length-prefixed payload.
-fn send_payload(fd: i32, data: &str) -> bool {
-    let len_bytes = (data.len() as u32).to_be_bytes();
-    unsafe {
-        if libc::write(fd, len_bytes.as_ptr() as *const _, 4) != 4 {
-            return false;
-        }
-        let mut sent: usize = 0;
-        while sent < data.len() {
-            let n = libc::write(fd, data.as_ptr().add(sent) as *const _, data.len() - sent);
-            if n <= 0 {
-                return false;
-            }
-            sent += n as usize;
-        }
-    }
-    true
+fn print_json(value: &Value) {
+    println!(
+        "{}",
+        serde_json::to_string_pretty(value).unwrap_or_default()
+    );
 }
 
-/// Receive a length-prefixed response.
-fn recv_response(fd: i32) -> String {
-    let mut len_buf = [0u8; 4];
-    unsafe {
-        if libc::recv(fd, len_buf.as_mut_ptr() as *mut _, 4, libc::MSG_WAITALL) != 4 {
-            return String::new();
-        }
-    }
-    let resp_len = u32::from_be_bytes(len_buf) as usize;
-    if resp_len == 0 || resp_len > 10 * 1024 * 1024 {
-        return String::new();
-    }
-
-    let mut buf = vec![0u8; resp_len];
-    let mut got: usize = 0;
-    while got < resp_len {
-        let n = unsafe { libc::read(fd, buf.as_mut_ptr().add(got) as *mut _, resp_len - got) };
-        if n <= 0 {
-            break;
-        }
-        got += n as usize;
-    }
-    String::from_utf8_lossy(&buf[..got]).to_string()
-}
-
-/// Send a JSON-RPC 2.0 request and return the response.
-fn send_jsonrpc(method: &str, params: Value) -> Result<(Value, bool), String> {
-    let fd = connect_daemon()?;
-    let req = json!({
-        "jsonrpc": "2.0",
-        "method": method,
-        "id": 1,
-        "params": params
-    });
-
-    if !send_payload(fd, &req.to_string()) {
-        unsafe {
-            libc::close(fd);
-        }
-        return Err("Failed to send request".into());
-    }
-
-    let mut stream_received = false;
-
-    loop {
-        let resp = recv_response(fd);
-        if resp.is_empty() {
-            unsafe {
-                libc::close(fd);
-            }
-            return Err("Empty response from daemon".into());
-        }
-
-        let parsed: Value = match serde_json::from_str(&resp) {
-            Ok(v) => v,
-            Err(e) => {
-                unsafe {
-                    libc::close(fd);
-                }
-                return Err(format!("Invalid JSON: {}", e));
-            }
-        };
-
-        if parsed.get("method").and_then(|v| v.as_str()) == Some("stream_chunk") {
-            stream_received = true;
-            if let Some(chunk) = parsed
-                .get("params")
-                .and_then(|p| p.get("chunk"))
-                .and_then(|c| c.as_str())
-            {
-                print!("{}", chunk);
-                std::io::stdout().flush().ok();
-            }
-            continue;
-        }
-
-        unsafe {
-            libc::close(fd);
-        }
-        return Ok((parsed, stream_received));
-    }
+fn print_error_and_exit(error: &str) -> ! {
+    eprintln!("Error: {}", error);
+    std::process::exit(1);
 }
 
 fn generate_session_id() -> String {
@@ -156,67 +48,40 @@ fn parse_usage_baseline(raw: &str) -> Result<Value, String> {
     serde_json::from_str(raw).map_err(|err| format!("Invalid usage baseline JSON: {}", err))
 }
 
-fn show_usage(session_id: Option<&str>, baseline: Option<&Value>) {
-    let mut params = json!({});
-    if let Some(session_id) = session_id.filter(|value| !value.trim().is_empty()) {
-        params["session_id"] = Value::String(session_id.to_string());
-    }
-    if let Some(baseline) = baseline {
-        params["baseline"] = baseline.clone();
-    }
-
-    match send_jsonrpc("get_usage", params) {
-        Ok((resp, _)) => {
-            if let Some(result) = resp.get("result") {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(result).unwrap_or_default()
-                );
-            } else if let Some(err) = resp.get("error") {
-                eprintln!(
-                    "Error: {}",
-                    err.get("message")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown")
-                );
-            }
-        }
-        Err(e) => eprintln!("Error: {}", e),
+fn show_usage(client: &TizenClaw, session_id: Option<&str>, baseline: Option<&Value>) {
+    match client.get_usage(session_id, baseline) {
+        Ok(result) => print_json(&result),
+        Err(error) => print_error_and_exit(&error),
     }
 }
 
-/// Send a prompt and print the response.
-fn send_prompt(session_id: &str, prompt: &str, stream: bool) -> Result<String, String> {
-    let (resp, stream_received) = send_jsonrpc(
-        "prompt",
-        json!({"session_id": session_id, "text": prompt, "stream": stream}),
-    )?;
-    let mut resolved_session_id = session_id.to_string();
+fn send_prompt(
+    client: &TizenClaw,
+    session_id: &str,
+    prompt: &str,
+    stream: bool,
+) -> Result<String, String> {
+    let response = if stream {
+        client.process_prompt_streaming(session_id, prompt, |chunk| {
+            print!("{}", chunk);
+            io::stdout().flush().ok();
+        })?
+    } else {
+        let text = client.process_prompt(session_id, prompt)?;
+        tizenclaw::api::PromptResponse {
+            session_id: session_id.to_string(),
+            text,
+            stream_received: false,
+        }
+    };
 
-    if let Some(result) = resp.get("result") {
-        if let Some(actual_session_id) = result.get("session_id").and_then(|v| v.as_str()) {
-            resolved_session_id = actual_session_id.to_string();
-        }
-        if let Some(text) = result.get("text").and_then(|v| v.as_str()) {
-            if !stream_received {
-                println!("{}", text);
-            } else {
-                println!();
-            }
-        } else {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&result).unwrap_or_default()
-            );
-        }
-    } else if let Some(err) = resp.get("error") {
-        let msg = err
-            .get("message")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Unknown error");
-        eprintln!("Error: {}", msg);
+    if !response.stream_received {
+        println!("{}", response.text);
+    } else {
+        println!();
     }
-    Ok(resolved_session_id)
+
+    Ok(response.session_id)
 }
 
 fn parse_dashboard_command(input: &str) -> (String, Option<u16>) {
@@ -247,80 +112,33 @@ fn parse_dashboard_command(input: &str) -> (String, Option<u16>) {
 }
 
 /// Handle `tizenclaw-cli dashboard <action> [--port N]`.
-fn cmd_dashboard(command: &str) {
+fn cmd_dashboard(client: &TizenClaw, command: &str) {
     let (action, port) = parse_dashboard_command(command);
 
     match action.as_str() {
-        "start" => {
-            let mut params = json!({"name": "web_dashboard"});
-            if let Some(port) = port {
-                params["settings"] = json!({ "port": port });
-            }
-            match send_jsonrpc("start_channel", params) {
-                Ok((resp, _)) => {
-                    if resp.get("result").is_some() {
-                        if let Some(port) = port {
-                            println!("Dashboard started on port {}.", port);
-                        } else {
-                            println!("Dashboard started.");
-                        }
-                    } else if let Some(err) = resp.get("error") {
-                        eprintln!(
-                            "Error: {}",
-                            err.get("message")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("unknown")
-                        );
-                        std::process::exit(1);
-                    }
-                }
-                Err(e) => {
-                    eprintln!("{}", e);
-                    std::process::exit(1);
+        "start" => match client.start_dashboard(port) {
+            Ok(_) => {
+                if let Some(port) = port {
+                    println!("Dashboard started on port {}.", port);
+                } else {
+                    println!("Dashboard started.");
                 }
             }
-        }
-        "stop" => match send_jsonrpc("stop_channel", json!({"name": "web_dashboard"})) {
-            Ok((resp, _)) => {
-                if resp.get("result").is_some() {
-                    println!("Dashboard stopped.");
-                } else if let Some(err) = resp.get("error") {
-                    eprintln!(
-                        "Error: {}",
-                        err.get("message")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown")
-                    );
-                    std::process::exit(1);
-                }
-            }
-            Err(e) => {
-                eprintln!("{}", e);
-                std::process::exit(1);
-            }
+            Err(error) => print_error_and_exit(&error),
         },
-        "status" => match send_jsonrpc("channel_status", json!({"name": "web_dashboard"})) {
-            Ok((resp, _)) => {
-                if let Some(result) = resp.get("result") {
-                    let running = result
-                        .get("running")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
-                    println!("Dashboard: {}", if running { "running" } else { "stopped" });
-                } else if let Some(err) = resp.get("error") {
-                    eprintln!(
-                        "Error: {}",
-                        err.get("message")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown")
-                    );
-                    std::process::exit(1);
-                }
+        "stop" => match client.stop_dashboard() {
+            Ok(_) => println!("Dashboard stopped."),
+            Err(error) => print_error_and_exit(&error),
+        },
+        "status" => match client.dashboard_status() {
+            Ok(result) => {
+                let running = result
+                    .get("running")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                println!("Dashboard: {}", if running { "running" } else { "stopped" });
             }
-            Err(e) => {
-                eprintln!("{}", e);
-                std::process::exit(1);
-            }
+            Err(error) => print_error_and_exit(&error),
         },
         _ => {
             eprintln!(
@@ -333,7 +151,7 @@ fn cmd_dashboard(command: &str) {
 }
 
 /// Interactive REPL mode.
-fn interactive_mode(explicit_session_id: Option<&str>, stream: bool) {
+fn interactive_mode(client: &TizenClaw, explicit_session_id: Option<&str>, stream: bool) {
     match explicit_session_id {
         Some(session_id) => println!("TizenClaw Interactive CLI (session: {})", session_id),
         None => println!("TizenClaw Interactive CLI (new session per prompt)"),
@@ -367,54 +185,32 @@ fn interactive_mode(explicit_session_id: Option<&str>, stream: bool) {
                 println!("  <text>            Send prompt");
             }
             cmd if cmd.starts_with("/usage") => {
-                show_usage(explicit_session_id, None);
+                show_usage(client, explicit_session_id, None);
             }
             cmd if cmd.starts_with("/dashboard ") => {
                 let action = cmd.trim_start_matches("/dashboard ").trim();
-                cmd_dashboard(action);
+                cmd_dashboard(client, action);
             }
             prompt => {
                 let session_id = explicit_session_id
                     .map(ToOwned::to_owned)
                     .unwrap_or_else(generate_session_id);
-                if let Err(e) = send_prompt(&session_id, prompt, stream) {
-                    eprintln!("Error: {}", e);
+                if let Err(error) = send_prompt(client, &session_id, prompt, stream) {
+                    eprintln!("Error: {}", error);
                 }
             }
         }
     }
 }
 
-fn cmd_config_get(path: Option<&str>) {
-    let params = match path {
-        Some(path) => json!({ "path": path }),
-        None => json!({}),
-    };
-    match send_jsonrpc("get_llm_config", params) {
-        Ok((resp, _)) => {
-            if let Some(result) = resp.get("result") {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(result).unwrap_or_default()
-                );
-            } else if let Some(err) = resp.get("error") {
-                eprintln!(
-                    "Error: {}",
-                    err.get("message")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown")
-                );
-                std::process::exit(1);
-            }
-        }
-        Err(e) => {
-            eprintln!("{}", e);
-            std::process::exit(1);
-        }
+fn cmd_config_get(client: &TizenClaw, path: Option<&str>) {
+    match client.get_llm_config(path) {
+        Ok(result) => print_json(&result),
+        Err(error) => print_error_and_exit(&error),
     }
 }
 
-fn cmd_config_set(path: &str, raw_value: &str, strict_json: bool) {
+fn cmd_config_set(client: &TizenClaw, path: &str, raw_value: &str, strict_json: bool) {
     let value = if strict_json {
         match serde_json::from_str::<Value>(raw_value) {
             Ok(value) => value,
@@ -427,84 +223,30 @@ fn cmd_config_set(path: &str, raw_value: &str, strict_json: bool) {
         Value::String(raw_value.to_string())
     };
 
-    match send_jsonrpc("set_llm_config", json!({ "path": path, "value": value })) {
-        Ok((resp, _)) => {
-            if let Some(result) = resp.get("result") {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(result).unwrap_or_default()
-                );
-            } else if let Some(err) = resp.get("error") {
-                eprintln!(
-                    "Error: {}",
-                    err.get("message")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown")
-                );
-                std::process::exit(1);
-            }
-        }
-        Err(e) => {
-            eprintln!("{}", e);
-            std::process::exit(1);
-        }
+    match client.set_llm_config(path, value) {
+        Ok(result) => print_json(&result),
+        Err(error) => print_error_and_exit(&error),
     }
 }
 
-fn cmd_config_unset(path: &str) {
-    match send_jsonrpc("unset_llm_config", json!({ "path": path })) {
-        Ok((resp, _)) => {
-            if let Some(result) = resp.get("result") {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(result).unwrap_or_default()
-                );
-            } else if let Some(err) = resp.get("error") {
-                eprintln!(
-                    "Error: {}",
-                    err.get("message")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown")
-                );
-                std::process::exit(1);
-            }
-        }
-        Err(e) => {
-            eprintln!("{}", e);
-            std::process::exit(1);
-        }
+fn cmd_config_unset(client: &TizenClaw, path: &str) {
+    match client.unset_llm_config(path) {
+        Ok(result) => print_json(&result),
+        Err(error) => print_error_and_exit(&error),
     }
 }
 
-fn cmd_config_reload() {
-    match send_jsonrpc("reload_llm_backends", json!({})) {
-        Ok((resp, _)) => {
-            if let Some(result) = resp.get("result") {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(result).unwrap_or_default()
-                );
-            } else if let Some(err) = resp.get("error") {
-                eprintln!(
-                    "Error: {}",
-                    err.get("message")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown")
-                );
-                std::process::exit(1);
-            }
-        }
-        Err(e) => {
-            eprintln!("{}", e);
-            std::process::exit(1);
-        }
+fn cmd_config_reload(client: &TizenClaw) {
+    match client.reload_llm_backends() {
+        Ok(result) => print_json(&result),
+        Err(error) => print_error_and_exit(&error),
     }
 }
 
-fn cmd_config(args: &[String]) {
+fn cmd_config(client: &TizenClaw, args: &[String]) {
     match args.first().map(String::as_str) {
         Some("get") => {
-            cmd_config_get(args.get(1).map(String::as_str));
+            cmd_config_get(client, args.get(1).map(String::as_str));
         }
         Some("set") => {
             if args.len() < 3 {
@@ -514,17 +256,17 @@ fn cmd_config(args: &[String]) {
             let strict_json = args[3..]
                 .iter()
                 .any(|arg| arg == "--strict-json" || arg == "--json");
-            cmd_config_set(&args[1], &args[2], strict_json);
+            cmd_config_set(client, &args[1], &args[2], strict_json);
         }
         Some("unset") => {
             if args.len() < 2 {
                 eprintln!("Usage: tizenclaw-cli config unset <path>");
                 std::process::exit(1);
             }
-            cmd_config_unset(&args[1]);
+            cmd_config_unset(client, &args[1]);
         }
         Some("reload") => {
-            cmd_config_reload();
+            cmd_config_reload(client);
         }
         _ => {
             eprintln!("Usage:");
@@ -538,7 +280,7 @@ fn cmd_config(args: &[String]) {
 }
 
 fn print_usage() {
-    eprintln!("tizenclaw-cli — TizenClaw IPC client\n");
+    eprintln!("tizenclaw-cli — TizenClaw CLI\n");
     eprintln!("Usage:");
     eprintln!("  tizenclaw-cli [options] [prompt]\n");
     eprintln!("Options:");
@@ -566,78 +308,24 @@ fn print_usage() {
     eprintln!("If no prompt given, starts interactive mode.");
 }
 
-fn cmd_register(kind: &str, path: &str) {
-    match send_jsonrpc("register_path", json!({"kind": kind, "path": path})) {
-        Ok((resp, _)) => {
-            if let Some(result) = resp.get("result") {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(result).unwrap_or_default()
-                );
-            } else if let Some(err) = resp.get("error") {
-                eprintln!(
-                    "Error: {}",
-                    err.get("message")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown")
-                );
-                std::process::exit(1);
-            }
-        }
-        Err(e) => {
-            eprintln!("{}", e);
-            std::process::exit(1);
-        }
+fn cmd_register(client: &TizenClaw, kind: &str, path: &str) {
+    match client.register_path(kind, path) {
+        Ok(result) => print_json(&result),
+        Err(error) => print_error_and_exit(&error),
     }
 }
 
-fn cmd_unregister(kind: &str, path: &str) {
-    match send_jsonrpc("unregister_path", json!({"kind": kind, "path": path})) {
-        Ok((resp, _)) => {
-            if let Some(result) = resp.get("result") {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(result).unwrap_or_default()
-                );
-            } else if let Some(err) = resp.get("error") {
-                eprintln!(
-                    "Error: {}",
-                    err.get("message")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown")
-                );
-                std::process::exit(1);
-            }
-        }
-        Err(e) => {
-            eprintln!("{}", e);
-            std::process::exit(1);
-        }
+fn cmd_unregister(client: &TizenClaw, kind: &str, path: &str) {
+    match client.unregister_path(kind, path) {
+        Ok(result) => print_json(&result),
+        Err(error) => print_error_and_exit(&error),
     }
 }
 
-fn cmd_list_registrations() {
-    match send_jsonrpc("list_registered_paths", json!({})) {
-        Ok((resp, _)) => {
-            if let Some(result) = resp.get("result") {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(result).unwrap_or_default()
-                );
-            } else if let Some(err) = resp.get("error") {
-                eprintln!(
-                    "Error: {}",
-                    err.get("message")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown")
-                );
-                std::process::exit(1);
-            }
-        }
-        Err(e) => {
-            eprintln!("{}", e);
-            std::process::exit(1);
-        }
+fn cmd_list_registrations(client: &TizenClaw) {
+    match client.list_registered_paths() {
+        Ok(result) => print_json(&result),
+        Err(error) => print_error_and_exit(&error),
     }
 }
 
@@ -678,6 +366,7 @@ fn main() {
                 std::process::exit(1);
             }
             "dashboard" if i + 1 < args.len() => {
+                let client = create_client().unwrap_or_else(|err| print_error_and_exit(&err));
                 i += 1;
                 let mut command = args[i].clone();
                 i += 1;
@@ -686,23 +375,27 @@ fn main() {
                     command.push_str(&args[i]);
                     i += 1;
                 }
-                cmd_dashboard(&command);
+                cmd_dashboard(&client, &command);
                 return;
             }
             "register" if i + 2 < args.len() => {
-                cmd_register(&args[i + 1], &args[i + 2]);
+                let client = create_client().unwrap_or_else(|err| print_error_and_exit(&err));
+                cmd_register(&client, &args[i + 1], &args[i + 2]);
                 return;
             }
             "unregister" if i + 2 < args.len() => {
-                cmd_unregister(&args[i + 1], &args[i + 2]);
+                let client = create_client().unwrap_or_else(|err| print_error_and_exit(&err));
+                cmd_unregister(&client, &args[i + 1], &args[i + 2]);
                 return;
             }
             "list" if i + 1 < args.len() && args[i + 1] == "registrations" => {
-                cmd_list_registrations();
+                let client = create_client().unwrap_or_else(|err| print_error_and_exit(&err));
+                cmd_list_registrations(&client);
                 return;
             }
             "config" => {
-                cmd_config(&args[i + 1..]);
+                let client = create_client().unwrap_or_else(|err| print_error_and_exit(&err));
+                cmd_config(&client, &args[i + 1..]);
                 return;
             }
             "dashboard" => {
@@ -727,8 +420,10 @@ fn main() {
         i += 1;
     }
 
+    let client = create_client().unwrap_or_else(|err| print_error_and_exit(&err));
+
     if usage_requested {
-        show_usage(session_id.as_deref(), usage_baseline.as_ref());
+        show_usage(&client, session_id.as_deref(), usage_baseline.as_ref());
         return;
     }
 
@@ -736,8 +431,8 @@ fn main() {
 
     if !prompt.is_empty() {
         let resolved_session_id = session_id.unwrap_or_else(generate_session_id);
-        if let Err(e) = send_prompt(&resolved_session_id, &prompt, stream) {
-            eprintln!("{}", e);
+        if let Err(error) = send_prompt(&client, &resolved_session_id, &prompt, stream) {
+            eprintln!("{}", error);
             std::process::exit(1);
         }
     } else {
@@ -746,6 +441,6 @@ fn main() {
         } else {
             None
         };
-        interactive_mode(explicit, stream);
+        interactive_mode(&client, explicit, stream);
     }
 }

@@ -1,12 +1,19 @@
 //! Safe Rust API for TizenClaw.
 //!
-//! This module provides a safe, ergonomic Rust interface
-//! wrapping the agent's core functionality. Used internally
-//! by the C FFI layer and available to Rust consumers via `rlib`.
+//! This module provides a safe, ergonomic Rust interface wrapping the daemon's
+//! IPC surface. It is used internally by the C FFI layer and is also available
+//! to Rust consumers via `rlib`.
 
+use std::io::{Read, Write};
+use std::os::unix::io::FromRawFd;
+use std::os::unix::net::UnixStream;
 use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
+
+const MAX_IPC_MESSAGE_SIZE: usize = 10 * 1024 * 1024;
+const IPC_TIMEOUT_SECS: u64 = 60;
+const ABSTRACT_SOCKET_NAME: &[u8] = b"tizenclaw.sock";
 
 /// Process uptime and system metrics.
 fn parse_proc_status() -> (i64, i64, i32) {
@@ -77,6 +84,22 @@ fn get_process_uptime() -> f64 {
     }
 }
 
+fn bool_to_json(flag: bool) -> Value {
+    Value::Bool(flag)
+}
+
+struct RpcEnvelope {
+    payload: Value,
+    stream_received: bool,
+}
+
+/// Result of prompt execution through the daemon IPC layer.
+pub struct PromptResponse {
+    pub session_id: String,
+    pub text: String,
+    pub stream_received: bool,
+}
+
 /// TizenClaw agent — safe Rust API.
 ///
 /// # Example (Rust)
@@ -92,8 +115,6 @@ pub struct TizenClaw {
     initialized: bool,
     /// Tool names loaded during initialization.
     tools: Vec<String>,
-    /// IPC socket path for the running daemon.
-    ipc_path: String,
 }
 
 impl TizenClaw {
@@ -102,17 +123,15 @@ impl TizenClaw {
         TizenClaw {
             initialized: false,
             tools: Vec::new(),
-            ipc_path: "/run/tizenclaw.sock".into(),
         }
     }
 
-    /// Initialize the agent: discovers tools, connects to daemon IPC.
+    /// Initialize the agent: discovers tools and prepares daemon IPC usage.
     pub fn initialize(&mut self) -> Result<(), String> {
         if self.initialized {
             return Err("Already initialized".into());
         }
 
-        // Discover tools from the tools directory
         self.tools = Self::discover_tools();
         self.initialized = true;
 
@@ -125,34 +144,31 @@ impl TizenClaw {
         self.initialized
     }
 
-    /// Process a prompt via IPC to the running daemon.
+    /// Process a prompt synchronously.
     pub fn process_prompt(&self, session_id: &str, prompt: &str) -> Result<String, String> {
-        if !self.initialized {
-            return Err("Not initialized".into());
-        }
+        Ok(self
+            .process_prompt_inner(session_id, prompt, false, None)?
+            .text)
+    }
 
-        let request = json!({
-            "method": "process",
-            "session_id": session_id,
-            "prompt": prompt
-        });
-
-        self.ipc_call(&request)
+    /// Process a prompt while streaming partial chunks through the callback.
+    pub fn process_prompt_streaming<F>(
+        &self,
+        session_id: &str,
+        prompt: &str,
+        on_chunk: F,
+    ) -> Result<PromptResponse, String>
+    where
+        F: FnMut(&str),
+    {
+        let mut on_chunk = on_chunk;
+        self.process_prompt_inner(session_id, prompt, true, Some(&mut on_chunk))
     }
 
     /// Clear a session's conversation history.
-    pub fn clear_session(&self, session_id: &str) -> Result<(), String> {
-        if !self.initialized {
-            return Err("Not initialized".into());
-        }
-
-        let request = json!({
-            "method": "clear_session",
-            "session_id": session_id
-        });
-
-        self.ipc_call(&request)?;
-        Ok(())
+    pub fn clear_session(&self, _session_id: &str) -> Result<(), String> {
+        self.ensure_initialized()?;
+        Err("clear_session is not exposed by the daemon IPC server".into())
     }
 
     /// Get agent status as JSON string.
@@ -191,45 +207,130 @@ impl TizenClaw {
 
     /// Get available tools as JSON string.
     pub fn get_tools(&self) -> Result<String, String> {
-        if !self.initialized {
-            return Err("Not initialized".into());
-        }
+        self.ensure_initialized()?;
 
-        let tools_json: Vec<Value> = self
-            .tools
-            .iter()
-            .map(|name| json!({"name": name}))
-            .collect();
-        Ok(Value::Array(tools_json).to_string())
+        let result = self.call_method("bridge_list_tools", json!({ "allowed_tools": [] }))?;
+        Ok(result
+            .get("tools")
+            .cloned()
+            .unwrap_or_else(|| Value::Array(vec![]))
+            .to_string())
     }
 
     /// Execute a tool by name with JSON arguments.
     pub fn execute_tool(&self, tool_name: &str, args_json: &str) -> Result<String, String> {
-        if !self.initialized {
-            return Err("Not initialized".into());
-        }
+        self.ensure_initialized()?;
 
         let args: Value =
             serde_json::from_str(args_json).map_err(|e| format!("Invalid JSON args: {}", e))?;
 
-        let request = json!({
-            "method": "execute_tool",
-            "tool_name": tool_name,
-            "args": args
-        });
+        let result = self.call_method(
+            "bridge_tool",
+            json!({
+                "tool_name": tool_name,
+                "args": args,
+                "allowed_tools": []
+            }),
+        )?;
 
-        self.ipc_call(&request)
+        Ok(result.to_string())
     }
 
     /// Reload skill manifests.
     pub fn reload_skills(&mut self) -> Result<(), String> {
-        if !self.initialized {
-            return Err("Not initialized".into());
-        }
+        self.ensure_initialized()?;
 
         self.tools = Self::discover_tools();
         log::info!("Skills reloaded ({} tools)", self.tools.len());
         Ok(())
+    }
+
+    /// Retrieve usage information as structured JSON.
+    pub fn get_usage(
+        &self,
+        session_id: Option<&str>,
+        baseline: Option<&Value>,
+    ) -> Result<Value, String> {
+        self.ensure_initialized()?;
+
+        let mut params = json!({});
+        if let Some(session_id) = session_id.filter(|value| !value.trim().is_empty()) {
+            params["session_id"] = Value::String(session_id.to_string());
+        }
+        if let Some(baseline) = baseline {
+            params["baseline"] = baseline.clone();
+        }
+
+        self.call_method("get_usage", params)
+    }
+
+    /// Start the dashboard channel.
+    pub fn start_dashboard(&self, port: Option<u16>) -> Result<Value, String> {
+        self.ensure_initialized()?;
+
+        let mut params = json!({ "name": "web_dashboard" });
+        if let Some(port) = port {
+            params["settings"] = json!({ "port": port });
+        }
+        self.call_method("start_channel", params)
+    }
+
+    /// Stop the dashboard channel.
+    pub fn stop_dashboard(&self) -> Result<Value, String> {
+        self.ensure_initialized()?;
+        self.call_method("stop_channel", json!({ "name": "web_dashboard" }))
+    }
+
+    /// Query the dashboard channel status.
+    pub fn dashboard_status(&self) -> Result<Value, String> {
+        self.ensure_initialized()?;
+        self.call_method("channel_status", json!({ "name": "web_dashboard" }))
+    }
+
+    /// Read LLM config content or a nested path.
+    pub fn get_llm_config(&self, path: Option<&str>) -> Result<Value, String> {
+        self.ensure_initialized()?;
+        let params = match path {
+            Some(path) => json!({ "path": path }),
+            None => json!({}),
+        };
+        self.call_method("get_llm_config", params)
+    }
+
+    /// Set a nested LLM config value.
+    pub fn set_llm_config(&self, path: &str, value: Value) -> Result<Value, String> {
+        self.ensure_initialized()?;
+        self.call_method("set_llm_config", json!({ "path": path, "value": value }))
+    }
+
+    /// Remove a nested LLM config value.
+    pub fn unset_llm_config(&self, path: &str) -> Result<Value, String> {
+        self.ensure_initialized()?;
+        self.call_method("unset_llm_config", json!({ "path": path }))
+    }
+
+    /// Reload backend configuration.
+    pub fn reload_llm_backends(&self) -> Result<Value, String> {
+        self.ensure_initialized()?;
+        self.call_method("reload_llm_backends", json!({}))
+    }
+
+    /// Register an external tool or skill path.
+    pub fn register_path(&self, kind: &str, path: &str) -> Result<Value, String> {
+        self.ensure_initialized()?;
+        self.call_method("register_path", json!({ "kind": kind, "path": path }))
+    }
+
+    /// Unregister an external tool or skill path.
+    pub fn unregister_path(&self, kind: &str, path: &str) -> Result<Value, String> {
+        self.ensure_initialized()?;
+        self.call_method("unregister_path", json!({ "kind": kind, "path": path }))
+    }
+
+    /// List registered tool and skill paths.
+    pub fn list_registered_paths(&self) -> Result<Value, String> {
+        self.ensure_initialized()?;
+        self.call_method("list_registered_paths", json!({}))
     }
 
     /// Shutdown and release resources.
@@ -241,46 +342,177 @@ impl TizenClaw {
         }
     }
 
-    // ── Internal helpers ───────────────────────
+    fn process_prompt_inner(
+        &self,
+        session_id: &str,
+        prompt: &str,
+        stream: bool,
+        on_chunk: Option<&mut dyn FnMut(&str)>,
+    ) -> Result<PromptResponse, String> {
+        self.ensure_initialized()?;
 
-    /// Send an IPC request to the TizenClaw daemon.
-    fn ipc_call(&self, request: &Value) -> Result<String, String> {
-        use std::io::{Read, Write};
-        use std::os::unix::net::UnixStream;
+        let envelope = self.send_jsonrpc(
+            "prompt",
+            json!({
+                "session_id": session_id,
+                "text": prompt,
+                "stream": bool_to_json(stream)
+            }),
+            on_chunk,
+        )?;
+        let result = Self::extract_result(&envelope.payload)?;
 
-        let mut stream = UnixStream::connect(&self.ipc_path)
-            .map_err(|e| format!("IPC connect failed: {}", e))?;
+        let resolved_session_id = result
+            .get("session_id")
+            .and_then(Value::as_str)
+            .unwrap_or(session_id)
+            .to_string();
+        let text = result
+            .get("text")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| result.to_string());
 
+        Ok(PromptResponse {
+            session_id: resolved_session_id,
+            text,
+            stream_received: envelope.stream_received,
+        })
+    }
+
+    fn ensure_initialized(&self) -> Result<(), String> {
+        if self.initialized {
+            Ok(())
+        } else {
+            Err("Not initialized".into())
+        }
+    }
+
+    fn call_method(&self, method: &str, params: Value) -> Result<Value, String> {
+        let envelope = self.send_jsonrpc(method, params, None)?;
+        Self::extract_result(&envelope.payload)
+    }
+
+    fn extract_result(payload: &Value) -> Result<Value, String> {
+        if let Some(error) = payload.get("error") {
+            let message = error
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("Unknown error");
+            return Err(message.to_string());
+        }
+
+        payload
+            .get("result")
+            .cloned()
+            .ok_or_else(|| "Missing JSON-RPC result".to_string())
+    }
+
+    fn connect_daemon() -> Result<UnixStream, String> {
+        let fd = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_STREAM, 0) };
+        if fd < 0 {
+            return Err("Failed to create daemon IPC socket".into());
+        }
+
+        let connect_result = unsafe {
+            let mut addr: libc::sockaddr_un = std::mem::zeroed();
+            addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
+            for (index, byte) in ABSTRACT_SOCKET_NAME.iter().enumerate() {
+                addr.sun_path[index + 1] = *byte as libc::c_char;
+            }
+            let addr_len = (std::mem::size_of::<libc::sa_family_t>()
+                + 1
+                + ABSTRACT_SOCKET_NAME.len()) as libc::socklen_t;
+            libc::connect(fd, &addr as *const _ as *const libc::sockaddr, addr_len)
+        };
+
+        if connect_result < 0 {
+            let error = std::io::Error::last_os_error();
+            unsafe {
+                libc::close(fd);
+            }
+            return Err(format!(
+                "Failed to connect to daemon. Is tizenclaw running? {}",
+                error
+            ));
+        }
+
+        let stream = unsafe { UnixStream::from_raw_fd(fd) };
         stream
-            .set_read_timeout(Some(std::time::Duration::from_secs(60)))
-            .map_err(|e| format!("Set timeout failed: {}", e))?;
+            .set_read_timeout(Some(std::time::Duration::from_secs(IPC_TIMEOUT_SECS)))
+            .map_err(|e| format!("Failed to set IPC read timeout: {}", e))?;
+        Ok(stream)
+    }
 
-        let payload = request.to_string();
-        let len_bytes = (payload.len() as u32).to_le_bytes();
+    fn send_jsonrpc(
+        &self,
+        method: &str,
+        params: Value,
+        mut on_chunk: Option<&mut dyn FnMut(&str)>,
+    ) -> Result<RpcEnvelope, String> {
+        let mut stream = Self::connect_daemon()?;
+        let request = json!({
+            "jsonrpc": "2.0",
+            "method": method,
+            "id": 1,
+            "params": params,
+        });
+
+        Self::write_frame(&mut stream, &request.to_string())?;
+
+        let mut stream_received = false;
+        loop {
+            let raw = Self::read_frame(&mut stream)?;
+            let payload: Value =
+                serde_json::from_str(&raw).map_err(|e| format!("Invalid JSON response: {}", e))?;
+
+            if payload.get("method").and_then(Value::as_str) == Some("stream_chunk") {
+                stream_received = true;
+                if let Some(chunk) = payload
+                    .get("params")
+                    .and_then(|params| params.get("chunk"))
+                    .and_then(Value::as_str)
+                {
+                    if let Some(callback) = on_chunk.as_mut() {
+                        (*callback)(chunk);
+                    }
+                }
+                continue;
+            }
+
+            return Ok(RpcEnvelope {
+                payload,
+                stream_received,
+            });
+        }
+    }
+
+    fn write_frame(stream: &mut UnixStream, payload: &str) -> Result<(), String> {
+        let len_bytes = (payload.len() as u32).to_be_bytes();
         stream
             .write_all(&len_bytes)
             .map_err(|e| format!("IPC write len failed: {}", e))?;
         stream
             .write_all(payload.as_bytes())
             .map_err(|e| format!("IPC write body failed: {}", e))?;
+        Ok(())
+    }
 
-        // Read response length
+    fn read_frame(stream: &mut UnixStream) -> Result<String, String> {
         let mut len_buf = [0u8; 4];
         stream
             .read_exact(&mut len_buf)
             .map_err(|e| format!("IPC read len failed: {}", e))?;
-        let resp_len = u32::from_le_bytes(len_buf) as usize;
-
-        if resp_len > 10 * 1024 * 1024 {
-            return Err("Response too large".into());
+        let payload_len = u32::from_be_bytes(len_buf) as usize;
+        if payload_len == 0 || payload_len > MAX_IPC_MESSAGE_SIZE {
+            return Err(format!("Invalid IPC payload size: {}", payload_len));
         }
 
-        let mut resp_buf = vec![0u8; resp_len];
+        let mut buffer = vec![0u8; payload_len];
         stream
-            .read_exact(&mut resp_buf)
+            .read_exact(&mut buffer)
             .map_err(|e| format!("IPC read body failed: {}", e))?;
-
-        String::from_utf8(resp_buf).map_err(|e| format!("Invalid UTF-8 response: {}", e))
+        String::from_utf8(buffer).map_err(|e| format!("Invalid UTF-8 response: {}", e))
     }
 
     /// Discover tool names from both the shared tool tree and the
@@ -312,7 +544,7 @@ impl TizenClaw {
 
 fn collect_tools_from_tree(root: &str, tools: &mut Vec<String>) {
     let root_entries = match std::fs::read_dir(root) {
-        Ok(e) => e,
+        Ok(entries) => entries,
         Err(_) => return,
     };
 
@@ -330,7 +562,7 @@ fn collect_tools_from_tree(root: &str, tools: &mut Vec<String>) {
                 }
                 let name = path
                     .file_name()
-                    .and_then(|n| n.to_str())
+                    .and_then(|name| name.to_str())
                     .unwrap_or("")
                     .to_string();
                 if !name.starts_with('.') && !name.is_empty() {
