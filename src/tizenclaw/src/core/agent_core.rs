@@ -1283,6 +1283,500 @@ impl AgentCore {
             .unwrap_or_default()
     }
 
+    fn bridge_builtin_tools() -> Vec<backend::LlmToolDecl> {
+        let mut builtins = Vec::new();
+        crate::core::tool_declaration_builder::ToolDeclarationBuilder::append_builtin_tools(
+            &mut builtins,
+            "workflow memory search",
+        );
+        builtins.push(backend::LlmToolDecl {
+            name: "execute_cli".into(),
+            description: "Execute a registered CLI tool by name for Bridge API compatibility."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "tool_name": {
+                        "type": "string",
+                        "description": "Registered CLI tool name such as tizen-device-info-cli"
+                    },
+                    "arguments": {
+                        "description": "Optional CLI arguments as a string or object",
+                        "oneOf": [
+                            {"type": "string"},
+                            {"type": "object"}
+                        ]
+                    }
+                },
+                "required": ["tool_name"]
+            }),
+        });
+        let supported = [
+            "execute_cli",
+            "generate_web_app",
+            "remember",
+            "recall",
+            "forget",
+            "web_search",
+            "validate_web_search",
+        ];
+        builtins.retain(|tool| supported.iter().any(|name| tool.name == *name));
+        builtins
+    }
+
+    pub async fn get_bridge_tool_declarations(
+        &self,
+        allowed_tools: &[String],
+    ) -> Vec<backend::LlmToolDecl> {
+        let mut tools = self.tool_dispatcher.read().await.get_tool_declarations();
+        tools.extend(Self::bridge_builtin_tools());
+        if let Ok(bridge) = self.action_bridge.lock() {
+            tools.extend(bridge.get_action_declarations());
+        }
+
+        let mut seen = std::collections::HashSet::new();
+        tools.retain(|tool| seen.insert(tool.name.clone()));
+
+        if !allowed_tools.is_empty() {
+            tools.retain(|tool| allowed_tools.iter().any(|name| name == &tool.name));
+        }
+
+        tools.sort_by(|left, right| left.name.cmp(&right.name));
+        tools
+    }
+
+    async fn generate_web_app(&self, args: &Value) -> Value {
+        let app_id = args
+            .get("app_id")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .trim();
+        let title = args
+            .get("title")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .trim();
+        let html = args
+            .get("html")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let css = args
+            .get("css")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let js = args
+            .get("js")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+
+        if app_id.is_empty() || app_id.len() > 64 {
+            return json!({"error": "app_id is required (max 64 chars)"});
+        }
+        if !app_id
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_')
+        {
+            return json!({"error": "app_id must be lowercase alphanumeric + underscore only"});
+        }
+        if title.is_empty() {
+            return json!({"error": "title is required"});
+        }
+        if html.is_empty() {
+            return json!({"error": "html is required"});
+        }
+
+        let apps_dir = self.platform.paths.web_root.join("apps");
+        let app_dir = apps_dir.join(app_id);
+        if let Err(err) = std::fs::create_dir_all(&app_dir) {
+            return json!({"error": format!("Failed to create app directory: {}", err)});
+        }
+
+        if let Err(err) = std::fs::write(app_dir.join("index.html"), html) {
+            return json!({"error": format!("Failed to write index.html: {}", err)});
+        }
+        if !css.is_empty() {
+            if let Err(err) = std::fs::write(app_dir.join("style.css"), css) {
+                return json!({"error": format!("Failed to write style.css: {}", err)});
+            }
+        }
+        if !js.is_empty() {
+            if let Err(err) = std::fs::write(app_dir.join("app.js"), js) {
+                return json!({"error": format!("Failed to write app.js: {}", err)});
+            }
+        }
+
+        let mut downloaded_assets = Vec::new();
+        if let Some(assets) = args.get("assets").and_then(|value| value.as_array()) {
+            let client = reqwest::Client::new();
+            for asset in assets {
+                let url = asset
+                    .get("url")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("")
+                    .trim();
+                let filename = asset
+                    .get("filename")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("")
+                    .trim();
+
+                if url.is_empty() || filename.is_empty() {
+                    continue;
+                }
+                if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+                    downloaded_assets.push(json!({
+                        "filename": filename,
+                        "status": "failed",
+                        "error": "Unsafe filename",
+                    }));
+                    continue;
+                }
+
+                let target_path = app_dir.join(filename);
+                let asset_result = async {
+                    let response = client
+                        .get(url)
+                        .send()
+                        .await
+                        .map_err(|err| err.to_string())?;
+                    if !response.status().is_success() {
+                        return Err(format!("HTTP {}", response.status()));
+                    }
+                    if let Some(len) = response.content_length() {
+                        if len > 10 * 1024 * 1024 {
+                            return Err("Asset exceeds 10MB limit".to_string());
+                        }
+                    }
+                    let bytes = response.bytes().await.map_err(|err| err.to_string())?;
+                    if bytes.len() > 10 * 1024 * 1024 {
+                        return Err("Asset exceeds 10MB limit".to_string());
+                    }
+                    std::fs::write(&target_path, &bytes).map_err(|err| err.to_string())?;
+                    Ok::<(), String>(())
+                }
+                .await;
+
+                match asset_result {
+                    Ok(()) => downloaded_assets.push(json!({
+                        "filename": filename,
+                        "status": "ok",
+                    })),
+                    Err(err) => {
+                        let _ = std::fs::remove_file(&target_path);
+                        downloaded_assets.push(json!({
+                            "filename": filename,
+                            "status": "failed",
+                            "error": err,
+                        }));
+                    }
+                }
+            }
+        }
+
+        let mut manifest = json!({
+            "app_id": app_id,
+            "title": title,
+            "created_at": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            "has_css": !css.is_empty(),
+            "has_js": !js.is_empty(),
+            "assets": downloaded_assets,
+        });
+
+        if let Some(allowed_tools) = args.get("allowed_tools").and_then(|value| value.as_array()) {
+            manifest["allowed_tools"] = Value::Array(
+                allowed_tools
+                    .iter()
+                    .filter_map(|value| value.as_str().map(|item| Value::String(item.to_string())))
+                    .collect(),
+            );
+        }
+
+        let manifest_bytes = match serde_json::to_vec_pretty(&manifest) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                return json!({"error": format!("Failed to encode manifest.json: {}", err)});
+            }
+        };
+        if let Err(err) = std::fs::write(app_dir.join("manifest.json"), manifest_bytes) {
+            return json!({"error": format!("Failed to write manifest.json: {}", err)});
+        }
+
+        let launched = self.launch_generated_web_app(app_id);
+        json!({
+            "status": "ok",
+            "app_id": app_id,
+            "title": title,
+            "url": format!("/apps/{}/", app_id),
+            "webview_launched": launched,
+            "message": format!(
+                "Web app created. Access at http://localhost:9090/apps/{}/",
+                app_id
+            ),
+            "assets": manifest["assets"].clone(),
+        })
+    }
+
+    fn launch_generated_web_app(&self, app_id: &str) -> bool {
+        if !std::path::Path::new("/etc/tizen-release").exists() {
+            return false;
+        }
+
+        let app_url = format!("http://localhost:9090/apps/{}/", app_id);
+        if self.launch_app_with_request(
+            "QvaPeQ7RDA.tizenclawbridge",
+            &app_url,
+            &[("url", app_url.as_str())],
+        ) {
+            return true;
+        }
+        if self
+            .platform
+            .app_control
+            .launch_app("QvaPeQ7RDA.tizenclawbridge")
+            .is_ok()
+        {
+            return true;
+        }
+        if self.launch_app_with_request(
+            "org.tizen.tizenclaw-webview",
+            &app_url,
+            &[("__APP_SVC_URI__", app_url.as_str())],
+        ) {
+            return true;
+        }
+        self.platform
+            .app_control
+            .launch_app("org.tizen.tizenclaw-webview")
+            .is_ok()
+    }
+
+    fn launch_app_with_request(&self, app_id: &str, uri: &str, extras: &[(&str, &str)]) -> bool {
+        unsafe {
+            use libtizenclaw_core::tizen_sys::app_control::*;
+
+            let mut handle: app_control_h = std::ptr::null_mut();
+            if app_control_create(&mut handle) != APP_CONTROL_ERROR_NONE {
+                return false;
+            }
+
+            let operation =
+                match std::ffi::CString::new("http://tizen.org/appcontrol/operation/default") {
+                    Ok(value) => value,
+                    Err(_) => {
+                        let _ = app_control_destroy(handle);
+                        return false;
+                    }
+                };
+            let app_id = match std::ffi::CString::new(app_id) {
+                Ok(value) => value,
+                Err(_) => {
+                    let _ = app_control_destroy(handle);
+                    return false;
+                }
+            };
+            let uri = match std::ffi::CString::new(uri) {
+                Ok(value) => value,
+                Err(_) => {
+                    let _ = app_control_destroy(handle);
+                    return false;
+                }
+            };
+
+            let _ = app_control_set_operation(handle, operation.as_ptr());
+            let _ = app_control_set_app_id(handle, app_id.as_ptr());
+            let _ = app_control_set_uri(handle, uri.as_ptr());
+
+            for (key, value) in extras {
+                let Ok(key) = std::ffi::CString::new(*key) else {
+                    continue;
+                };
+                let Ok(value) = std::ffi::CString::new(*value) else {
+                    continue;
+                };
+                let _ = app_control_add_extra_data(handle, key.as_ptr(), value.as_ptr());
+            }
+
+            let result = app_control_send_launch_request(handle, None, std::ptr::null_mut());
+            let _ = app_control_destroy(handle);
+            result == APP_CONTROL_ERROR_NONE
+        }
+    }
+
+    pub async fn execute_bridge_tool(
+        &self,
+        tool_name: &str,
+        args: &Value,
+        allowed_tools: &[String],
+    ) -> Value {
+        if !allowed_tools.is_empty() && !allowed_tools.iter().any(|name| name == tool_name) {
+            return json!({"error": format!("Tool not allowed for this app: {}", tool_name)});
+        }
+
+        if let Ok(policy) = self.tool_policy.lock() {
+            if matches!(
+                policy.get_risk_level(tool_name),
+                crate::core::tool_policy::RiskLevel::High
+            ) {
+                return json!({"error": format!("High-risk tool not available via bridge: {}", tool_name)});
+            }
+        }
+
+        match tool_name {
+            "execute_cli" => {
+                let requested_tool = args
+                    .get("tool_name")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("")
+                    .trim();
+                if requested_tool.is_empty() {
+                    return json!({"error": "Missing CLI tool name"});
+                }
+
+                let cli_args = match args.get("arguments") {
+                    Some(Value::String(raw)) => json!({ "args": raw }),
+                    Some(Value::Object(map)) => Value::Object(map.clone()),
+                    Some(other) if !other.is_null() => json!({ "args": other.to_string() }),
+                    _ => json!({}),
+                };
+
+                let candidates = [
+                    requested_tool.to_string(),
+                    requested_tool.replace("tizenclaw-", ""),
+                ];
+
+                for candidate in candidates {
+                    let result = self
+                        .tool_dispatcher
+                        .read()
+                        .await
+                        .execute(&candidate, &cli_args, None)
+                        .await;
+                    let is_unknown = result
+                        .get("error")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.contains("Unknown tool:"))
+                        .unwrap_or(false);
+                    if !is_unknown {
+                        return result;
+                    }
+                }
+
+                json!({"error": format!("Unknown CLI tool: {}", requested_tool)})
+            }
+            "generate_web_app" => self.generate_web_app(args).await,
+            "validate_web_search" => {
+                let engine = args.get("engine").and_then(|value| value.as_str());
+                feature_tools::validate_web_search(&self.platform.paths.config_dir, engine)
+            }
+            "web_search" => {
+                let query = args
+                    .get("query")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("");
+                let engine = args.get("engine").and_then(|value| value.as_str());
+                let limit = args
+                    .get("limit")
+                    .and_then(|value| value.as_u64())
+                    .map(|value| value as usize)
+                    .unwrap_or(5);
+                feature_tools::web_search(
+                    query,
+                    engine,
+                    limit,
+                    &self.platform.paths.data_dir,
+                    &self.platform.paths.config_dir,
+                )
+                .await
+            }
+            "remember" => {
+                let key = args
+                    .get("key")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("");
+                let value = args
+                    .get("value")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("");
+                let category = args
+                    .get("category")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("general");
+                match self.memory_store.lock() {
+                    Ok(store_guard) => {
+                        if let Some(store) = store_guard.as_ref() {
+                            if key.is_empty() || value.is_empty() {
+                                json!({"error": "Missing key or value"})
+                            } else {
+                                store.set(key, value, category);
+                                json!({"status": "success", "message": format!("Remembered '{}'", key)})
+                            }
+                        } else {
+                            json!({"error": "MemoryStore not initialized"})
+                        }
+                    }
+                    Err(_) => json!({"error": "MemoryStore lock failed"}),
+                }
+            }
+            "recall" => {
+                let key = args
+                    .get("key")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("");
+                match self.memory_store.lock() {
+                    Ok(store_guard) => {
+                        if let Some(store) = store_guard.as_ref() {
+                            if let Some(value) = store.get(key) {
+                                json!({"status": "success", "value": value})
+                            } else {
+                                json!({"error": "Key not found"})
+                            }
+                        } else {
+                            json!({"error": "MemoryStore not initialized"})
+                        }
+                    }
+                    Err(_) => json!({"error": "MemoryStore lock failed"}),
+                }
+            }
+            "forget" => {
+                let key = args
+                    .get("key")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("");
+                match self.memory_store.lock() {
+                    Ok(store_guard) => {
+                        if let Some(store) = store_guard.as_ref() {
+                            if store.delete(key) {
+                                json!({"status": "success", "message": format!("Forgot '{}'", key)})
+                            } else {
+                                json!({"error": "Key not found"})
+                            }
+                        } else {
+                            json!({"error": "MemoryStore not initialized"})
+                        }
+                    }
+                    Err(_) => json!({"error": "MemoryStore lock failed"}),
+                }
+            }
+            _ if tool_name.starts_with("action_") => match self.action_bridge.lock() {
+                Ok(bridge) => {
+                    let action_id = tool_name.strip_prefix("action_").unwrap_or(tool_name);
+                    bridge.execute_action(action_id, args)
+                }
+                Err(_) => json!({"error": "Failed to lock action bridge"}),
+            },
+            _ => {
+                self.tool_dispatcher
+                    .read()
+                    .await
+                    .execute(tool_name, args, Some(&self.platform.paths.data_dir))
+                    .await
+            }
+        }
+    }
+
     fn build_session_profile(
         &self,
         role_name: Option<&str>,
@@ -3062,6 +3556,8 @@ impl AgentCore {
                                 &session_workdir,
                                 &llm_doc,
                             ).await
+                        } else if tc_name == "generate_web_app" {
+                            self.generate_web_app(&tc_args).await
                         } else if tc_name == "extract_document_text" {
                             let path = tc_args.get("path").and_then(|v| v.as_str()).unwrap_or("");
                             let output_path = tc_args.get("output_path").and_then(|v| v.as_str());

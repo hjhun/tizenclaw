@@ -437,6 +437,52 @@ impl ToolDeclarationBuilder {
                 "required": []
             }),
         });
+        tools.push(LlmToolDecl {
+            name: "generate_web_app".into(),
+            description: "Generate or update a web application served by the web dashboard at /apps/<app_id>/. Supports HTML/CSS/JS files, optional asset downloads, bridge tool allowlists, and best-effort bridge or webview launch on Tizen.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "app_id": {
+                        "type": "string",
+                        "description": "Unique identifier for the app (lowercase alphanumeric + underscore, max 64 chars)"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Display title for the web app"
+                    },
+                    "html": {
+                        "type": "string",
+                        "description": "Complete HTML content. Can be a single-file app or reference style.css and app.js"
+                    },
+                    "css": {
+                        "type": "string",
+                        "description": "Optional separate CSS stylesheet saved as style.css"
+                    },
+                    "js": {
+                        "type": "string",
+                        "description": "Optional separate JavaScript code saved as app.js"
+                    },
+                    "assets": {
+                        "type": "array",
+                        "description": "Optional external assets to download. Each item is {url, filename}. Max 10MB per file.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "url": {"type": "string", "description": "Asset download URL"},
+                                "filename": {"type": "string", "description": "Local filename such as logo.png"}
+                            }
+                        }
+                    },
+                    "allowed_tools": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional tool names this app may call via the bridge API"
+                    }
+                },
+                "required": ["app_id", "title", "html"]
+            }),
+        });
     }
 
     fn push_agent_tools(tools: &mut Vec<LlmToolDecl>) {

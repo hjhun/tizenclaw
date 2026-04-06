@@ -17,7 +17,7 @@ use axum::{
     Router,
 };
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -96,6 +96,7 @@ const ALLOWED_CONFIGS: &[&str] = &[
     "tunnel_config.json",
     "web_search_config.json",
 ];
+const BRIDGE_RATE_LIMIT_PER_SECOND: usize = 10;
 
 // ─── AppState ─────────────────────────────────────────────────
 
@@ -106,6 +107,7 @@ struct AppState {
     data_dir: PathBuf,
     admin_pw_hash: Arc<Mutex<String>>,
     active_tokens: Arc<Mutex<HashSet<String>>>,
+    bridge_rate: Arc<Mutex<HashMap<String, Vec<u64>>>>,
 }
 
 #[derive(Clone)]
@@ -233,6 +235,7 @@ async fn main() {
         data_dir,
         admin_pw_hash: Arc::new(Mutex::new(pw_hash)),
         active_tokens: Arc::new(Mutex::new(HashSet::new())),
+        bridge_rate: Arc::new(Mutex::new(HashMap::new())),
     };
 
     let bind_addr = if localhost_only {
@@ -252,7 +255,10 @@ async fn main() {
         .route("/api/metrics", get(api_metrics))
         .route("/api/chat", post(api_chat))
         .route("/api/sessions/dates", get(api_session_dates))
-        .route("/api/sessions", get(api_sessions).delete(api_sessions_delete))
+        .route(
+            "/api/sessions",
+            get(api_sessions).delete(api_sessions_delete),
+        )
         .route(
             "/api/sessions/:id",
             get(api_session_detail).delete(api_session_delete),
@@ -273,7 +279,14 @@ async fn main() {
             get(api_config_get).post(api_config_set),
         )
         .route("/api/apps", get(api_apps_list))
-        .route("/api/apps/:id", get(api_app_detail))
+        .route("/api/apps/:id", get(api_app_detail).delete(api_app_delete))
+        .route("/api/bridge/tool", post(api_bridge_tool))
+        .route("/api/bridge/tools", get(api_bridge_tools))
+        .route(
+            "/api/bridge/data",
+            get(api_bridge_data_get).post(api_bridge_data_post),
+        )
+        .route("/api/bridge/chat", post(api_bridge_chat))
         .route("/api/a2a", post(api_a2a));
 
     let app = Router::new()
@@ -529,7 +542,11 @@ fn collect_session_summaries(data_dir: &std::path::Path) -> Vec<SessionSummary> 
 }
 
 fn first_line_preview(text: &str, max_chars: usize) -> String {
-    let line = text.lines().find(|line| !line.trim().is_empty()).unwrap_or("").trim();
+    let line = text
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or("")
+        .trim();
     truncate_chars(line, max_chars)
 }
 
@@ -969,6 +986,87 @@ async fn api_config_set(
     }
 }
 
+fn is_safe_app_id(app_id: &str) -> bool {
+    !app_id.is_empty() && !app_id.contains("..") && !app_id.contains('/')
+}
+
+fn is_safe_app_key(key: &str) -> bool {
+    !key.is_empty() && !key.contains("..") && !key.contains('/')
+}
+
+fn load_app_allowed_tools(web_root: &std::path::Path, app_id: &str) -> Vec<String> {
+    if !is_safe_app_id(app_id) {
+        return Vec::new();
+    }
+    let manifest_path = web_root.join("apps").join(app_id).join("manifest.json");
+    let Ok(content) = std::fs::read_to_string(manifest_path) else {
+        return Vec::new();
+    };
+    let Ok(manifest) = serde_json::from_str::<Value>(&content) else {
+        return Vec::new();
+    };
+    manifest
+        .get("allowed_tools")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(|item| item.to_string()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn check_bridge_rate_limit(state: &AppState, app_id: &str) -> bool {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let cutoff = now_ms.saturating_sub(1000);
+    let Ok(mut guard) = state.bridge_rate.lock() else {
+        return false;
+    };
+    let timestamps = guard.entry(app_id.to_string()).or_default();
+    timestamps.retain(|ts| *ts >= cutoff);
+    if timestamps.len() >= BRIDGE_RATE_LIMIT_PER_SECOND {
+        return false;
+    }
+    timestamps.push(now_ms);
+    true
+}
+
+#[derive(serde::Deserialize)]
+struct BridgeToolsQuery {
+    app_id: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct BridgeDataQuery {
+    app_id: String,
+    key: String,
+}
+
+#[derive(serde::Deserialize)]
+struct BridgeToolPayload {
+    app_id: String,
+    tool_name: String,
+    #[serde(default)]
+    arguments: Value,
+}
+
+#[derive(serde::Deserialize)]
+struct BridgeDataPayload {
+    app_id: String,
+    key: String,
+    value: Value,
+}
+
+#[derive(serde::Deserialize)]
+struct BridgeChatPayload {
+    app_id: Option<String>,
+    prompt: String,
+}
+
 async fn api_apps_list(State(state): State<AppState>) -> Json<Value> {
     let apps_dir = state.web_root.join("apps");
     let mut apps = vec![];
@@ -990,6 +1088,9 @@ async fn api_apps_list(State(state): State<AppState>) -> Json<Value> {
             if let Ok(ms) = std::fs::read_to_string(path.join("manifest.json")) {
                 if let Ok(manifest) = serde_json::from_str::<Value>(&ms) {
                     app["title"] = manifest.get("title").cloned().unwrap_or(json!(dirname));
+                    app["created_at"] = manifest.get("created_at").cloned().unwrap_or(Value::Null);
+                    app["has_css"] = manifest.get("has_css").cloned().unwrap_or(json!(false));
+                    app["has_js"] = manifest.get("has_js").cloned().unwrap_or(json!(false));
                 }
             }
             apps.push(app);
@@ -1002,7 +1103,7 @@ async fn api_app_detail(
     State(state): State<AppState>,
     AxumPath(app_id): AxumPath<String>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    if app_id.contains("..") || app_id.contains('/') {
+    if !is_safe_app_id(&app_id) {
         return Err(json_error(StatusCode::BAD_REQUEST, "Invalid app_id"));
     }
     let path = state.web_root.join("apps").join(&app_id);
@@ -1031,6 +1132,166 @@ async fn api_app_detail(
     }
     app["files"] = Value::Array(files);
     Ok(Json(app))
+}
+
+async fn api_app_delete(
+    State(state): State<AppState>,
+    AxumPath(app_id): AxumPath<String>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    if !is_safe_app_id(&app_id) {
+        return Err(json_error(StatusCode::BAD_REQUEST, "Invalid app_id"));
+    }
+    let path = state.web_root.join("apps").join(&app_id);
+    if !path.is_dir() {
+        return Err(json_error(StatusCode::NOT_FOUND, "App not found"));
+    }
+    std::fs::remove_dir_all(&path)
+        .map_err(|err| json_error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    Ok(Json(json!({"status": "deleted", "app_id": app_id})))
+}
+
+async fn api_bridge_tool(
+    State(state): State<AppState>,
+    Json(payload): Json<BridgeToolPayload>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    if !is_safe_app_id(&payload.app_id) || payload.tool_name.trim().is_empty() {
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            "app_id and tool_name are required",
+        ));
+    }
+    if !check_bridge_rate_limit(&state, &payload.app_id) {
+        return Err(json_error(StatusCode::FORBIDDEN, "Rate limit exceeded"));
+    }
+    let allowed_tools = load_app_allowed_tools(&state.web_root, &payload.app_id);
+    if allowed_tools.is_empty() {
+        return Err(json_error(
+            StatusCode::FORBIDDEN,
+            "No bridge tools are allowed for this app",
+        ));
+    }
+    let tool_name = payload.tool_name.clone();
+    let arguments = payload.arguments.clone();
+    let result =
+        tokio::task::spawn_blocking(move || ipc_bridge_tool(&tool_name, arguments, allowed_tools))
+            .await
+            .map_err(|err| json_error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    match result {
+        Ok(value) => {
+            if value.get("error").is_some() {
+                Ok(Json(
+                    json!({"status": "error", "error": value["error"].clone()}),
+                ))
+            } else {
+                Ok(Json(json!({"status": "ok", "result": value})))
+            }
+        }
+        Err(err) => Err(json_error(
+            StatusCode::BAD_GATEWAY,
+            &format!("Agent error: {}", err),
+        )),
+    }
+}
+
+async fn api_bridge_tools(
+    State(state): State<AppState>,
+    Query(query): Query<BridgeToolsQuery>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let allowed_tools = query
+        .app_id
+        .as_deref()
+        .map(|app_id| load_app_allowed_tools(&state.web_root, app_id))
+        .unwrap_or_default();
+    if query.app_id.is_some() && allowed_tools.is_empty() {
+        return Ok(Json(json!({"tools": [], "count": 0})));
+    }
+    let result = tokio::task::spawn_blocking(move || ipc_bridge_list_tools(allowed_tools))
+        .await
+        .map_err(|err| json_error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    match result {
+        Ok(value) => {
+            let count = value
+                .get("tools")
+                .and_then(|tools| tools.as_array())
+                .map(|tools| tools.len())
+                .unwrap_or(0);
+            Ok(Json(json!({
+                "tools": value.get("tools").cloned().unwrap_or_else(|| Value::Array(vec![])),
+                "count": count
+            })))
+        }
+        Err(err) => Err(json_error(
+            StatusCode::BAD_GATEWAY,
+            &format!("Agent error: {}", err),
+        )),
+    }
+}
+
+async fn api_bridge_data_get(
+    State(state): State<AppState>,
+    Query(query): Query<BridgeDataQuery>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    if !is_safe_app_id(&query.app_id) || !is_safe_app_key(&query.key) {
+        return Err(json_error(StatusCode::BAD_REQUEST, "Invalid parameters"));
+    }
+    let path = state
+        .web_root
+        .join("apps")
+        .join(&query.app_id)
+        .join("data")
+        .join(format!("{}.json", query.key));
+    if !path.exists() {
+        return Ok(Json(json!({"key": query.key, "value": Value::Null})));
+    }
+    let content = std::fs::read_to_string(path)
+        .map_err(|err| json_error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    let value = serde_json::from_str::<Value>(&content).unwrap_or(Value::String(content));
+    Ok(Json(json!({"key": query.key, "value": value})))
+}
+
+async fn api_bridge_data_post(
+    State(state): State<AppState>,
+    Json(payload): Json<BridgeDataPayload>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    if !is_safe_app_id(&payload.app_id) || !is_safe_app_key(&payload.key) {
+        return Err(json_error(StatusCode::BAD_REQUEST, "Invalid parameters"));
+    }
+    let data_dir = state
+        .web_root
+        .join("apps")
+        .join(&payload.app_id)
+        .join("data");
+    std::fs::create_dir_all(&data_dir)
+        .map_err(|err| json_error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    let encoded = serde_json::to_vec(&payload.value)
+        .map_err(|err| json_error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    std::fs::write(data_dir.join(format!("{}.json", payload.key)), encoded)
+        .map_err(|err| json_error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    Ok(Json(json!({"status": "ok", "key": payload.key})))
+}
+
+async fn api_bridge_chat(
+    Json(payload): Json<BridgeChatPayload>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let prompt = payload.prompt.trim().to_string();
+    if prompt.is_empty() {
+        return Err(json_error(StatusCode::BAD_REQUEST, "prompt required"));
+    }
+    let app_id = payload
+        .app_id
+        .filter(|value| is_safe_app_id(value))
+        .unwrap_or_else(|| "anonymous".to_string());
+    let session_id = format!("webapp_{}", app_id);
+    let response = tokio::task::spawn_blocking(move || ipc_send_prompt(&session_id, &prompt))
+        .await
+        .map_err(|err| json_error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    match response {
+        Ok(text) => Ok(Json(json!({"status": "ok", "response": text}))),
+        Err(err) => Err(json_error(
+            StatusCode::BAD_GATEWAY,
+            &format!("Agent error: {}", err),
+        )),
+    }
 }
 
 async fn api_agent_card() -> Json<Value> {
@@ -1071,7 +1332,10 @@ fn ipc_get_usage() -> Option<Value> {
             (std::mem::size_of::<libc::sa_family_t>() + 1 + name.len()) as libc::socklen_t;
 
         // Short timeout: don't block the metrics endpoint.
-        let timeout = libc::timeval { tv_sec: 1, tv_usec: 0 };
+        let timeout = libc::timeval {
+            tv_sec: 1,
+            tv_usec: 0,
+        };
         libc::setsockopt(
             fd,
             libc::SOL_SOCKET,
@@ -1215,6 +1479,111 @@ fn ipc_send_prompt(session_id: &str, prompt: &str) -> Result<String, String> {
         }
         Err("Unexpected response format".into())
     }
+}
+
+fn ipc_call(method: &str, params: Value) -> Result<Value, String> {
+    unsafe {
+        let fd = libc::socket(libc::AF_UNIX, libc::SOCK_STREAM, 0);
+        if fd < 0 {
+            return Err("Failed to create IPC socket".into());
+        }
+
+        let mut addr: libc::sockaddr_un = std::mem::zeroed();
+        addr.sun_family = libc::AF_UNIX as u16;
+        let name = b"tizenclaw.sock";
+        for (i, b) in name.iter().enumerate() {
+            addr.sun_path[1 + i] = *b as libc::c_char;
+        }
+        let addr_len =
+            (std::mem::size_of::<libc::sa_family_t>() + 1 + name.len()) as libc::socklen_t;
+
+        if libc::connect(fd, &addr as *const _ as *const libc::sockaddr, addr_len) < 0 {
+            libc::close(fd);
+            return Err("Failed to connect to agent".into());
+        }
+
+        let req = json!({
+            "jsonrpc": "2.0",
+            "method": method,
+            "id": 1,
+            "params": params
+        });
+        let data = req.to_string();
+        let len_bytes = (data.len() as u32).to_be_bytes();
+        if libc::write(fd, len_bytes.as_ptr() as *const _, 4) != 4 {
+            libc::close(fd);
+            return Err("Failed to send request length".into());
+        }
+
+        let mut sent = 0usize;
+        while sent < data.len() {
+            let n = libc::write(fd, data.as_ptr().add(sent) as *const _, data.len() - sent);
+            if n <= 0 {
+                libc::close(fd);
+                return Err("Failed to send request".into());
+            }
+            sent += n as usize;
+        }
+
+        let mut len_buf = [0u8; 4];
+        if libc::recv(fd, len_buf.as_mut_ptr() as *mut _, 4, libc::MSG_WAITALL) != 4 {
+            libc::close(fd);
+            return Err("Failed to receive response".into());
+        }
+        let resp_len = u32::from_be_bytes(len_buf) as usize;
+        if resp_len == 0 || resp_len > 10 * 1024 * 1024 {
+            libc::close(fd);
+            return Err("Invalid response length".into());
+        }
+        let mut buf = vec![0u8; resp_len];
+        let mut got = 0usize;
+        while got < resp_len {
+            let n = libc::recv(fd, buf.as_mut_ptr().add(got) as *mut _, resp_len - got, 0);
+            if n <= 0 {
+                break;
+            }
+            got += n as usize;
+        }
+        libc::close(fd);
+
+        let raw = String::from_utf8_lossy(&buf[..got]).to_string();
+        let resp: Value = serde_json::from_str(&raw).map_err(|e| format!("Invalid JSON: {}", e))?;
+        if let Some(result) = resp.get("result") {
+            return Ok(result.clone());
+        }
+        if let Some(err) = resp.get("error") {
+            return Err(err
+                .get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown error")
+                .to_string());
+        }
+        Err("Unexpected response format".into())
+    }
+}
+
+fn ipc_bridge_tool(
+    tool_name: &str,
+    args: Value,
+    allowed_tools: Vec<String>,
+) -> Result<Value, String> {
+    ipc_call(
+        "bridge_tool",
+        json!({
+            "tool_name": tool_name,
+            "args": args,
+            "allowed_tools": allowed_tools,
+        }),
+    )
+}
+
+fn ipc_bridge_list_tools(allowed_tools: Vec<String>) -> Result<Value, String> {
+    ipc_call(
+        "bridge_list_tools",
+        json!({
+            "allowed_tools": allowed_tools,
+        }),
+    )
 }
 
 // ─── Utility ──────────────────────────────────────────────────
@@ -1437,7 +1806,11 @@ fn parse_task_markdown_summary(file: &str, content: &str) -> (String, String) {
         if in_frontmatter {
             if let Some((key, value)) = trimmed.split_once(':') {
                 if key.trim() == "name" {
-                    title = value.trim().trim_matches('"').trim_matches('\'').to_string();
+                    title = value
+                        .trim()
+                        .trim_matches('"')
+                        .trim_matches('\'')
+                        .to_string();
                 }
             }
             continue;

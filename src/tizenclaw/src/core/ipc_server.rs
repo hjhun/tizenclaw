@@ -306,6 +306,49 @@ impl IpcServer {
                 }
             }
 
+            "bridge_tool" => {
+                let tool_name = params["tool_name"].as_str().unwrap_or("").trim();
+                if tool_name.is_empty() {
+                    return json!({"jsonrpc":"2.0","error":{"code":-32602,"message":"Missing 'tool_name'"},"id":req_id})
+                        .to_string();
+                }
+                let args = params.get("args").cloned().unwrap_or_else(|| json!({}));
+                let allowed_tools = params
+                    .get("allowed_tools")
+                    .and_then(|value| value.as_array())
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|item| item.as_str().map(|item| item.to_string()))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                let fut = agent.execute_bridge_tool(tool_name, &args, &allowed_tools);
+                tokio::task::block_in_place(|| rt_handle.block_on(fut))
+            }
+
+            "bridge_list_tools" => {
+                let allowed_tools = params
+                    .get("allowed_tools")
+                    .and_then(|value| value.as_array())
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|item| item.as_str().map(|item| item.to_string()))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                let fut = agent.get_bridge_tool_declarations(&allowed_tools);
+                let tools = tokio::task::block_in_place(|| rt_handle.block_on(fut));
+                json!({
+                    "tools": tools.into_iter().map(|tool| json!({
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.parameters,
+                    })).collect::<Vec<_>>()
+                })
+            }
+
             "get_llm_config" => {
                 let path = params["path"].as_str();
                 match agent.get_llm_config(path) {
