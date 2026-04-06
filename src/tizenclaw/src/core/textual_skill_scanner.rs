@@ -299,17 +299,19 @@ mod tests {
         fs::create_dir_all(&skill_dir).unwrap();
         let skill_file = skill_dir.join("SKILL.md");
 
-        let content = "---\ndescription: Battery helper\ntags:\n  - battery\n  - power\ntriggers:\n  - check battery\nexamples:\n  - battery status 알려줘\n---\n# Skill\nInspect device power state";
+        let content = "---\ndescription: Battery helper\ntags:\n  - battery\n  - power\ntriggers:\n  - check battery\nexamples:\n  - check battery status\n---\n# Skill\nInspect device power state";
         fs::write(&skill_file, content).unwrap();
 
         let skills = scan_textual_skills(&dir.path().to_string_lossy());
         assert_eq!(skills.len(), 1);
         assert_eq!(skills[0].tags, vec!["battery", "power"]);
         assert_eq!(skills[0].triggers, vec!["check battery"]);
-        assert_eq!(skills[0].examples, vec!["battery status 알려줘"]);
-        assert!(skills[0]
-            .searchable_text
-            .contains("inspect device power state"));
+        assert_eq!(skills[0].examples, vec!["check battery status"]);
+        assert!(
+            skills[0]
+                .searchable_text
+                .contains("inspect device power state")
+        );
     }
 
     #[test]

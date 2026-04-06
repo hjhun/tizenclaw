@@ -14,7 +14,7 @@
 //! share `Arc<AgentCore>` without an outer Mutex.
 
 use futures_util::future::join_all;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -26,7 +26,7 @@ static THINK_RE: LazyLock<regex::Regex> =
 use crate::core::agent_loop_state::{AgentLoopState, AgentPhase, EvalVerdict};
 use crate::core::agent_role::{AgentRole, AgentRoleRegistry};
 use crate::core::context_engine::{
-    ContextEngine, SizedContextEngine, DEFAULT_TOOL_RESULT_BUDGET_CHARS,
+    ContextEngine, DEFAULT_TOOL_RESULT_BUDGET_CHARS, SizedContextEngine,
 };
 use crate::core::fallback_parser::FallbackParser;
 use crate::core::feature_tools;
@@ -1598,9 +1598,9 @@ impl AgentCore {
             }
         }
 
-        let success = results.iter().any(|item| {
-            item.get("status").and_then(|value| value.as_str()) == Some("sent")
-        });
+        let success = results
+            .iter()
+            .any(|item| item.get("status").and_then(|value| value.as_str()) == Some("sent"));
 
         json!({
             "status": if success { "success" } else { "error" },
@@ -1693,7 +1693,10 @@ impl AgentCore {
             .to_string();
             match client.post(&url, &payload).await {
                 Ok(resp) if resp.status_code < 400 => delivered.push(chat_id),
-                Ok(resp) => errors.push(format!("chat {} returned HTTP {}", chat_id, resp.status_code)),
+                Ok(resp) => errors.push(format!(
+                    "chat {} returned HTTP {}",
+                    chat_id, resp.status_code
+                )),
                 Err(err) => errors.push(format!("chat {} failed: {}", chat_id, err)),
             }
         }
@@ -2754,31 +2757,14 @@ impl AgentCore {
         let p = prompt.to_lowercase();
         let mut keywords = Vec::new();
 
-        if p.contains("파일")
-            || p.contains("읽어")
-            || p.contains("열어")
-            || p.contains("내용")
-            || p.contains("file")
-            || p.contains("read")
-            || p.contains("cat")
-        {
+        if p.contains("file") || p.contains("read") || p.contains("cat") {
             keywords.extend(["fs", "file", "read", "write", "content"].map(String::from));
         }
-        if p.contains("설치")
-            || p.contains("앱")
-            || p.contains("패키지")
-            || p.contains("실행")
-            || p.contains("install")
-            || p.contains("package")
-            || p.contains("app")
-            || p.contains("run")
+        if p.contains("install") || p.contains("package") || p.contains("app") || p.contains("run")
         {
             keywords.extend(["pkg", "app", "install", "exec", "shell", "run"].map(String::from));
         }
-        if p.contains("기억")
-            || p.contains("저장")
-            || p.contains("알려")
-            || p.contains("remember")
+        if p.contains("remember")
             || p.contains("memory")
             || p.contains("search")
             || p.contains("knowledge")
@@ -2788,20 +2774,11 @@ impl AgentCore {
                 ["mem", "remember", "forget", "recall", "search", "know"].map(String::from),
             );
         }
-        if p.contains("일정")
-            || p.contains("알람")
-            || p.contains("시간")
-            || p.contains("task")
-            || p.contains("schedule")
-            || p.contains("alarm")
-            || p.contains("time")
+        if p.contains("task") || p.contains("schedule") || p.contains("alarm") || p.contains("time")
         {
             keywords.extend(["task", "sched", "alarm", "time", "date"].map(String::from));
         }
-        if p.contains("시스템")
-            || p.contains("정보")
-            || p.contains("상태")
-            || p.contains("system")
+        if p.contains("system")
             || p.contains("info")
             || p.contains("status")
             || p.contains("battery")
@@ -2814,14 +2791,7 @@ impl AgentCore {
                 .map(String::from),
             );
         }
-        if p.contains("툴")
-            || p.contains("도구")
-            || p.contains("명령어")
-            || p.contains("help")
-            || p.contains("list")
-            || p.contains("도와")
-            || p.contains("뭐")
-        {
+        if p.contains("help") || p.contains("list") {
             keywords.extend(["ALL"].map(String::from));
         }
 
@@ -2835,23 +2805,8 @@ impl AgentCore {
 
         let p = prompt.to_lowercase();
         let asks_to_create = [
-            "create",
-            "make",
-            "build",
-            "generate",
-            "write",
-            "update",
-            "improve",
-            "enhance",
-            "modify",
-            "edit",
-            "만들",
-            "생성",
-            "작성",
-            "구현",
-            "수정",
-            "개선",
-            "업데이트",
+            "create", "make", "build", "generate", "write", "update", "improve", "enhance",
+            "modify", "edit",
         ]
         .iter()
         .any(|needle| p.contains(needle));
@@ -2872,22 +2827,9 @@ impl AgentCore {
             "visualization",
             "chart",
             "monitor",
-            "웹앱",
-            "웹 앱",
-            "브라우저",
-            "웹뷰",
-            "대시보드",
-            "화면",
-            "패널",
-            "시각화",
-            "차트",
-            "모니터",
-            "테트리스",
             "tetris",
             "game",
-            "게임",
             "page",
-            "페이지",
         ]
         .iter()
         .any(|needle| p.contains(needle));
@@ -3067,8 +3009,7 @@ impl AgentCore {
         crate::core::tool_declaration_builder::ToolDeclarationBuilder::append_builtin_tools(
             &mut tools, prompt,
         );
-        if is_dashboard_web_app_request
-            && !tools.iter().any(|tool| tool.name == "generate_web_app")
+        if is_dashboard_web_app_request && !tools.iter().any(|tool| tool.name == "generate_web_app")
         {
             tools.push(crate::llm::backend::LlmToolDecl {
                 name: "generate_web_app".into(),
@@ -3137,7 +3078,7 @@ impl AgentCore {
             // Add search_tools meta-tool for Two-Tier router
             tools.push(crate::llm::backend::LlmToolDecl {
                 name: "search_tools".into(),
-                description: "전체 또는 특정 카테고리의 사용가능한 도구들을 검색합니다. 필요한 기능이 컨텍스트에 없을 때 필수적으로 사용하세요.".into(),
+                description: "Search available tools across all categories or within a specific category. Use this whenever the required capability is not already present in context.".into(),
                 parameters: serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -3246,7 +3187,10 @@ impl AgentCore {
             if let Some(store) = ms.as_ref() {
                 let mem_str = store.load_relevant_for_prompt(prompt, 5, 0.1);
                 if !mem_str.is_empty() {
-                    let memory_context = format!("## Context from Long-Term Memory\n<long_term_memory>\n{}\n</long_term_memory>", mem_str);
+                    let memory_context = format!(
+                        "## Context from Long-Term Memory\n<long_term_memory>\n{}\n</long_term_memory>",
+                        mem_str
+                    );
                     loop_state
                         .record_prefetch_memory(Some(utf8_safe_preview(&mem_str, 240).to_string()));
                     inject_context_message(&mut messages, memory_context.clone());
@@ -3277,9 +3221,13 @@ impl AgentCore {
                 if let Some(be) = be_guard.as_ref() {
                     let cached = be.prepare_cache(&system_prompt).await;
                     if cached {
-                        log::info!("[PromptCache] Cache ready — subsequent rounds will reference cached content");
+                        log::info!(
+                            "[PromptCache] Cache ready — subsequent rounds will reference cached content"
+                        );
                     } else {
-                        log::debug!("[PromptCache] Backend does not support caching or prompt too short; using inline system_instruction");
+                        log::debug!(
+                            "[PromptCache] Backend does not support caching or prompt too short; using inline system_instruction"
+                        );
                     }
                 }
                 drop(be_guard);
@@ -4309,7 +4257,10 @@ impl AgentCore {
                         }
                         return "Error: Agent is stuck in an execution loop.".into();
                     } else {
-                        log::warn!("[AgentLoop] Idle loop detected (round {}) - Triggering Dynamic Fallback RePlanning.", loop_state.round);
+                        log::warn!(
+                            "[AgentLoop] Idle loop detected (round {}) - Triggering Dynamic Fallback RePlanning.",
+                            loop_state.round
+                        );
                         loop_state.set_follow_up(true);
                         messages.push(LlmMessage {
                             role: "user".into(),
@@ -4765,14 +4716,13 @@ impl<'a> SessionStoreRef<'a> {
 #[cfg(test)]
 mod tests {
     use super::{
-        append_dashboard_outbound_message, build_progress_marker,
-        build_role_supervisor_hint, build_skill_prefetch_message,
+        AgentRole, MAX_OUTBOUND_DASHBOARD_MESSAGES, append_dashboard_outbound_message,
+        build_progress_marker, build_role_supervisor_hint, build_skill_prefetch_message,
         dashboard_outbound_queue_path, extract_final_text, generated_code_runtime_spec,
-        generated_code_script_path, manage_generated_code_tool,
-        normalize_conversation_log_text, parse_shell_like_args, prompt_mode_from_doc,
-        reasoning_policy_from_doc, role_relevance_score, sanitize_generated_code_name,
-        select_delegate_roles, select_relevant_skills, utf8_safe_preview, AgentRole,
-        MAX_OUTBOUND_DASHBOARD_MESSAGES,
+        generated_code_script_path, manage_generated_code_tool, normalize_conversation_log_text,
+        parse_shell_like_args, prompt_mode_from_doc, reasoning_policy_from_doc,
+        role_relevance_score, sanitize_generated_code_name, select_delegate_roles,
+        select_relevant_skills, utf8_safe_preview,
     };
     use crate::core::prompt_builder::{PromptMode, ReasoningPolicy};
     use crate::core::textual_skill_scanner::TextualSkill;
@@ -4787,7 +4737,7 @@ mod tests {
 
     #[test]
     fn utf8_safe_preview_truncates_on_char_boundary() {
-        let text = "배터리 상태를 확인해서 한 줄로 알려줘. 필요하면 도구를 사용해.";
+        let text = "Check battery status and summarize it in one line.";
         let preview = utf8_safe_preview(text, 12);
 
         assert_eq!(preview.chars().count(), 12);
@@ -4796,18 +4746,18 @@ mod tests {
 
     #[test]
     fn utf8_safe_preview_handles_zero_length() {
-        assert_eq!(utf8_safe_preview("안녕하세요", 0), "");
+        assert_eq!(utf8_safe_preview("hello", 0), "");
     }
 
     #[test]
     fn normalize_conversation_log_text_preserves_meaningful_line_breaks() {
-        let text = "  첫 줄입니다.\n\n   결과만   알려줘.  ";
+        let text = "  First line.\n\n   Return only the result.  ";
 
         let normalized = normalize_conversation_log_text(text);
 
         assert_eq!(
             normalized.as_deref(),
-            Some("첫 줄입니다.\n\n결과만   알려줘.")
+            Some("First line.\n\nReturn only the result.")
         );
     }
 
@@ -4825,11 +4775,11 @@ mod tests {
                 description: "Inspect battery and power telemetry".into(),
                 tags: vec!["battery".into(), "power".into()],
                 triggers: vec!["check battery".into()],
-                examples: vec!["battery status 알려줘".into()],
+                examples: vec!["check battery status".into()],
                 openclaw_requires: Vec::new(),
                 openclaw_install: Vec::new(),
                 searchable_text:
-                    "battery_monitor inspect battery and power telemetry battery power check battery battery status 알려줘 inspect device power".into(),
+                    "battery_monitor inspect battery and power telemetry battery power check battery check battery status inspect device power".into(),
             },
             TextualSkill {
                 file_name: "calendar_sync".into(),
@@ -4844,7 +4794,7 @@ mod tests {
             },
         ];
 
-        let selected = select_relevant_skills("배터리 상태를 확인해줘 battery", &skills, 2);
+        let selected = select_relevant_skills("please check battery status battery", &skills, 2);
 
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].file_name, "battery_monitor");

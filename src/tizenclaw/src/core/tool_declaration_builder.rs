@@ -1,7 +1,7 @@
 //! Tool declaration builder — generates LLM function declarations for all tools.
 
 use crate::llm::backend::LlmToolDecl;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashSet;
 
 pub struct ToolDeclarationBuilder;
@@ -16,36 +16,21 @@ impl ToolDeclarationBuilder {
         Self::push_meta_tools(tools);
 
         // 2. Task Intent
-        if p.contains("task")
-            || p.contains("schedule")
-            || p.contains("기억")
-            || p.contains("태스크")
-            || p.contains("작업")
-            || p.contains("예약")
-            || p.contains("내일")
-        {
+        if p.contains("task") || p.contains("schedule") {
             Self::push_task_tools(tools);
         }
 
         // 3. Memory & Knowledge Intent
         if p.contains("remember")
             || p.contains("memory")
-            || p.contains("기억")
             || p.contains("search")
             || p.contains("knowledge")
-            || p.contains("지식")
-            || p.contains("문서")
         {
             Self::push_memory_tools(tools);
         }
 
         // 4. Session Intent
-        if p.contains("session")
-            || p.contains("세션")
-            || p.contains("switch")
-            || p.contains("user")
-            || p.contains("유저")
-        {
+        if p.contains("session") || p.contains("switch") || p.contains("user") {
             Self::push_session_tools(tools);
         }
 
@@ -53,25 +38,14 @@ impl ToolDeclarationBuilder {
         if p.contains("workflow")
             || p.contains("pipeline")
             || p.contains("skill")
-            || p.contains("스킬")
-            || p.contains("파이프라인")
-            || p.contains("워크플로우")
-            || p.contains("배우")
             || p.contains("learn")
             || p.contains("run")
-            || p.contains("실행")
         {
             Self::push_workflow_tools(tools);
         }
 
         // 6. Agent Role Intent
-        if p.contains("agent")
-            || p.contains("role")
-            || p.contains("에이전트")
-            || p.contains("역할")
-            || p.contains("supervisor")
-            || p.contains("감독")
-        {
+        if p.contains("agent") || p.contains("role") || p.contains("supervisor") {
             Self::push_agent_tools(tools);
         }
 
@@ -83,9 +57,6 @@ impl ToolDeclarationBuilder {
             || p.contains("news")
             || p.contains("conference")
             || p.contains("market")
-            || p.contains("웹")
-            || p.contains("검색")
-            || p.contains("조사")
         {
             Self::push_research_tools(tools);
         }
@@ -100,9 +71,6 @@ impl ToolDeclarationBuilder {
             || p.contains("document")
             || p.contains("summary")
             || p.contains("pdf")
-            || p.contains("엑셀")
-            || p.contains("문서")
-            || p.contains("표")
         {
             Self::push_document_tools(tools);
         }
@@ -115,9 +83,6 @@ impl ToolDeclarationBuilder {
             || p.contains("draw")
             || p.contains("illustration")
             || p.contains("photo")
-            || p.contains("그림")
-            || p.contains("이미지")
-            || p.contains("사진")
         {
             Self::push_image_tools(tools);
         }

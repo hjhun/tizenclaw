@@ -8,8 +8,8 @@
 //! text to the agent, and renders the response via TTS.
 
 use super::{Channel, ChannelConfig};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 fn utf8_safe_preview(text: &str, max_chars: usize) -> &str {
     if max_chars == 0 {
@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn utf8_safe_preview_returns_empty_for_zero_length() {
-        assert_eq!(utf8_safe_preview("안녕하세요", 0), "");
+        assert_eq!(utf8_safe_preview("hello", 0), "");
     }
 
     #[test]
@@ -218,10 +218,10 @@ mod tests {
 
     #[test]
     fn utf8_safe_preview_truncates_on_char_boundary() {
-        let text = "안녕하세요 TizenClaw";
-        let preview = utf8_safe_preview(text, 5);
+        let text = "TizenClaw™ ready";
+        let preview = utf8_safe_preview(text, 10);
 
-        assert_eq!(preview, "안녕하세요");
+        assert_eq!(preview, "TizenClaw™");
         assert!(text.is_char_boundary(preview.len()));
     }
 }
