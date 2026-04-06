@@ -409,6 +409,49 @@ impl TelegramClient {
         .to_string()
     }
 
+    fn command_menu_entries() -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("select", "Switch between chat and coding mode"),
+            ("cli_backend", "Choose codex, gemini, or claude"),
+            ("usage", "Show local usage for the selected CLI"),
+            ("mode", "Set coding mode to plan or fast"),
+            ("status", "Show the current Telegram channel state"),
+            ("auto_approve", "Toggle automatic approval when supported"),
+        ]
+    }
+
+    fn build_set_my_commands_payload() -> String {
+        let commands: Vec<Value> = Self::command_menu_entries()
+            .into_iter()
+            .map(|(command, description)| {
+                json!({
+                    "command": command,
+                    "description": description
+                })
+            })
+            .collect();
+
+        json!({
+            "commands": commands
+        })
+        .to_string()
+    }
+
+    fn register_bot_commands(bot_token: &str) {
+        if bot_token.is_empty() {
+            return;
+        }
+
+        let url = format!("https://api.telegram.org/bot{}/setMyCommands", bot_token);
+        let payload = Self::build_set_my_commands_payload();
+        let client = crate::infra::http_client::HttpClient::new();
+
+        match client.post_sync(&url, &payload) {
+            Ok(_) => log::info!("Telegram bot commands registered"),
+            Err(err) => log::warn!("Telegram setMyCommands failed: {}", err),
+        }
+    }
+
     // Static so it can be called inside spawned async tasks easily
     fn send_telegram_message(bot_token: &str, chat_id: i64, text: &str) {
         if bot_token.is_empty() {
@@ -432,11 +475,11 @@ impl TelegramClient {
         [
             "Telegram coding-agent commands:",
             "/select <chat|coding> - switch between normal chat and local CLI coding mode",
-            "/cli-backend <codex|gemini|claude> - choose the coding-agent backend",
+            "/cli_backend <codex|gemini|claude> - choose the coding-agent backend",
             "/usage - show locally tracked usage for the selected CLI backend",
             "/mode <plan|fast> - switch planning style for coding mode prompts",
             "/status - show the current Telegram channel control state",
-            "/auto-approve <on|off> - toggle backend auto approval when supported",
+            "/auto_approve <on|off> - toggle backend auto approval when supported",
         ]
         .join("\n")
     }
@@ -530,7 +573,7 @@ impl TelegramClient {
         cli_backend_paths: &HashMap<TelegramCliBackend, String>,
     ) -> String {
         let Some(backend_raw) = args.first() else {
-            return "Usage: /cli-backend <codex|gemini|claude>".to_string();
+            return "Usage: /cli_backend <codex|gemini|claude>".to_string();
         };
         let Some(backend) = TelegramCliBackend::parse(backend_raw) else {
             return "Invalid CLI backend. Use codex, gemini, or claude".to_string();
@@ -582,12 +625,12 @@ impl TelegramClient {
         args: &[String],
     ) -> String {
         let Some(value_raw) = args.first() else {
-            return "Usage: /auto-approve <on|off>".to_string();
+            return "Usage: /auto_approve <on|off>".to_string();
         };
         let enabled = match value_raw.trim().to_ascii_lowercase().as_str() {
             "on" | "true" | "yes" | "1" => true,
             "off" | "false" | "no" | "0" => false,
-            _ => return "Invalid value. Use /auto-approve on or /auto-approve off".to_string(),
+            _ => return "Invalid value. Use /auto_approve on or /auto_approve off".to_string(),
         };
 
         Self::mutate_chat_state(chat_states, state_path, chat_id, move |state| {
@@ -1063,6 +1106,7 @@ impl Channel for TelegramClient {
         );
         let client = crate::infra::http_client::HttpClient::new();
         let _ = client.get_sync(&reset_url);
+        Self::register_bot_commands(&self.bot_token);
 
         self.running.store(true, Ordering::SeqCst);
         let running = self.running.clone();
@@ -1237,5 +1281,37 @@ mod tests {
         assert_eq!(json["chat_id"], 123);
         assert_eq!(json["text"], "value_with`markdown`");
         assert!(json.get("parse_mode").is_none());
+    }
+
+    #[test]
+    fn supported_commands_text_uses_underscored_names() {
+        let help = TelegramClient::supported_commands_text();
+        assert!(help.contains("/cli_backend <codex|gemini|claude>"));
+        assert!(help.contains("/auto_approve <on|off>"));
+        assert!(!help.contains("/cli-backend <codex|gemini|claude>"));
+        assert!(!help.contains("/auto-approve <on|off>"));
+    }
+
+    #[test]
+    fn set_my_commands_payload_contains_expected_commands() {
+        let payload = TelegramClient::build_set_my_commands_payload();
+        let json: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        let commands = json["commands"].as_array().unwrap();
+        let names: Vec<&str> = commands
+            .iter()
+            .filter_map(|entry| entry["command"].as_str())
+            .collect();
+
+        assert_eq!(
+            names,
+            vec![
+                "select",
+                "cli_backend",
+                "usage",
+                "mode",
+                "status",
+                "auto_approve"
+            ]
+        );
     }
 }
