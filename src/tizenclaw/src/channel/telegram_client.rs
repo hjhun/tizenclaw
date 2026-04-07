@@ -143,6 +143,45 @@ struct TelegramCliErrorHint {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
+struct TelegramCliModelChoice {
+    value: String,
+    label: Option<String>,
+    description: Option<String>,
+}
+
+impl TelegramCliModelChoice {
+    fn simple(value: &str) -> Self {
+        Self {
+            value: value.to_string(),
+            label: None,
+            description: None,
+        }
+    }
+
+    fn detailed(value: &str, label: &str, description: &str) -> Self {
+        Self {
+            value: value.to_string(),
+            label: Some(label.to_string()),
+            description: Some(description.to_string()),
+        }
+    }
+
+    fn normalized_value(&self) -> String {
+        TelegramCliBackend::normalized(&self.value)
+    }
+
+    fn summary_text(&self) -> String {
+        match self.label.as_deref() {
+            Some(label) if label.trim() != self.value.trim() => {
+                format!("{} -> {}", label.trim(), self.value.trim())
+            }
+            _ => self.value.trim().to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 struct TelegramCliBackendDefinition {
     display_name: Option<String>,
     aliases: Vec<String>,
@@ -152,6 +191,8 @@ struct TelegramCliBackendDefinition {
     auth_hint: String,
     usage_hint: String,
     auto_approve_usage_hint: Option<String>,
+    model_choices_source_label: String,
+    model_choices: Vec<TelegramCliModelChoice>,
     usage_source_label: String,
     usage_refresh_hint: Option<String>,
     remaining_usage_hint: Option<String>,
@@ -192,6 +233,30 @@ impl Default for TelegramCliBackendRegistry {
                     "`codex exec --json --dangerously-bypass-approvals-and-sandbox -C <project> <prompt>`"
                         .to_string(),
                 ),
+                model_choices_source_label:
+                    "curated Codex-compatible model choices".to_string(),
+                model_choices: vec![
+                    TelegramCliModelChoice::detailed(
+                        "gpt-5.4",
+                        "gpt-5.4",
+                        "Balanced default for strong coding quality",
+                    ),
+                    TelegramCliModelChoice::detailed(
+                        "gpt-5.3-codex",
+                        "gpt-5.3-codex",
+                        "Dedicated Codex-family coding model",
+                    ),
+                    TelegramCliModelChoice::detailed(
+                        "gpt-5-codex",
+                        "gpt-5-codex",
+                        "Stable Codex-family override",
+                    ),
+                    TelegramCliModelChoice::detailed(
+                        "codex-mini-latest",
+                        "codex-mini-latest",
+                        "Lower-cost Codex-family option",
+                    ),
+                ],
                 usage_source_label: "turn.completed.usage".to_string(),
                 usage_refresh_hint: Some(
                     "updates after the next successful Codex run".to_string(),
@@ -255,6 +320,34 @@ impl Default for TelegramCliBackendRegistry {
                     "`gemini --model <model> --prompt <prompt> --output-format json -y --approval-mode yolo`"
                         .to_string(),
                 ),
+                model_choices_source_label:
+                    "Gemini CLI aliases and documented model names".to_string(),
+                model_choices: vec![
+                    TelegramCliModelChoice::detailed(
+                        "auto",
+                        "auto",
+                        "Gemini CLI default routing alias",
+                    ),
+                    TelegramCliModelChoice::detailed(
+                        "pro",
+                        "pro",
+                        "Alias for the stronger reasoning tier",
+                    ),
+                    TelegramCliModelChoice::detailed(
+                        "flash",
+                        "flash",
+                        "Alias for the fast balanced tier",
+                    ),
+                    TelegramCliModelChoice::detailed(
+                        "flash-lite",
+                        "flash-lite",
+                        "Alias for the lightest Gemini tier",
+                    ),
+                    TelegramCliModelChoice::simple("gemini-2.5-pro"),
+                    TelegramCliModelChoice::simple("gemini-2.5-flash"),
+                    TelegramCliModelChoice::simple("gemini-2.5-flash-lite"),
+                    TelegramCliModelChoice::simple("gemini-3-pro-preview"),
+                ],
                 usage_source_label: "stats.models.<model>.tokens".to_string(),
                 usage_refresh_hint: Some(
                     "updates after the next successful Gemini run".to_string(),
@@ -360,6 +453,28 @@ impl Default for TelegramCliBackendRegistry {
                     "`claude --print --output-format json --permission-mode bypassPermissions <prompt>`"
                         .to_string(),
                 ),
+                model_choices_source_label:
+                    "Claude Code aliases and common concrete model names"
+                        .to_string(),
+                model_choices: vec![
+                    TelegramCliModelChoice::detailed(
+                        "sonnet",
+                        "sonnet",
+                        "Claude Code alias for the latest Sonnet line",
+                    ),
+                    TelegramCliModelChoice::detailed(
+                        "opus",
+                        "opus",
+                        "Claude Code alias for the latest Opus line",
+                    ),
+                    TelegramCliModelChoice::detailed(
+                        "haiku",
+                        "haiku",
+                        "Claude Code alias for the lightweight tier",
+                    ),
+                    TelegramCliModelChoice::simple("claude-sonnet-4-6"),
+                    TelegramCliModelChoice::simple("claude-opus-4-1"),
+                ],
                 usage_source_label: "usage + modelUsage".to_string(),
                 usage_refresh_hint: Some(
                     "updates after the next successful Claude run".to_string(),
@@ -574,6 +689,48 @@ impl TelegramCliBackendRegistry {
                 .and_then(Value::as_str)
             {
                 definition.auto_approve_usage_hint = Some(usage_hint.to_string());
+            }
+            if let Some(label) = entry_object
+                .get("model_choices_source_label")
+                .and_then(Value::as_str)
+            {
+                definition.model_choices_source_label = label.to_string();
+            }
+            if let Some(choices) = entry_object.get("model_choices").and_then(Value::as_array) {
+                definition.model_choices = choices
+                    .iter()
+                    .filter_map(|entry| match entry {
+                        Value::String(value) => {
+                            let trimmed = value.trim();
+                            (!trimmed.is_empty()).then(|| TelegramCliModelChoice::simple(trimmed))
+                        }
+                        Value::Object(object) => {
+                            let value = object
+                                .get("value")
+                                .and_then(Value::as_str)
+                                .map(str::trim)
+                                .filter(|value| !value.is_empty())?;
+                            let label = object
+                                .get("label")
+                                .and_then(Value::as_str)
+                                .map(str::trim)
+                                .filter(|value| !value.is_empty())
+                                .map(ToString::to_string);
+                            let description = object
+                                .get("description")
+                                .and_then(Value::as_str)
+                                .map(str::trim)
+                                .filter(|value| !value.is_empty())
+                                .map(ToString::to_string);
+                            Some(TelegramCliModelChoice {
+                                value: value.to_string(),
+                                label,
+                                description,
+                            })
+                        }
+                        _ => None,
+                    })
+                    .collect();
             }
             if let Some(label) = entry_object
                 .get("usage_source_label")
@@ -1351,7 +1508,7 @@ impl TelegramClient {
         vec![
             ("select", "Switch mode"),
             ("coding_agent", "Choose backend"),
-            ("model", "Set model"),
+            ("model", "Choose model"),
             ("project", "Set project path"),
             ("new_session", "Start new session"),
             ("usage", "Show usage"),
@@ -1395,6 +1552,19 @@ impl TelegramClient {
         })
     }
 
+    fn build_owned_reply_keyboard(rows: &[Vec<String>]) -> Value {
+        let keyboard: Vec<Vec<Value>> = rows
+            .iter()
+            .map(|row| row.iter().cloned().map(Value::String).collect())
+            .collect();
+
+        json!({
+            "keyboard": keyboard,
+            "resize_keyboard": true,
+            "one_time_keyboard": true
+        })
+    }
+
     fn remove_keyboard_markup() -> Value {
         json!({
             "remove_keyboard": true
@@ -1416,6 +1586,111 @@ impl TelegramClient {
             .collect::<Vec<_>>();
         let borrowed = row_refs.iter().map(Vec::as_slice).collect::<Vec<_>>();
         Self::build_reply_keyboard(&borrowed)
+    }
+
+    fn available_model_choices(
+        state: &TelegramChatState,
+        backend: &TelegramCliBackend,
+        cli_backends: &TelegramCliBackendRegistry,
+    ) -> (Vec<TelegramCliModelChoice>, String) {
+        let definition = cli_backends.get(backend);
+        let mut choices = Vec::new();
+        let mut seen = HashSet::new();
+
+        if let Some(current) = state.effective_cli_model(backend, cli_backends) {
+            Self::push_model_choice(
+                &mut choices,
+                &mut seen,
+                TelegramCliModelChoice::simple(&current),
+            );
+        }
+
+        if let Some(definition) = definition {
+            for choice in definition.model_choices.iter().cloned() {
+                Self::push_model_choice(&mut choices, &mut seen, choice);
+            }
+        }
+
+        if choices.is_empty() {
+            Self::push_model_choice(
+                &mut choices,
+                &mut seen,
+                TelegramCliModelChoice::simple("auto"),
+            );
+        }
+
+        let source = definition
+            .map(|definition| definition.model_choices_source_label.trim())
+            .filter(|value| !value.is_empty())
+            .unwrap_or("configured backend model choices")
+            .to_string();
+
+        (choices, source)
+    }
+
+    fn push_model_choice(
+        choices: &mut Vec<TelegramCliModelChoice>,
+        seen: &mut HashSet<String>,
+        choice: TelegramCliModelChoice,
+    ) {
+        let trimmed = choice.value.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+
+        let normalized = choice.normalized_value();
+        if seen.insert(normalized) {
+            choices.push(TelegramCliModelChoice {
+                value: trimmed.to_string(),
+                label: choice.label,
+                description: choice.description,
+            });
+        }
+    }
+
+    fn model_keyboard(choices: &[TelegramCliModelChoice]) -> Value {
+        let mut rows = Vec::new();
+        let mut current_row = Vec::new();
+
+        for choice in choices {
+            current_row.push(format!("/model {}", choice.value.trim()));
+            if current_row.len() == 2 {
+                rows.push(std::mem::take(&mut current_row));
+            }
+        }
+
+        if !current_row.is_empty() {
+            rows.push(current_row);
+        }
+
+        rows.push(vec!["/model reset".to_string()]);
+        Self::build_owned_reply_keyboard(&rows)
+    }
+
+    fn format_model_menu_text(
+        state: &TelegramChatState,
+        backend: &TelegramCliBackend,
+        cli_backends: &TelegramCliBackendRegistry,
+    ) -> String {
+        let model = state
+            .effective_cli_model(backend, cli_backends)
+            .unwrap_or_else(|| "auto".to_string());
+        let source = state.effective_cli_model_source(backend, cli_backends);
+        let (choices, catalog_source) = Self::available_model_choices(state, backend, cli_backends);
+        let choices_text = choices
+            .iter()
+            .map(TelegramCliModelChoice::summary_text)
+            .collect::<Vec<_>>()
+            .join(" | ");
+
+        format!(
+            "CodingAgent: {}\nModel: {}\nSource: {}\nCatalog: {}\nChoices: {}\nUse: /model [name] | /model reset",
+            Self::backend_label(backend),
+            Self::value_label(model),
+            Self::value_label(source),
+            Self::value_label(catalog_source),
+            Self::value_label(choices_text)
+        )
     }
 
     fn mode_keyboard() -> Value {
@@ -1556,7 +1831,7 @@ impl TelegramClient {
             "Commands",
             "/select [chat|coding]",
             &format!("/coding_agent [{}]", backend_choices),
-            "/model [name|reset]",
+            "/model [name|list|reset]",
             "/project [path]",
             "/project reset",
             "/new_session",
@@ -1761,16 +2036,11 @@ impl TelegramClient {
         if args.is_empty() {
             let state = Self::load_chat_state_snapshot(chat_states, chat_id);
             let backend = state.effective_cli_backend(cli_backends);
-            let model = state
-                .effective_cli_model(&backend, cli_backends)
-                .unwrap_or_else(|| "auto".to_string());
-            let source = state.effective_cli_model_source(&backend, cli_backends);
-            return TelegramOutgoingMessage::plain(format!(
-                "CodingAgent: {}\nModel: {}\nSource: {}\nUse: /model [name] | /model reset",
-                Self::backend_label(&backend),
-                Self::value_label(model),
-                Self::value_label(source)
-            ));
+            let (choices, _) = Self::available_model_choices(&state, &backend, cli_backends);
+            return TelegramOutgoingMessage::with_markup(
+                Self::format_model_menu_text(&state, &backend, cli_backends),
+                Self::model_keyboard(&choices),
+            );
         }
 
         let requested = args.join(" ").trim().to_string();
@@ -1779,7 +2049,16 @@ impl TelegramClient {
         }
 
         match requested.to_ascii_lowercase().as_str() {
-            "reset" | "clear" | "default" => TelegramOutgoingMessage::plain(
+            "list" | "menu" | "show" => {
+                let state = Self::load_chat_state_snapshot(chat_states, chat_id);
+                let backend = state.effective_cli_backend(cli_backends);
+                let (choices, _) = Self::available_model_choices(&state, &backend, cli_backends);
+                TelegramOutgoingMessage::with_markup(
+                    Self::format_model_menu_text(&state, &backend, cli_backends),
+                    Self::model_keyboard(&choices),
+                )
+            }
+            "reset" | "clear" | "default" => TelegramOutgoingMessage::with_removed_keyboard(
                 Self::mutate_chat_state(chat_states, state_path, chat_id, move |state| {
                     let backend = state.effective_cli_backend(cli_backends);
                     state.model_overrides.remove(backend.as_str());
@@ -1795,7 +2074,7 @@ impl TelegramClient {
                     )
                 }),
             ),
-            _ => TelegramOutgoingMessage::plain(Self::mutate_chat_state(
+            _ => TelegramOutgoingMessage::with_removed_keyboard(Self::mutate_chat_state(
                 chat_states,
                 state_path,
                 chat_id,
@@ -3916,7 +4195,7 @@ mod tests {
     fn supported_commands_text_uses_coding_agent_name() {
         let help = TelegramClient::supported_commands_text(&default_registry());
         assert!(help.contains("/coding_agent [codex|gemini|claude]"));
-        assert!(help.contains("/model [name|reset]"));
+        assert!(help.contains("/model [name|list|reset]"));
         assert!(help.contains("/usage"));
         assert!(help.contains("/auto_approve [on|off]"));
         assert!(help.contains("/project [path]"));
@@ -3985,6 +4264,20 @@ mod tests {
         assert_eq!(keyboard["keyboard"][0][0], "/coding_agent codex");
         assert_eq!(keyboard["keyboard"][1][0], "/coding_agent gemini");
         assert_eq!(keyboard["keyboard"][2][0], "/coding_agent claude");
+    }
+
+    #[test]
+    fn model_keyboard_exposes_curated_choices_and_reset() {
+        let state = TelegramChatState::default();
+        let backend = backend("gemini");
+        let (choices, source) =
+            TelegramClient::available_model_choices(&state, &backend, &default_registry());
+        let keyboard = TelegramClient::model_keyboard(&choices);
+
+        assert_eq!(source, "Gemini CLI aliases and documented model names");
+        assert_eq!(keyboard["keyboard"][0][0], "/model gemini-2.5-flash");
+        assert_eq!(keyboard["keyboard"][0][1], "/model auto");
+        assert_eq!(keyboard["keyboard"][4][0], "/model reset");
     }
 
     #[test]
@@ -4274,7 +4567,12 @@ mod tests {
         assert!(show_reply.text.contains("Model: [claude-sonnet-4-6]"));
         assert!(show_reply
             .text
-            .contains("Use: /model [name] | /model reset"));
+            .contains("Catalog: [curated Codex-compatible model choices]"));
+        assert!(show_reply.text.contains("Choices: [claude-sonnet-4-6"));
+        assert_eq!(
+            show_reply.reply_markup.as_ref().unwrap()["keyboard"][0][0],
+            "/model claude-sonnet-4-6"
+        );
 
         let reset_reply = TelegramClient::handle_command(
             77,
@@ -4290,6 +4588,70 @@ mod tests {
         .unwrap();
         assert!(reset_reply.text.contains("Model: [auto]"));
         assert!(reset_reply.text.contains("Source: [backend auto]"));
+        assert_eq!(
+            reset_reply.reply_markup.as_ref().unwrap()["remove_keyboard"],
+            true
+        );
+    }
+
+    #[test]
+    fn custom_backend_model_choices_are_shown_in_model_menu() {
+        let mut registry = default_registry();
+        registry.merge_config_value(Some(&serde_json::json!({
+            "backends": {
+                "custom_agent": {
+                    "model_choices_source_label": "custom backend menu",
+                    "model_choices": [
+                        "alpha",
+                        { "value": "beta-fast", "label": "beta", "description": "fast tier" }
+                    ]
+                }
+            }
+        })));
+
+        let chat_states = Arc::new(Mutex::new(HashMap::new()));
+        let state_path = std::env::temp_dir().join(format!(
+            "telegram_model_custom_state_{}_{}.json",
+            std::process::id(),
+            TelegramClient::current_timestamp_millis()
+        ));
+
+        let _ = TelegramClient::handle_command(
+            77,
+            "/coding_agent custom_agent",
+            None,
+            &chat_states,
+            &state_path,
+            &registry,
+            &HashMap::new(),
+            std::path::Path::new("/tmp"),
+            0,
+        )
+        .unwrap();
+
+        let reply = TelegramClient::handle_command(
+            77,
+            "/model",
+            None,
+            &chat_states,
+            &state_path,
+            &registry,
+            &HashMap::new(),
+            std::path::Path::new("/tmp"),
+            0,
+        )
+        .unwrap();
+
+        assert!(reply.text.contains("Catalog: [custom backend menu]"));
+        assert!(reply.text.contains("Choices: [alpha | beta -> beta-fast]"));
+        assert_eq!(
+            reply.reply_markup.as_ref().unwrap()["keyboard"][0][0],
+            "/model alpha"
+        );
+        assert_eq!(
+            reply.reply_markup.as_ref().unwrap()["keyboard"][0][1],
+            "/model beta-fast"
+        );
     }
 
     #[test]
