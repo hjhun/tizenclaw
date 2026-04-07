@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version or tag string to embed in the bundle name'
+        description: 'Release tag/version to publish, for example v1.0.1'
         required: false
         default: ''
       publish:
@@ -75,16 +75,15 @@ jobs:
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             VERSION="${GITHUB_REF_NAME}"
             PUBLISH="true"
+          elif [[ "${INPUT_PUBLISH:-false}" == "true" && -z "${INPUT_VERSION}" ]]; then
+            echo "Manual publish requires the version input." >&2
+            exit 1
           elif [[ -n "${INPUT_VERSION}" ]]; then
             VERSION="${INPUT_VERSION}"
-            PUBLISH="false"
+            PUBLISH="${INPUT_PUBLISH:-false}"
           else
             VERSION="dev-${GITHUB_SHA::7}"
             PUBLISH="false"
-          fi
-
-          if [[ "${INPUT_PUBLISH:-false}" == "true" ]]; then
-            PUBLISH="true"
           fi
 
           echo "BUNDLE_VERSION=${VERSION}" >> "${GITHUB_ENV}"
@@ -118,8 +117,17 @@ jobs:
               --repo "${GITHUB_REPOSITORY}" \
               --clobber
           else
-            gh release create "${BUNDLE_VERSION}" dist/* \
-              --repo "${GITHUB_REPOSITORY}" \
-              --title "${BUNDLE_VERSION}" \
+            create_args=(
+              "${BUNDLE_VERSION}"
+              dist/*
+              --repo "${GITHUB_REPOSITORY}"
+              --title "${BUNDLE_VERSION}"
               --notes "Automated host bundle release for ${BUNDLE_VERSION}."
+            )
+
+            if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
+              create_args+=(--target "${GITHUB_SHA}")
+            fi
+
+            gh release create "${create_args[@]}"
           fi
