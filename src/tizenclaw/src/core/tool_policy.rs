@@ -41,7 +41,7 @@ impl Default for PolicyConfig {
     fn default() -> Self {
         PolicyConfig {
             max_repeat_count: 3,
-            max_iterations: 15,
+            max_iterations: 0,
             blocked_skills: HashSet::new(),
             risk_levels: HashMap::new(),
             aliases: HashMap::new(),
@@ -218,7 +218,7 @@ mod tests {
     #[test]
     fn test_default_max_iterations() {
         let policy = ToolPolicy::new();
-        assert_eq!(policy.get_max_iterations(), 15);
+        assert_eq!(policy.get_max_iterations(), 0);
     }
 
     #[test]

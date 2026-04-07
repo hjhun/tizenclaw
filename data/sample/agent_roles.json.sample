@@ -4,19 +4,19 @@
       "name": "researcher",
       "system_prompt": "You are a research specialist. Find and summarize relevant information. Be thorough and cite sources when available. Focus on accuracy and completeness.",
       "allowed_tools": ["search_knowledge", "ingest_document"],
-      "max_iterations": 8
+      "max_iterations": 0
     },
     {
       "name": "writer",
       "system_prompt": "You are a writing specialist. Create well-structured, clear content based on provided materials. Focus on readability and proper formatting.",
       "allowed_tools": ["file_manager"],
-      "max_iterations": 5
+      "max_iterations": 0
     },
     {
       "name": "device_controller",
       "system_prompt": "You are a Tizen device controller. Execute device operations precisely and report results concisely. Always verify operation success.",
       "allowed_tools": [],
-      "max_iterations": 5
+      "max_iterations": 0
     }
   ]
 }

@@ -78,7 +78,7 @@ impl AgentRoleRegistry {
                         name,
                         system_prompt: r["system_prompt"].as_str().unwrap_or("").to_string(),
                         allowed_tools: allowed,
-                        max_iterations: r["max_iterations"].as_u64().unwrap_or(10) as usize,
+                        max_iterations: r["max_iterations"].as_u64().unwrap_or(0) as usize,
                         description: r["description"].as_str().unwrap_or("").to_string(),
                         role_type: r["type"].as_str().unwrap_or("worker").to_string(),
                         auto_start: r["auto_start"].as_bool().unwrap_or(false),
@@ -152,7 +152,7 @@ fn builtin_roles() -> Vec<AgentRole> {
             system_prompt:
                 "You are TizenClaw's default generalist agent. Solve end-user requests directly, using tools when needed.".into(),
             allowed_tools: Vec::new(),
-            max_iterations: 10,
+            max_iterations: 0,
             description: "Balanced default role for general requests.".into(),
             role_type: "worker".into(),
             auto_start: false,
@@ -165,7 +165,7 @@ fn builtin_roles() -> Vec<AgentRole> {
             system_prompt:
                 "You are a focused sub-agent. Stay narrow, execute only the assigned task, and return concise progress or results.".into(),
             allowed_tools: Vec::new(),
-            max_iterations: 6,
+            max_iterations: 0,
             description: "Focused role for delegated or background tasks.".into(),
             role_type: "worker".into(),
             auto_start: false,
@@ -178,7 +178,7 @@ fn builtin_roles() -> Vec<AgentRole> {
             system_prompt:
                 "You are a local-backend helper. Prefer short plans, compact tool usage, and backend-safe formatting.".into(),
             allowed_tools: Vec::new(),
-            max_iterations: 6,
+            max_iterations: 0,
             description: "Minimal profile optimized for local or constrained backends.".into(),
             role_type: "worker".into(),
             auto_start: false,
@@ -198,7 +198,7 @@ mod tests {
             name: name.to_string(),
             system_prompt: format!("You are {}", name),
             allowed_tools: vec!["test_tool".into()],
-            max_iterations: 10,
+            max_iterations: 0,
             description: format!("{} role", name),
             role_type: "worker".into(),
             auto_start: false,
@@ -245,7 +245,7 @@ mod tests {
         let mut reg = AgentRoleRegistry::new();
         reg.add_dynamic_role(sample_role("analyst"));
         let r = reg.get_role("analyst").unwrap();
-        assert_eq!(r.max_iterations, 10);
+        assert_eq!(r.max_iterations, 0);
         assert!(r.allowed_tools.contains(&"test_tool".to_string()));
         assert_eq!(r.prompt_mode, Some(PromptMode::Minimal));
         assert_eq!(r.reasoning_policy, Some(ReasoningPolicy::Tagged));
@@ -261,9 +261,9 @@ mod tests {
     fn test_builtin_roles_seeded() {
         let mut reg = AgentRoleRegistry::new();
         reg.ensure_builtin_roles();
-        assert!(reg.get_role("default").is_some());
-        assert!(reg.get_role("subagent").is_some());
-        assert!(reg.get_role("local-reasoner").is_some());
+        assert_eq!(reg.get_role("default").unwrap().max_iterations, 0);
+        assert_eq!(reg.get_role("subagent").unwrap().max_iterations, 0);
+        assert_eq!(reg.get_role("local-reasoner").unwrap().max_iterations, 0);
     }
 
     #[test]

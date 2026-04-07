@@ -1,11 +1,11 @@
 //! Context Engine — Size-based context window pressure management.
 //!
-//! Controls when and how conversation history is compacted to stay within the
-//! LLM's token budget. Uses a three-phase compaction strategy:
+//! Controls when and how conversation history is compacted when a positive
+//! token budget is configured. Uses a three-phase compaction strategy:
 //!
 //! ## Compaction Trigger
 //! Compaction is triggered when estimated token usage reaches or exceeds
-//! `compact_threshold` × `budget` (default: 90% of 256,000 = 230,400 tokens).
+//! `compact_threshold` × `budget`.
 //!
 //! ## Compaction Phases
 //! 1. **Pin**: Always keep the system prompt (role="system") and the original
@@ -54,15 +54,15 @@ pub trait ContextEngine: Send + Sync {
 
 /// Size-based context engine.
 ///
-/// Triggers compaction based on token utilization (≥90% of budget by default).
-/// Budget default: 256,000 tokens. Threshold default: 0.90.
+/// Triggers compaction based on token utilization (≥90% of budget by default)
+/// when a positive budget is supplied.
 pub struct SizedContextEngine {
     compact_threshold: f32,
 }
 
 impl SizedContextEngine {
-    /// Default token budget: 256,000 tokens (≈ Gemini 1.5 / Claude 3.5 context).
-    pub const DEFAULT_BUDGET: usize = 256_000;
+    /// Default token budget: 0 disables compaction until configured.
+    pub const DEFAULT_BUDGET: usize = 0;
     /// Compact when utilization reaches 90% of budget.
     pub const DEFAULT_THRESHOLD: f32 = 0.90;
 

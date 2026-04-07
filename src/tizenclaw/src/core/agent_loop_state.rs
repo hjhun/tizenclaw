@@ -108,7 +108,7 @@ pub struct AgentLoopState {
     pub round: usize,
     pub error_count: usize,
     pub tool_retry_count: usize,
-    pub max_tool_rounds: usize, // 10 default
+    pub max_tool_rounds: usize, // 0 disables the round cap
 
     // Workflow execution mode
     pub active_workflow_id: Option<String>,
@@ -120,9 +120,9 @@ pub struct AgentLoopState {
     pub recent_outputs: Vec<String>, // for idle/stuck detection (window=3)
 
     // Token budget (size-based compaction)
-    pub token_budget: usize, // 256_000 default
+    pub token_budget: usize, // 0 disables automatic compaction
     pub token_used: usize,
-    pub compact_threshold: f32, // 0.90 default
+    pub compact_threshold: f32, // 0.90 default when budget > 0
 
     // Observation
     pub last_observation: Option<Value>,
@@ -143,9 +143,9 @@ pub struct AgentLoopState {
 }
 
 impl AgentLoopState {
-    pub const DEFAULT_TOKEN_BUDGET: usize = 256_000;
+    pub const DEFAULT_TOKEN_BUDGET: usize = 0;
     pub const DEFAULT_COMPACT_THRESHOLD: f32 = 0.90;
-    pub const DEFAULT_MAX_TOOL_ROUNDS: usize = 10;
+    pub const DEFAULT_MAX_TOOL_ROUNDS: usize = 0;
     /// Idle detection window: if last N outputs are identical → Stuck
     pub const IDLE_WINDOW: usize = 3;
 
@@ -226,6 +226,9 @@ impl AgentLoopState {
 
     /// Returns true if the loop has reached the maximum allowed rounds.
     pub fn is_round_limit_reached(&self) -> bool {
+        if self.max_tool_rounds == 0 {
+            return false;
+        }
         self.round >= self.max_tool_rounds
     }
 
@@ -328,6 +331,14 @@ mod tests {
         assert!(!s.is_round_limit_reached());
         s.round = 5;
         assert!(s.is_round_limit_reached());
+    }
+
+    #[test]
+    fn test_round_limit_is_disabled_when_zero() {
+        let mut s = AgentLoopState::new("sess1", "goal");
+        s.max_tool_rounds = 0;
+        s.round = 999;
+        assert!(!s.is_round_limit_reached());
     }
 
     #[test]

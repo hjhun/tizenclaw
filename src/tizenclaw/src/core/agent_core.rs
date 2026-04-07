@@ -40,7 +40,7 @@ use crate::llm::backend::{self, LlmBackend, LlmMessage, LlmResponse};
 use crate::storage::session_store::SessionStore;
 
 const MAX_CONTEXT_MESSAGES: usize = 100;
-const CONTEXT_TOKEN_BUDGET: usize = 256_000;
+const CONTEXT_TOKEN_BUDGET: usize = 0;
 const CONTEXT_COMPACT_THRESHOLD: f32 = 0.90;
 const MAX_TOOL_RETRY: usize = 3;
 const MAX_PREFETCHED_SKILLS: usize = 3;
@@ -2988,7 +2988,7 @@ impl AgentCore {
             .as_ref()
             .and_then(|profile| profile.max_iterations)
         {
-            loop_state.max_tool_rounds = max_iterations.max(1);
+            loop_state.max_tool_rounds = max_iterations;
         }
         let skill_reference_docs =
             crate::core::skill_support::list_skill_reference_docs(&self.platform.paths.docs_dir);
@@ -3812,7 +3812,7 @@ impl AgentCore {
                                     name: name.to_string(),
                                     system_prompt: system_prompt.to_string(),
                                     allowed_tools,
-                                    max_iterations: tc_args.get("max_iterations").and_then(|v| v.as_u64()).unwrap_or(6) as usize,
+                                    max_iterations: tc_args.get("max_iterations").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
                                     description: tc_args.get("description").and_then(|v| v.as_str()).unwrap_or("Dynamic role").to_string(),
                                     role_type: tc_args.get("type").and_then(|v| v.as_str()).unwrap_or("worker").to_string(),
                                     auto_start: tc_args.get("auto_start").and_then(|v| v.as_bool()).unwrap_or(false),

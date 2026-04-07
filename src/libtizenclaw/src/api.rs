@@ -4,15 +4,17 @@
 //! IPC surface. It is used internally by the C FFI layer and is also available
 //! to Rust consumers via `rlib`.
 
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::os::unix::io::FromRawFd;
 use std::os::unix::net::UnixStream;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
 const MAX_IPC_MESSAGE_SIZE: usize = 10 * 1024 * 1024;
-const IPC_TIMEOUT_SECS: u64 = 60;
+const IPC_TIMEOUT_SECS: u64 = 300;
+const IPC_RETRY_SLEEP_MS: u64 = 25;
 const ABSTRACT_SOCKET_NAME: &[u8] = b"tizenclaw.sock";
 
 /// Process uptime and system metrics.
@@ -86,6 +88,45 @@ fn get_process_uptime() -> f64 {
 
 fn bool_to_json(flag: bool) -> Value {
     Value::Bool(flag)
+}
+
+fn is_retryable_read_error(error: &std::io::Error) -> bool {
+    matches!(
+        error.kind(),
+        ErrorKind::WouldBlock | ErrorKind::TimedOut | ErrorKind::Interrupted
+    )
+}
+
+fn read_exact_with_retry<R: Read>(
+    reader: &mut R,
+    buf: &mut [u8],
+    deadline: Instant,
+    context: &str,
+) -> Result<(), String> {
+    let mut offset = 0;
+    while offset < buf.len() {
+        match reader.read(&mut buf[offset..]) {
+            Ok(0) => {
+                return Err(format!(
+                    "IPC {} failed: unexpected EOF after {} of {} bytes",
+                    context,
+                    offset,
+                    buf.len()
+                ));
+            }
+            Ok(read) => {
+                offset += read;
+            }
+            Err(error) if is_retryable_read_error(&error) && Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(IPC_RETRY_SLEEP_MS));
+            }
+            Err(error) => {
+                return Err(format!("IPC {} failed: {}", context, error));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 struct RpcEnvelope {
@@ -499,19 +540,16 @@ impl TizenClaw {
     }
 
     fn read_frame(stream: &mut UnixStream) -> Result<String, String> {
+        let deadline = Instant::now() + Duration::from_secs(IPC_TIMEOUT_SECS);
         let mut len_buf = [0u8; 4];
-        stream
-            .read_exact(&mut len_buf)
-            .map_err(|e| format!("IPC read len failed: {}", e))?;
+        read_exact_with_retry(stream, &mut len_buf, deadline, "read len")?;
         let payload_len = u32::from_be_bytes(len_buf) as usize;
         if payload_len == 0 || payload_len > MAX_IPC_MESSAGE_SIZE {
             return Err(format!("Invalid IPC payload size: {}", payload_len));
         }
 
         let mut buffer = vec![0u8; payload_len];
-        stream
-            .read_exact(&mut buffer)
-            .map_err(|e| format!("IPC read body failed: {}", e))?;
+        read_exact_with_retry(stream, &mut buffer, deadline, "read body")?;
         String::from_utf8(buffer).map_err(|e| format!("Invalid UTF-8 response: {}", e))
     }
 
@@ -615,3 +653,103 @@ impl Drop for TizenClaw {
 
 /// Thread-safe shared handle for use in C FFI.
 pub type TizenClawHandle = Arc<Mutex<TizenClaw>>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::VecDeque;
+
+    enum ScriptedRead {
+        Bytes(Vec<u8>),
+        Error(ErrorKind),
+        Eof,
+    }
+
+    struct ScriptedReader {
+        steps: VecDeque<ScriptedRead>,
+    }
+
+    impl ScriptedReader {
+        fn new(steps: Vec<ScriptedRead>) -> Self {
+            Self {
+                steps: VecDeque::from(steps),
+            }
+        }
+    }
+
+    impl Read for ScriptedReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            match self.steps.pop_front() {
+                Some(ScriptedRead::Bytes(bytes)) => {
+                    let len = bytes.len().min(buf.len());
+                    buf[..len].copy_from_slice(&bytes[..len]);
+                    Ok(len)
+                }
+                Some(ScriptedRead::Error(kind)) => Err(std::io::Error::from(kind)),
+                Some(ScriptedRead::Eof) | None => Ok(0),
+            }
+        }
+    }
+
+    #[test]
+    fn read_exact_with_retry_recovers_from_would_block() {
+        let mut reader = ScriptedReader::new(vec![
+            ScriptedRead::Error(ErrorKind::WouldBlock),
+            ScriptedRead::Bytes(vec![0xAA, 0xBB]),
+            ScriptedRead::Error(ErrorKind::Interrupted),
+            ScriptedRead::Bytes(vec![0xCC, 0xDD]),
+        ]);
+        let mut buf = [0u8; 4];
+
+        let result = read_exact_with_retry(
+            &mut reader,
+            &mut buf,
+            Instant::now() + Duration::from_millis(500),
+            "read body",
+        );
+
+        assert!(result.is_ok(), "expected retryable reads to succeed");
+        assert_eq!(buf, [0xAA, 0xBB, 0xCC, 0xDD]);
+    }
+
+    #[test]
+    fn read_exact_with_retry_fails_after_deadline() {
+        let mut reader = ScriptedReader::new(vec![ScriptedRead::Error(ErrorKind::WouldBlock)]);
+        let mut buf = [0u8; 4];
+
+        let result = read_exact_with_retry(
+            &mut reader,
+            &mut buf,
+            Instant::now(),
+            "read len",
+        );
+
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().contains("IPC read len failed"),
+            "expected read-len context in error"
+        );
+    }
+
+    #[test]
+    fn read_exact_with_retry_reports_unexpected_eof() {
+        let mut reader = ScriptedReader::new(vec![
+            ScriptedRead::Bytes(vec![0xAA, 0xBB]),
+            ScriptedRead::Eof,
+        ]);
+        let mut buf = [0u8; 4];
+
+        let result = read_exact_with_retry(
+            &mut reader,
+            &mut buf,
+            Instant::now() + Duration::from_millis(500),
+            "read body",
+        );
+
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().contains("unexpected EOF"),
+            "expected EOF detail in error"
+        );
+    }
+}

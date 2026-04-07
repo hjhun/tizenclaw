@@ -512,7 +512,10 @@ impl ToolDeclarationBuilder {
                     "name": {"type": "string", "description": "Unique name"},
                     "system_prompt": {"type": "string", "description": "System prompt"},
                     "allowed_tools": {"type": "array", "items": {"type": "string"}},
-                    "max_iterations": {"type": "integer"},
+                    "max_iterations": {
+                        "type": "integer",
+                        "description": "Maximum tool-call rounds for the role. Use 0 to disable the cap."
+                    },
                     "description": {"type": "string"},
                     "type": {"type": "string", "enum": ["worker", "supervisor"]},
                     "auto_start": {"type": "boolean"},
