@@ -129,6 +129,8 @@ struct TelegramCliUsageExtractor {
     model_path: Option<String>,
     model_key_path: Option<String>,
     session_id_path: Option<String>,
+    remaining_text_path: Option<String>,
+    reset_at_path: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -150,6 +152,10 @@ struct TelegramCliBackendDefinition {
     auth_hint: String,
     usage_hint: String,
     auto_approve_usage_hint: Option<String>,
+    usage_source_label: String,
+    usage_refresh_hint: Option<String>,
+    remaining_usage_hint: Option<String>,
+    reset_usage_hint: Option<String>,
     invocation: TelegramCliInvocationTemplate,
     response_extractors: Vec<TelegramCliResponseExtractor>,
     usage_extractors: Vec<TelegramCliUsageExtractor>,
@@ -186,11 +192,18 @@ impl Default for TelegramCliBackendRegistry {
                     "`codex exec --json --dangerously-bypass-approvals-and-sandbox -C <project> <prompt>`"
                         .to_string(),
                 ),
+                usage_source_label: "turn.completed.usage".to_string(),
+                usage_refresh_hint: Some(
+                    "updates after the next successful Codex run".to_string(),
+                ),
+                remaining_usage_hint: Some("not reported by Codex CLI".to_string()),
+                reset_usage_hint: Some("not reported by Codex CLI".to_string()),
                 invocation: TelegramCliInvocationTemplate {
                     args: vec![
                         "exec".to_string(),
                         "--json".to_string(),
                         "{approval_mode}".to_string(),
+                        "{model_args}".to_string(),
                         "-C".to_string(),
                         "{project_dir}".to_string(),
                         "--skip-git-repo-check".to_string(),
@@ -242,10 +255,15 @@ impl Default for TelegramCliBackendRegistry {
                     "`gemini --model <model> --prompt <prompt> --output-format json -y --approval-mode yolo`"
                         .to_string(),
                 ),
+                usage_source_label: "stats.models.<model>.tokens".to_string(),
+                usage_refresh_hint: Some(
+                    "updates after the next successful Gemini run".to_string(),
+                ),
+                remaining_usage_hint: Some("not reported by Gemini CLI".to_string()),
+                reset_usage_hint: Some("not reported by Gemini CLI".to_string()),
                 invocation: TelegramCliInvocationTemplate {
                     args: vec![
-                        "--model".to_string(),
-                        "{model}".to_string(),
+                        "{model_args}".to_string(),
                         "{approval_mode}".to_string(),
                         "--prompt".to_string(),
                         "{prompt}".to_string(),
@@ -342,11 +360,18 @@ impl Default for TelegramCliBackendRegistry {
                     "`claude --print --output-format json --permission-mode bypassPermissions <prompt>`"
                         .to_string(),
                 ),
+                usage_source_label: "usage + modelUsage".to_string(),
+                usage_refresh_hint: Some(
+                    "updates after the next successful Claude run".to_string(),
+                ),
+                remaining_usage_hint: Some("not reported by Claude CLI".to_string()),
+                reset_usage_hint: Some("not reported by Claude CLI".to_string()),
                 invocation: TelegramCliInvocationTemplate {
                     args: vec![
                         "--print".to_string(),
                         "--output-format".to_string(),
                         "json".to_string(),
+                        "{model_args}".to_string(),
                         "--permission-mode".to_string(),
                         "{approval_mode}".to_string(),
                         "{prompt}".to_string(),
@@ -550,6 +575,27 @@ impl TelegramCliBackendRegistry {
             {
                 definition.auto_approve_usage_hint = Some(usage_hint.to_string());
             }
+            if let Some(label) = entry_object
+                .get("usage_source_label")
+                .and_then(Value::as_str)
+            {
+                definition.usage_source_label = label.to_string();
+            }
+            if let Some(hint) = entry_object
+                .get("usage_refresh_hint")
+                .and_then(Value::as_str)
+            {
+                definition.usage_refresh_hint = Some(hint.to_string());
+            }
+            if let Some(hint) = entry_object
+                .get("remaining_usage_hint")
+                .and_then(Value::as_str)
+            {
+                definition.remaining_usage_hint = Some(hint.to_string());
+            }
+            if let Some(hint) = entry_object.get("reset_usage_hint").and_then(Value::as_str) {
+                definition.reset_usage_hint = Some(hint.to_string());
+            }
             if let Some(invocation) = entry_object.get("invocation") {
                 if let Ok(parsed) =
                     serde_json::from_value::<TelegramCliInvocationTemplate>(invocation.clone())
@@ -682,6 +728,8 @@ struct TelegramCliActualUsage {
     tool_tokens: i64,
     model: Option<String>,
     session_id: Option<String>,
+    remaining_text: Option<String>,
+    reset_at: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -748,6 +796,7 @@ struct TelegramChatState {
     execution_mode: TelegramExecutionMode,
     auto_approve: bool,
     project_dir: Option<String>,
+    model_overrides: HashMap<String, String>,
     chat_session_index: u64,
     coding_session_index: u64,
     usage: HashMap<String, TelegramCliUsageStats>,
@@ -761,6 +810,7 @@ impl Default for TelegramChatState {
             execution_mode: TelegramExecutionMode::Plan,
             auto_approve: false,
             project_dir: None,
+            model_overrides: HashMap::new(),
             chat_session_index: 1,
             coding_session_index: 1,
             usage: HashMap::new(),
@@ -784,6 +834,46 @@ impl TelegramChatState {
             self.cli_backend.clone()
         } else {
             cli_backends.default_backend()
+        }
+    }
+
+    fn model_override_for(&self, backend: &TelegramCliBackend) -> Option<&str> {
+        self.model_overrides
+            .get(backend.as_str())
+            .map(String::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    }
+
+    fn effective_cli_model(
+        &self,
+        backend: &TelegramCliBackend,
+        cli_backends: &TelegramCliBackendRegistry,
+    ) -> Option<String> {
+        self.model_override_for(backend)
+            .map(ToString::to_string)
+            .or_else(|| {
+                cli_backends
+                    .get(backend)
+                    .and_then(|definition| definition.model.clone())
+            })
+    }
+
+    fn effective_cli_model_source(
+        &self,
+        backend: &TelegramCliBackend,
+        cli_backends: &TelegramCliBackendRegistry,
+    ) -> &'static str {
+        if self.model_override_for(backend).is_some() {
+            "chat override"
+        } else if cli_backends
+            .get(backend)
+            .and_then(|definition| definition.model.as_deref())
+            .is_some()
+        {
+            "backend default"
+        } else {
+            "backend auto"
         }
     }
 
@@ -1261,6 +1351,7 @@ impl TelegramClient {
         vec![
             ("select", "Switch mode"),
             ("coding_agent", "Choose backend"),
+            ("model", "Set model"),
             ("project", "Set project path"),
             ("new_session", "Start new session"),
             ("usage", "Show usage"),
@@ -1465,6 +1556,7 @@ impl TelegramClient {
             "Commands",
             "/select [chat|coding]",
             &format!("/coding_agent [{}]", backend_choices),
+            "/model [name|reset]",
             "/project [path]",
             "/project reset",
             "/new_session",
@@ -1498,6 +1590,16 @@ impl TelegramClient {
 
     fn active_session_value_label(state: &TelegramChatState) -> String {
         Self::session_value_label(&state.active_session_label())
+    }
+
+    fn usage_capture_label(captured_at_ms: Option<u64>) -> String {
+        captured_at_ms
+            .map(|captured_at_ms| {
+                let age_secs =
+                    Self::current_timestamp_millis().saturating_sub(captured_at_ms) / 1000;
+                format!("captured {}s ago", age_secs)
+            })
+            .unwrap_or_else(|| "not captured yet".to_string())
     }
 
     fn session_value_label_for_mode(
@@ -1647,6 +1749,70 @@ impl TelegramClient {
                 )
             },
         ))
+    }
+
+    fn set_model(
+        chat_states: &Arc<Mutex<HashMap<i64, TelegramChatState>>>,
+        state_path: &Path,
+        chat_id: i64,
+        args: &[String],
+        cli_backends: &TelegramCliBackendRegistry,
+    ) -> TelegramOutgoingMessage {
+        if args.is_empty() {
+            let state = Self::load_chat_state_snapshot(chat_states, chat_id);
+            let backend = state.effective_cli_backend(cli_backends);
+            let model = state
+                .effective_cli_model(&backend, cli_backends)
+                .unwrap_or_else(|| "auto".to_string());
+            let source = state.effective_cli_model_source(&backend, cli_backends);
+            return TelegramOutgoingMessage::plain(format!(
+                "CodingAgent: {}\nModel: {}\nSource: {}\nUse: /model [name] | /model reset",
+                Self::backend_label(&backend),
+                Self::value_label(model),
+                Self::value_label(source)
+            ));
+        }
+
+        let requested = args.join(" ").trim().to_string();
+        if requested.is_empty() {
+            return TelegramOutgoingMessage::plain("Model name cannot be empty.");
+        }
+
+        match requested.to_ascii_lowercase().as_str() {
+            "reset" | "clear" | "default" => TelegramOutgoingMessage::plain(
+                Self::mutate_chat_state(chat_states, state_path, chat_id, move |state| {
+                    let backend = state.effective_cli_backend(cli_backends);
+                    state.model_overrides.remove(backend.as_str());
+                    let model = state
+                        .effective_cli_model(&backend, cli_backends)
+                        .unwrap_or_else(|| "auto".to_string());
+                    let source = state.effective_cli_model_source(&backend, cli_backends);
+                    format!(
+                        "CodingAgent: {}\nModel: {}\nSource: {}",
+                        Self::backend_label(&backend),
+                        Self::value_label(model),
+                        Self::value_label(source)
+                    )
+                }),
+            ),
+            _ => TelegramOutgoingMessage::plain(Self::mutate_chat_state(
+                chat_states,
+                state_path,
+                chat_id,
+                move |state| {
+                    let backend = state.effective_cli_backend(cli_backends);
+                    state
+                        .model_overrides
+                        .insert(backend.as_str().to_string(), requested.clone());
+                    format!(
+                        "CodingAgent: {}\nModel: {}\nSource: {}",
+                        Self::backend_label(&backend),
+                        Self::value_label(requested.clone()),
+                        Self::value_label("chat override")
+                    )
+                },
+            )),
+        }
     }
 
     fn resolve_project_directory(
@@ -1856,22 +2022,41 @@ Prompt: {}\n\
 Completion: {}\n\
 CacheWrite: {}\n\
 CacheRead: {}\n\
-Requests: {}",
+Requests: {}\n\
+Refresh: {}\n\
+Remaining: {}\n\
+Reset: {}",
             Self::value_label(TelegramInteractionMode::Chat.as_str()),
             Self::session_value_label_for_mode(state, TelegramInteractionMode::Chat),
             Self::value_label(read("prompt_tokens").to_string()),
             Self::value_label(read("completion_tokens").to_string()),
             Self::value_label(read("cache_creation_input_tokens").to_string()),
             Self::value_label(read("cache_read_input_tokens").to_string()),
-            Self::value_label(read("total_requests").to_string())
+            Self::value_label(read("total_requests").to_string()),
+            Self::value_label("updates after the next chat response"),
+            Self::value_label("not tracked by daemon session store"),
+            Self::value_label("not tracked by daemon session store")
         )
     }
 
     fn format_coding_usage_report(
         state: &TelegramChatState,
         backend: &TelegramCliBackend,
+        cli_backends: &TelegramCliBackendRegistry,
     ) -> String {
         let usage = state.usage_for(backend);
+        let backend_definition = cli_backends.get(backend);
+        let effective_model = state
+            .effective_cli_model(backend, cli_backends)
+            .unwrap_or_else(|| "auto".to_string());
+        let model_source = state.effective_cli_model_source(backend, cli_backends);
+        let usage_source = backend_definition
+            .map(|definition| definition.usage_source_label.as_str())
+            .filter(|label| !label.trim().is_empty())
+            .unwrap_or("backend-specific usage payload");
+        let refresh_hint = backend_definition
+            .and_then(|definition| definition.usage_refresh_hint.as_deref())
+            .unwrap_or("updates after the next successful backend run");
         let mut lines = vec![
             format!(
                 "Mode: {}",
@@ -1882,6 +2067,14 @@ Requests: {}",
                 Self::session_value_label_for_mode(state, TelegramInteractionMode::Coding)
             ),
             format!("CodingAgent: {}", Self::backend_label(backend)),
+            format!("Model: {}", Self::value_label(effective_model)),
+            format!("ModelSource: {}", Self::value_label(model_source)),
+            format!("Source: {}", Self::value_label(usage_source)),
+            format!(
+                "Updated: {}",
+                Self::value_label(Self::usage_capture_label(usage.last_actual_usage_at_ms))
+            ),
+            format!("Refresh: {}", Self::value_label(refresh_hint)),
         ];
 
         if let Some(actual) = &usage.last_actual_usage {
@@ -1890,7 +2083,7 @@ Requests: {}",
                 Self::value_label(actual.session_id.as_deref().unwrap_or("-"))
             ));
             lines.push(format!(
-                "Model: {}",
+                "ReportedModel: {}",
                 Self::value_label(actual.model.as_deref().unwrap_or("-"))
             ));
             lines.push(format!(
@@ -1930,8 +2123,50 @@ Requests: {}",
                     Self::value_label(actual.tool_tokens.to_string())
                 ));
             }
+            lines.push(format!(
+                "Remaining: {}",
+                Self::value_label(
+                    actual
+                        .remaining_text
+                        .as_deref()
+                        .or_else(|| {
+                            backend_definition
+                                .and_then(|definition| definition.remaining_usage_hint.as_deref())
+                        })
+                        .unwrap_or("pending first successful run")
+                )
+            ));
+            lines.push(format!(
+                "Reset: {}",
+                Self::value_label(
+                    actual
+                        .reset_at
+                        .as_deref()
+                        .or_else(|| {
+                            backend_definition
+                                .and_then(|definition| definition.reset_usage_hint.as_deref())
+                        })
+                        .unwrap_or("pending first successful run")
+                )
+            ));
         } else {
             lines.push(format!("Latest: {}", Self::value_label("not reported yet")));
+            lines.push(format!(
+                "Remaining: {}",
+                Self::value_label(
+                    backend_definition
+                        .and_then(|definition| definition.remaining_usage_hint.as_deref())
+                        .unwrap_or("pending first successful run")
+                )
+            ));
+            lines.push(format!(
+                "Reset: {}",
+                Self::value_label(
+                    backend_definition
+                        .and_then(|definition| definition.reset_usage_hint.as_deref())
+                        .unwrap_or("pending first successful run")
+                )
+            ));
         }
 
         lines.push(format!(
@@ -2027,7 +2262,7 @@ Requests: {}",
             }
             TelegramInteractionMode::Coding => {
                 let backend = state.effective_cli_backend(cli_backends);
-                Self::format_coding_usage_report(state, &backend)
+                Self::format_coding_usage_report(state, &backend, cli_backends)
             }
         }
     }
@@ -2047,12 +2282,16 @@ Requests: {}",
             .map(|path| path.as_str())
             .unwrap_or("not found");
         let usage = state.usage_for(&backend);
+        let model = state
+            .effective_cli_model(&backend, cli_backends)
+            .unwrap_or_else(|| "auto".to_string());
 
         format!(
             "TizenClaw: {}\n\
 Mode: {}\n\
 Session: {}\n\
 CodingAgent: {}\n\
+Model: {}\n\
 CodingMode: {}\n\
 AutoApprove: {}\n\
 Project: {}\n\
@@ -2063,6 +2302,7 @@ Runs: {}",
             Self::value_label(state.interaction_mode.as_str()),
             Self::active_session_value_label(state),
             Self::backend_label(&backend),
+            Self::value_label(model),
             Self::value_label(state.execution_mode.as_str()),
             Self::value_label(if state.auto_approve { "on" } else { "off" }),
             Self::value_label(effective_workdir.display().to_string()),
@@ -2102,6 +2342,7 @@ Runs: {}",
                 cli_backends,
                 cli_backend_paths,
             ),
+            "model" => Self::set_model(chat_states, state_path, chat_id, &args, cli_backends),
             "project" => {
                 Self::set_project_directory(chat_states, state_path, chat_id, &args, cli_workdir)
             }
@@ -2314,6 +2555,7 @@ User request:\n{}",
             effective_cli_workdir,
             text,
         );
+        let effective_model = state.effective_cli_model(&backend, cli_backends);
         let approval_value = if state.auto_approve {
             definition
                 .invocation
@@ -2334,7 +2576,7 @@ User request:\n{}",
                 template,
                 &prompt,
                 effective_cli_workdir,
-                definition.model.as_deref(),
+                effective_model.as_deref(),
                 definition.invocation.approval_placeholder.as_deref(),
                 approval_value,
             ));
@@ -2354,6 +2596,12 @@ User request:\n{}",
         let trimmed = template.trim();
         if trimmed.is_empty() {
             return Vec::new();
+        }
+
+        if trimmed == "{model_args}" {
+            return model
+                .map(|model| vec!["--model".to_string(), model.to_string()])
+                .unwrap_or_default();
         }
 
         if trimmed == "{model}" && model.is_none() {
@@ -2600,6 +2848,14 @@ User request:\n{}",
                 }),
             session_id: extractor
                 .session_id_path
+                .as_deref()
+                .and_then(|path| Self::string_at_path(&document, path)),
+            remaining_text: extractor
+                .remaining_text_path
+                .as_deref()
+                .and_then(|path| Self::string_at_path(&document, path)),
+            reset_at: extractor
+                .reset_at_path
                 .as_deref()
                 .and_then(|path| Self::string_at_path(&document, path)),
         })
@@ -3660,6 +3916,7 @@ mod tests {
     fn supported_commands_text_uses_coding_agent_name() {
         let help = TelegramClient::supported_commands_text(&default_registry());
         assert!(help.contains("/coding_agent [codex|gemini|claude]"));
+        assert!(help.contains("/model [name|reset]"));
         assert!(help.contains("/usage"));
         assert!(help.contains("/auto_approve [on|off]"));
         assert!(help.contains("/project [path]"));
@@ -3685,6 +3942,7 @@ mod tests {
             vec![
                 "select",
                 "coding_agent",
+                "model",
                 "project",
                 "new_session",
                 "usage",
@@ -3977,6 +4235,64 @@ mod tests {
     }
 
     #[test]
+    fn model_command_sets_shows_and_resets_backend_override() {
+        let chat_states = Arc::new(Mutex::new(HashMap::new()));
+        let state_path = std::env::temp_dir().join(format!(
+            "telegram_model_state_{}_{}.json",
+            std::process::id(),
+            TelegramClient::current_timestamp_millis()
+        ));
+
+        let set_reply = TelegramClient::handle_command(
+            77,
+            "/model claude-sonnet-4-6",
+            None,
+            &chat_states,
+            &state_path,
+            &default_registry(),
+            &HashMap::new(),
+            std::path::Path::new("/tmp"),
+            0,
+        )
+        .unwrap();
+        assert!(set_reply.text.contains("CodingAgent: [codex]"));
+        assert!(set_reply.text.contains("Model: [claude-sonnet-4-6]"));
+        assert!(set_reply.text.contains("Source: [chat override]"));
+
+        let show_reply = TelegramClient::handle_command(
+            77,
+            "/model",
+            None,
+            &chat_states,
+            &state_path,
+            &default_registry(),
+            &HashMap::new(),
+            std::path::Path::new("/tmp"),
+            0,
+        )
+        .unwrap();
+        assert!(show_reply.text.contains("Model: [claude-sonnet-4-6]"));
+        assert!(show_reply
+            .text
+            .contains("Use: /model [name] | /model reset"));
+
+        let reset_reply = TelegramClient::handle_command(
+            77,
+            "/model reset",
+            None,
+            &chat_states,
+            &state_path,
+            &default_registry(),
+            &HashMap::new(),
+            std::path::Path::new("/tmp"),
+            0,
+        )
+        .unwrap();
+        assert!(reset_reply.text.contains("Model: [auto]"));
+        assert!(reset_reply.text.contains("Source: [backend auto]"));
+    }
+
+    #[test]
     fn config_driven_codex_response_and_usage_are_parsed() {
         let output = concat!(
             "{\"type\":\"thread.started\",\"thread_id\":\"abc\"}\n",
@@ -4088,6 +4404,7 @@ mod tests {
             execution_mode: TelegramExecutionMode::Plan,
             auto_approve: false,
             project_dir: None,
+            model_overrides: HashMap::new(),
             chat_session_index: 1,
             coding_session_index: 1,
             usage: HashMap::new(),
@@ -4119,6 +4436,7 @@ mod tests {
             execution_mode: TelegramExecutionMode::Plan,
             auto_approve: false,
             project_dir: None,
+            model_overrides: HashMap::new(),
             chat_session_index: 1,
             coding_session_index: 1,
             usage: HashMap::new(),
@@ -4145,6 +4463,60 @@ mod tests {
             .position(|arg| arg == "--output-format")
             .unwrap();
         assert_eq!(args[output_index + 1], "json");
+    }
+
+    #[test]
+    fn codex_and_claude_invocations_include_model_override_when_set() {
+        let codex_state = TelegramChatState {
+            interaction_mode: TelegramInteractionMode::Coding,
+            cli_backend: backend("codex"),
+            execution_mode: TelegramExecutionMode::Plan,
+            auto_approve: false,
+            project_dir: None,
+            model_overrides: HashMap::from([("codex".to_string(), "gpt-5-codex".to_string())]),
+            chat_session_index: 1,
+            coding_session_index: 1,
+            usage: HashMap::new(),
+        };
+        let codex_paths = HashMap::from([(backend("codex"), "/usr/bin/codex".to_string())]);
+        let (_, codex_args) = TelegramClient::build_cli_invocation(
+            77,
+            &codex_state,
+            std::path::Path::new("/tmp/project"),
+            &default_registry(),
+            &codex_paths,
+            "hello",
+        )
+        .unwrap();
+        let codex_model_index = codex_args.iter().position(|arg| arg == "--model").unwrap();
+        assert_eq!(codex_args[codex_model_index + 1], "gpt-5-codex");
+
+        let claude_state = TelegramChatState {
+            interaction_mode: TelegramInteractionMode::Coding,
+            cli_backend: backend("claude"),
+            execution_mode: TelegramExecutionMode::Plan,
+            auto_approve: false,
+            project_dir: None,
+            model_overrides: HashMap::from([(
+                "claude".to_string(),
+                "claude-sonnet-4-6".to_string(),
+            )]),
+            chat_session_index: 1,
+            coding_session_index: 1,
+            usage: HashMap::new(),
+        };
+        let claude_paths = HashMap::from([(backend("claude"), "/usr/bin/claude".to_string())]);
+        let (_, claude_args) = TelegramClient::build_cli_invocation(
+            77,
+            &claude_state,
+            std::path::Path::new("/tmp/project"),
+            &default_registry(),
+            &claude_paths,
+            "hello",
+        )
+        .unwrap();
+        let claude_model_index = claude_args.iter().position(|arg| arg == "--model").unwrap();
+        assert_eq!(claude_args[claude_model_index + 1], "claude-sonnet-4-6");
     }
 
     #[test]
@@ -4230,6 +4602,7 @@ mod tests {
             execution_mode: TelegramExecutionMode::Plan,
             auto_approve: false,
             project_dir: None,
+            model_overrides: HashMap::new(),
             chat_session_index: 1,
             coding_session_index: 2,
             usage: HashMap::new(),
@@ -4255,15 +4628,24 @@ mod tests {
             .usage
             .insert(backend("gemini").as_str().to_string(), usage);
 
-        let report = TelegramClient::format_coding_usage_report(&state, &backend("gemini"));
+        let report = TelegramClient::format_coding_usage_report(
+            &state,
+            &backend("gemini"),
+            &default_registry(),
+        );
         assert!(report.contains("Mode: [coding]"));
         assert!(report.contains("Session: [0002]"));
         assert!(report.contains("CodingAgent: [gemini]"));
+        assert!(report.contains("ModelSource: [backend default]"));
+        assert!(report.contains("Source: [stats.models.<model>.tokens]"));
+        assert!(report.contains("Refresh: [updates after the next successful Gemini run]"));
         assert!(report.contains("LatestCLI: [gemini-session]"));
         assert!(report.contains("Model: [gemini-2.5-flash]"));
         assert!(report.contains("Latest: [in 10 | out 2 | total 15]"));
         assert!(report.contains("Cached: [1]"));
         assert!(report.contains("Thought: [3]"));
+        assert!(report.contains("Remaining: [not reported by Gemini CLI]"));
+        assert!(report.contains("Reset: [not reported by Gemini CLI]"));
         assert!(report.contains("TotalThought: [3]"));
     }
 
@@ -4317,6 +4699,7 @@ mod tests {
             execution_mode: TelegramExecutionMode::Plan,
             auto_approve: false,
             project_dir: None,
+            model_overrides: HashMap::new(),
             chat_session_index: 1,
             coding_session_index: 1,
             usage: HashMap::new(),
