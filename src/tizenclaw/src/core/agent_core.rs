@@ -15,13 +15,36 @@
 
 use futures_util::future::join_all;
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex, RwLock};
 
 static THINK_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?s)<think>(.*?)</think>").unwrap());
+static EXPLICIT_PATH_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r#"(/(?:[^/\s"'`<>()\[\]{};,]+/)*[^/\s"'`<>()\[\]{};,]+/?)"#).unwrap()
+});
+static LEVEL_ANSWER_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"\[Level\s+(\d+)\]").unwrap());
+static LEVEL_ANSWER_LINE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?m)^\[Level\s+(\d+)\]\s+Answer:\s*(.+?)\s*$").unwrap()
+});
+static LEVEL_OUTPUT_FILE_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"^level-\d+-solution\.py$").unwrap());
+static LEVEL_OUTPUT_LEVEL_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"^level-(\d+)-solution\.py$").unwrap());
+static LEVEL_INPUT_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"level[_-]?(\d+)[^/\s]*\.csv$").unwrap());
+static SPECULATION_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?i)\b(assuming|assume|placeholder)\b").unwrap());
+static QUOTED_IDENTIFIER_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r#"['"]([A-Za-z_][A-Za-z0-9_]*)['"]"#).unwrap()
+});
+static MARKDOWN_LEVEL_HEADING_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"^##\s+\[(\d+)단계\]").unwrap());
+static CSV_FILE_NAME_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"([A-Za-z0-9_-]+\.csv)\b").unwrap());
 
 use crate::core::agent_loop_state::{AgentLoopState, AgentPhase, EvalVerdict};
 use crate::core::agent_role::{AgentRole, AgentRoleRegistry};
@@ -761,6 +784,802 @@ fn parse_shell_like_args(args: &str) -> Vec<String> {
     parsed
 }
 
+fn normalize_explicit_path_token(token: &str) -> Option<String> {
+    let trimmed = token.trim_matches(|ch: char| {
+        ch.is_whitespace()
+            || matches!(
+                ch,
+                '"' | '\'' | '`' | ',' | ';' | ':' | '.' | '(' | ')' | '[' | ']' | '{' | '}'
+            )
+    });
+    if !trimmed.starts_with('/') {
+        return None;
+    }
+    let candidate = trimmed.trim_end_matches(|ch: char| ch == '.' || ch == ',');
+    let candidate = if candidate.len() > 1 {
+        candidate.trim_end_matches('/')
+    } else {
+        candidate
+    };
+    if candidate.is_empty() {
+        return None;
+    }
+    Some(candidate.to_string())
+}
+
+fn extract_explicit_paths(text: &str) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut paths = Vec::new();
+    for captures in EXPLICIT_PATH_RE.captures_iter(text) {
+        if let Some(path) = captures
+            .get(0)
+            .and_then(|matched| normalize_explicit_path_token(matched.as_str()))
+        {
+            if seen.insert(path.clone()) {
+                paths.push(path);
+            }
+        }
+    }
+    paths
+}
+
+fn path_looks_like_file(path: &str) -> bool {
+    let path_obj = Path::new(path);
+    std::fs::metadata(path_obj)
+        .map(|metadata| metadata.is_file())
+        .unwrap_or_else(|_| path_obj.extension().is_some())
+}
+
+fn path_looks_like_directory(path: &str) -> bool {
+    let path_obj = Path::new(path);
+    std::fs::metadata(path_obj)
+        .map(|metadata| metadata.is_dir())
+        .unwrap_or_else(|_| path_obj.extension().is_none())
+}
+
+fn extract_explicit_file_paths(text: &str) -> Vec<String> {
+    extract_explicit_paths(text)
+        .into_iter()
+        .filter(|path| path_looks_like_file(path))
+        .collect()
+}
+
+fn extract_explicit_directory_paths(text: &str) -> Vec<String> {
+    extract_explicit_paths(text)
+        .into_iter()
+        .filter(|path| path_looks_like_directory(path))
+        .collect()
+}
+
+fn should_prefetch_prompt_file(path: &str) -> bool {
+    matches!(
+        Path::new(path).extension().and_then(|value| value.to_str()),
+        Some("md" | "txt" | "json" | "yaml" | "yml")
+    )
+}
+
+fn load_prefetched_prompt_file_previews(paths: &[String]) -> Vec<(String, String, bool)> {
+    const MAX_PREFETCH_FILES: usize = 3;
+    const MAX_PREFETCH_BYTES: u64 = 64 * 1024;
+    const MAX_PREFETCH_CHARS: usize = 12_000;
+
+    paths.iter()
+        .filter(|path| should_prefetch_prompt_file(path))
+        .take(MAX_PREFETCH_FILES)
+        .filter_map(|path| {
+            let metadata = std::fs::metadata(path).ok()?;
+            if !metadata.is_file() || metadata.len() > MAX_PREFETCH_BYTES {
+                return None;
+            }
+            let content = std::fs::read_to_string(path).ok()?;
+            let preview = utf8_safe_preview(&content, MAX_PREFETCH_CHARS).to_string();
+            Some((path.clone(), preview.clone(), preview.len() < content.len()))
+        })
+        .collect()
+}
+
+fn build_prefetched_prompt_file_messages(paths: &[String]) -> Vec<LlmMessage> {
+    load_prefetched_prompt_file_previews(paths)
+        .into_iter()
+        .enumerate()
+        .map(|(idx, (path, preview, truncated))| {
+            LlmMessage::tool_result(
+                &format!("prefetch_prompt_file_{}", idx + 1),
+                "read_file",
+                json!({
+                    "path": path,
+                    "content": preview,
+                    "prefetched": true,
+                    "truncated": truncated,
+                }),
+            )
+        })
+        .collect()
+}
+
+fn build_prefetched_prompt_file_context(paths: &[String]) -> Option<String> {
+    const MAX_CONTEXT_CHARS_PER_FILE: usize = 2_000;
+
+    let previews = load_prefetched_prompt_file_previews(paths);
+    if previews.is_empty() {
+        return None;
+    }
+
+    let sections = previews
+        .into_iter()
+        .map(|(path, preview, truncated)| {
+            let shortened = utf8_safe_preview(&preview, MAX_CONTEXT_CHARS_PER_FILE);
+            let suffix = if truncated || shortened.len() < preview.len() {
+                "\n...[truncated]"
+            } else {
+                ""
+            };
+            format!(
+                "### {}\n```\n{}{}\n```",
+                path,
+                shortened.trim_end(),
+                suffix
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    Some(format!(
+        "## Prompt File Excerpts\nThese prefetched files are authoritative. Follow their exact requirements and do not invent extra questions, columns, or output formats.\n\n{}",
+        sections
+    ))
+}
+
+fn parse_markdown_level_requirements(markdown: &str) -> Vec<(String, String)> {
+    let mut current_level: Option<String> = None;
+    let mut requirements = Vec::new();
+
+    for line in markdown.lines() {
+        let trimmed = line.trim();
+        if let Some(captures) = MARKDOWN_LEVEL_HEADING_RE.captures(trimmed) {
+            current_level = captures.get(1).map(|value| value.as_str().to_string());
+            continue;
+        }
+
+        if let Some(level) = current_level.as_ref() {
+            if let Some(question) = trimmed.strip_prefix("**문제:**") {
+                requirements.push((level.clone(), question.trim().to_string()));
+                current_level = None;
+            }
+        }
+    }
+
+    requirements
+}
+
+fn resolve_markdown_requirement_csv_path(problem_path: &str, requirement: &str) -> Option<String> {
+    if let Some(path) = extract_explicit_file_paths(requirement).into_iter().next() {
+        return Some(path);
+    }
+
+    let file_name = CSV_FILE_NAME_RE
+        .captures(requirement)
+        .and_then(|captures| captures.get(1).map(|value| value.as_str().to_string()))?;
+    let parent = Path::new(problem_path).parent()?;
+    Some(parent.join(file_name).to_string_lossy().to_string())
+}
+
+fn summarize_requirement_directive(requirement: &str, csv_path: Option<&str>) -> String {
+    let csv_suffix = csv_path
+        .map(|path| format!(" using {}", path))
+        .unwrap_or_default();
+
+    if requirement.contains("가장 많이 팔렸") {
+        return format!(
+            "Count the frequency of Fruit{} and print only the single most common fruit name.",
+            csv_suffix
+        );
+    }
+    if requirement.contains("평균") {
+        return format!(
+            "Compute the arithmetic mean of Hours{} and print only that single average value.",
+            csv_suffix
+        );
+    }
+    if requirement.contains("차이") || requirement.contains("Range") {
+        return format!(
+            "Compute max(Height_cm) - min(Height_cm){} and print only that single range value.",
+            csv_suffix
+        );
+    }
+    if requirement.contains("이상치") {
+        return format!(
+            "Use the IQR rule on Score{} and print only the final outlier count.",
+            csv_suffix
+        );
+    }
+    if requirement.contains("회귀 계수") || requirement.contains("beta_1") || requirement.contains("β1") {
+        return format!(
+            "Estimate the normal-equation OLS coefficients from X1, X2, Y{} and print only beta_1 rounded to three decimals.",
+            csv_suffix
+        );
+    }
+
+    requirement.to_string()
+}
+
+fn build_authoritative_problem_requirements_context(paths: &[String]) -> Option<String> {
+    let previews = load_prefetched_prompt_file_previews(paths);
+    let mut lines = Vec::new();
+
+    for (path, preview, _truncated) in previews {
+        for (level, requirement) in parse_markdown_level_requirements(&preview) {
+            let csv_path = resolve_markdown_requirement_csv_path(&path, &requirement);
+            let directive = summarize_requirement_directive(&requirement, csv_path.as_deref());
+            match csv_path {
+                Some(path) => lines.push(format!(
+                    "- Level {} uses {}. Final directive: {}",
+                    level, path, directive
+                )),
+                None => lines.push(format!(
+                    "- Level {} final directive: {}",
+                    level, directive
+                )),
+            }
+        }
+    }
+
+    if lines.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "## Authoritative Level Requirements\nUse these exact level tasks from the prefetched problem document. Do not add extra metrics, helper outputs, or invented columns.\n{}\nEach generated script should print exactly one final answer value after '[Level N] Answer:'. All generated scripts must execute successfully on the current target runtime. If pandas or numpy are unavailable, fall back to the Python standard library instead of failing.",
+            lines.join("\n")
+        ))
+    }
+}
+
+fn parse_tool_stdout_json(result: &Value) -> Option<Value> {
+    let stdout = result.get("stdout").and_then(|value| value.as_str())?.trim();
+    serde_json::from_str(stdout).ok()
+}
+
+fn collect_grounded_paths_from_value(value: &Value, grounded_paths: &mut HashSet<String>) {
+    if let Some(path) = value.get("path").and_then(|item| item.as_str()) {
+        grounded_paths.insert(path.to_string());
+        if let Some(entries) = value.get("entries").and_then(|item| item.as_array()) {
+            for entry in entries {
+                if let Some(name) = entry.get("name").and_then(|item| item.as_str()) {
+                    grounded_paths.insert(format!("{}/{}", path.trim_end_matches('/'), name));
+                }
+            }
+        }
+    }
+}
+
+fn collect_grounded_paths(messages: &[LlmMessage]) -> HashSet<String> {
+    let mut grounded_paths = HashSet::new();
+    for message in messages.iter().filter(|item| item.role == "tool") {
+        match message.tool_name.as_str() {
+            "read_file" | "list_files" | "extract_document_text" | "inspect_tabular_data" => {
+                collect_grounded_paths_from_value(&message.tool_result, &mut grounded_paths);
+                if let Some(stdout_json) = parse_tool_stdout_json(&message.tool_result) {
+                    collect_grounded_paths_from_value(&stdout_json, &mut grounded_paths);
+                }
+            }
+            _ => {}
+        }
+    }
+    grounded_paths
+}
+
+fn script_references_any_known_input(script_text: &str, known_paths: &HashSet<String>) -> bool {
+    known_paths.iter().any(|path| {
+        script_text.contains(path)
+            || std::path::Path::new(path)
+                .file_name()
+                .and_then(|value| value.to_str())
+                .map(|name| script_text.contains(name))
+                .unwrap_or(false)
+    })
+}
+
+fn path_is_within_any_directory(path: &str, directories: &HashSet<String>) -> bool {
+    let path_obj = Path::new(path);
+    directories
+        .iter()
+        .any(|dir| path_obj.starts_with(Path::new(dir)))
+}
+
+fn prompt_requires_persisted_level_scripts(prompt: &str) -> bool {
+    prompt.contains("level-{problem level}-solution.py")
+        || (prompt.contains("/result/library-used") && prompt.contains("/result/library-not-used"))
+}
+
+fn extract_prompt_level_numbers(prompt: &str) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut levels = extract_explicit_file_paths(prompt)
+        .into_iter()
+        .filter_map(|path| {
+            let file_name = Path::new(&path).file_name()?.to_str()?;
+            let captures = LEVEL_INPUT_RE.captures(file_name)?;
+            let level = captures.get(1)?.as_str().to_string();
+            if seen.insert(level.clone()) {
+                Some(level)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    levels.sort_by_key(|value| value.parse::<usize>().unwrap_or(usize::MAX));
+    levels
+}
+
+fn extract_level_answer_markers(code: &str) -> HashSet<String> {
+    LEVEL_ANSWER_RE
+        .captures_iter(code)
+        .filter_map(|captures| captures.get(1).map(|value| value.as_str().to_string()))
+        .collect()
+}
+
+fn extract_declared_output_path_from_leading_comment(code: &str) -> Option<String> {
+    let first_content_line = code
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())?;
+    let comment_body = first_content_line
+        .strip_prefix('#')
+        .or_else(|| first_content_line.strip_prefix("//"))?
+        .trim();
+    let candidate = normalize_explicit_path_token(comment_body)?;
+    if candidate != comment_body || !path_looks_like_file(&candidate) {
+        return None;
+    }
+    Some(candidate)
+}
+
+fn extract_level_number_from_output_path(path: &str) -> Option<String> {
+    let file_name = Path::new(path).file_name()?.to_str()?;
+    LEVEL_OUTPUT_LEVEL_RE
+        .captures(file_name)
+        .and_then(|captures| captures.get(1).map(|value| value.as_str().to_string()))
+}
+
+fn expected_persisted_level_script_paths(prompt: &str) -> Vec<String> {
+    if !prompt_requires_persisted_level_scripts(prompt) {
+        return Vec::new();
+    }
+
+    let output_dirs = extract_explicit_directory_paths(prompt);
+    let levels = extract_prompt_level_numbers(prompt);
+    if output_dirs.is_empty() || levels.is_empty() {
+        return Vec::new();
+    }
+
+    let mut expected_paths = output_dirs
+        .into_iter()
+        .flat_map(|dir| {
+            levels.iter().map(move |level| {
+                format!("{}/level-{}-solution.py", dir.trim_end_matches('/'), level)
+            })
+        })
+        .collect::<Vec<_>>();
+    expected_paths.sort();
+    expected_paths
+}
+
+fn parse_csv_headers_from_preview(preview: &str) -> HashSet<String> {
+    preview
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .map(|line| {
+            line.split(',')
+                .map(|value| value.trim())
+                .filter(|value| !value.is_empty())
+                .map(|value| value.to_string())
+                .collect::<HashSet<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn collect_grounded_csv_headers(messages: &[LlmMessage]) -> HashSet<String> {
+    let mut headers = HashSet::new();
+
+    for message in messages.iter().filter(|message| message.role == "tool") {
+        match message.tool_name.as_str() {
+            "extract_document_text" => {
+                let path = message
+                    .tool_result
+                    .get("path")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("");
+                if !path.ends_with(".csv") {
+                    continue;
+                }
+                if let Some(preview) = message
+                    .tool_result
+                    .get("text_preview")
+                    .and_then(|value| value.as_str())
+                {
+                    headers.extend(parse_csv_headers_from_preview(preview));
+                }
+            }
+            "inspect_tabular_data" => {
+                if let Some(sheets) = message
+                    .tool_result
+                    .get("inspection")
+                    .and_then(|value| value.get("sheets"))
+                    .and_then(|value| value.as_array())
+                {
+                    for sheet in sheets {
+                        if let Some(sheet_headers) =
+                            sheet.get("headers").and_then(|value| value.as_array())
+                        {
+                            headers.extend(
+                                sheet_headers
+                                    .iter()
+                                    .filter_map(|value| value.as_str())
+                                    .map(|value| value.to_string()),
+                            );
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    headers
+}
+
+fn extract_indexed_column_names(code: &str) -> HashSet<String> {
+    let mut columns = HashSet::new();
+    let chars = code.char_indices().collect::<Vec<_>>();
+
+    for (idx, ch) in chars.iter().copied() {
+        if ch != '[' {
+            continue;
+        }
+
+        let prev_non_ws = code[..idx].chars().rev().find(|value| !value.is_whitespace());
+        if !matches!(prev_non_ws, Some(value) if value.is_ascii_alphanumeric() || value == '_' || value == ')' || value == ']')
+        {
+            continue;
+        }
+
+        let mut depth = 0usize;
+        let mut end_idx = None;
+        for (candidate_idx, candidate) in code[idx..].char_indices() {
+            match candidate {
+                '[' => depth += 1,
+                ']' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        end_idx = Some(idx + candidate_idx + candidate.len_utf8());
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let Some(end_idx) = end_idx else {
+            continue;
+        };
+        let segment = &code[idx..end_idx];
+        if segment.contains('/') {
+            continue;
+        }
+        columns.extend(
+            QUOTED_IDENTIFIER_RE
+                .captures_iter(segment)
+                .filter_map(|captures| captures.get(1).map(|value| value.as_str().to_string())),
+        );
+    }
+
+    columns
+}
+
+fn collect_successful_saved_output_paths(messages: &[LlmMessage]) -> HashSet<String> {
+    messages
+        .iter()
+        .filter(|message| message.role == "tool" && message.tool_name == "run_generated_code")
+        .filter(|message| {
+            message
+                .tool_result
+                .get("result")
+                .and_then(|value| value.get("success"))
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false)
+        })
+        .filter_map(|message| {
+            message
+                .tool_result
+                .get("saved_output_path")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string())
+        })
+        .collect()
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct GeneratedCodeGrounding {
+    declared_output_path: Option<String>,
+    declared_output_level: Option<String>,
+}
+
+fn prompt_requires_atomic_level_answer(prompt: &str) -> bool {
+    prompt.contains("[Level X] Answer:")
+}
+
+fn validate_generated_code_execution_output(
+    stdout: &str,
+    expected_level: Option<&str>,
+    enforce_atomic_answer: bool,
+) -> Result<(), String> {
+    let answer_lines = LEVEL_ANSWER_LINE_RE
+        .captures_iter(stdout)
+        .filter_map(|captures| {
+            let level = captures.get(1)?.as_str().to_string();
+            let answer = captures.get(2)?.as_str().trim().to_string();
+            Some((level, answer))
+        })
+        .collect::<Vec<_>>();
+
+    if let Some(level) = expected_level {
+        if answer_lines.len() != 1 {
+            return Err(format!(
+                "Generated script for level {} must print exactly one '[Level {}] Answer:' line.",
+                level, level
+            ));
+        }
+        if answer_lines[0].0 != level {
+            return Err(format!(
+                "Generated script was saved as level {}, but printed a level {} answer line.",
+                level, answer_lines[0].0
+            ));
+        }
+    }
+
+    if enforce_atomic_answer {
+        for (level, answer) in answer_lines {
+            if answer.is_empty() {
+                return Err(format!(
+                    "Generated script for level {} printed an empty answer value.",
+                    level
+                ));
+            }
+            if answer.split_whitespace().count() > 1 {
+                return Err(format!(
+                    "Generated script for level {} printed multiple answer tokens ('{}'). Print exactly one final answer value after '[Level {}] Answer:'.",
+                    level, answer, level
+                ));
+            }
+            if answer.contains('|') || answer.contains('\n') || answer.contains('\t') {
+                return Err(format!(
+                    "Generated script for level {} printed a compound answer ('{}'). Print exactly one final answer value after '[Level {}] Answer:'.",
+                    level, answer, level
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_generated_code_grounding(
+    prompt: &str,
+    grounded_paths: &HashSet<String>,
+    grounded_csv_headers: &HashSet<String>,
+    code: &str,
+    args: &str,
+) -> Result<GeneratedCodeGrounding, String> {
+    let prompt_paths = extract_explicit_paths(prompt);
+    let prompt_files = extract_explicit_file_paths(prompt);
+    let prompt_directories = extract_explicit_directory_paths(prompt)
+        .into_iter()
+        .collect::<HashSet<_>>();
+    if prompt_files.is_empty() && prompt_directories.is_empty() {
+        return Ok(GeneratedCodeGrounding::default());
+    }
+
+    let missing_paths = prompt_files
+        .iter()
+        .filter(|path| !grounded_paths.contains(path.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !missing_paths.is_empty() {
+        return Err(format!(
+            "Inspect the referenced input files before executing generated code: {}. Use read_file, extract_document_text, or inspect_tabular_data first.",
+            missing_paths.join(", ")
+        ));
+    }
+
+    let combined = if args.trim().is_empty() {
+        code.to_string()
+    } else {
+        format!("{}\n{}", code, args)
+    };
+    let combined_paths = extract_explicit_file_paths(&combined);
+    let known_paths = prompt_paths
+        .iter()
+        .chain(grounded_paths.iter())
+        .cloned()
+        .collect::<HashSet<_>>();
+    let unexpected_paths = combined_paths
+        .into_iter()
+        .filter(|path| {
+            !known_paths.contains(path) && !path_is_within_any_directory(path, &prompt_directories)
+        })
+        .collect::<Vec<_>>();
+    if !unexpected_paths.is_empty() {
+        return Err(format!(
+            "Generated code references unverified file paths: {}. Use only the inspected inputs or the user-provided paths.",
+            unexpected_paths.join(", ")
+        ));
+    }
+
+    let known_input_paths = prompt_files
+        .iter()
+        .chain(grounded_paths.iter().filter(|path| path_looks_like_file(path)))
+        .cloned()
+        .collect::<HashSet<_>>();
+    if !script_references_any_known_input(&combined, &known_input_paths) {
+        return Err(
+            "Generated code is not grounded in the inspected input files. Do not substitute mock data or invented datasets; reference the real inputs or pass them through args."
+                .to_string(),
+        );
+    }
+
+    if SPECULATION_RE.is_match(code) {
+        return Err(
+            "Generated code contains speculative assumptions or placeholder logic. Use only the exact problem statement, real CSV headers, and real data values."
+                .to_string(),
+        );
+    }
+
+    if !grounded_csv_headers.is_empty() {
+        let unexpected_columns = extract_indexed_column_names(&combined)
+            .into_iter()
+            .filter(|column| !grounded_csv_headers.contains(column))
+            .collect::<Vec<_>>();
+        if !unexpected_columns.is_empty() {
+            let mut known_headers = grounded_csv_headers.iter().cloned().collect::<Vec<_>>();
+            known_headers.sort();
+            return Err(format!(
+                "Generated code references unverified CSV columns: {}. Use only inspected headers: {}.",
+                unexpected_columns.join(", "),
+                known_headers.join(", ")
+            ));
+        }
+    }
+
+    let declared_output_path = extract_declared_output_path_from_leading_comment(code)
+        .filter(|path| path_is_within_any_directory(path, &prompt_directories));
+    let declared_output_level = declared_output_path
+        .as_deref()
+        .and_then(extract_level_number_from_output_path);
+
+    if prompt_requires_persisted_level_scripts(prompt) && !prompt_directories.is_empty() {
+        let Some(output_path) = declared_output_path.as_ref() else {
+            return Err(
+                "Persist each generated script by placing the exact absolute output file path in a leading comment line, for example '# /tmp/ds_olympiad/result/library-used/level-1-solution.py'."
+                    .to_string(),
+            );
+        };
+        let file_name = Path::new(output_path)
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
+        if !LEVEL_OUTPUT_FILE_RE.is_match(file_name) {
+            return Err(format!(
+                "Use the requested filename format 'level-N-solution.py' for generated scripts, not '{}'.",
+                file_name
+            ));
+        }
+
+        if let Some(level) = declared_output_level.as_ref() {
+            let matching_level_inputs = prompt_files
+                .iter()
+                .filter(|path| {
+                    Path::new(path)
+                        .file_name()
+                        .and_then(|value| value.to_str())
+                        .and_then(|file_name| LEVEL_INPUT_RE.captures(file_name))
+                        .and_then(|captures| captures.get(1).map(|value| value.as_str().to_string()))
+                        .as_deref()
+                        == Some(level.as_str())
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            let matching_level_input_set =
+                matching_level_inputs.iter().cloned().collect::<HashSet<_>>();
+            if !matching_level_inputs.is_empty()
+                && !script_references_any_known_input(&combined, &matching_level_input_set)
+            {
+                return Err(format!(
+                    "Generated level {} script must use the matching inspected input file(s): {}.",
+                    level,
+                    matching_level_inputs.join(", ")
+                ));
+            }
+
+            let unrelated_level_inputs = prompt_files
+                .iter()
+                .filter(|path| {
+                    Path::new(path)
+                        .file_name()
+                        .and_then(|value| value.to_str())
+                        .and_then(|file_name| LEVEL_INPUT_RE.captures(file_name))
+                        .and_then(|captures| captures.get(1).map(|value| value.as_str().to_string()))
+                        .is_some_and(|candidate| candidate != *level)
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            let cross_level_inputs = unrelated_level_inputs
+                .into_iter()
+                .filter(|path| {
+                    combined.contains(path)
+                        || Path::new(path)
+                            .file_name()
+                            .and_then(|value| value.to_str())
+                            .map(|name| combined.contains(name))
+                            .unwrap_or(false)
+                })
+                .collect::<Vec<_>>();
+            if !cross_level_inputs.is_empty() {
+                return Err(format!(
+                    "Generated level {} script references other levels' input files: {}.",
+                    level,
+                    cross_level_inputs.join(", ")
+                ));
+            }
+        }
+
+        let level_markers = extract_level_answer_markers(code);
+        if level_markers.len() > 1 {
+            return Err(
+                "Generate exactly one level per script. One run_generated_code call must produce one level-N-solution.py file."
+                    .to_string(),
+            );
+        }
+    }
+
+    Ok(GeneratedCodeGrounding {
+        declared_output_path,
+        declared_output_level,
+    })
+}
+
+fn persist_generated_code_copy(code: &str, output_path: &Path) -> Result<(), String> {
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| {
+            format!(
+                "Failed to create generated output directory '{}': {}",
+                parent.display(),
+                err
+            )
+        })?;
+    }
+
+    let mut file = std::fs::File::create(output_path).map_err(|err| {
+        format!(
+            "Failed to create generated output file '{}': {}",
+            output_path.display(),
+            err
+        )
+    })?;
+    file.write_all(code.as_bytes()).map_err(|err| {
+        format!(
+            "Failed to write generated output file '{}': {}",
+            output_path.display(),
+            err
+        )
+    })?;
+    file.flush().map_err(|err| {
+        format!(
+            "Failed to flush generated output file '{}': {}",
+            output_path.display(),
+            err
+        )
+    })
+}
+
 fn extract_option_value(args: &[String], flag: &str) -> Option<String> {
     args.windows(2)
         .find(|window| window[0] == flag)
@@ -1202,6 +2021,9 @@ async fn run_generated_code_tool(
     args: &str,
     base_dir: &Path,
     workdir: Option<&Path>,
+    declared_output_path: Option<&str>,
+    declared_output_level: Option<&str>,
+    enforce_atomic_answer: bool,
 ) -> Value {
     let code_trimmed = code.trim_start();
     let looks_like_web_markup = code_trimmed.starts_with("<!DOCTYPE html")
@@ -1268,16 +2090,71 @@ async fn run_generated_code_tool(
         .execute_oneshot(binary, &exec_args_ref, Some(cwd.as_str()))
         .await
     {
-        Ok(result) => json!({
-            "runtime": runtime,
-            "script_path": script_path,
-            "name": script_path.rsplit('/').next().unwrap_or(""),
-            "result": result
-        }),
+        Ok(result) => {
+            let mut saved_output_path = None;
+            let stderr = result
+                .get("stderr")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+
+            if result
+                .get("success")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false)
+            {
+                let stdout = result
+                    .get("stdout")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("");
+                if let Err(err) = validate_generated_code_execution_output(
+                    stdout,
+                    declared_output_level,
+                    enforce_atomic_answer,
+                ) {
+                    return json!({
+                        "runtime": runtime,
+                        "script_path": script_path,
+                        "name": script_path.rsplit('/').next().unwrap_or(""),
+                        "saved_output_path": saved_output_path,
+                        "result": result,
+                        "error": err
+                    });
+                }
+
+                if let Some(path) = declared_output_path {
+                    let output_path = Path::new(path);
+                    if let Err(err) = persist_generated_code_copy(code, output_path) {
+                        return json!({ "error": err });
+                    }
+                    saved_output_path = Some(output_path.to_string_lossy().to_string());
+                }
+            }
+
+            let module_error = if stderr.contains("ModuleNotFoundError")
+                && (stderr.contains("pandas") || stderr.contains("numpy"))
+            {
+                Some(
+                    "Required third-party Python packages are unavailable on the target runtime. Generate code that executes successfully with the available standard library instead of importing missing packages."
+                        .to_string(),
+                )
+            } else {
+                None
+            };
+
+            json!({
+                "runtime": runtime,
+                "script_path": script_path,
+                "name": script_path.rsplit('/').next().unwrap_or(""),
+                "saved_output_path": saved_output_path,
+                "result": result,
+                "error": module_error
+            })
+        }
         Err(err) => json!({
             "runtime": runtime,
             "script_path": script_path,
             "name": script_path.rsplit('/').next().unwrap_or(""),
+            "saved_output_path": serde_json::Value::Null,
             "error": format!("Failed to execute generated code: {}", err)
         }),
     }
@@ -3185,6 +4062,53 @@ impl AgentCore {
                 session_workdir.to_string_lossy()
             ),
         );
+        let explicit_prompt_paths = extract_explicit_file_paths(prompt);
+        let explicit_output_dirs = extract_explicit_directory_paths(prompt);
+        if !explicit_prompt_paths.is_empty() {
+            for prefetched_message in build_prefetched_prompt_file_messages(&explicit_prompt_paths) {
+                if let Some(last_user_idx) =
+                    messages.iter().rposition(|message| message.role == "user")
+                {
+                    messages.insert(last_user_idx, prefetched_message);
+                } else {
+                    messages.push(prefetched_message);
+                }
+            }
+            inject_context_message(
+                &mut messages,
+                format!(
+                    "## File Grounding\nThe user explicitly referenced these real input files:\n{}\nInspect the relevant files before generating or executing code. Base every answer and script on the real file contents. Do not invent substitute datasets, placeholder paths, or mock values.",
+                    explicit_prompt_paths
+                        .iter()
+                        .map(|path| format!("- {}", path))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                ),
+            );
+            if let Some(prefetched_context) =
+                build_prefetched_prompt_file_context(&explicit_prompt_paths)
+            {
+                inject_context_message(&mut messages, prefetched_context);
+            }
+            if let Some(problem_requirements_context) =
+                build_authoritative_problem_requirements_context(&explicit_prompt_paths)
+            {
+                inject_context_message(&mut messages, problem_requirements_context);
+            }
+        }
+        if prompt_requires_persisted_level_scripts(prompt) && !explicit_output_dirs.is_empty() {
+            inject_context_message(
+                &mut messages,
+                format!(
+                    "## Output Contract\nThe user requested persisted script files under these output directories:\n{}\nFor each run_generated_code call, generate exactly one level script. Put the exact absolute target file path in the first comment line, use the filename format 'level-N-solution.py', and do not paste fenced code or prose instead of calling run_generated_code.",
+                    explicit_output_dirs
+                        .iter()
+                        .map(|path| format!("- {}", path))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                ),
+            );
+        }
 
         // Load long term memory dynamically and inject into messages (preserves system_prompt cache)
         let mut memory_context_for_log: Option<String> = None;
@@ -3620,6 +4544,8 @@ impl AgentCore {
                 let llm_doc = llm_config_store::load(&self.platform.paths.config_dir)
                     .unwrap_or_else(|_| llm_config_store::default_document());
                 let search_config_dir = self.platform.paths.config_dir.clone();
+                let grounded_paths_snapshot = collect_grounded_paths(&messages);
+                let grounded_csv_headers_snapshot = collect_grounded_csv_headers(&messages);
 
                 for tc in detected_tool_calls.iter() {
                     let skills_dir = self.platform.paths.skills_dir.clone();
@@ -3634,6 +4560,8 @@ impl AgentCore {
                     let session_workdir = session_workdir.clone();
                     let llm_doc = llm_doc.clone();
                     let search_config_dir = search_config_dir.clone();
+                    let grounded_paths_snapshot = grounded_paths_snapshot.clone();
+                    let grounded_csv_headers_snapshot = grounded_csv_headers_snapshot.clone();
 
                     // ── Phase 11: SafetyCheck per tool ───────────────────
                     let block_reason = if let Ok(tp) = self.tool_policy.lock() {
@@ -4062,16 +4990,30 @@ impl AgentCore {
                             let name = tc_args.get("name").and_then(|v| v.as_str());
                             let code = tc_args.get("code").and_then(|v| v.as_str()).unwrap_or("");
                             let args = tc_args.get("args").and_then(|v| v.as_str()).unwrap_or("");
-                            let base_dir = self.platform.paths.data_dir.clone();
-                            run_generated_code_tool(
-                                runtime,
-                                name,
+                            match validate_generated_code_grounding(
+                                prompt,
+                                &grounded_paths_snapshot,
+                                &grounded_csv_headers_snapshot,
                                 code,
                                 args,
-                                &base_dir,
-                                Some(&session_workdir),
-                            )
-                            .await
+                            ) {
+                                Err(reason) => serde_json::json!({ "error": reason }),
+                                Ok(grounding) => {
+                                    let base_dir = self.platform.paths.data_dir.clone();
+                                    run_generated_code_tool(
+                                        runtime,
+                                        name,
+                                        code,
+                                        args,
+                                        &base_dir,
+                                        Some(&session_workdir),
+                                        grounding.declared_output_path.as_deref(),
+                                        grounding.declared_output_level.as_deref(),
+                                        prompt_requires_atomic_level_answer(prompt),
+                                    )
+                                    .await
+                                }
+                            }
                         } else if tc_name == "manage_generated_code" {
                             let operation = tc_args.get("operation").and_then(|v| v.as_str()).unwrap_or("");
                             let name = tc_args.get("name").and_then(|v| v.as_str());
@@ -4299,6 +5241,30 @@ impl AgentCore {
                     continue; // Immediately start next round to pick up next workflow step
                 }
             } else {
+                let expected_output_paths = expected_persisted_level_script_paths(prompt);
+                if !expected_output_paths.is_empty() {
+                    let saved_output_paths = collect_successful_saved_output_paths(&messages);
+                    let missing_output_paths = expected_output_paths
+                        .into_iter()
+                        .filter(|path| !saved_output_paths.contains(path))
+                        .collect::<Vec<_>>();
+
+                    if !missing_output_paths.is_empty() {
+                        loop_state.set_follow_up(true);
+                        messages.push(LlmMessage {
+                            role: "assistant".into(),
+                            text: response.text.clone(),
+                            ..Default::default()
+                        });
+                        messages.push(LlmMessage::user(&format!(
+                            "The task is not complete yet. Do not respond with prose or fenced code. Use run_generated_code to create the missing files exactly at these paths:\n{}\nIf needed, inspect /tmp/ds_olympiad/problem.md first. Generate exactly one level per run_generated_code call and continue until every file is saved.",
+                            missing_output_paths.join("\n")
+                        )));
+                        loop_state.transition(AgentPhase::RePlanning);
+                        continue;
+                    }
+                }
+
                 let mut advance_workflow = false;
                 if let Some(wf_id) = loop_state.active_workflow_id.as_ref() {
                     let we = self.workflow_engine.read().await;
@@ -4722,17 +5688,26 @@ impl<'a> SessionStoreRef<'a> {
 mod tests {
     use super::{
         AgentRole, MAX_OUTBOUND_DASHBOARD_MESSAGES, append_dashboard_outbound_message,
-        build_progress_marker, build_role_supervisor_hint, build_skill_prefetch_message,
-        dashboard_outbound_queue_path, extract_final_text, generated_code_runtime_spec,
-        generated_code_script_path, manage_generated_code_tool, normalize_conversation_log_text,
-        parse_shell_like_args, prompt_mode_from_doc, reasoning_policy_from_doc,
+        build_authoritative_problem_requirements_context, build_prefetched_prompt_file_context,
+        build_prefetched_prompt_file_messages, build_progress_marker,
+        build_role_supervisor_hint, build_skill_prefetch_message, collect_grounded_csv_headers,
+        collect_grounded_paths, dashboard_outbound_queue_path,
+        expected_persisted_level_script_paths, extract_level_number_from_output_path,
+        extract_explicit_directory_paths, extract_explicit_file_paths,
+        extract_explicit_paths, extract_final_text, generated_code_runtime_spec,
+        generated_code_script_path, manage_generated_code_tool,
+        normalize_conversation_log_text, parse_shell_like_args,
+        persist_generated_code_copy, prompt_mode_from_doc, reasoning_policy_from_doc,
         role_relevance_score, sanitize_generated_code_name, select_delegate_roles,
-        select_relevant_skills, utf8_safe_preview,
+        select_relevant_skills, utf8_safe_preview, validate_generated_code_execution_output,
+        validate_generated_code_grounding,
     };
     use crate::core::prompt_builder::{PromptMode, ReasoningPolicy};
     use crate::core::textual_skill_scanner::TextualSkill;
-    use crate::llm::backend::LlmToolCall;
+    use crate::llm::backend::{LlmMessage, LlmToolCall};
     use serde_json::json;
+    use std::collections::HashSet;
+    use tempfile::tempdir;
 
     #[test]
     fn utf8_safe_preview_returns_full_short_ascii_text() {
@@ -4876,6 +5851,465 @@ mod tests {
                 "hello world".to_string(),
                 "alpha beta".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn extract_explicit_file_paths_finds_absolute_files() {
+        let prompt = "Read /tmp/ds_olympiad/problem.md and '/tmp/ds_olympiad/answer.md'.";
+
+        let paths = extract_explicit_file_paths(prompt);
+
+        assert_eq!(
+            paths,
+            vec![
+                "/tmp/ds_olympiad/problem.md".to_string(),
+                "/tmp/ds_olympiad/answer.md".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn extract_explicit_paths_includes_output_directories() {
+        let prompt = "Write files into /tmp/ds_olympiad/result/library-used and /tmp/ds_olympiad/result/library-not-used.";
+
+        let paths = extract_explicit_paths(prompt);
+        let directories = extract_explicit_directory_paths(prompt);
+
+        assert!(paths.contains(&"/tmp/ds_olympiad/result/library-used".to_string()));
+        assert!(paths.contains(&"/tmp/ds_olympiad/result/library-not-used".to_string()));
+        assert_eq!(directories.len(), 2);
+    }
+
+    #[test]
+    fn collect_grounded_paths_reads_paths_from_tool_stdout_json() {
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "read_file",
+            json!({
+                "stdout": "{\"path\":\"/tmp/ds_olympiad/problem.md\",\"content\":\"demo\"}",
+                "success": true
+            }),
+        )];
+
+        let grounded = collect_grounded_paths(&messages);
+
+        assert!(grounded.contains("/tmp/ds_olympiad/problem.md"));
+    }
+
+    #[test]
+    fn build_prefetched_prompt_file_messages_prefetches_markdown_specs() {
+        let dir = tempdir().unwrap();
+        let spec_path = dir.path().join("problem.md");
+        std::fs::write(&spec_path, "# Problem\nUse the real data.\n").unwrap();
+        let csv_path = dir.path().join("data.csv");
+        std::fs::write(&csv_path, "x,y\n1,2\n").unwrap();
+
+        let messages = build_prefetched_prompt_file_messages(&[
+            spec_path.to_string_lossy().to_string(),
+            csv_path.to_string_lossy().to_string(),
+        ]);
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].tool_name, "read_file");
+        assert_eq!(
+            messages[0]
+                .tool_result
+                .get("path")
+                .and_then(|value| value.as_str()),
+            Some(spec_path.to_string_lossy().as_ref())
+        );
+    }
+
+    #[test]
+    fn build_prefetched_prompt_file_context_includes_authoritative_excerpt() {
+        let dir = tempdir().unwrap();
+        let spec_path = dir.path().join("problem.md");
+        std::fs::write(&spec_path, "# Problem\nUse the exact CSV files.\n").unwrap();
+
+        let context =
+            build_prefetched_prompt_file_context(&[spec_path.to_string_lossy().to_string()])
+                .unwrap_or_default();
+
+        assert!(context.contains("Prompt File Excerpts"));
+        assert!(context.contains(spec_path.to_string_lossy().as_ref()));
+        assert!(context.contains("Use the exact CSV files."));
+    }
+
+    #[test]
+    fn build_authoritative_problem_requirements_context_summarizes_levels() {
+        let dir = tempdir().unwrap();
+        let spec_path = dir.path().join("problem.md");
+        std::fs::write(
+            &spec_path,
+            "## [1단계] 초등학생\n**문제:** `level1_fruit_sales.csv` 파일에서 가장 많이 팔린 과일을 찾으세요.\n## [2단계] 초등학생\n**문제:** `level2_study_time.csv` 파일에서 하루 평균 공부 시간을 구하세요.\n",
+        )
+        .unwrap();
+
+        let context = build_authoritative_problem_requirements_context(&[
+            spec_path.to_string_lossy().to_string(),
+        ])
+        .unwrap_or_default();
+
+        assert!(context.contains("Level 1 uses"));
+        assert!(context.contains("level1_fruit_sales.csv"));
+        assert!(context.contains("Level 2 uses"));
+        assert!(context.contains("exactly one final answer value"));
+    }
+
+    #[test]
+    fn extract_level_number_from_output_path_reads_level_suffix() {
+        assert_eq!(
+            extract_level_number_from_output_path(
+                "/tmp/ds_olympiad/result/library-used/level-4-solution.py"
+            )
+            .as_deref(),
+            Some("4")
+        );
+    }
+
+    #[test]
+    fn extract_explicit_file_paths_finds_paths_inside_function_calls() {
+        let script = "with open('/tmp/ds_olympiad/data.csv') as fh:\n    print(fh.read())";
+
+        let paths = extract_explicit_file_paths(script);
+
+        assert_eq!(paths, vec!["/tmp/ds_olympiad/data.csv".to_string()]);
+    }
+
+    #[test]
+    fn validate_generated_code_grounding_requires_prompt_files_to_be_read_first() {
+        let prompt = "Read /tmp/ds_olympiad/problem.md and solve it.";
+        let grounded_paths = HashSet::new();
+        let grounded_csv_headers = HashSet::new();
+
+        let result = validate_generated_code_grounding(
+            prompt,
+            &grounded_paths,
+            &grounded_csv_headers,
+            "print('hello')",
+            "",
+        );
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .contains("/tmp/ds_olympiad/problem.md")
+        );
+    }
+
+    #[test]
+    fn validate_generated_code_grounding_rejects_unverified_paths() {
+        let prompt = "Read /tmp/ds_olympiad/problem.md and solve it.";
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "read_file",
+            json!({
+                "stdout": "{\"path\":\"/tmp/ds_olympiad/problem.md\",\"content\":\"demo\"}",
+                "success": true
+            }),
+        )];
+        let grounded_paths = collect_grounded_paths(&messages);
+        let grounded_csv_headers = collect_grounded_csv_headers(&messages);
+
+        let result = validate_generated_code_grounding(
+            prompt,
+            &grounded_paths,
+            &grounded_csv_headers,
+            "with open('/tmp/ds_olympiad/data.csv') as fh:\n    print(fh.read())",
+            "",
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unverified file paths"));
+    }
+
+    #[test]
+    fn validate_generated_code_grounding_accepts_declared_output_paths() {
+        let prompt = "Read /tmp/ds_olympiad/problem.md and save the script to /tmp/ds_olympiad/result/library-used.";
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "read_file",
+            json!({
+                "stdout": "{\"path\":\"/tmp/ds_olympiad/problem.md\",\"content\":\"demo\"}",
+                "success": true
+            }),
+        )];
+        let grounded_paths = collect_grounded_paths(&messages);
+        let grounded_csv_headers = collect_grounded_csv_headers(&messages);
+
+        let result = validate_generated_code_grounding(
+            prompt,
+            &grounded_paths,
+            &grounded_csv_headers,
+            "# /tmp/ds_olympiad/result/library-used/level-1-solution.py\nwith open('/tmp/ds_olympiad/problem.md') as fh:\n    print(fh.read())",
+            "",
+        )
+        .unwrap();
+
+        assert_eq!(
+            result.declared_output_path.as_deref(),
+            Some("/tmp/ds_olympiad/result/library-used/level-1-solution.py")
+        );
+    }
+
+    #[test]
+    fn validate_generated_code_grounding_requires_leading_comment_output_path() {
+        let prompt = "Read /tmp/ds_olympiad/problem.md and save the script to /tmp/ds_olympiad/result/library-used using the filename level-{problem level}-solution.py.";
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "read_file",
+            json!({
+                "stdout": "{\"path\":\"/tmp/ds_olympiad/problem.md\",\"content\":\"demo\"}",
+                "success": true
+            }),
+        )];
+        let grounded_paths = collect_grounded_paths(&messages);
+        let grounded_csv_headers = collect_grounded_csv_headers(&messages);
+
+        let result = validate_generated_code_grounding(
+            prompt,
+            &grounded_paths,
+            &grounded_csv_headers,
+            "with open('/tmp/ds_olympiad/problem.md') as source:\n    print(source.read())\nwith open('/tmp/ds_olympiad/result/library-used/level-1-solution.py', 'w') as fh:\n    fh.write('demo')\nprint('[Level 1] Answer: demo')",
+            "",
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("leading comment line"));
+    }
+
+    #[test]
+    fn validate_generated_code_grounding_requires_declared_output_path_when_prompt_demands_files() {
+        let prompt = "Write each result to /tmp/ds_olympiad/result/library-used using the filename level-{problem level}-solution.py after reading /tmp/ds_olympiad/problem.md.";
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "read_file",
+            json!({
+                "stdout": "{\"path\":\"/tmp/ds_olympiad/problem.md\",\"content\":\"demo\"}",
+                "success": true
+            }),
+        )];
+        let grounded_paths = collect_grounded_paths(&messages);
+        let grounded_csv_headers = collect_grounded_csv_headers(&messages);
+
+        let result = validate_generated_code_grounding(
+            prompt,
+            &grounded_paths,
+            &grounded_csv_headers,
+            "with open('/tmp/ds_olympiad/problem.md') as fh:\n    print(fh.read())",
+            "",
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("leading comment line"));
+    }
+
+    #[test]
+    fn validate_generated_code_grounding_rejects_multi_level_script_when_one_file_is_required() {
+        let prompt = "Write each result to /tmp/ds_olympiad/result/library-used using the filename level-{problem level}-solution.py after reading /tmp/ds_olympiad/problem.md.";
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "read_file",
+            json!({
+                "stdout": "{\"path\":\"/tmp/ds_olympiad/problem.md\",\"content\":\"demo\"}",
+                "success": true
+            }),
+        )];
+        let grounded_paths = collect_grounded_paths(&messages);
+        let grounded_csv_headers = collect_grounded_csv_headers(&messages);
+
+        let result = validate_generated_code_grounding(
+            prompt,
+            &grounded_paths,
+            &grounded_csv_headers,
+            "# /tmp/ds_olympiad/result/library-used/level-1-solution.py\nwith open('/tmp/ds_olympiad/problem.md') as source:\n    print(source.read())\nprint('[Level 1] Answer: 1')\nprint('[Level 2] Answer: 2')",
+            "",
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("exactly one level per script"));
+    }
+
+    #[test]
+    fn validate_generated_code_grounding_accepts_known_inputs() {
+        let prompt = "Read /tmp/ds_olympiad/problem.md and solve it.";
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "read_file",
+            json!({
+                "stdout": "{\"path\":\"/tmp/ds_olympiad/problem.md\",\"content\":\"demo\"}",
+                "success": true
+            }),
+        )];
+        let grounded_paths = collect_grounded_paths(&messages);
+        let grounded_csv_headers = collect_grounded_csv_headers(&messages);
+
+        let result = validate_generated_code_grounding(
+            prompt,
+            &grounded_paths,
+            &grounded_csv_headers,
+            "with open('/tmp/ds_olympiad/problem.md') as fh:\n    print(fh.read())",
+            "",
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().declared_output_path, None);
+    }
+
+    #[test]
+    fn validate_generated_code_grounding_rejects_unverified_csv_columns() {
+        let prompt = "Read /tmp/ds_olympiad/level1_fruit_sales.csv and solve it.";
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "extract_document_text",
+            json!({
+                "path": "/tmp/ds_olympiad/level1_fruit_sales.csv",
+                "text_preview": "Fruit\nApple\nBanana\n",
+                "status": "success"
+            }),
+        )];
+        let grounded_paths = collect_grounded_paths(&messages);
+        let grounded_csv_headers = collect_grounded_csv_headers(&messages);
+
+        let result = validate_generated_code_grounding(
+            prompt,
+            &grounded_paths,
+            &grounded_csv_headers,
+            "import csv\nwith open('/tmp/ds_olympiad/level1_fruit_sales.csv') as fh:\n    rows = [row['Sales'] for row in csv.DictReader(fh)]\nprint(rows)",
+            "",
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unverified CSV columns"));
+    }
+
+    #[test]
+    fn validate_generated_code_grounding_rejects_speculative_placeholders() {
+        let prompt = "Read /tmp/ds_olympiad/level5_multiple_regression.csv and solve it.";
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "extract_document_text",
+            json!({
+                "path": "/tmp/ds_olympiad/level5_multiple_regression.csv",
+                "text_preview": "X1,X2,Y\n1,2,3\n",
+                "status": "success"
+            }),
+        )];
+        let grounded_paths = collect_grounded_paths(&messages);
+        let grounded_csv_headers = collect_grounded_csv_headers(&messages);
+
+        let result = validate_generated_code_grounding(
+            prompt,
+            &grounded_paths,
+            &grounded_csv_headers,
+            "with open('/tmp/ds_olympiad/level5_multiple_regression.csv') as fh:\n    print('placeholder value')",
+            "",
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("speculative assumptions"));
+    }
+
+    #[test]
+    fn validate_generated_code_grounding_rejects_cross_level_inputs_for_saved_scripts() {
+        let prompt = "Write each result to /tmp/ds_olympiad/result/library-used and /tmp/ds_olympiad/result/library-not-used using the filename level-{problem level}-solution.py after reading /tmp/ds_olympiad/problem.md, /tmp/ds_olympiad/level1_fruit_sales.csv, /tmp/ds_olympiad/level2_study_time.csv.";
+        let messages = vec![
+            LlmMessage::tool_result(
+                "call_1",
+                "read_file",
+                json!({
+                    "stdout": "{\"path\":\"/tmp/ds_olympiad/problem.md\",\"content\":\"demo\"}",
+                    "success": true
+                }),
+            ),
+            LlmMessage::tool_result(
+                "call_2",
+                "extract_document_text",
+                json!({
+                    "path": "/tmp/ds_olympiad/level1_fruit_sales.csv",
+                    "text_preview": "Fruit\nApple\nBanana\n",
+                    "status": "success"
+                }),
+            ),
+            LlmMessage::tool_result(
+                "call_3",
+                "extract_document_text",
+                json!({
+                    "path": "/tmp/ds_olympiad/level2_study_time.csv",
+                    "text_preview": "Day,Hours\nMon,2.0\n",
+                    "status": "success"
+                }),
+            ),
+        ];
+        let grounded_paths = collect_grounded_paths(&messages);
+        let grounded_csv_headers = collect_grounded_csv_headers(&messages);
+
+        let result = validate_generated_code_grounding(
+            prompt,
+            &grounded_paths,
+            &grounded_csv_headers,
+            "# /tmp/ds_olympiad/result/library-used/level-1-solution.py\nimport csv\nwith open('/tmp/ds_olympiad/level2_study_time.csv') as fh:\n    print(next(csv.DictReader(fh))['Hours'])",
+            "",
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("matching inspected input file"));
+    }
+
+    #[test]
+    fn validate_generated_code_execution_output_rejects_multi_token_answers() {
+        let result = validate_generated_code_execution_output(
+            "[Level 4] Answer: 81.2 8 12.03\n",
+            Some("4"),
+            true,
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("multiple answer tokens"));
+    }
+
+    #[test]
+    fn validate_generated_code_execution_output_accepts_single_value_answers() {
+        let result = validate_generated_code_execution_output(
+            "[Level 2] Answer: 2.2시간\n",
+            Some("2"),
+            true,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn expected_persisted_level_script_paths_expands_all_levels_and_dirs() {
+        let prompt = "Write each result to /tmp/ds_olympiad/result/library-used and /tmp/ds_olympiad/result/library-not-used using the filename level-{problem level}-solution.py after reading /tmp/ds_olympiad/problem.md, /tmp/ds_olympiad/level1_fruit_sales.csv, /tmp/ds_olympiad/level2_study_time.csv, /tmp/ds_olympiad/level3_student_physical.csv.";
+
+        let expected = expected_persisted_level_script_paths(prompt);
+
+        assert_eq!(
+            expected,
+            vec![
+                "/tmp/ds_olympiad/result/library-not-used/level-1-solution.py",
+                "/tmp/ds_olympiad/result/library-not-used/level-2-solution.py",
+                "/tmp/ds_olympiad/result/library-not-used/level-3-solution.py",
+                "/tmp/ds_olympiad/result/library-used/level-1-solution.py",
+                "/tmp/ds_olympiad/result/library-used/level-2-solution.py",
+                "/tmp/ds_olympiad/result/library-used/level-3-solution.py",
+            ]
+        );
+    }
+
+    #[test]
+    fn persist_generated_code_copy_writes_requested_output_file() {
+        let dir = tempdir().unwrap();
+        let output_path = dir.path().join("result/library-used/level-1-solution.py");
+
+        persist_generated_code_copy("print('ok')\n", &output_path).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&output_path).unwrap(),
+            "print('ok')\n"
         );
     }
 

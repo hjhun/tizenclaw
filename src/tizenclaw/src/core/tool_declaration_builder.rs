@@ -150,7 +150,7 @@ impl ToolDeclarationBuilder {
         });
         tools.push(LlmToolDecl {
             name: "run_generated_code".into(),
-            description: "Write generated Python, Node.js, or Bash code under the device-owned codes directory and execute it immediately. Use this for executable scripts only. Do not use it for HTML/CSS/JS browser apps or webview content; use generate_web_app for those.".into(),
+            description: "Write generated Python, Node.js, or Bash code under the device-owned codes directory and execute it immediately. If the first non-empty line is a comment containing the exact allowed absolute output file path, the same script may also be persisted there. When the user asks you to create script files under specific directories, do not answer with fenced code or prose; use this tool. Use this for executable scripts only. Do not use it for HTML/CSS/JS browser apps or webview content; use generate_web_app for those.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
