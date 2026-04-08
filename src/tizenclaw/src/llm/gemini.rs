@@ -22,6 +22,9 @@ pub struct GeminiBackend {
     endpoint: String,
     temperature: Option<f64>,
     default_max_tokens: Option<u32>,
+    /// Thinking level: "off", "minimal", "low", "medium", "high".
+    /// Gemini 3 Pro supports LOW/MEDIUM/HIGH. Gemini 3 Flash supports MINIMAL/LOW/MEDIUM/HIGH.
+    thinking_level: Option<String>,
     /// Cached system-prompt name returned by Gemini CachedContent API.
     /// `None` means no cache is active; fall back to inline system_instruction.
     cached_content_name: RwLock<Option<String>>,
@@ -44,6 +47,7 @@ impl GeminiBackend {
             endpoint: "https://generativelanguage.googleapis.com/v1beta".into(),
             temperature: None,
             default_max_tokens: Some(4096),
+            thinking_level: None,
             cached_content_name: RwLock::new(None),
             prompt_cache_enabled: false,
         }
@@ -78,13 +82,22 @@ impl GeminiBackend {
         let mut req = json!({});
 
         let resolved_tokens = max_tokens.or(self.default_max_tokens);
-        if resolved_tokens.is_some() || self.temperature.is_some() {
+        if resolved_tokens.is_some() || self.temperature.is_some() || self.thinking_level.is_some() {
             let mut generation_config = json!({});
             if let Some(tokens) = resolved_tokens {
                 generation_config["maxOutputTokens"] = json!(tokens);
             }
             if let Some(temperature) = self.temperature {
                 generation_config["temperature"] = json!(temperature);
+            }
+            if let Some(ref level) = self.thinking_level {
+                let upper = level.to_uppercase();
+                if upper != "OFF" {
+                    generation_config["thinkingConfig"] = json!({
+                        "includeThoughts": true,
+                        "thinkingLevel": upper
+                    });
+                }
             }
             req["generationConfig"] = generation_config;
         }
@@ -205,7 +218,11 @@ impl GeminiBackend {
         {
             for part in parts {
                 if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
-                    resp.text.push_str(text);
+                    if part.get("thought").and_then(|v| v.as_bool()).unwrap_or(false) {
+                        resp.reasoning_text.push_str(text);
+                    } else {
+                        resp.text.push_str(text);
+                    }
                 }
                 if let Some(fc) = part.get("functionCall") {
                     resp.tool_calls.push(LlmToolCall {
@@ -336,8 +353,8 @@ impl LlmBackend for GeminiBackend {
         if let Some(tokens) = config["max_tokens"].as_u64() {
             self.default_max_tokens = Some(tokens as u32);
         }
-        if let Some(enabled) = config["prompt_cache"].as_bool() {
-            self.prompt_cache_enabled = enabled;
+        if let Some(tl) = config["thinking_level"].as_str() {
+            self.thinking_level = Some(tl.into());
         }
         !self.api_key.is_empty()
     }

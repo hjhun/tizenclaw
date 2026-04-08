@@ -12,9 +12,9 @@ pub struct AnthropicBackend {
     endpoint: String,
     temperature: Option<f64>,
     default_max_tokens: Option<u32>,
-    /// When `true`, attach `cache_control` to the system prompt and send the
-    /// `anthropic-beta: prompt-caching-2024-07-31` header. Default: `false`.
-    prompt_cache_enabled: bool,
+    /// Thinking level: "off", "low", "medium", "high".
+    /// For Claude Sonnet/Opus 4.5+: uses extended thinking with budget_tokens.
+    thinking_level: Option<String>,
 }
 
 impl Default for AnthropicBackend {
@@ -31,7 +31,7 @@ impl AnthropicBackend {
             endpoint: "https://api.anthropic.com/v1".into(),
             temperature: None,
             default_max_tokens: Some(4096),
-            prompt_cache_enabled: false,
+            thinking_level: None,
         }
     }
 
@@ -119,8 +119,13 @@ impl LlmBackend for AnthropicBackend {
         if let Some(tokens) = config["max_tokens"].as_u64() {
             self.default_max_tokens = Some(tokens as u32);
         }
+<<<<<<< HEAD
         if let Some(enabled) = config["prompt_cache"].as_bool() {
             self.prompt_cache_enabled = enabled;
+=======
+        if let Some(tl) = config["thinking_level"].as_str() {
+            self.thinking_level = Some(tl.into());
+>>>>>>> 9c4034d2 (Add thinking level config for Gemini and Anthropic)
         }
         !self.api_key.is_empty()
     }
@@ -140,6 +145,38 @@ impl LlmBackend for AnthropicBackend {
         if let Some(temperature) = self.temperature {
             req["temperature"] = json!(temperature);
         }
+
+        // Extended thinking configuration
+        if let Some(ref level) = self.thinking_level {
+            let lower = level.to_lowercase();
+            if lower != "off" {
+                let budget: u32 = match lower.as_str() {
+                    "low" => 2048,
+                    "medium" => 8192,
+                    "high" => 32768,
+                    _ => 8192,
+                };
+                req["thinking"] = json!({
+                    "type": "enabled",
+                    "budget_tokens": budget
+                });
+                // Temperature is incompatible with extended thinking — remove it
+                if self.temperature.is_some() {
+                    log::info!(
+                        "[Anthropic] Removing temperature (incompatible with extended thinking)"
+                    );
+                }
+                if let Some(obj) = req.as_object_mut() {
+                    obj.remove("temperature");
+                }
+                // Ensure max_tokens can accommodate thinking budget + output
+                let current_max = req["max_tokens"].as_u64().unwrap_or(4096);
+                if current_max < (budget as u64 + 4096) {
+                    req["max_tokens"] = json!(budget + 4096);
+                }
+            }
+        }
+
         if !system_prompt.is_empty() {
             if self.prompt_cache_enabled {
                 req["system"] = json!([{
@@ -264,6 +301,10 @@ impl LlmBackend for AnthropicBackend {
             if let Some(content) = json["content"].as_array() {
                 for block in content {
                     match block["type"].as_str() {
+                        Some("thinking") => {
+                            resp.reasoning_text
+                                .push_str(block["thinking"].as_str().unwrap_or(""));
+                        }
                         Some("text") => {
                             resp.text.push_str(block["text"].as_str().unwrap_or(""));
                         }
