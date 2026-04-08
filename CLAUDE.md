@@ -11,9 +11,10 @@ repository. All rules here are binding.
 ## Project Overview
 
 **TizenClaw** is a Rust-based Autonomous AI Agent daemon for Tizen OS
-(embedded Linux). It runs on Tizen TV/emulator targets and is built
-exclusively via GBS (`./deploy.sh`). The project is a Cargo workspace with
-9 crates under `src/`.
+(embedded Linux) and Ubuntu/WSL host development. The default workflow
+uses `./devel_host.sh`; the Tizen GBS workflow uses `./deploy.sh` when
+explicitly requested. The project is a Cargo workspace with 9 crates
+under `src/`.
 
 **Active branch**: `develRust`  
 **Target device**: `emulator-26101` (x86_64) — auto-detected via `sdb`
@@ -23,13 +24,13 @@ exclusively via GBS (`./deploy.sh`). The project is a Cargo workspace with
 ## Absolute Rules (Never Violate)
 
 ### Build & Test
-- **NEVER** run `cargo build`, `cargo check`, `cargo test`, or `cargo clippy`
-  locally. All builds must go through `./deploy.sh` (GBS Build).
+- **NEVER** run `cargo build`, `cargo check`, `cargo test`, or
+  `cargo clippy` directly. Default development builds/tests must go
+  through `./devel_host.sh`.
 - **NEVER** run `cmake .` or any local CMake build.
-- All verification happens on the QEMU emulator or physical device via
-  `./deploy.sh`.
-- Architecture focus: **x86_64 only** (`./deploy.sh -a x86_64`).
-  armv7l builds are currently **[DISABLED]**.
+- Use `./deploy.sh` only when the user explicitly asks for Tizen,
+  emulator, or device validation.
+- Architecture focus: **x86_64 only**.
 
 ### Commits
 - **NEVER** use `git commit -m "..."`. Write the message to
@@ -74,8 +75,8 @@ update `.dev_note/DASHBOARD.md` with the stage status.
 | 1. Planning | `.agent/skills/planning-project/SKILL.md` | Module objectives, execution mode classification |
 | 2. Design | `.agent/skills/designing-architecture/SKILL.md` | FFI boundaries, async topology docs |
 | 3. Development | `.agent/skills/developing-code/SKILL.md` | TDD Red→Green→Refactor cycle |
-| 4. Build/Deploy | `.agent/skills/building-deploying/SKILL.md` | `./deploy.sh -a x86_64` succeeded |
-| 5. Test/Review | `.agent/skills/reviewing-code/SKILL.md` | Device logs as evidence (journalctl) |
+| 4. Build/Deploy | `.agent/skills/building-deploying/SKILL.md` | `./devel_host.sh` succeeded, or explicit `./deploy.sh -a x86_64` |
+| 5. Test/Review | `.agent/skills/reviewing-code/SKILL.md` | Host or device logs as evidence |
 | 6. Commit | `.agent/skills/managing-versions/SKILL.md` | Clean commit via `.tmp/commit_msg.txt` |
 
 ---
@@ -100,24 +101,24 @@ update `.dev_note/DASHBOARD.md` with the stage status.
 ./deploy.sh -d emulator-26101 -S
 ```
 
-### Host Linux (cargo build → local Ubuntu/WSL)
+### Host Linux (default Ubuntu/WSL workflow)
 ```bash
 # Release build + install + run (Generic Linux mode)
-./deploy_host.sh
+./devel_host.sh
 
 # Debug build
-./deploy_host.sh -d
+./devel_host.sh -d
 
 # Build only (no install/run)
-./deploy_host.sh -b
+./devel_host.sh -b
 
 # Run tests (offline, vendored)
-./deploy_host.sh --test
+./devel_host.sh --test
 
 # Daemon management
-./deploy_host.sh --status   # check status
-./deploy_host.sh --log      # follow logs
-./deploy_host.sh --stop     # stop daemon
+./devel_host.sh --status   # check status
+./devel_host.sh --log      # follow logs
+./devel_host.sh --stop     # stop daemon
 ```
 
 ---
@@ -163,9 +164,9 @@ the next stage. See `.agent/skills/supervising-workflow/SKILL.md`.
 
 Rollback is triggered if:
 - Local `cargo` commands were used
-- `./deploy.sh` was skipped
+- The wrong script path was used for the cycle
 - Commit used inline `-m` flag
-- No device logs provided in Test/Review stage
+- No host/device logs provided in Test/Review stage
 - Extraneous build artifacts are staged for commit
 
 Maximum 3 retries per stage gate before escalating to the user.

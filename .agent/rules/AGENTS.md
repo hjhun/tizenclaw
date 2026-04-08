@@ -2,16 +2,15 @@
 description: TizenClaw Development Overarching Management Document
 ---
 
-This root copy exists so tools that auto-detect `AGENTS.md` from the
-repository root can load the project rules. The canonical source remains
-`.agent/rules/AGENTS.md`.
+This canonical copy is mirrored by the repository-root `AGENTS.md` so
+auto-detection and internal references stay aligned.
 
 # TizenClaw Development Agent Operation Rules
 
 This document is the **top-level operational rule** representing the
-comprehensive management of the `tizenclaw` project's development process.
-The agent (you) must strictly adhere to the procedures defined in this
-document to develop TizenClaw.
+comprehensive management of the `tizenclaw` project's development
+process. The agent (you) must strictly adhere to the procedures defined
+in this document to develop TizenClaw.
 
 > [!IMPORTANT]
 > **Language Rule**: You must plan and report in the same language as the
@@ -21,14 +20,14 @@ document to develop TizenClaw.
 
 ## Project Overview
 
-**TizenClaw** is a Rust-based, high-performance Autonomous AI Agent daemon
-that supports both host Linux development and Tizen deployment.
+**TizenClaw** is a Rust-based, high-performance Autonomous AI Agent
+daemon that supports both host Linux development and Tizen deployment.
 The core goal is to build an ecosystem that operates autonomously,
 asynchronously, and flawlessly with optimal resource efficiency.
 The fundamental development principles are as follows:
 
-- **Host-First Development Default**: Unless the user explicitly asks for
-  Tizen/emulator/device validation, perform development through
+- **Host-First Development Default**: Unless the user explicitly asks
+  for Tizen/emulator/device validation, perform development through
   `./devel_host.sh` on Ubuntu/WSL.
 - **Script-First Build/Test Rule**: Do not invoke `cargo build`,
   `cargo test`, `cargo check`, or `cargo clippy` directly for ordinary
@@ -52,8 +51,9 @@ The fundamental development principles are as follows:
 
 All development tasks for the Autonomous Agent **MUST strictly proceed
 through the 6 stages below sequentially**.
-**Skipping stages or autonomously jumping between skill agents is strictly
-prohibited.** Development must follow a rigid, step-by-step process.
+**Skipping stages or autonomously jumping between skill agents is
+strictly prohibited.** Development must follow a rigid, step-by-step
+process.
 
 ```
 1. Planning → [Supervisor] → 2. Design → [Supervisor] → 3. Development → [Supervisor] →
@@ -102,8 +102,8 @@ prohibited.** Development must follow a rigid, step-by-step process.
 
 > [!CAUTION]
 > **Direct Cargo/CMake Prohibition**: Do not execute `cargo build`,
-> `cargo test`, `cargo check`, `cargo clippy`, or ad-hoc `cmake` commands
-> directly for ordinary development work.
+> `cargo test`, `cargo check`, `cargo clippy`, or ad-hoc `cmake`
+> commands directly for ordinary development work.
 > Use `./devel_host.sh` for default host builds/tests and `./deploy.sh`
 > only for explicit Tizen/emulator/device cycles.
 > **Untested Code is Garbage**: A developer must *never* consider a task
@@ -124,8 +124,8 @@ prohibited.** Development must follow a rigid, step-by-step process.
 - **Role**: Analyze autonomous E2E test results and review memory
   footprint, execution speed, and FFI safety.
 - **Activity**: Run verification via `./devel_host.sh --test` by default,
-  and use `./deploy.sh --test` / device-specific validation only when the
-  user explicitly requests a Tizen cycle.
+  and use `./deploy.sh --test` / device-specific validation only when
+  the user explicitly requests a Tizen cycle.
 - **Artifact**: Update stage status in `.dev_note/DASHBOARD.md`
 - **Skill Usage**:
   [`.agent/skills/reviewing-code/SKILL.md`](.agent/skills/reviewing-code/SKILL.md)
@@ -178,8 +178,8 @@ prohibited.** Development must follow a rigid, step-by-step process.
 > [!IMPORTANT]
 > **Shell Detection Rule**: Before executing ANY command, follow the
 > [`.agent/rules/shell-detection.md`](.agent/rules/shell-detection.md)
-> decision matrix to determine the correct shell (PowerShell vs WSL Bash).
-> This rule is authoritative for all shell decisions.
+> decision matrix to determine the correct shell (PowerShell vs WSL
+> Bash). This rule is authoritative for all shell decisions.
 
 Follow the background limits and sequential execution commands in the
 environment skill carefully to avoid Samba/WSL lockups.
@@ -194,7 +194,8 @@ environment skill carefully to avoid Samba/WSL lockups.
 
 The Supervisor is the **active stage-gate validator** that is invoked
 **after every stage completion** in the development cycle.
-No stage transition occurs without the Supervisor's explicit PASS verdict.
+No stage transition occurs without the Supervisor's explicit PASS
+verdict.
 
 - **Skill Usage**:
   [`.agent/skills/supervising-workflow/SKILL.md`](.agent/skills/supervising-workflow/SKILL.md)
@@ -223,8 +224,8 @@ usage, inline `-m` commit):
 
 > [!CAUTION]
 > **Retry Limit**: A maximum of **3 retry attempts** per stage gate is
-> allowed. If the violation persists after 3 attempts, the cycle is halted
-> and escalated to the user for manual intervention.
+> allowed. If the violation persists after 3 attempts, the cycle is
+> halted and escalated to the user for manual intervention.
 
 ---
 

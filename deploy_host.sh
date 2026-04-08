@@ -21,6 +21,7 @@ set -euo pipefail
 # Constants
 # ─────────────────────────────────────────────
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ENTRYPOINT_NAME="${TIZENCLAW_HOST_ENTRYPOINT_NAME:-$(basename "$0")}"
 PKG_NAME="tizenclaw"
 TOOL_EXECUTOR_NAME="tizenclaw-tool-executor"
 CLI_NAME="tizenclaw-cli"
@@ -99,7 +100,7 @@ run() {
 process_report() {
   ps -eo pid,ppid,stat,cmd \
     | grep -E "(${INSTALL_DIR}/${PKG_NAME}|${INSTALL_DIR}/${TOOL_EXECUTOR_NAME}|${INSTALL_DIR}/${WEB_DASHBOARD_NAME}|(^|/| )${PKG_NAME}($| )|(^|/| )${TOOL_EXECUTOR_NAME}($| )|(^|/| )${WEB_DASHBOARD_NAME}($| ))" \
-    | grep -v -E "grep -E|deploy_host.sh" || true
+    | grep -v -E "grep -E|deploy_host.sh|devel_host.sh" || true
 }
 
 dashboard_port() {
@@ -224,7 +225,7 @@ usage() {
 ${BOLD}TizenClaw Host Linux Build & Run${NC}
 
 ${CYAN}Usage:${NC}
-  $(basename "$0") [options]
+  ${ENTRYPOINT_NAME} [options]
 
 ${CYAN}Options:${NC}
   -d, --debug             Build in debug mode (default: release)
@@ -241,16 +242,16 @@ ${CYAN}Options:${NC}
   -h, --help              Show this help
 
 ${CYAN}Examples:${NC}
-  $(basename "$0")                           # Release build + install + run
-  $(basename "$0") -d                        # Debug build + install + run
-  $(basename "$0") -b                        # Build only
-  $(basename "$0") --test                    # Run unit/integration tests
-  $(basename "$0") --status                  # Check daemon status
-  $(basename "$0") --log                     # Tail daemon logs
-  $(basename "$0") -s                        # Stop the daemon
-  $(basename "$0") --remove                  # Remove host install and stop tools
-  $(basename "$0") --build-root /tmp/tc-build  # Use external build root
-  $(basename "$0") --llm-config /path/to/llm_config.json  # Use custom LLM config
+  ${ENTRYPOINT_NAME}                           # Release build + install + run
+  ${ENTRYPOINT_NAME} -d                        # Debug build + install + run
+  ${ENTRYPOINT_NAME} -b                        # Build only
+  ${ENTRYPOINT_NAME} --test                    # Run unit/integration tests
+  ${ENTRYPOINT_NAME} --status                  # Check daemon status
+  ${ENTRYPOINT_NAME} --log                     # Tail daemon logs
+  ${ENTRYPOINT_NAME} -s                        # Stop the daemon
+  ${ENTRYPOINT_NAME} --remove                  # Remove host install and stop tools
+  ${ENTRYPOINT_NAME} --build-root /tmp/tc-build  # Use external build root
+  ${ENTRYPOINT_NAME} --llm-config /path/to/llm_config.json  # Use custom LLM config
 EOF
   exit 0
 }
@@ -857,10 +858,10 @@ show_summary() {
   local host_dashboard_port
   host_dashboard_port="$(dashboard_port)"
   log "Useful commands:"
-  log "  Logs (follow)  : ./deploy_host.sh --log"
-  log "  Status         : ./deploy_host.sh --status"
-  log "  Stop           : ./deploy_host.sh --stop"
-  log "  Remove         : ./deploy_host.sh --remove"
+  log "  Logs (follow)  : ./${ENTRYPOINT_NAME} --log"
+  log "  Status         : ./${ENTRYPOINT_NAME} --status"
+  log "  Stop           : ./${ENTRYPOINT_NAME} --stop"
+  log "  Remove         : ./${ENTRYPOINT_NAME} --remove"
   log "  CLI test       : tizenclaw-cli 'hello'"
   log "  Dashboard URL  : http://localhost:${host_dashboard_port}"
   echo ""
