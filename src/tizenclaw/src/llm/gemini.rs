@@ -25,6 +25,9 @@ pub struct GeminiBackend {
     /// Cached system-prompt name returned by Gemini CachedContent API.
     /// `None` means no cache is active; fall back to inline system_instruction.
     cached_content_name: RwLock<Option<String>>,
+    /// When `true`, `prepare_cache()` will attempt to create a server-side
+    /// CachedContent. Default: `false`.
+    prompt_cache_enabled: bool,
 }
 
 impl Default for GeminiBackend {
@@ -42,6 +45,7 @@ impl GeminiBackend {
             temperature: None,
             default_max_tokens: Some(4096),
             cached_content_name: RwLock::new(None),
+            prompt_cache_enabled: false,
         }
     }
 
@@ -318,6 +322,9 @@ impl LlmBackend for GeminiBackend {
         if let Some(tokens) = config["max_tokens"].as_u64() {
             self.default_max_tokens = Some(tokens as u32);
         }
+        if let Some(enabled) = config["prompt_cache"].as_bool() {
+            self.prompt_cache_enabled = enabled;
+        }
         !self.api_key.is_empty()
     }
 
@@ -360,7 +367,11 @@ impl LlmBackend for GeminiBackend {
     }
 
     async fn prepare_cache(&self, system_prompt: &str) -> bool {
-        self.create_or_refresh_cache(system_prompt).await
+        if self.prompt_cache_enabled {
+            self.create_or_refresh_cache(system_prompt).await
+        } else {
+            false
+        }
     }
 
     fn get_name(&self) -> &str {

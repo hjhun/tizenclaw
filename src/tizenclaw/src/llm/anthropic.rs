@@ -12,6 +12,9 @@ pub struct AnthropicBackend {
     endpoint: String,
     temperature: Option<f64>,
     default_max_tokens: Option<u32>,
+    /// When `true`, attach `cache_control` to the system prompt and send the
+    /// `anthropic-beta: prompt-caching-2024-07-31` header. Default: `false`.
+    prompt_cache_enabled: bool,
 }
 
 impl Default for AnthropicBackend {
@@ -28,6 +31,7 @@ impl AnthropicBackend {
             endpoint: "https://api.anthropic.com/v1".into(),
             temperature: None,
             default_max_tokens: Some(4096),
+            prompt_cache_enabled: false,
         }
     }
 
@@ -115,6 +119,9 @@ impl LlmBackend for AnthropicBackend {
         if let Some(tokens) = config["max_tokens"].as_u64() {
             self.default_max_tokens = Some(tokens as u32);
         }
+        if let Some(enabled) = config["prompt_cache"].as_bool() {
+            self.prompt_cache_enabled = enabled;
+        }
         !self.api_key.is_empty()
     }
 
@@ -134,11 +141,18 @@ impl LlmBackend for AnthropicBackend {
             req["temperature"] = json!(temperature);
         }
         if !system_prompt.is_empty() {
-            req["system"] = json!([{
-                "type": "text",
-                "text": system_prompt,
-                "cache_control": {"type": "ephemeral"}
-            }]);
+            if self.prompt_cache_enabled {
+                req["system"] = json!([{
+                    "type": "text",
+                    "text": system_prompt,
+                    "cache_control": {"type": "ephemeral"}
+                }]);
+            } else {
+                req["system"] = json!([{
+                    "type": "text",
+                    "text": system_prompt
+                }]);
+            }
         }
 
         let mut valid_tools = std::collections::HashSet::new();
@@ -222,12 +236,20 @@ impl LlmBackend for AnthropicBackend {
         }
 
         let url = Self::request_url(&self.endpoint);
-        let headers = [
-            ("x-api-key", self.api_key.as_str()),
-            ("anthropic-version", "2023-06-01"),
-            ("anthropic-beta", "prompt-caching-2024-07-31"),
-        ];
-        let http_resp = http_client::http_post(&url, &headers, &req.to_string(), 1, 60).await;
+        let http_resp = if self.prompt_cache_enabled {
+            let headers = [
+                ("x-api-key", self.api_key.as_str()),
+                ("anthropic-version", "2023-06-01"),
+                ("anthropic-beta", "prompt-caching-2024-07-31"),
+            ];
+            http_client::http_post(&url, &headers, &req.to_string(), 1, 60).await
+        } else {
+            let headers = [
+                ("x-api-key", self.api_key.as_str()),
+                ("anthropic-version", "2023-06-01"),
+            ];
+            http_client::http_post(&url, &headers, &req.to_string(), 1, 60).await
+        };
 
         let mut resp = LlmResponse::default();
         resp.http_status = http_resp.status_code;
