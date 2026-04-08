@@ -1,7 +1,7 @@
 ---
 name: reviewing-code
 description: Reviews deployed TizenClaw daemon behavior using the
-default host path (`devel_host.sh`) or the explicit Tizen path
+default host path (`deploy_host.sh`) or the explicit Tizen path
 (`deploy.sh`) chosen for the cycle. Reviews potential async deadlocks,
 memory unsafety flags, and performs dynamic evaluation of the agent
 state machines.
@@ -36,12 +36,12 @@ Line-by-line review checking for errant `.unwrap()`, incorrect pointer casting i
 
 > [!WARNING]
 > **Direct cargo test prohibition**: You must not invoke raw `cargo test`
-> yourself. Use `./devel_host.sh --test` for default host validation or
+> yourself. Use `./deploy_host.sh --test` for default host validation or
 > `./deploy.sh` when the user explicitly requests Tizen validation.
 
 ### Step 2: E2E Integration Execution Verification
 Ensure the correct build script was utilized for the active cycle.
-- Default host cycle: `./devel_host.sh` / `./devel_host.sh --test`
+- Default host cycle: `./deploy_host.sh` / `./deploy_host.sh --test`
 - Explicit Tizen cycle: `./deploy.sh`
 Verify the daemon initialized without host/service failures.
 
@@ -51,8 +51,8 @@ originally.
 - **Continuous Execution Verification**: Does the daemon stay alive? Core event capabilities must survive repetitive invoking.
 - **Log Execution Proofs**: Extract runtime artifacts from the selected
   environment.
-  - Host examples: `./devel_host.sh --status`,
-    `./devel_host.sh --log`, or `~/.tizenclaw/logs/tizenclaw.log`
+  - Host examples: `./deploy_host.sh --status`,
+    `./deploy_host.sh --log`, or `~/.tizenclaw/logs/tizenclaw.log`
   - Tizen examples: `sdb shell journalctl -u tizenclaw`,
     `dlogutil -v threadtime TIZENCLAW`, or
     `/opt/usr/share/tizenclaw/logs/tizenclaw.log`

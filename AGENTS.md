@@ -29,10 +29,10 @@ The fundamental development principles are as follows:
 
 - **Host-First Development Default**: Unless the user explicitly asks for
   Tizen/emulator/device validation, perform development through
-  `./devel_host.sh` on Ubuntu/WSL.
+  `./deploy_host.sh` on Ubuntu/WSL.
 - **Script-First Build/Test Rule**: Do not invoke `cargo build`,
   `cargo test`, `cargo check`, or `cargo clippy` directly for ordinary
-  development work. Use `./devel_host.sh` for the host path and
+  development work. Use `./deploy_host.sh` for the host path and
   `./deploy.sh` only when the user explicitly requests the Tizen path.
 - **Explicit Tizen Override**: When the user asks for device packaging,
   emulator deployment, or Tizen validation, switch to `./deploy.sh`
@@ -41,7 +41,7 @@ The fundamental development principles are as follows:
   verification, the default focus remains **x86_64**.
 - **Execution Centric**: Do not stop at just writing documents;
   physically execute the actual terminal commands (e.g.,
-  `./devel_host.sh`, `./deploy.sh`, `git commit`).
+  `./deploy_host.sh`, `./deploy.sh`, `git commit`).
 - **Feedback Loops**: If an agent capability fails testing
   (e.g. memory leak, async panic), analyze the active host/Tizen
   constraints, roll back to the previous stage, modify, and retry.
@@ -75,7 +75,7 @@ prohibited.** Development must follow a rigid, step-by-step process.
 - **Role**: Analyze requirements and define the scope of the autonomous
   agent behavior.
 - **Activity**: Analyze whether the cycle should use the default
-  host workflow (`./devel_host.sh`) or an explicitly requested Tizen
+  host workflow (`./deploy_host.sh`) or an explicitly requested Tizen
   workflow (`./deploy.sh`), then organize the required daemon behavior.
 - **Artifact**: Update stage status in `.dev_note/DASHBOARD.md`
 - **Skill Usage**:
@@ -93,7 +93,7 @@ prohibited.** Development must follow a rigid, step-by-step process.
 ### Stage 3: Development
 - **Role**: Write highly stable, memory-safe code under TDD principles.
 - **Activity**: Develop state machines, continuous loops, and event-driven
-  implementations. Validate code quality through `./devel_host.sh` by
+  implementations. Validate code quality through `./deploy_host.sh` by
   default, and use `./deploy.sh` only when the user explicitly requests
   Tizen/emulator/device validation.
 - **Artifact**: Update stage status in `.dev_note/DASHBOARD.md`
@@ -104,7 +104,7 @@ prohibited.** Development must follow a rigid, step-by-step process.
 > **Direct Cargo/CMake Prohibition**: Do not execute `cargo build`,
 > `cargo test`, `cargo check`, `cargo clippy`, or ad-hoc `cmake` commands
 > directly for ordinary development work.
-> Use `./devel_host.sh` for default host builds/tests and `./deploy.sh`
+> Use `./deploy_host.sh` for default host builds/tests and `./deploy.sh`
 > only for explicit Tizen/emulator/device cycles.
 > **Untested Code is Garbage**: A developer must *never* consider a task
 > done simply by writing code. Running the appropriate script-driven
@@ -113,7 +113,7 @@ prohibited.** Development must follow a rigid, step-by-step process.
 ### Stage 4: Build & Deploy
 - **Role**: Execute the build/install/deploy path that matches the active
   cycle.
-- **Activity**: Run `./devel_host.sh` by default for host install/restart
+- **Activity**: Run `./deploy_host.sh` by default for host install/restart
   validation, or `./deploy.sh` when the user explicitly requests Tizen
   packaging/deployment.
 - **Artifact**: Update stage status in `.dev_note/DASHBOARD.md`
@@ -123,7 +123,7 @@ prohibited.** Development must follow a rigid, step-by-step process.
 ### Stage 5: Test & Review
 - **Role**: Analyze autonomous E2E test results and review memory
   footprint, execution speed, and FFI safety.
-- **Activity**: Run verification via `./devel_host.sh --test` by default,
+- **Activity**: Run verification via `./deploy_host.sh --test` by default,
   and use `./deploy.sh --test` / device-specific validation only when the
   user explicitly requests a Tizen cycle.
 - **Artifact**: Update stage status in `.dev_note/DASHBOARD.md`
@@ -173,7 +173,7 @@ prohibited.** Development must follow a rigid, step-by-step process.
 > **Mandatory WSL Shell (Ubuntu) Usage**: Execute all terminal commands
 > through the WSL shell (e.g., `wsl -e bash -c "..."`) as direct
 > PowerShell executions are error-prone. The default project command is
-> `./devel_host.sh`; `./deploy.sh` is reserved for explicit Tizen cycles.
+> `./deploy_host.sh`; `./deploy.sh` is reserved for explicit Tizen cycles.
 
 > [!IMPORTANT]
 > **Shell Detection Rule**: Before executing ANY command, follow the

@@ -100,7 +100,7 @@ run() {
 process_report() {
   ps -eo pid,ppid,stat,cmd \
     | grep -E "(${INSTALL_DIR}/${PKG_NAME}|${INSTALL_DIR}/${TOOL_EXECUTOR_NAME}|${INSTALL_DIR}/${WEB_DASHBOARD_NAME}|(^|/| )${PKG_NAME}($| )|(^|/| )${TOOL_EXECUTOR_NAME}($| )|(^|/| )${WEB_DASHBOARD_NAME}($| ))" \
-    | grep -v -E "grep -E|deploy_host.sh|devel_host.sh" || true
+    | grep -v -E "grep -E|deploy_host.sh" || true
 }
 
 dashboard_port() {

@@ -2,6 +2,14 @@
 
 ## Current Cycle
 
+- Request: host 기본 개발 경로를 `devel_host.sh` 대신
+  `deploy_host.sh`로 전환한다.
+- Date: 2026-04-09
+- Language: Korean
+- Request: `setup_pinchbench.sh`와 `devel_host.sh`를 검토해
+  타당한 유지 이유가 없으면 제거한다.
+- Date: 2026-04-09
+- Language: Korean
 - Request: Prepare the current OpenAI Codex session-link work for commit
   and review Cargo-related build paths to reduce GitHub CI risk.
 - Date: 2026-04-09
@@ -127,6 +135,118 @@
 
 ## Stage Status
 
+- [x] Supervisor Gate after Commit & Push
+  - PASS: workspace cleanup 후 host 기본 경로 전환과 스크립트 정리
+    변경만 스테이징했고 `.tmp/commit_msg.txt` 기반 커밋을
+    준비했다.
+- [x] Stage 6: Commit & Push
+  - Summary:
+    - `bash .agent/scripts/cleanup_workspace.sh`를 실행해 작업
+      트리를 정리했다.
+    - `deploy_host.sh` 기본 경로 전환 관련 규칙/문서 변경과
+      `devel_host.sh`, `setup_pinchbench.sh` 삭제만 커밋 범위로
+      확정했다.
+    - 커밋 메시지는 영어 요약 형식으로 `.tmp/commit_msg.txt`에
+      작성해 사용한다.
+- [x] Supervisor Gate after Test & Review
+  - PASS: host 기본 경로를 `deploy_host.sh`로 전환한 뒤 빌드와
+    테스트가 새 기본 경로에서 모두 통과했다.
+- [x] Stage 5: Test & Review
+  - Verdict: PASS
+  - Evidence:
+    - `./deploy_host.sh --test`가 성공했고 전체 테스트가 통과했다.
+    - `devel_host.sh` 문자열 참조는 저장소 전체에서 0건으로
+      정리됐다.
+    - 테스트 로그에는 기존과 동일한
+      `src/tizenclaw-metadata-plugin/src/logging.rs`의
+      `dead_code` 경고 4건만 남아 있었다.
+- [x] Supervisor Gate after Build & Deploy
+  - PASS: 새 host 기본 경로인 `./deploy_host.sh`로 빌드 검증을
+    수행했고 빌드 산출물 생성이 정상 동작했다.
+- [x] Stage 4: Build & Deploy
+  - Summary:
+    - `./deploy_host.sh -b`로 host 빌드 검증을 수행했다.
+    - 기본 host 엔트리포인트 전환 뒤에도 기존 build root와
+      산출물 경로가 정상 유지됨을 확인했다.
+- [x] Supervisor Gate after Development
+  - PASS: 규칙, 스킬, 문서, 스크립트 구현이 모두
+    `deploy_host.sh` 기본 경로 기준으로 정렬됐다.
+- [x] Stage 3: Development
+  - Summary:
+    - `AGENTS.md`, `.agent/rules`, `.agent/skills`, `CLAUDE.md`의
+      host 기본 경로를 `deploy_host.sh`로 전환했다.
+    - `devel_host.sh` 호환 래퍼를 삭제했다.
+    - 이전 사이클에서 제거한 `setup_pinchbench.sh` 삭제 상태는
+      그대로 유지했다.
+- [x] Supervisor Gate after Design
+  - PASS: host 기본 경로 전환 범위를 문서/감독 규칙/실행 스크립트
+    전반으로 확정했고 단순 별칭 유지 대신 정식 전환으로 설계했다.
+- [x] Stage 2: Design
+  - Artifact:
+    `.dev_note/DASHBOARD.md`
+  - Summary:
+    - `deploy_host.sh`가 이미 실질 구현체이므로 기본 host 경로를
+      이 이름으로 통일하기로 했다.
+    - 전환 시점에 `devel_host.sh` 참조와 호환 래퍼를 함께 제거해
+      중복 개념을 없애기로 했다.
+- [x] Supervisor Gate after Planning
+  - PASS: 이번 작업을 host-default 사이클로 분류했고
+    `deploy_host.sh` 기준 전환 범위를 명확히 기록했다.
+- [x] Stage 1: Planning
+  - Artifact:
+    `.dev_note/DASHBOARD.md`
+  - Summary:
+    - 요청을 host 기본 스크립트 이름 전환 작업으로 분류했다.
+    - 검증은 `./deploy_host.sh -b`와 `./deploy_host.sh --test`로
+      수행하기로 계획했다.
+- [x] Supervisor Gate after Test & Review
+  - PASS: `setup_pinchbench.sh` 제거 뒤 host 테스트가 통과했고,
+    `devel_host.sh` 유지 판단 근거와 검증 로그를 남겼다.
+- [x] Stage 5: Test & Review
+  - Verdict: PASS
+  - Evidence:
+    - `./devel_host.sh --test`가 성공했고 전체 테스트가 통과했다.
+    - 테스트 로그에는
+      `src/tizenclaw-metadata-plugin/src/logging.rs`의 기존
+      `dead_code` 경고 4건이 보였지만 이번 변경에서 새로
+      발생한 오류나 실패는 없었다.
+- [x] Supervisor Gate after Build & Deploy
+  - PASS: host-default 경로인 `./devel_host.sh`로 빌드 검증을
+    수행했고 삭제된 스크립트에 대한 런타임 영향은 없었다.
+- [x] Stage 4: Build & Deploy
+  - Summary:
+    - `./devel_host.sh -b`로 host 빌드 전용 검증을 수행했다.
+    - 빌드 산출물 생성과 기본 host 엔트리포인트 동작이 유지됨을
+      확인했다.
+- [x] Supervisor Gate after Development
+  - PASS: 독립 PinchBench 보조 스크립트만 제거했고, host 기본
+    엔트리포인트는 현재 규칙 호환성을 위해 유지했다.
+- [x] Stage 3: Development
+  - Summary:
+    - `setup_pinchbench.sh`를 삭제했다.
+    - `devel_host.sh`는 `deploy_host.sh` 호환 래퍼이자 현재
+      프로젝트의 기본 host 진입점이므로 유지했다.
+- [x] Supervisor Gate after Design
+  - PASS: Host 기본 엔트리포인트 유지 필요성과 PinchBench 전용
+    보조 스크립트 제거 범위를 분리해 설계했다.
+- [x] Stage 2: Design
+  - Artifact:
+    `.dev_note/DASHBOARD.md`
+  - Summary:
+    - `devel_host.sh`는 현재 host 기본 워크플로우 이름으로 문서,
+      규칙, 검증 절차에 묶여 있으므로 즉시 삭제하지 않기로 했다.
+    - `setup_pinchbench.sh`는 저장소 내 참조가 없고 독립 보조
+      스크립트라 제거 대상으로 확정했다.
+- [x] Supervisor Gate after Planning
+  - PASS: 이번 작업을 host-default 사이클로 분류했고, 두 스크립트의
+    유지 필요성을 분리 판단하는 계획을 기록했다.
+- [x] Stage 1: Planning
+  - Artifact:
+    `.dev_note/DASHBOARD.md`
+  - Summary:
+    - 요청 범위를 `setup_pinchbench.sh` 삭제 가능성 검토와
+      `devel_host.sh` 유지 타당성 검증으로 나눴다.
+    - 기본 검증 경로는 host-default인 `./devel_host.sh`로 유지한다.
 - [x] Supervisor Gate after Commit & Push
   - PASS: Workspace cleanup completed, unrelated pre-existing deletions
     were left unstaged, and the finalized changes were committed through

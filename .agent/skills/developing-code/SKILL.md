@@ -1,7 +1,7 @@
 ---
 name: developing-code
 description: Generates high-performance Native Rust source code based on
-architecture blueprints. Adheres to TDD principles via `devel_host.sh`
+architecture blueprints. Adheres to TDD principles via `deploy_host.sh`
 by default and `deploy.sh` when Tizen validation is explicitly
 requested, writing tests that cover async behaviors, FFI memory safety,
 and steady daemon states before implementing the actual autonomous agent
@@ -16,7 +16,7 @@ Your core mission is to convert the ultimate AGI blueprints created by the Archi
 > [!IMPORTANT]
 > **Host-First Testing Default**: Unless the user explicitly asks for
 > Tizen/emulator/device validation, run development-time build/test
-> verification through `./devel_host.sh`.
+> verification through `./deploy_host.sh`.
 > Directly executing `cargo test` locally is **prohibited**.
 
 > [!CAUTION]
@@ -28,7 +28,7 @@ Your core mission is to convert the ultimate AGI blueprints created by the Archi
 
 - **Direct Build/Test Prohibition**: Do not directly run `cargo build`,
   `cargo test`, `cargo check`, or `cmake` by hand.
-  Use `./devel_host.sh` for default host work and `./deploy.sh` only for
+  Use `./deploy_host.sh` for default host work and `./deploy.sh` only for
   explicit Tizen/emulator/device work.
 - **Zero Tolerance for Build Warnings & Errors**: Build errors or
   compiler warnings are strictly prohibited. Detect and fix warnings via
@@ -37,7 +37,7 @@ Your core mission is to convert the ultimate AGI blueprints created by the Archi
 - **Strict Adherence to Concurrency TDD & Coverage**: Never write the `tokio` business logic first. You must maintain the cycle of writing failing tests that satisfy the agent's behavior transitions first (Red), passing them safely (Green), and refactoring `Arc/Mutex` lifecycles (Refactor).
   - **Test Coverage**: All async and state tests written must defend against Edge Cases: Happy Path, Missing Tizen Dependencies (Missing `.so`), and Sudden Daemon Interruptions.
 - **Architecture Focus**: Generating x86_64 host artifacts through
-  `./devel_host.sh` is the default. Use `./deploy.sh -a x86_64` only
+  `./deploy_host.sh` is the default. Use `./deploy.sh -a x86_64` only
   when the user requests Tizen validation.
 - **Robust FFI & Tizen Dynamic Loading (dlopen)**: The autonomous daemon checks for Tizen capabilities dynamically via `libloading` wrappers. Ensure perfectly safe mappings of all `extern "C"` logic, and declare the explicit ABI versions (`libdlog.so.0`). If an API is missing, the AI Agent must intelligently fall back; it must NEVER panic.
 - **Minimal FFI Principle**: Minimize the use of FFI. Imprint the Architect's rule: implement core AGI cognitive logic in pure Rust, restricting FFI usage strictly to instances where Tizen-specific system interactions are unavoidable. Over-reliance on FFI for general logic is an architectural violation.
@@ -65,7 +65,7 @@ Before yielding to the Supervisor for validation, confirm:
 3. `.dev_note/DASHBOARD.md` is updated with Development stage status
 4. No direct local `cargo` / `cmake` command was executed during this
    stage
-5. `./devel_host.sh` was used by default, or `./deploy.sh` was used only
+5. `./deploy_host.sh` was used by default, or `./deploy.sh` was used only
    because the user explicitly requested the Tizen path
 6. TDD cycle was followed: failing tests written first (Red), then
    implementation (Green), then refactor

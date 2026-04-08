@@ -2,7 +2,7 @@
 
 Direct `cargo check`, `cargo build`, `cargo test`, or ad-hoc `cmake`
 execution is **prohibited** in this project.
-Default development builds/tests must go through `./devel_host.sh`.
+Default development builds/tests must go through `./deploy_host.sh`.
 Use `./deploy.sh` only when the user explicitly asks for the
 Tizen/emulator/device path.
 
@@ -53,8 +53,8 @@ script for the cycle:
 
 ```bash
 # Correct: default host development
-./devel_host.sh
-./devel_host.sh --test
+./deploy_host.sh
+./deploy_host.sh --test
 
 # Correct: explicit Tizen/emulator/device cycle
 ./deploy.sh

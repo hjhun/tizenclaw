@@ -48,7 +48,7 @@ Confirm that `.dev_note/DASHBOARD.md` was updated to reflect the completed stage
 | **1. Planning** | Execution mode and build path classified (host-default vs explicit Tizen); DASHBOARD updated. |
 | **2. Design** | FFI boundaries defined; `Send+Sync` specifications present; `libloading` dynamic loading strategy documented |
 | **3. Development** | No direct local `cargo build/test/check` or `cmake` usage; TDD cycle followed (Red→Green→Refactor); DASHBOARD updated |
-| **4. Build & Deploy** | `./devel_host.sh` used by default, or `./deploy.sh` used only when Tizen was explicitly requested; no direct local `cargo build`; runtime/install/deploy confirmed |
+| **4. Build & Deploy** | `./deploy_host.sh` used by default, or `./deploy.sh` used only when Tizen was explicitly requested; no direct local `cargo build`; runtime/install/deploy confirmed |
 | **5. Test & Review** | Runtime logs captured from the selected host/device environment; PASS/FAIL verdict issued with evidence |
 | **6. Commit & Push** | `commit_msg.txt` used (no `-m` flag); workspace cleaned via `cleanup_workspace.sh`; no extraneous build artifacts staged |
 
@@ -104,7 +104,7 @@ Supervisor Authority Checklist:
 - [ ] Daemon Transition Intactness (Are there bypassed sequential stages?)
 - [ ] Dashboard Tracking Updated correctly
 - [ ] Deployment Execution Rigidity (script path matches the cycle:
-      `devel_host.sh` by default, `deploy.sh` on explicit Tizen request)
+      `deploy_host.sh` by default, `deploy.sh` on explicit Tizen request)
 - [ ] Real-time DASHBOARD Tracking
 - [ ] Rollback attempt count within limit (≤ 3)
 ```
@@ -116,7 +116,7 @@ Whenever complex AI Logic transitions, verify the progress and code against supr
 2. **Evaluation (`evaluating-metrics`)**: Did they engineer intense edge-cases (simulated Tizen libraries stripping)?
 3. **Design (`designing-architecture`)**: Did they construct Zero-Cost abstractions cleanly outside core cognitive routines?
 4. **Development (`developing-code`)**: Did they avoid direct cargo
-   execution and choose `devel_host.sh` by default unless Tizen was
+   execution and choose `deploy_host.sh` by default unless Tizen was
    explicitly requested?
 5. **Build & Deploy (`building-deploying`)**: Was the correct script
    used sequentially for the chosen cycle, with x86_64 remaining the

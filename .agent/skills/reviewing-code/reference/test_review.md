@@ -14,7 +14,7 @@ with zero runtime critical bugs or memory leaks.
 ## Core Missions
 1. **Code Verification Based on Tizen Native Capabilities & Asynchronous Integrations**:
    - Analyze asynchronous task management inside the source code (Tokio `spawn`, channels). Verify the data races are impossible and `Send + Sync` constraints are elegantly enforced without unsafe abuses.
-   - Using `./devel_host.sh` by default, or `./deploy.sh` for explicit
+   - Using `./deploy_host.sh` by default, or `./deploy.sh` for explicit
      Tizen cycles, actually invoke the `tizenclaw` runtime in the chosen
      environment. Trigger inputs and continuously tail logs gathering
      concrete evidence of proper logic flow and performance footprints

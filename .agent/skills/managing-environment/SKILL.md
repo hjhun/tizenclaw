@@ -17,24 +17,24 @@ This architectural skillset establishes stringent constraints isolating the cont
 
 ## 1. Mandatory WSL Shell Wrapper
 Since Antigravity natively executes in Windows PowerShell, executing
-Linux commands directly (e.g., `./devel_host.sh`, `./deploy.sh`,
+Linux commands directly (e.g., `./deploy_host.sh`, `./deploy.sh`,
 `gbs build`) will fail fatally or hang the agent loop.
 * **Rule**: ALL terminal commands targeting the Tizenclaw daemon MUST be
   wrapped explicitly under WSL.
 * **Pattern**: Always use the format `wsl -e bash -c "..."`.
   - Default host development example:
-    `wsl -e bash -c "./devel_host.sh"`
+    `wsl -e bash -c "./deploy_host.sh"`
   - Explicit Tizen example:
     `wsl -e bash -c "./deploy.sh -a x86_64"`
 
 ## 2. Sequential Constraints for GBS and Cargo (No Background Sub-processes)
 When triggering intensive build layers generating large object files
-(e.g., `wsl -e bash -c "./devel_host.sh --test"` or
+(e.g., `wsl -e bash -c "./deploy_host.sh --test"` or
 `wsl -e bash -c "./deploy.sh -a x86_64"`), execute synchronously
 strictly natively blocking.
 * **Rule**: Spawning background sub-shells (`nohup` or `&`) crushes the I/O interface between WSL and Windows. Isolate long builds continuously foregrounded.
 * **Pattern**: Chain them blocking inherently: run
-  `wsl -e bash -c "./devel_host.sh --test"` or
+  `wsl -e bash -c "./deploy_host.sh --test"` or
   `wsl -e bash -c "./deploy.sh -a x86_64"` and wait until completion
   before spawning the next task.
 

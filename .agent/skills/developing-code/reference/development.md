@@ -29,7 +29,7 @@ autonomous AGI daemon.
 
 ## Compliance (Self-Evaluation / Fix Loop)
 - Your Rust compilation must yield absolutely ZERO warnings when
-  subjected to the host-default `./devel_host.sh` flow or the explicit
+  subjected to the host-default `./deploy_host.sh` flow or the explicit
   Tizen `./deploy.sh` flow.
 - **Upon code regression due to test(e) or build(d) failure:** Do not blindly force `#![allow(...)]` or `unwrap()`. Understand why the async task panicked or why a Linker mapping collapsed. If a major memory leak or FFI bridging hazard is uncovered, re-escalate to the **b. Design** Architect for trait redesign. If it's a procedural bug, implement a surgical, memory-safe `Refactor` and re-enter stage d.
 

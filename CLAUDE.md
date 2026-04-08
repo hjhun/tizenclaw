@@ -12,7 +12,7 @@ repository. All rules here are binding.
 
 **TizenClaw** is a Rust-based Autonomous AI Agent daemon for Tizen OS
 (embedded Linux) and Ubuntu/WSL host development. The default workflow
-uses `./devel_host.sh`; the Tizen GBS workflow uses `./deploy.sh` when
+uses `./deploy_host.sh`; the Tizen GBS workflow uses `./deploy.sh` when
 explicitly requested. The project is a Cargo workspace with 9 crates
 under `src/`.
 
@@ -26,7 +26,7 @@ under `src/`.
 ### Build & Test
 - **NEVER** run `cargo build`, `cargo check`, `cargo test`, or
   `cargo clippy` directly. Default development builds/tests must go
-  through `./devel_host.sh`.
+  through `./deploy_host.sh`.
 - **NEVER** run `cmake .` or any local CMake build.
 - Use `./deploy.sh` only when the user explicitly asks for Tizen,
   emulator, or device validation.
@@ -75,7 +75,7 @@ update `.dev_note/DASHBOARD.md` with the stage status.
 | 1. Planning | `.agent/skills/planning-project/SKILL.md` | Module objectives, execution mode classification |
 | 2. Design | `.agent/skills/designing-architecture/SKILL.md` | FFI boundaries, async topology docs |
 | 3. Development | `.agent/skills/developing-code/SKILL.md` | TDD Red→Green→Refactor cycle |
-| 4. Build/Deploy | `.agent/skills/building-deploying/SKILL.md` | `./devel_host.sh` succeeded, or explicit `./deploy.sh -a x86_64` |
+| 4. Build/Deploy | `.agent/skills/building-deploying/SKILL.md` | `./deploy_host.sh` succeeded, or explicit `./deploy.sh -a x86_64` |
 | 5. Test/Review | `.agent/skills/reviewing-code/SKILL.md` | Host or device logs as evidence |
 | 6. Commit | `.agent/skills/managing-versions/SKILL.md` | Clean commit via `.tmp/commit_msg.txt` |
 
@@ -104,21 +104,21 @@ update `.dev_note/DASHBOARD.md` with the stage status.
 ### Host Linux (default Ubuntu/WSL workflow)
 ```bash
 # Release build + install + run (Generic Linux mode)
-./devel_host.sh
+./deploy_host.sh
 
 # Debug build
-./devel_host.sh -d
+./deploy_host.sh -d
 
 # Build only (no install/run)
-./devel_host.sh -b
+./deploy_host.sh -b
 
 # Run tests (offline, vendored)
-./devel_host.sh --test
+./deploy_host.sh --test
 
 # Daemon management
-./devel_host.sh --status   # check status
-./devel_host.sh --log      # follow logs
-./devel_host.sh --stop     # stop daemon
+./deploy_host.sh --status   # check status
+./deploy_host.sh --log      # follow logs
+./deploy_host.sh --stop     # stop daemon
 ```
 
 ---

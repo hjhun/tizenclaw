@@ -12,8 +12,8 @@ constructing the `tizenclaw` source code through the correct script for
 the active cycle.
 
 ## Core Missions
-1. **Operating the Default Host Workflow (`./devel_host.sh`)**:
-   - Use `./devel_host.sh` as the first-choice build/install/test entry
+1. **Operating the Default Host Workflow (`./deploy_host.sh`)**:
+   - Use `./deploy_host.sh` as the first-choice build/install/test entry
      point for ordinary Ubuntu/WSL development.
    - Verify the host install directory, daemon restart, and basic runtime
      status before handing the cycle forward.

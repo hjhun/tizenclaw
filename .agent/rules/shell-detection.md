@@ -11,7 +11,7 @@ To run Linux/bash commands, they **must** be wrapped with `wsl -e bash -c "..."`
 
 | Target | Shell | Command Pattern | Example |
 |--------|-------|-----------------|---------|
-| Linux filesystem / build / deploy | Bash (via WSL) | `wsl -e bash -c "..."` | `wsl -e bash -c "./devel_host.sh"` |
+| Linux filesystem / build / deploy | Bash (via WSL) | `wsl -e bash -c "..."` | `wsl -e bash -c "./deploy_host.sh"` |
 | Linux file content (cat, grep, find) | Bash (via WSL) | `wsl -e bash -c "..."` | `wsl -e bash -c "cat Cargo.toml"` |
 | Git operations on WSL repo | Bash (via WSL) | `wsl -e bash -c "..."` | `wsl -e bash -c "git status"` |
 | Windows-native tools (explorer, notepad) | PowerShell | Direct command | `explorer.exe .` |
@@ -25,10 +25,10 @@ Since the project lives entirely on the WSL filesystem (`\\wsl.localhost\Ubuntu\
 
 ```powershell
 # ✅ Correct — WSL wrapper, host-default path
-wsl -e bash -c "cd /home/hjhun/samba/github/tizenclaw && ./devel_host.sh"
+wsl -e bash -c "cd /home/hjhun/samba/github/tizenclaw && ./deploy_host.sh"
 
 # ❌ Wrong — Direct PowerShell
-./devel_host.sh
+./deploy_host.sh
 ```
 
 ### 2. Working Directory Handling
@@ -81,7 +81,7 @@ The following are the **only** cases where direct PowerShell commands are approp
 ```
 Project command?
 ├── YES → wsl -e bash -c "..."
-│   ├── Host default → wsl -e bash -c "./devel_host.sh ..."
+│   ├── Host default → wsl -e bash -c "./deploy_host.sh ..."
 │   ├── Tizen on demand → wsl -e bash -c "./deploy.sh ..."
 │   ├── Git → wsl -e bash -c "git ..."
 │   ├── File ops → wsl -e bash -c "cat/grep/find ..."
