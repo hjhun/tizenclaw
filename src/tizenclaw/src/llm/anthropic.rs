@@ -15,6 +15,9 @@ pub struct AnthropicBackend {
     /// Thinking level: "off", "low", "medium", "high".
     /// For Claude Sonnet/Opus 4.5+: uses extended thinking with budget_tokens.
     thinking_level: Option<String>,
+    /// When `true`, request Anthropic prompt caching headers and annotate
+    /// the system prompt with cache_control metadata.
+    prompt_cache_enabled: bool,
 }
 
 impl Default for AnthropicBackend {
@@ -32,6 +35,7 @@ impl AnthropicBackend {
             temperature: None,
             default_max_tokens: Some(4096),
             thinking_level: None,
+            prompt_cache_enabled: false,
         }
     }
 
@@ -119,13 +123,11 @@ impl LlmBackend for AnthropicBackend {
         if let Some(tokens) = config["max_tokens"].as_u64() {
             self.default_max_tokens = Some(tokens as u32);
         }
-<<<<<<< HEAD
         if let Some(enabled) = config["prompt_cache"].as_bool() {
             self.prompt_cache_enabled = enabled;
-=======
+        }
         if let Some(tl) = config["thinking_level"].as_str() {
             self.thinking_level = Some(tl.into());
->>>>>>> 9c4034d2 (Add thinking level config for Gemini and Anthropic)
         }
         !self.api_key.is_empty()
     }
@@ -385,10 +387,25 @@ mod tests {
 
     #[test]
     fn extract_error_message_reads_nested_anthropic_error() {
-        let body = r#"{"type":"error","error":{"type":"not_found_error","message":"model not found"}}"#;
+        let body =
+            r#"{"type":"error","error":{"type":"not_found_error","message":"model not found"}}"#;
         assert_eq!(
             AnthropicBackend::extract_error_message(body).as_deref(),
             Some("model not found")
         );
+    }
+
+    #[test]
+    fn initialize_reads_prompt_cache_and_thinking_level() {
+        let mut backend = AnthropicBackend::new();
+        let ok = backend.initialize(&json!({
+            "api_key": "test-key",
+            "prompt_cache": true,
+            "thinking_level": "medium"
+        }));
+
+        assert!(ok);
+        assert!(backend.prompt_cache_enabled);
+        assert_eq!(backend.thinking_level.as_deref(), Some("medium"));
     }
 }

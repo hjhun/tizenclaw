@@ -14,7 +14,7 @@
 //! share `Arc<AgentCore>` without an outer Mutex.
 
 use futures_util::future::join_all;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -27,9 +27,8 @@ static EXPLICIT_PATH_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
 });
 static LEVEL_ANSWER_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"\[Level\s+(\d+)\]").unwrap());
-static LEVEL_ANSWER_LINE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"(?m)^\[Level\s+(\d+)\]\s+Answer:\s*(.+?)\s*$").unwrap()
-});
+static LEVEL_ANSWER_LINE_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?m)^\[Level\s+(\d+)\]\s+Answer:\s*(.+?)\s*$").unwrap());
 static LEVEL_OUTPUT_FILE_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"^level-\d+-solution\.py$").unwrap());
 static LEVEL_OUTPUT_LEVEL_RE: LazyLock<regex::Regex> =
@@ -38,9 +37,8 @@ static LEVEL_INPUT_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"level[_-]?(\d+)[^/\s]*\.csv$").unwrap());
 static SPECULATION_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?i)\b(assuming|assume|placeholder)\b").unwrap());
-static QUOTED_IDENTIFIER_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r#"['"]([A-Za-z_][A-Za-z0-9_]*)['"]"#).unwrap()
-});
+static QUOTED_IDENTIFIER_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r#"['"]([A-Za-z_][A-Za-z0-9_]*)['"]"#).unwrap());
 static MARKDOWN_LEVEL_HEADING_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"^##\s+\[(\d+)단계\]").unwrap());
 static CSV_FILE_NAME_RE: LazyLock<regex::Regex> =
@@ -49,7 +47,7 @@ static CSV_FILE_NAME_RE: LazyLock<regex::Regex> =
 use crate::core::agent_loop_state::{AgentLoopState, AgentPhase, EvalVerdict};
 use crate::core::agent_role::{AgentRole, AgentRoleRegistry};
 use crate::core::context_engine::{
-    ContextEngine, DEFAULT_TOOL_RESULT_BUDGET_CHARS, SizedContextEngine,
+    ContextEngine, SizedContextEngine, DEFAULT_TOOL_RESULT_BUDGET_CHARS,
 };
 use crate::core::fallback_parser::FallbackParser;
 use crate::core::feature_tools;
@@ -811,13 +809,23 @@ fn normalize_explicit_path_token(token: &str) -> Option<String> {
 /// user-agent strings, or shebang lines — not real filesystem paths.
 fn is_likely_false_positive_path(path: &str) -> bool {
     // Version-like fragments: /5.0, /7.68.0, /1.1, /2.0
-    if path.trim_start_matches('/').chars().next().map_or(false, |ch| ch.is_ascii_digit()) {
+    if path
+        .trim_start_matches('/')
+        .chars()
+        .next()
+        .map_or(false, |ch| ch.is_ascii_digit())
+    {
         return true;
     }
     // Common well-known non-file paths from code strings
     let known_fp = [
-        "/bin/bash", "/bin/sh", "/usr/bin/env", "/usr/bin/python",
-        "/usr/bin/python3", "/usr/bin/node", "/dev/null",
+        "/bin/bash",
+        "/bin/sh",
+        "/usr/bin/env",
+        "/usr/bin/python",
+        "/usr/bin/python3",
+        "/usr/bin/node",
+        "/dev/null",
     ];
     if known_fp.contains(&path) {
         return true;
@@ -885,7 +893,8 @@ fn load_prefetched_prompt_file_previews(paths: &[String]) -> Vec<(String, String
     const MAX_PREFETCH_BYTES: u64 = 64 * 1024;
     const MAX_PREFETCH_CHARS: usize = 12_000;
 
-    paths.iter()
+    paths
+        .iter()
         .filter(|path| should_prefetch_prompt_file(path))
         .take(MAX_PREFETCH_FILES)
         .filter_map(|path| {
@@ -936,12 +945,7 @@ fn build_prefetched_prompt_file_context(paths: &[String]) -> Option<String> {
             } else {
                 ""
             };
-            format!(
-                "### {}\n```\n{}{}\n```",
-                path,
-                shortened.trim_end(),
-                suffix
-            )
+            format!("### {}\n```\n{}{}\n```", path, shortened.trim_end(), suffix)
         })
         .collect::<Vec<_>>()
         .join("\n\n");
@@ -1015,7 +1019,10 @@ fn summarize_requirement_directive(requirement: &str, csv_path: Option<&str>) ->
             csv_suffix
         );
     }
-    if requirement.contains("회귀 계수") || requirement.contains("beta_1") || requirement.contains("β1") {
+    if requirement.contains("회귀 계수")
+        || requirement.contains("beta_1")
+        || requirement.contains("β1")
+    {
         return format!(
             "Estimate the normal-equation OLS coefficients from X1, X2, Y{} and print only beta_1 rounded to three decimals.",
             csv_suffix
@@ -1038,10 +1045,7 @@ fn build_authoritative_problem_requirements_context(paths: &[String]) -> Option<
                     "- Level {} uses {}. Final directive: {}",
                     level, path, directive
                 )),
-                None => lines.push(format!(
-                    "- Level {} final directive: {}",
-                    level, directive
-                )),
+                None => lines.push(format!("- Level {} final directive: {}", level, directive)),
             }
         }
     }
@@ -1057,7 +1061,10 @@ fn build_authoritative_problem_requirements_context(paths: &[String]) -> Option<
 }
 
 fn parse_tool_stdout_json(result: &Value) -> Option<Value> {
-    let stdout = result.get("stdout").and_then(|value| value.as_str())?.trim();
+    let stdout = result
+        .get("stdout")
+        .and_then(|value| value.as_str())?
+        .trim();
     serde_json::from_str(stdout).ok()
 }
 
@@ -1140,10 +1147,7 @@ fn extract_level_answer_markers(code: &str) -> HashSet<String> {
 }
 
 fn extract_declared_output_path_from_leading_comment(code: &str) -> Option<String> {
-    let first_content_line = code
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())?;
+    let first_content_line = code.lines().map(str::trim).find(|line| !line.is_empty())?;
     let comment_body = first_content_line
         .strip_prefix('#')
         .or_else(|| first_content_line.strip_prefix("//"))?
@@ -1258,7 +1262,10 @@ fn extract_indexed_column_names(code: &str) -> HashSet<String> {
             continue;
         }
 
-        let prev_non_ws = code[..idx].chars().rev().find(|value| !value.is_whitespace());
+        let prev_non_ws = code[..idx]
+            .chars()
+            .rev()
+            .find(|value| !value.is_whitespace());
         if !matches!(prev_non_ws, Some(value) if value.is_ascii_alphanumeric() || value == '_' || value == ')' || value == ']')
         {
             continue;
@@ -1445,7 +1452,12 @@ fn validate_generated_code_grounding(
 
     let known_input_paths = prompt_files
         .iter()
-        .chain(grounded_paths.iter().filter(|path| path_looks_like_file(path)))
+        .filter(|path| Path::new(path.as_str()).exists())
+        .chain(
+            grounded_paths
+                .iter()
+                .filter(|path| path_looks_like_file(path)),
+        )
         .cloned()
         .collect::<HashSet<_>>();
     // Only enforce input-grounding when there are known input files.
@@ -1515,14 +1527,18 @@ fn validate_generated_code_grounding(
                         .file_name()
                         .and_then(|value| value.to_str())
                         .and_then(|file_name| LEVEL_INPUT_RE.captures(file_name))
-                        .and_then(|captures| captures.get(1).map(|value| value.as_str().to_string()))
+                        .and_then(|captures| {
+                            captures.get(1).map(|value| value.as_str().to_string())
+                        })
                         .as_deref()
                         == Some(level.as_str())
                 })
                 .cloned()
                 .collect::<Vec<_>>();
-            let matching_level_input_set =
-                matching_level_inputs.iter().cloned().collect::<HashSet<_>>();
+            let matching_level_input_set = matching_level_inputs
+                .iter()
+                .cloned()
+                .collect::<HashSet<_>>();
             if !matching_level_inputs.is_empty()
                 && !script_references_any_known_input(&combined, &matching_level_input_set)
             {
@@ -1540,7 +1556,9 @@ fn validate_generated_code_grounding(
                         .file_name()
                         .and_then(|value| value.to_str())
                         .and_then(|file_name| LEVEL_INPUT_RE.captures(file_name))
-                        .and_then(|captures| captures.get(1).map(|value| value.as_str().to_string()))
+                        .and_then(|captures| {
+                            captures.get(1).map(|value| value.as_str().to_string())
+                        })
                         .is_some_and(|candidate| candidate != *level)
                 })
                 .cloned()
@@ -3937,8 +3955,8 @@ impl AgentCore {
             .read()
             .await
             .get_tool_declarations_filtered(&intent_keywords);
-        crate::core::tool_declaration_builder::ToolDeclarationBuilder::append_builtin_tools(
-            &mut tools, prompt,
+        crate::core::tool_declaration_builder::ToolDeclarationBuilder::append_all_builtin_tools(
+            &mut tools,
         );
         if is_dashboard_web_app_request && !tools.iter().any(|tool| tool.name == "generate_web_app")
         {
@@ -4114,7 +4132,8 @@ impl AgentCore {
         let explicit_prompt_paths = extract_explicit_file_paths(prompt);
         let explicit_output_dirs = extract_explicit_directory_paths(prompt);
         if !explicit_prompt_paths.is_empty() {
-            for prefetched_message in build_prefetched_prompt_file_messages(&explicit_prompt_paths) {
+            for prefetched_message in build_prefetched_prompt_file_messages(&explicit_prompt_paths)
+            {
                 if let Some(last_user_idx) =
                     messages.iter().rposition(|message| message.role == "user")
                 {
@@ -4329,9 +4348,6 @@ impl AgentCore {
                 tools.len()
             );
 
-            // Step 6: Set Max Tokens Dynamically
-            let dynamic_max_tokens = if prompt.len() < 50 { 1024 } else { 4096 };
-
             let mut response = LlmResponse::default();
             let mut is_workflow_tool = false;
 
@@ -4421,7 +4437,7 @@ impl AgentCore {
                                     &tools,
                                     on_chunk,
                                     &system_prompt,
-                                    Some(dynamic_max_tokens),
+                                    None,
                                 )
                                 .await;
                         }
@@ -4434,7 +4450,7 @@ impl AgentCore {
                         &tools,
                         on_chunk,
                         &system_prompt,
-                        Some(dynamic_max_tokens),
+                        None,
                     )
                     .await;
             }
@@ -4639,7 +4655,9 @@ impl AgentCore {
                             let query = tc_args.get("query").and_then(|v| v.as_str()).unwrap_or("ALL");
 
                             let mut all_tools = td_guard_ref.get_tool_declarations();
-                            crate::core::tool_declaration_builder::ToolDeclarationBuilder::append_builtin_tools(&mut all_tools, "ALL");
+                            crate::core::tool_declaration_builder::ToolDeclarationBuilder::append_all_builtin_tools(
+                                &mut all_tools,
+                            );
                             if let Ok(bridge) = bridge_ref.lock() {
                                 all_tools.extend(bridge.get_action_declarations());
                             }
@@ -5237,17 +5255,21 @@ impl AgentCore {
                         }
                     }
                 }
-                let (budgeted_results, budgeted_count) = context_engine
-                    .budget_tool_result_messages(results, DEFAULT_TOOL_RESULT_BUDGET_CHARS);
-                if budgeted_count > 0 {
-                    loop_state.record_budget_events(budgeted_count);
-                    log::info!(
-                        "[ToolBudget] Round {} budgeted {} oversized tool result(s)",
-                        loop_state.round,
-                        budgeted_count
-                    );
+                if loop_state.token_budget > 0 {
+                    let (budgeted_results, budgeted_count) = context_engine
+                        .budget_tool_result_messages(results, DEFAULT_TOOL_RESULT_BUDGET_CHARS);
+                    if budgeted_count > 0 {
+                        loop_state.record_budget_events(budgeted_count);
+                        log::info!(
+                            "[ToolBudget] Round {} budgeted {} oversized tool result(s)",
+                            loop_state.round,
+                            budgeted_count
+                        );
+                    }
+                    messages.extend(budgeted_results);
+                } else {
+                    messages.extend(results);
                 }
-                messages.extend(budgeted_results);
 
                 // ── Phase 7: Evaluating (partial progress) ───────────────
                 loop_state.transition(AgentPhase::Evaluating);
@@ -5587,6 +5609,8 @@ impl AgentCore {
         use crate::core::tool_indexer;
 
         let root_dir = self.platform.paths.tools_dir.to_string_lossy().to_string();
+        // Embedded descriptors are documentation/indexing metadata for
+        // code-defined built-in tools. They are not the execution source.
         let embedded_dir = self
             .platform
             .paths
@@ -5768,20 +5792,19 @@ impl<'a> SessionStoreRef<'a> {
 #[cfg(test)]
 mod tests {
     use super::{
-        AgentRole, MAX_OUTBOUND_DASHBOARD_MESSAGES, append_dashboard_outbound_message,
-        build_authoritative_problem_requirements_context, build_prefetched_prompt_file_context,
-        build_prefetched_prompt_file_messages, build_progress_marker,
-        build_role_supervisor_hint, build_skill_prefetch_message, collect_grounded_csv_headers,
-        collect_grounded_paths, dashboard_outbound_queue_path,
-        expected_persisted_level_script_paths, extract_level_number_from_output_path,
-        extract_explicit_directory_paths, extract_explicit_file_paths,
-        extract_explicit_paths, extract_final_text, generated_code_runtime_spec,
-        generated_code_script_path, manage_generated_code_tool,
-        normalize_conversation_log_text, parse_shell_like_args,
-        persist_generated_code_copy, prompt_mode_from_doc, reasoning_policy_from_doc,
-        role_relevance_score, sanitize_generated_code_name, select_delegate_roles,
-        select_relevant_skills, utf8_safe_preview, validate_generated_code_execution_output,
-        validate_generated_code_grounding,
+        append_dashboard_outbound_message, build_authoritative_problem_requirements_context,
+        build_prefetched_prompt_file_context, build_prefetched_prompt_file_messages,
+        build_progress_marker, build_role_supervisor_hint, build_skill_prefetch_message,
+        collect_grounded_csv_headers, collect_grounded_paths, dashboard_outbound_queue_path,
+        expected_persisted_level_script_paths, extract_explicit_directory_paths,
+        extract_explicit_file_paths, extract_explicit_paths, extract_final_text,
+        extract_level_number_from_output_path, generated_code_runtime_spec,
+        generated_code_script_path, manage_generated_code_tool, normalize_conversation_log_text,
+        parse_shell_like_args, persist_generated_code_copy, prompt_mode_from_doc,
+        reasoning_policy_from_doc, role_relevance_score, sanitize_generated_code_name,
+        select_delegate_roles, select_relevant_skills, utf8_safe_preview,
+        validate_generated_code_execution_output, validate_generated_code_grounding, AgentRole,
+        MAX_OUTBOUND_DASHBOARD_MESSAGES,
     };
     use crate::core::prompt_builder::{PromptMode, ReasoningPolicy};
     use crate::core::textual_skill_scanner::TextualSkill;
@@ -6027,9 +6050,9 @@ mod tests {
         )
         .unwrap();
 
-        let context = build_authoritative_problem_requirements_context(&[
-            spec_path.to_string_lossy().to_string(),
-        ])
+        let context = build_authoritative_problem_requirements_context(&[spec_path
+            .to_string_lossy()
+            .to_string()])
         .unwrap_or_default();
 
         assert!(context.contains("Level 1 uses"));
@@ -6060,12 +6083,15 @@ mod tests {
 
     #[test]
     fn validate_generated_code_grounding_requires_prompt_files_to_be_read_first() {
-        let prompt = "Read /tmp/ds_olympiad/problem.md and solve it.";
+        let dir = tempdir().unwrap();
+        let input_path = dir.path().join("problem.md");
+        std::fs::write(&input_path, "demo").unwrap();
+        let prompt = format!("Read {} and solve it.", input_path.display());
         let grounded_paths = HashSet::new();
         let grounded_csv_headers = HashSet::new();
 
         let result = validate_generated_code_grounding(
-            prompt,
+            &prompt,
             &grounded_paths,
             &grounded_csv_headers,
             "print('hello')",
@@ -6073,11 +6099,28 @@ mod tests {
         );
 
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .contains("/tmp/ds_olympiad/problem.md")
+        assert!(result
+            .unwrap_err()
+            .contains(input_path.to_string_lossy().as_ref()));
+    }
+
+    #[test]
+    fn validate_generated_code_grounding_allows_nonexistent_prompt_output_paths() {
+        let dir = tempdir().unwrap();
+        let output_path = dir.path().join("new_result.txt");
+        let prompt = format!("Write the answer to {}.", output_path.display());
+        let grounded_paths = HashSet::new();
+        let grounded_csv_headers = HashSet::new();
+
+        let result = validate_generated_code_grounding(
+            &prompt,
+            &grounded_paths,
+            &grounded_csv_headers,
+            "print('hello')",
+            "",
         );
+
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -6336,7 +6379,9 @@ mod tests {
         );
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("matching inspected input file"));
+        assert!(result
+            .unwrap_err()
+            .contains("matching inspected input file"));
     }
 
     #[test]

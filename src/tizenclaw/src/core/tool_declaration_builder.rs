@@ -1,7 +1,7 @@
 //! Tool declaration builder — generates LLM function declarations for all tools.
 
 use crate::llm::backend::LlmToolDecl;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::HashSet;
 
 pub struct ToolDeclarationBuilder;
@@ -11,6 +11,11 @@ impl ToolDeclarationBuilder {
     /// This drastically reduces token bloat (Token Optimization via Dynamic Tool Loading).
     pub fn append_builtin_tools(tools: &mut Vec<LlmToolDecl>, prompt: &str) {
         let p = prompt.to_lowercase();
+
+        if p.trim() == "all" {
+            Self::append_all_builtin_tools(tools);
+            return;
+        }
 
         // 1. Meta / System Tools - always injected
         Self::push_meta_tools(tools);
@@ -87,6 +92,24 @@ impl ToolDeclarationBuilder {
             Self::push_image_tools(tools);
         }
 
+        Self::dedup(tools);
+    }
+
+    /// Append every built-in tool declaration regardless of prompt heuristics.
+    pub fn append_all_builtin_tools(tools: &mut Vec<LlmToolDecl>) {
+        Self::push_meta_tools(tools);
+        Self::push_task_tools(tools);
+        Self::push_memory_tools(tools);
+        Self::push_session_tools(tools);
+        Self::push_workflow_tools(tools);
+        Self::push_agent_tools(tools);
+        Self::push_research_tools(tools);
+        Self::push_document_tools(tools);
+        Self::push_image_tools(tools);
+        Self::dedup(tools);
+    }
+
+    fn dedup(tools: &mut Vec<LlmToolDecl>) {
         let mut seen = HashSet::new();
         tools.retain(|tool| seen.insert(tool.name.clone()));
     }
@@ -652,6 +675,30 @@ mod tests {
         ToolDeclarationBuilder::append_builtin_tools(&mut tools2, "create a new task");
         let names2: Vec<&str> = tools2.iter().map(|t| t.name.as_str()).collect();
         assert!(names2.contains(&"create_task"));
+    }
+
+    #[test]
+    fn test_append_all_builtin_tools_includes_workflow_and_agent_tools() {
+        let mut tools = vec![];
+        ToolDeclarationBuilder::append_all_builtin_tools(&mut tools);
+        let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+
+        assert!(names.contains(&"create_task"));
+        assert!(names.contains(&"run_supervisor"));
+        assert!(names.contains(&"create_session"));
+        assert!(names.contains(&"search_knowledge"));
+        assert!(names.contains(&"generate_image"));
+    }
+
+    #[test]
+    fn test_append_builtin_tools_all_shortcut_expands_everything() {
+        let mut tools = vec![];
+        ToolDeclarationBuilder::append_builtin_tools(&mut tools, "ALL");
+        let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+
+        assert!(names.contains(&"create_task"));
+        assert!(names.contains(&"run_supervisor"));
+        assert!(names.contains(&"create_session"));
     }
 
     #[test]

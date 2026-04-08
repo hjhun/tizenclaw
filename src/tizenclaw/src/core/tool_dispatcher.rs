@@ -91,10 +91,9 @@ impl ToolDispatcher {
 
     /// Load tools from a directory containing sub-directories with tool descriptors.
     ///
-    /// Each immediate child directory is scanned for either `tool.md` or `index.md`
-    /// (checked in that priority order). This allows any subdirectory layout under
-    /// `<tizen-tools>/` to register tools without requiring a specific naming
-    /// convention for the parent directory.
+    /// Each immediate child directory is scanned for `tool.md`.
+    /// Generated `index.md` files are documentation and must not be
+    /// registered as executable tools.
     pub fn load_tools_from_dir(&mut self, dir: &str) {
         let entries = match std::fs::read_dir(dir) {
             Ok(e) => e,
@@ -103,12 +102,8 @@ impl ToolDispatcher {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                // Accept either tool.md or index.md as the tool descriptor
-                let descriptor = ["tool.md", "index.md"]
-                    .iter()
-                    .map(|name| path.join(name))
-                    .find(|p| p.exists());
-                if let Some(md_path) = descriptor {
+                let md_path = path.join("tool.md");
+                if md_path.exists() {
                     if let Ok(content) = std::fs::read_to_string(&md_path) {
                         if let Some(decl) = Self::parse_tool_md(&content, &path) {
                             log::debug!(
@@ -125,11 +120,10 @@ impl ToolDispatcher {
     }
 
     fn parse_decl_from_dir(path: &Path) -> Option<ToolDecl> {
-        let descriptor = ["tool.md", "index.md"]
-            .iter()
-            .map(|name| path.join(name))
-            .find(|candidate| candidate.exists());
-        let md_path = descriptor?;
+        let md_path = path.join("tool.md");
+        if !md_path.exists() {
+            return None;
+        }
         let content = std::fs::read_to_string(&md_path).ok()?;
         Self::parse_tool_md(&content, path)
     }
@@ -569,6 +563,34 @@ script: worker.sh
             decl.prepend_args,
             vec![script_path.to_string_lossy().to_string()]
         );
+    }
+
+    #[test]
+    fn load_tools_from_dir_ignores_index_only_directories() {
+        let root = tempfile::tempdir().unwrap();
+        let docs_dir = root.path().join("cli");
+        let tool_dir = root.path().join("demo");
+
+        fs::create_dir_all(&docs_dir).unwrap();
+        fs::create_dir_all(&tool_dir).unwrap();
+        fs::write(
+            docs_dir.join("index.md"),
+            "# CLI Tools Index\n\nThis is documentation only.\n",
+        )
+        .unwrap();
+        fs::write(tool_dir.join("tool.md"), "# demo\n").unwrap();
+        fs::write(tool_dir.join("demo"), "#!/bin/sh\necho ok\n").unwrap();
+
+        let mut dispatcher = ToolDispatcher::new();
+        dispatcher.load_tools_from_dir(root.path().to_str().unwrap());
+
+        let names = dispatcher
+            .get_tool_declarations()
+            .into_iter()
+            .map(|decl| decl.name)
+            .collect::<Vec<_>>();
+
+        assert_eq!(names, vec!["demo".to_string()]);
     }
 
     #[test]
