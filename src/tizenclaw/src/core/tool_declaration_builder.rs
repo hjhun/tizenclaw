@@ -149,6 +149,24 @@ impl ToolDeclarationBuilder {
             }),
         });
         tools.push(LlmToolDecl {
+            name: "file_write".into(),
+            description: "Write content to a file at the specified path in the workspace. Creates parent directories if needed. Use this when you need to create or overwrite a file without executing code. For paths without a leading '/', the file is created relative to the current workspace directory.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "File path to write to (relative to workspace or absolute)"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Content to write to the file"
+                    }
+                },
+                "required": ["path", "content"]
+            }),
+        });
+        tools.push(LlmToolDecl {
             name: "run_generated_code".into(),
             description: "Write generated Python, Node.js, or Bash code under the device-owned codes directory and execute it immediately. If the first non-empty line is a comment containing the exact allowed absolute output file path, the same script may also be persisted there. When the user asks you to create script files under specific directories, do not answer with fenced code or prose; use this tool. Use this for executable scripts only. Do not use it for HTML/CSS/JS browser apps or webview content; use generate_web_app for those.".into(),
             parameters: json!({

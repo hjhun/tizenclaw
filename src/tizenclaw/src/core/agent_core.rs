@@ -5034,6 +5034,38 @@ impl AgentCore {
                                     }
                                 }
                             }
+                        } else if tc_name == "file_write" {
+                            let path_str = tc_args.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                            let content = tc_args.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                            if path_str.is_empty() {
+                                json!({"error": "Missing required parameter: path"})
+                            } else {
+                                let file_path = if std::path::Path::new(path_str).is_absolute() {
+                                    std::path::PathBuf::from(path_str)
+                                } else {
+                                    session_workdir.join(path_str)
+                                };
+                                if let Some(parent) = file_path.parent() {
+                                    if let Err(e) = std::fs::create_dir_all(parent) {
+                                        return LlmMessage::tool_result(
+                                            &tc_id,
+                                            &tc_name,
+                                            json!({"error": format!("Failed to create directory: {}", e)}),
+                                        );
+                                    }
+                                }
+                                match std::fs::write(&file_path, content) {
+                                    Ok(()) => {
+                                        log::info!("[file_write] Wrote {} bytes to {}", content.len(), file_path.display());
+                                        json!({
+                                            "success": true,
+                                            "path": file_path.to_string_lossy(),
+                                            "bytes_written": content.len()
+                                        })
+                                    }
+                                    Err(e) => json!({"error": format!("Failed to write file: {}", e)}),
+                                }
+                            }
                         } else if tc_name == "run_generated_code" {
                             let runtime = tc_args.get("runtime").and_then(|v| v.as_str()).unwrap_or("");
                             let name = tc_args.get("name").and_then(|v| v.as_str());
