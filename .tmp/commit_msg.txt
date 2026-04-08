@@ -1,0 +1,11 @@
+Harden Telegram OAuth backend linkage
+
+Persist Codex OAuth auth_path and token snapshots when linking
+the openai-codex backend through the CLI.
+
+Prefer the explicit auth path during backend initialization and
+fall back to stored OAuth tokens when the Codex auth file is not
+reachable from the daemon runtime.
+
+Refresh default config documents and add regression tests for the
+new auth path and fallback behavior.

@@ -64,8 +64,10 @@ pub fn default_document() -> Value {
                 "oauth": {
                     "access_token": "",
                     "refresh_token": "",
+                    "id_token": "",
                     "expires_at": 0,
                     "account_id": "",
+                    "auth_path": "",
                     "source": "codex_cli"
                 }
             },

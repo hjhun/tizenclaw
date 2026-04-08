@@ -157,6 +157,10 @@ impl OpenAiBackend {
         Some(Self::codex_auth_path_from_home(Path::new(&home)))
     }
 
+    fn codex_auth_path_from_config(config: &Value) -> Option<PathBuf> {
+        Self::config_string(config, &["oauth", "auth_path"]).map(PathBuf::from)
+    }
+
     fn parse_codex_auth_json(
         contents: &str,
         source: CodexAuthSource,
@@ -810,16 +814,12 @@ impl LlmBackend for OpenAiBackend {
         }
 
         if self.provider_name == "openai-codex" {
-            if let Some(state) = Self::build_codex_auth_from_config(config) {
-                *self
-                    .codex_auth
-                    .lock()
-                    .unwrap_or_else(|err| err.into_inner()) = Some(state);
-                return true;
-            }
+            let config_state = Self::build_codex_auth_from_config(config);
 
             if Self::should_use_codex_cli_source(config) {
-                if let Some(path) = Self::codex_auth_path() {
+                if let Some(path) =
+                    Self::codex_auth_path_from_config(config).or_else(Self::codex_auth_path)
+                {
                     match Self::load_codex_auth_from_path(&path) {
                         Ok(state) => {
                             *self
@@ -837,6 +837,14 @@ impl LlmBackend for OpenAiBackend {
                         }
                     }
                 }
+            }
+
+            if let Some(state) = config_state {
+                *self
+                    .codex_auth
+                    .lock()
+                    .unwrap_or_else(|err| err.into_inner()) = Some(state);
+                return true;
             }
 
             log::warn!(
@@ -1047,6 +1055,64 @@ mod tests {
         if let Some(home) = previous_home {
             std::env::set_var("HOME", home);
         }
+
+        assert!(initialized);
+    }
+
+    #[test]
+    fn openai_codex_uses_explicit_auth_path_from_config() {
+        let dir = tempdir().unwrap();
+        let auth_path = dir.path().join("codex-auth.json");
+        std::fs::write(
+            &auth_path,
+            json!({
+                "auth_mode": "chatgpt",
+                "tokens": {
+                    "access_token": create_jwt(json!({
+                        "exp": 4_000_000_000i64,
+                        "https://api.openai.com/auth": {
+                            "chatgpt_account_id": "acct-path"
+                        }
+                    })),
+                    "refresh_token": "refresh-token",
+                    "account_id": "acct-path"
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let mut backend = OpenAiBackend::new("openai-codex");
+        let initialized = backend.initialize(&json!({
+            "oauth": {
+                "source": "codex_cli",
+                "auth_path": auth_path.display().to_string()
+            }
+        }));
+
+        assert!(initialized);
+    }
+
+    #[test]
+    fn openai_codex_falls_back_to_config_tokens_when_auth_file_is_unavailable() {
+        let mut backend = OpenAiBackend::new("openai-codex");
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let initialized = backend.initialize(&json!({
+            "oauth": {
+                "source": "codex_cli",
+                "auth_path": "/tmp/does-not-exist-auth.json",
+                "access_token": create_jwt(json!({
+                    "exp": now + 3600,
+                    "https://api.openai.com/auth": {
+                        "chatgpt_account_id": "acct-fallback"
+                    }
+                })),
+                "refresh_token": "refresh-token"
+            }
+        }));
 
         assert!(initialized);
     }

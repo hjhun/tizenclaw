@@ -178,8 +178,10 @@ fn default_llm_config() -> Value {
                 "oauth": {
                     "access_token": "",
                     "refresh_token": "",
+                    "id_token": "",
                     "expires_at": 0,
                     "account_id": "",
+                    "auth_path": "",
                     "source": "codex_cli"
                 }
             },
@@ -556,6 +558,31 @@ fn read_codex_auth_doc() -> Result<Value, String> {
         .map_err(|err| format!("Failed to parse '{}': {}", path.display(), err))
 }
 
+fn codex_oauth_snapshot(auth_doc: &Value) -> Value {
+    let tokens = auth_doc
+        .get("tokens")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let mut oauth = Map::new();
+
+    for key in ["access_token", "refresh_token", "id_token", "account_id"] {
+        if let Some(value) = tokens.get(key).and_then(Value::as_str) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                oauth.insert(key.to_string(), Value::String(trimmed.to_string()));
+            }
+        }
+    }
+
+    oauth.insert(
+        "auth_path".to_string(),
+        Value::String(codex_auth_path().display().to_string()),
+    );
+
+    Value::Object(oauth)
+}
+
 fn codex_login_status() -> Value {
     let cli_path = codex_cli_path();
     let auth_path = codex_auth_path();
@@ -738,6 +765,11 @@ fn connect_codex_session() -> Result<Value, String> {
 
     doc["backends"]["openai-codex"]["oauth"]["source"] = Value::String("codex_cli".to_string());
     if let Ok(auth_doc) = read_codex_auth_doc() {
+        if let Value::Object(snapshot) = codex_oauth_snapshot(&auth_doc) {
+            for (key, value) in snapshot {
+                doc["backends"]["openai-codex"]["oauth"][&key] = value;
+            }
+        }
         if let Some(account_id) = auth_doc
             .get("tokens")
             .and_then(|value| value.get("account_id"))
@@ -1482,7 +1514,10 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{dashboard_port_from_doc, merge_missing, parse_chat_ids, parse_codex_login_state};
+    use super::{
+        codex_oauth_snapshot, dashboard_port_from_doc, merge_missing, parse_chat_ids,
+        parse_codex_login_state,
+    };
     use serde_json::json;
 
     #[test]
@@ -1538,5 +1573,28 @@ mod tests {
         merge_missing(&mut doc, &defaults);
         assert_eq!(doc["backends"]["openai-codex"]["model"], json!("custom-model"));
         assert_eq!(doc["backends"]["openai-codex"]["transport"], json!("responses"));
+    }
+
+    #[test]
+    fn codex_oauth_snapshot_copies_tokens_and_auth_path() {
+        let auth_doc = json!({
+            "tokens": {
+                "access_token": "access-token",
+                "refresh_token": "refresh-token",
+                "id_token": "id-token",
+                "account_id": "acct-123"
+            }
+        });
+
+        let snapshot = codex_oauth_snapshot(&auth_doc);
+
+        assert_eq!(snapshot["access_token"], json!("access-token"));
+        assert_eq!(snapshot["refresh_token"], json!("refresh-token"));
+        assert_eq!(snapshot["id_token"], json!("id-token"));
+        assert_eq!(snapshot["account_id"], json!("acct-123"));
+        assert!(snapshot["auth_path"]
+            .as_str()
+            .map(|value| value.ends_with("/.codex/auth.json"))
+            .unwrap_or(false));
     }
 }

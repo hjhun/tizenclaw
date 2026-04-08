@@ -2,6 +2,10 @@
 
 ## Current Cycle
 
+- Request: 현재 Oauth로 로그인된 llm 연결 채널을 텔레그램에서
+  사용하면 연동이 안되는 문제를 개선한다.
+- Date: 2026-04-09
+- Language: Korean
 - Request: host 기본 개발 경로를 `devel_host.sh` 대신
   `deploy_host.sh`로 전환한다.
 - Date: 2026-04-09
@@ -135,6 +139,84 @@
 
 ## Stage Status
 
+- [x] Supervisor Gate after Commit & Push
+  - PASS: workspace cleanup 후 OAuth Telegram 연동 개선 관련 파일만
+    스테이징했고 `.tmp/commit_msg.txt` 기반 영어 커밋 메시지로
+    커밋을 완료했다.
+- [x] Stage 6: Commit & Push
+  - Summary:
+    - `bash .agent/scripts/cleanup_workspace.sh`를 실행해 작업 트리를
+      정리했다.
+    - OAuth Telegram 연동 개선과 관련된 설정/백엔드/샘플/대시보드
+      변경만 커밋 범위로 확정했다.
+    - 커밋 메시지는 영어 요약 형식으로 `.tmp/commit_msg.txt`에
+      작성해 사용한다.
+- [x] Supervisor Gate after Test & Review
+  - PASS: host 테스트가 모두 통과했고, daemon 재기동 뒤 상태/로그 증거로
+    Telegram 채널이 의존하는 host runtime이 정상 생존함을 확인했다.
+- [x] Stage 5: Test & Review
+  - Verdict: PASS
+  - Evidence:
+    - `./deploy_host.sh --test`가 성공했고 전체 테스트가 통과했다.
+    - 새 회귀 테스트로 `openai-codex`의 명시적 `auth_path` 사용과
+      auth 파일 접근 실패 시 설정 토큰 폴백을 검증했다.
+    - `./deploy_host.sh --status`에서 `tizenclaw`, tool executor,
+      web dashboard가 모두 실행 중임을 확인했다.
+    - host log 증거:
+      `[OK] Daemon ready (1383ms) startup sequence completed`
+    - 테스트 로그에는 기존
+      `src/tizenclaw-metadata-plugin/src/logging.rs`의
+      `dead_code` 경고 4건만 남아 있었고, 이번 변경에서 새 경고나
+      실패는 없었다.
+- [x] Supervisor Gate after Build & Deploy
+  - PASS: host 기본 경로인 `./deploy_host.sh`로 설치와 재시작을
+    완료했고 daemon, tool executor, dashboard가 다시 올라왔다.
+- [x] Stage 4: Build & Deploy
+  - Summary:
+    - `./deploy_host.sh`로 host 빌드, 설치, 실행까지 완료했다.
+    - `./deploy_host.sh --restart-only`와 `./deploy_host.sh --status`로
+      최종 재기동 상태를 재확인했다.
+- [x] Supervisor Gate after Development
+  - PASS: OAuth 기반 `openai-codex` 연동이 Telegram 채널의 daemon
+    실행 환경 차이에도 유지되도록 설정/초기화 경로와 회귀 테스트를
+    함께 보강했다.
+- [x] Stage 3: Development
+  - Summary:
+    - `tizenclaw-cli auth openai-codex connect`가
+      `llm_config.json`에 `auth_path`, access/refresh/id token,
+      account_id 스냅샷을 함께 저장하도록 수정했다.
+    - `openai-codex` backend 초기화가 명시적 `oauth.auth_path`를
+      우선 사용하고, auth 파일을 읽지 못하면 설정 내 OAuth 토큰으로
+      폴백하도록 수정했다.
+    - 기본 설정 문서와 샘플 설정을 새 OAuth 필드에 맞게 갱신했고,
+      회귀 테스트를 추가했다.
+- [x] Supervisor Gate after Design
+  - PASS: Telegram 채팅 경로에서 OAuth 기반 `openai-codex`가
+    daemon 실행 환경의 `HOME` 차이 또는 Codex auth 파일 접근 실패에도
+    동작하도록 명시적 auth 경로와 설정 내 토큰 스냅샷 폴백을
+    함께 설계했다.
+- [x] Stage 2: Design
+  - Artifact:
+    `.dev_note/DASHBOARD.md`
+  - Summary:
+    - `tizenclaw-cli auth openai-codex connect`가 Codex CLI의
+      `auth.json` 메타데이터만 연결하고 실제 토큰을
+      `llm_config.json`에 남기지 않는 점을 원인 후보로 확정했다.
+    - `openai-codex` 초기화는 `oauth.auth_path`를 우선 사용하고,
+      파일 접근이 실패하면 설정에 저장된 토큰 스냅샷으로
+      폴백하도록 보강하기로 했다.
+- [x] Supervisor Gate after Planning
+  - PASS: 이번 작업을 host-default 사이클로 분류했고,
+    텔레그램 채팅 모드의 OAuth backend 연동 불안정성을
+    `deploy_host.sh` 기반으로 검증하기로 계획했다.
+- [x] Stage 1: Planning
+  - Artifact:
+    `.dev_note/DASHBOARD.md`
+  - Summary:
+    - 요청 범위를 Telegram 채널에서 OAuth 로그인 기반
+      `openai-codex` backend가 동작하지 않는 문제 수정으로 분류했다.
+    - 검증은 host 기본 경로인 `./deploy_host.sh -b`와
+      `./deploy_host.sh --test`로 수행하기로 계획했다.
 - [x] Supervisor Gate after Commit & Push
   - PASS: workspace cleanup 후 host 기본 경로 전환과 스크립트 정리
     변경만 스테이징했고 `.tmp/commit_msg.txt` 기반 커밋을
