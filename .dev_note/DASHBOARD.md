@@ -2,6 +2,11 @@
 
 ## Current Cycle
 
+- Request: `openai-codex`는 `codex cli` fallback 없이 OpenClaw 식
+  OAuth transport로 직접 연결되도록 수정하고, Telegram/Web/CLI에서
+  간헐적으로 발생하는 `All LLM backends failed` 원인을 제거한다.
+- Date: 2026-04-09
+- Language: Korean
 - Request: 현재 Oauth로 로그인된 llm 연결 채널을 텔레그램에서
   사용하면 연동이 안되는 문제를 개선한다.
 - Date: 2026-04-09
@@ -139,6 +144,81 @@
 
 ## Stage Status
 
+- [ ] Supervisor Gate after Commit & Push
+- [x] Stage 6: Commit & Push
+  - Summary:
+    - `bash .agent/scripts/cleanup_workspace.sh`를 실행해 빌드 부산물과
+      임시 파일을 정리했다.
+    - 이번 범위는 OpenClaw식 `openai-codex` transport 수정과 관련된
+      backend/config/sample/dashboard 변경만 커밋 대상으로 확정했다.
+    - 커밋 메시지는 영어 요약 형식으로 `.tmp/commit_msg.txt`에 작성해
+      `git commit -F`로 기록한다.
+- [x] Supervisor Gate after Test & Review
+  - PASS: host 테스트 전체가 통과했고, 실제 `openai-codex` CLI 호출이
+    새 Codex SSE transport로 성공해 더 이상 `All LLM backends failed`로
+    떨어지지 않음을 확인했다.
+- [x] Stage 5: Test & Review
+  - Verdict: PASS
+  - Evidence:
+    - `./deploy_host.sh --test` 성공, 전체 테스트 통과
+    - `llm::openai::tests::openai_codex_request_matches_codex_route_contract`
+      추가 및 통과
+    - 실제 실행:
+      `/home/hjhun/.tizenclaw/bin/tizenclaw-cli '한 문장으로 테스트 응답만 해줘'`
+      결과 `테스트 응답입니다.`
+    - daemon log 증거:
+      `Round 0 Response: success=true`
+      `Conversation][Assistant] 테스트 응답입니다.`
+- [x] Supervisor Gate after Build & Deploy
+  - PASS: host 기본 경로인 `./deploy_host.sh`로 빌드/설치/재기동을
+    완료했고, 최종 `--status`에서 daemon, tool executor,
+    web dashboard가 모두 살아 있음을 확인했다.
+- [x] Stage 4: Build & Deploy
+  - Summary:
+    - `./deploy_host.sh`로 새 `openai-codex` transport를 host runtime에
+      배포했다.
+    - `./deploy_host.sh --restart-only`, `./deploy_host.sh --status`로
+      최종 생존 상태를 재확인했다.
+- [x] Supervisor Gate after Development
+  - PASS: `openai-codex`를 OpenClaw식 ChatGPT Codex route 계약에 맞춰
+    `/codex/responses` SSE transport로 교체했고, 오래된 config도
+    런타임에서 자동 정규화되도록 보강했다.
+- [x] Stage 3: Development
+  - Summary:
+    - 실제 ChatGPT Codex route를 재현해 `https://chatgpt.com/backend-api`
+      하위 기본 `/responses`가 아니라
+      `/codex/responses`가 유효 endpoint임을 확인했다.
+    - Codex route는 `instructions`, `store: false`, `stream: true`를
+      요구하고 `max_output_tokens`는 거부함을 실측으로 확인했다.
+    - 이에 따라 Rust `openai-codex` backend를 OpenClaw 식 전용
+      transport 계약에 맞게 수정했다.
+    - 수정 내용:
+      `openai-codex` 요청 경로를 `/codex/responses`로 교체하고,
+      `instructions` 보장, `store=false`, `stream=true` 강제,
+      SSE event 파싱, 기존 `/responses` 설정 자동 정규화,
+      기본 설정/샘플 업데이트를 반영했다.
+- [x] Supervisor Gate after Design
+  - PASS: OpenClaw와 실 endpoint 검증 결과를 근거로
+    `openai-codex`를 별도 SSE transport로 다루는 설계를 확정했다.
+- [x] Stage 2: Design
+  - Artifact:
+    `.dev_note/DASHBOARD.md`
+  - Summary:
+    - 기존 실패 원인을 `backend-api/responses` 경로 오사용,
+      `instructions` 미보장, `store/stream` 계약 불일치로 좁혔다.
+    - 수정 방향을 `codex/responses` SSE 직결, `store=false` 강제,
+      `service_tier` 제거, 최종 이벤트 기반 응답 파싱으로 정했다.
+- [x] Supervisor Gate after Planning
+  - PASS: 이번 요청을 host 기본 사이클로 분류했고, OpenClaw식 OAuth
+    transport 차이를 먼저 실측 검증한 뒤 코드 수정으로 이어가기로 했다.
+- [x] Stage 1: Planning
+  - Artifact:
+    `.dev_note/DASHBOARD.md`
+  - Summary:
+    - `codex cli` fallback은 사용하지 않고 `openai-codex` 자체를
+      고쳐 Telegram/Web/CLI 공통 경로를 안정화하는 것으로 범위를 정했다.
+    - 검증은 실제 OAuth 토큰으로 endpoint contract를 확인한 뒤
+      `./deploy_host.sh`, `./deploy_host.sh --test`로 마무리한다.
 - [x] Supervisor Gate after Commit & Push
   - PASS: workspace cleanup 후 OAuth Telegram 연동 개선 관련 파일만
     스테이징했고 `.tmp/commit_msg.txt` 기반 영어 커밋 메시지로

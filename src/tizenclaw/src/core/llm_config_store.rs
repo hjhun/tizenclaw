@@ -59,8 +59,7 @@ pub fn default_document() -> Value {
                 "model": "gpt-5.4",
                 "endpoint": "https://chatgpt.com/backend-api",
                 "transport": "responses",
-                "api_path": "/responses",
-                "service_tier": "priority",
+                "api_path": "/codex/responses",
                 "oauth": {
                     "access_token": "",
                     "refresh_token": "",

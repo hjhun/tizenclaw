@@ -6,16 +6,20 @@ use super::backend::*;
 use crate::infra::http_client;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use futures_util::StreamExt;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 const CHATGPT_BACKEND_API: &str = "https://chatgpt.com/backend-api";
 const OPENAI_RESPONSES_PATH: &str = "/responses";
+const OPENAI_CODEX_RESPONSES_PATH: &str = "/codex/responses";
 const OPENAI_CHAT_COMPLETIONS_PATH: &str = "/chat/completions";
 const OPENAI_CODEX_OAUTH_ENDPOINT: &str = "https://auth.openai.com/oauth/token";
 const OPENAI_CODEX_CLIENT_ID: &str = "managedreloadapp_EMoamEEZ73f0CkXaXp7hrann";
 const OPENAI_CODEX_REFRESH_SKEW_SECS: i64 = 300;
+const OPENAI_CODEX_USER_AGENT: &str = "CodexBar";
+const OPENAI_CODEX_DEFAULT_INSTRUCTIONS: &str = "You are a helpful assistant.";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum OpenAiTransport {
@@ -64,9 +68,9 @@ impl OpenAiBackend {
             "openai-codex" => (
                 CHATGPT_BACKEND_API,
                 "gpt-5.4",
-                OPENAI_RESPONSES_PATH,
+                OPENAI_CODEX_RESPONSES_PATH,
                 OpenAiTransport::Responses,
-                Some("priority".to_string()),
+                None,
             ),
             _ => (
                 "https://api.openai.com/v1",
@@ -667,6 +671,309 @@ impl OpenAiBackend {
         input
     }
 
+    fn codex_instructions(system_prompt: &str) -> String {
+        let trimmed = system_prompt.trim();
+        if trimmed.is_empty() {
+            OPENAI_CODEX_DEFAULT_INSTRUCTIONS.to_string()
+        } else {
+            trimmed.to_string()
+        }
+    }
+
+    fn build_codex_responses_request(
+        &self,
+        messages: &[LlmMessage],
+        tools: &[LlmToolDecl],
+        system_prompt: &str,
+    ) -> Value {
+        let mut req = json!({
+            "model": self.model,
+            "instructions": Self::codex_instructions(system_prompt),
+            "store": false,
+            "stream": true,
+            "input": self.build_responses_input(messages, tools)
+        });
+        if !tools.is_empty() {
+            req["tools"] = Value::Array(
+                tools
+                    .iter()
+                    .map(|tool| {
+                        json!({
+                            "type": "function",
+                            "name": tool.name,
+                            "description": tool.description,
+                            "parameters": tool.parameters
+                        })
+                    })
+                    .collect(),
+            );
+        }
+        req
+    }
+
+    fn append_output_text_from_content(response: &mut LlmResponse, content: &Value) {
+        let Some(items) = content.as_array() else {
+            return;
+        };
+        for item in items {
+            match item.get("type").and_then(Value::as_str).unwrap_or("") {
+                "output_text" | "text" | "input_text" => {
+                    if let Some(text) = item
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                    {
+                        if !response.text.is_empty() {
+                            response.text.push('\n');
+                        }
+                        response.text.push_str(text);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn append_reasoning_summary(response: &mut LlmResponse, item: &Value) {
+        let Some(entries) = item.get("summary").and_then(Value::as_array) else {
+            return;
+        };
+        for entry in entries {
+            if let Some(text) = entry
+                .get("text")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                if !response.reasoning_text.is_empty() {
+                    response.reasoning_text.push('\n');
+                }
+                response.reasoning_text.push_str(text);
+            }
+        }
+    }
+
+    fn append_output_item(response: &mut LlmResponse, item: &Value) {
+        match item.get("type").and_then(Value::as_str).unwrap_or("") {
+            "message" => {
+                if response.text.trim().is_empty() {
+                    Self::append_output_text_from_content(response, &item["content"]);
+                }
+            }
+            "function_call" => {
+                let args_str = item
+                    .get("arguments")
+                    .and_then(Value::as_str)
+                    .unwrap_or("{}");
+                let call_id = item
+                    .get("call_id")
+                    .and_then(Value::as_str)
+                    .or_else(|| item.get("id").and_then(Value::as_str))
+                    .unwrap_or("");
+                response.tool_calls.push(LlmToolCall {
+                    id: call_id.to_string(),
+                    name: item
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    args: serde_json::from_str(args_str).unwrap_or_else(|_| json!({})),
+                });
+            }
+            "reasoning" => Self::append_reasoning_summary(response, item),
+            _ => {}
+        }
+    }
+
+    fn apply_responses_usage(response: &mut LlmResponse, usage: &Value) {
+        response.prompt_tokens = usage["input_tokens"].as_i64().unwrap_or(0) as i32;
+        response.completion_tokens = usage["output_tokens"].as_i64().unwrap_or(0) as i32;
+        response.total_tokens = usage["total_tokens"].as_i64().unwrap_or(0) as i32;
+        response.cache_read_input_tokens = usage
+            .get("input_tokens_details")
+            .and_then(|details| details.get("cached_tokens"))
+            .and_then(Value::as_i64)
+            .unwrap_or(0) as i32;
+    }
+
+    fn apply_codex_stream_event(
+        response: &mut LlmResponse,
+        event_type: &str,
+        data: &str,
+    ) -> Result<(), String> {
+        if data.trim().is_empty() || data.trim() == "[DONE]" {
+            return Ok(());
+        }
+        let json = serde_json::from_str::<Value>(data)
+            .map_err(|err| format!("Failed to parse Codex SSE event '{}': {}", event_type, err))?;
+
+        match event_type {
+            "response.output_text.delta" => {
+                if let Some(delta) = json.get("delta").and_then(Value::as_str) {
+                    response.text.push_str(delta);
+                }
+            }
+            "response.output_item.done" => {
+                if let Some(item) = json.get("item") {
+                    Self::append_output_item(response, item);
+                }
+            }
+            "response.completed" => {
+                if let Some(usage) = json.get("response").and_then(|value| value.get("usage")) {
+                    Self::apply_responses_usage(response, usage);
+                }
+                response.success = true;
+            }
+            "response.failed" => {
+                if let Some(message) = json
+                    .get("response")
+                    .and_then(|value| value.get("error"))
+                    .and_then(|value| value.get("message"))
+                    .and_then(Value::as_str)
+                {
+                    response.error_message = message.to_string();
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    async fn chat_codex_responses(
+        &self,
+        messages: &[LlmMessage],
+        tools: &[LlmToolDecl],
+        system_prompt: &str,
+    ) -> LlmResponse {
+        let url = format!("{}{}", self.endpoint.trim_end_matches('/'), self.api_path);
+        let auth_headers = match self.auth_headers().await {
+            Ok(headers) => headers,
+            Err(err) => {
+                let mut response = LlmResponse::default();
+                response.error_message = err;
+                return response;
+            }
+        };
+        let request = self.build_codex_responses_request(messages, tools, system_prompt);
+
+        let client = http_client::default_client();
+        let mut req = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "text/event-stream")
+            .header("User-Agent", OPENAI_CODEX_USER_AGENT);
+        for (key, value) in &auth_headers {
+            req = req.header(key, value);
+        }
+
+        let http_response = match req.body(request.to_string()).send().await {
+            Ok(resp) => resp,
+            Err(err) => {
+                let mut response = LlmResponse::default();
+                response.error_message = format!("Connection Failed: {}", err);
+                return response;
+            }
+        };
+
+        let status = http_response.status();
+        let mut response = LlmResponse {
+            http_status: status.as_u16(),
+            ..LlmResponse::default()
+        };
+
+        if !status.is_success() {
+            let body = http_response.text().await.unwrap_or_default();
+            response.error_message = format!("HTTP {}", status.as_u16());
+            if let Ok(error_json) = serde_json::from_str::<Value>(&body) {
+                if let Some(message) = error_json.get("detail").and_then(Value::as_str) {
+                    response.error_message = message.to_string();
+                } else if let Some(message) = error_json
+                    .get("error")
+                    .and_then(|error| error.get("message"))
+                    .and_then(Value::as_str)
+                {
+                    response.error_message = message.to_string();
+                } else if let Some(message) = error_json.get("message").and_then(Value::as_str) {
+                    response.error_message = message.to_string();
+                }
+            }
+            return response;
+        }
+
+        let mut event_type = String::new();
+        let mut data_lines: Vec<String> = Vec::new();
+        let mut pending = String::new();
+        let mut stream = http_response.bytes_stream();
+
+        while let Some(chunk) = stream.next().await {
+            let chunk = match chunk {
+                Ok(chunk) => chunk,
+                Err(err) => {
+                    response.error_message = format!("Failed to read Codex SSE stream: {}", err);
+                    return response;
+                }
+            };
+            pending.push_str(&String::from_utf8_lossy(&chunk));
+
+            while let Some(newline_idx) = pending.find('\n') {
+                let mut line = pending.drain(..=newline_idx).collect::<String>();
+                if line.ends_with('\n') {
+                    line.pop();
+                }
+                if line.ends_with('\r') {
+                    line.pop();
+                }
+
+                if line.is_empty() {
+                    let joined = data_lines.join("\n");
+                    if !event_type.is_empty() || !joined.is_empty() {
+                        if let Err(err) = Self::apply_codex_stream_event(
+                            &mut response,
+                            &event_type,
+                            &joined,
+                        ) {
+                            response.error_message = err;
+                            return response;
+                        }
+                    }
+                    event_type.clear();
+                    data_lines.clear();
+                    continue;
+                }
+
+                if let Some(value) = line.strip_prefix("event:") {
+                    event_type = value.trim().to_string();
+                } else if let Some(value) = line.strip_prefix("data:") {
+                    data_lines.push(value.trim_start().to_string());
+                }
+            }
+        }
+
+        if !pending.trim().is_empty() {
+            if let Some(value) = pending.strip_prefix("data:") {
+                data_lines.push(value.trim_start().to_string());
+            }
+        }
+        if !event_type.is_empty() || !data_lines.is_empty() {
+            let joined = data_lines.join("\n");
+            if let Err(err) = Self::apply_codex_stream_event(&mut response, &event_type, &joined)
+            {
+                response.error_message = err;
+                return response;
+            }
+        }
+
+        if response.success && response.error_message.is_empty() {
+            return response;
+        }
+        if response.text.is_empty() && response.tool_calls.is_empty() && response.error_message.is_empty() {
+            response.error_message = "Codex stream completed without a final response".to_string();
+        }
+        response
+    }
+
     fn parse_chat_completions_response(body: &str) -> LlmResponse {
         let mut response = LlmResponse::default();
         if let Ok(json) = serde_json::from_str::<Value>(body) {
@@ -771,14 +1078,7 @@ impl OpenAiBackend {
         }
 
         if let Some(usage) = json.get("usage") {
-            response.prompt_tokens = usage["input_tokens"].as_i64().unwrap_or(0) as i32;
-            response.completion_tokens = usage["output_tokens"].as_i64().unwrap_or(0) as i32;
-            response.total_tokens = usage["total_tokens"].as_i64().unwrap_or(0) as i32;
-            response.cache_read_input_tokens = usage
-                .get("input_tokens_details")
-                .and_then(|details| details.get("cached_tokens"))
-                .and_then(Value::as_i64)
-                .unwrap_or(0) as i32;
+            Self::apply_responses_usage(&mut response, usage);
         }
 
         response.success = true;
@@ -795,13 +1095,6 @@ impl LlmBackend for OpenAiBackend {
         if let Some(endpoint) = Self::config_string(config, &["endpoint"]) {
             self.endpoint = endpoint.into();
         }
-        if let Some(path) = Self::config_string(config, &["api_path"]) {
-            self.api_path = if path.starts_with('/') {
-                path.into()
-            } else {
-                format!("/{}", path)
-            };
-        }
         if let Some(transport) = Self::config_string(config, &["transport"]) {
             self.transport = if transport.eq_ignore_ascii_case("responses") {
                 OpenAiTransport::Responses
@@ -809,11 +1102,23 @@ impl LlmBackend for OpenAiBackend {
                 OpenAiTransport::ChatCompletions
             };
         }
-        if let Some(service_tier) = Self::config_string(config, &["service_tier"]) {
-            self.service_tier = Some(service_tier.to_string());
-        }
 
         if self.provider_name == "openai-codex" {
+            if let Some(path) = Self::config_string(config, &["api_path"]) {
+                let normalized = if path.starts_with('/') {
+                    path.to_string()
+                } else {
+                    format!("/{}", path)
+                };
+                self.api_path = if normalized == OPENAI_RESPONSES_PATH {
+                    OPENAI_CODEX_RESPONSES_PATH.to_string()
+                } else {
+                    normalized
+                };
+            } else {
+                self.api_path = OPENAI_CODEX_RESPONSES_PATH.to_string();
+            }
+            self.service_tier = None;
             let config_state = Self::build_codex_auth_from_config(config);
 
             if Self::should_use_codex_cli_source(config) {
@@ -854,6 +1159,17 @@ impl LlmBackend for OpenAiBackend {
             return false;
         }
 
+        if let Some(path) = Self::config_string(config, &["api_path"]) {
+            self.api_path = if path.starts_with('/') {
+                path.into()
+            } else {
+                format!("/{}", path)
+            };
+        }
+        if let Some(service_tier) = Self::config_string(config, &["service_tier"]) {
+            self.service_tier = Some(service_tier.to_string());
+        }
+
         if let Some(key) = Self::config_string(config, &["api_key"]) {
             self.api_key = key.into();
         } else if let Some(key) = Self::config_string(config, &["oauth", "access_token"]) {
@@ -871,6 +1187,13 @@ impl LlmBackend for OpenAiBackend {
         system_prompt: &str,
         max_tokens: Option<u32>,
     ) -> LlmResponse {
+        if self.provider_name == "openai-codex" && matches!(self.transport, OpenAiTransport::Responses)
+        {
+            return self
+                .chat_codex_responses(messages, tools, system_prompt)
+                .await;
+        }
+
         let mut request = match self.transport {
             OpenAiTransport::ChatCompletions => {
                 let mut req = json!({
@@ -980,8 +1303,12 @@ impl LlmBackend for OpenAiBackend {
 
 #[cfg(test)]
 mod tests {
-    use super::{OpenAiBackend, OpenAiTransport, CHATGPT_BACKEND_API, OPENAI_RESPONSES_PATH};
+    use super::{
+        OpenAiBackend, OpenAiTransport, CHATGPT_BACKEND_API, OPENAI_CODEX_RESPONSES_PATH,
+        OPENAI_RESPONSES_PATH,
+    };
     use crate::llm::backend::LlmBackend;
+    use crate::llm::backend::LlmMessage;
     use base64::Engine;
     use serde_json::{json, Value};
     use tempfile::tempdir;
@@ -1121,8 +1448,21 @@ mod tests {
     fn openai_codex_defaults_to_responses_transport() {
         let backend = OpenAiBackend::new("openai-codex");
         assert_eq!(backend.endpoint, CHATGPT_BACKEND_API);
-        assert_eq!(backend.api_path, OPENAI_RESPONSES_PATH);
+        assert_eq!(backend.api_path, OPENAI_CODEX_RESPONSES_PATH);
         assert!(matches!(backend.transport, OpenAiTransport::Responses));
+    }
+
+    #[test]
+    fn openai_codex_request_matches_codex_route_contract() {
+        let backend = OpenAiBackend::new("openai-codex");
+        let request =
+            backend.build_codex_responses_request(&[LlmMessage::user("안녕")], &[], "");
+
+        assert_eq!(request["instructions"], json!("You are a helpful assistant."));
+        assert_eq!(request["store"], json!(false));
+        assert_eq!(request["stream"], json!(true));
+        assert!(request.get("max_output_tokens").is_none());
+        assert!(request.get("service_tier").is_none());
     }
 
     #[test]
