@@ -49,6 +49,15 @@ impl GeminiBackend {
         }
     }
 
+    /// Gemini 3.x models require `thoughtSignature` on all functionCall parts.
+    /// When replaying unsigned function calls, use the sentinel value that tells
+    /// the API to skip validation.
+    /// See: https://ai.google.dev/gemini-api/docs/thought-signatures
+    fn is_gemini3_model(model: &str) -> bool {
+        let lower = model.to_lowercase();
+        lower.contains("gemini-3") || lower.contains("gemini-3.")
+    }
+
     fn trimmed_text(text: &str) -> String {
         text.trim().to_string()
     }
@@ -146,8 +155,13 @@ impl GeminiBackend {
                 if !text.is_empty() {
                     arr.push(json!({"text": text}));
                 }
+                let needs_sig = Self::is_gemini3_model(&self.model);
                 for tc in &msg.tool_calls {
-                    arr.push(json!({"functionCall": {"name": tc.name, "args": tc.args}}));
+                    let mut fc = json!({"functionCall": {"name": tc.name, "args": tc.args}});
+                    if needs_sig {
+                        fc["thoughtSignature"] = json!("skip_thought_signature_validator");
+                    }
+                    arr.push(fc);
                 }
                 Value::Array(arr)
             } else if !text.is_empty() {
