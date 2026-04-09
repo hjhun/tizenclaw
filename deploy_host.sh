@@ -29,6 +29,7 @@ CLI_NAME="tizenclaw-cli"
 TEST_TOOL_NAME="tizenclaw-tests"
 WEB_DASHBOARD_NAME="tizenclaw-web-dashboard"
 HOST_DASHBOARD_PORT_DEFAULT=9091
+DEVEL_BRANCH_PREFIX="devel"
 
 HOST_BASE_DIR="${HOME}/.tizenclaw"
 INSTALL_DIR="${HOST_BASE_DIR}/bin"
@@ -98,6 +99,28 @@ run() {
     return 0
   fi
   "$@"
+}
+
+current_git_branch() {
+  git -C "${PROJECT_DIR}" branch --show-current 2>/dev/null || true
+}
+
+require_devel_branch_for_devel_mode() {
+  if [ "${DEVEL_MODE}" != true ]; then
+    return 0
+  fi
+
+  local branch
+  branch="$(current_git_branch)"
+  if [ -z "${branch}" ]; then
+    fail "--devel requires a checked out Git branch under ${PROJECT_DIR}"
+  fi
+
+  if [[ "${branch}" != "${DEVEL_BRANCH_PREFIX}"* ]]; then
+    fail "--devel is allowed only on ${DEVEL_BRANCH_PREFIX}* branches (current: ${branch})"
+  fi
+
+  ok "Devel mode allowed on branch ${branch}"
 }
 
 process_report() {
@@ -240,7 +263,7 @@ ${CYAN}Options:${NC}
       --status            Show current daemon status
       --log               Follow daemon log output
       --dry-run           Print commands without executing
-      --devel             Start the installed daemon with autonomous devel mode
+      --devel             Start devel mode only on devel* branches
       --build-root <dir>  Override host Cargo target dir
       --llm-config <path> Use specified llm_config.json (sets TIZENCLAW_DATA_DIR)
   -h, --help              Show this help
@@ -252,7 +275,7 @@ ${CYAN}Examples:${NC}
   ${ENTRYPOINT_NAME} --test                    # Run unit/integration tests
   ${ENTRYPOINT_NAME} --status                  # Check daemon status
   ${ENTRYPOINT_NAME} --log                     # Tail daemon logs
-  ${ENTRYPOINT_NAME} --devel                   # Start daemon with devel scheduler
+  ${ENTRYPOINT_NAME} --devel                   # Start devel scheduler on devel* branch
   ${ENTRYPOINT_NAME} -s                        # Stop the daemon
   ${ENTRYPOINT_NAME} --remove                  # Remove host install and stop tools
   ${ENTRYPOINT_NAME} --build-root /tmp/tc-build  # Use external build root
@@ -795,6 +818,8 @@ do_run() {
   header "Step 3/3: Start Host Daemon"
   local host_dashboard_port
   host_dashboard_port="$(dashboard_port)"
+
+  require_devel_branch_for_devel_mode
 
   # If a custom llm_config.json was specified, wire it up via TIZENCLAW_DATA_DIR
   if [ -n "${LLM_CONFIG}" ]; then
