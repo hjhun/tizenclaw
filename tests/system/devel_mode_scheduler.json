@@ -19,6 +19,14 @@
           "equals": true
         },
         {
+          "path": "roadmap_all_phases_complete",
+          "equals": false
+        },
+        {
+          "path": "development_required",
+          "equals": true
+        },
+        {
           "path": "status_done",
           "equals": false
         },
@@ -40,6 +48,10 @@
         },
         {
           "path": "telegram_notifications_enabled",
+          "exists": true
+        },
+        {
+          "path": "status_next_phase",
           "exists": true
         }
       ]

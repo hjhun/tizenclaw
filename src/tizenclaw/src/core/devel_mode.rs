@@ -33,10 +33,26 @@ pub struct DevelStatus {
     pub status_path: PathBuf,
     pub status_done: bool,
     pub prompt_exists: bool,
+    pub prompt_actionable: bool,
+    pub status_next_phase: Option<String>,
     pub roadmap_has_pending_work: bool,
+    pub roadmap_all_phases_complete: bool,
     pub recurring_task_present: bool,
     pub bootstrap_task_present: bool,
+    pub development_required: bool,
     pub telegram_notifications_enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StatusSnapshot {
+    done: bool,
+    next_phase: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RoadmapProgress {
+    total_phases: usize,
+    pending_phases: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,6 +120,8 @@ pub fn sync_devel_tasks_with_prompt_state(
     })?;
     remove_legacy_default_tasks(task_dir)?;
     ensure_status_file(&paths)?;
+    let roadmap_progress = roadmap_progress(&paths.roadmap_path);
+    normalize_completion_state(&paths, &roadmap_progress)?;
 
     let task_path = task_dir.join(DEVEL_TASK_FILE_NAME);
     let bootstrap_task_path = task_dir.join(DEVEL_BOOTSTRAP_TASK_FILE_NAME);
@@ -130,9 +148,11 @@ pub fn sync_devel_tasks_with_prompt_state(
     write_if_changed(&task_path, &recurring_content)?;
 
     let current_prompt_fingerprint = current_prompt_fingerprint(&paths.prompt_path);
-    let roadmap_has_pending_work = roadmap_has_pending_work(&paths.roadmap_path);
-    let current_work_fingerprint =
-        current_work_fingerprint(&paths, current_prompt_fingerprint.clone(), roadmap_has_pending_work);
+    let current_work_fingerprint = current_work_fingerprint(
+        &paths,
+        current_prompt_fingerprint.clone(),
+        &roadmap_progress,
+    );
     let prompt_changed = current_work_fingerprint
         .as_deref()
         .zip(last_prompt_fingerprint)
@@ -207,16 +227,30 @@ pub fn devel_status(task_dir: &Path, repo_root: &Path) -> DevelStatus {
     let task_path = task_dir.join(DEVEL_TASK_FILE_NAME);
     let bootstrap_task_path = task_dir.join(DEVEL_BOOTSTRAP_TASK_FILE_NAME);
     let telegram_notifications_enabled = telegram_notifications_enabled();
+    let status_snapshot = read_status_snapshot(&paths.status_path, &paths.legacy_status_path);
+    let roadmap_progress = roadmap_progress(&paths.roadmap_path);
+    let prompt_actionable = prompt_has_actionable_content(&paths.prompt_path);
+    let roadmap_has_pending_work = roadmap_progress.pending_phases > 0;
+    let roadmap_all_phases_complete =
+        roadmap_progress.total_phases > 0 && roadmap_progress.pending_phases == 0;
+    let status_done = status_snapshot.done;
+    let status_next_phase = status_snapshot.next_phase;
+    let development_required =
+        development_required(prompt_actionable, status_done, status_next_phase.as_deref(), roadmap_has_pending_work);
     DevelStatus {
         repo_root: repo_root.to_path_buf(),
         task_path: task_path.clone(),
         bootstrap_task_path: bootstrap_task_path.clone(),
         status_path: paths.status_path.clone(),
-        status_done: status_is_done(&paths.status_path, &paths.legacy_status_path),
+        status_done,
         prompt_exists: paths.prompt_path.is_file(),
-        roadmap_has_pending_work: roadmap_has_pending_work(&paths.roadmap_path),
+        prompt_actionable,
+        status_next_phase,
+        roadmap_has_pending_work,
+        roadmap_all_phases_complete,
         recurring_task_present: task_path.is_file(),
         bootstrap_task_present: bootstrap_task_path.is_file(),
+        development_required,
         telegram_notifications_enabled,
     }
 }
@@ -231,9 +265,13 @@ pub fn devel_status_json(task_dir: &Path, repo_root: &Path) -> Value {
         "status_path": status.status_path.display().to_string(),
         "status_done": status.status_done,
         "prompt_exists": status.prompt_exists,
+        "prompt_actionable": status.prompt_actionable,
+        "status_next_phase": status.status_next_phase,
         "roadmap_has_pending_work": status.roadmap_has_pending_work,
+        "roadmap_all_phases_complete": status.roadmap_all_phases_complete,
         "recurring_task_present": status.recurring_task_present,
         "bootstrap_task_present": status.bootstrap_task_present,
+        "development_required": status.development_required,
         "telegram_notifications_enabled": status.telegram_notifications_enabled,
     })
 }
@@ -280,16 +318,26 @@ fn current_prompt_fingerprint(prompt_path: &Path) -> Option<String> {
 fn current_work_fingerprint(
     paths: &DevelPaths,
     prompt_fingerprint: Option<String>,
-    roadmap_has_pending_work: bool,
+    roadmap_progress: &RoadmapProgress,
 ) -> Option<String> {
-    prompt_fingerprint.or_else(|| {
-        current_file_fingerprint(&paths.status_path).map(|fingerprint| format!("status-{}", fingerprint))
-    }).or_else(|| {
-        roadmap_has_pending_work
-            .then(|| current_file_fingerprint(&paths.roadmap_path))
-            .flatten()
-            .map(|fingerprint| format!("roadmap-{}", fingerprint))
-    })
+    let mut parts = Vec::new();
+    if let Some(fingerprint) = prompt_fingerprint {
+        parts.push(format!("prompt-{}", fingerprint));
+    }
+    if let Some(fingerprint) = current_file_fingerprint(&paths.status_path) {
+        parts.push(format!("status-{}", fingerprint));
+    }
+    if roadmap_progress.pending_phases > 0 {
+        if let Some(fingerprint) = current_file_fingerprint(&paths.roadmap_path) {
+            parts.push(format!("roadmap-{}", fingerprint));
+        }
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("__"))
+    }
 }
 
 fn current_file_fingerprint(path: &Path) -> Option<String> {
@@ -300,14 +348,29 @@ fn current_file_fingerprint(path: &Path) -> Option<String> {
 }
 
 fn roadmap_has_pending_work(roadmap_path: &Path) -> bool {
-    fs::read_to_string(roadmap_path)
-        .ok()
-        .map(|content| {
-            content
-                .lines()
-                .any(|line| line.trim_start().starts_with("[ ] "))
-        })
-        .unwrap_or(false)
+    roadmap_progress(roadmap_path).pending_phases > 0
+}
+
+fn roadmap_progress(roadmap_path: &Path) -> RoadmapProgress {
+    let mut total_phases = 0usize;
+    let mut pending_phases = 0usize;
+
+    if let Ok(content) = fs::read_to_string(roadmap_path) {
+        for line in content.lines() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("[ ] ") || trimmed.starts_with("[x] ") || trimmed.starts_with("[X] ") {
+                total_phases += 1;
+                if trimmed.starts_with("[ ] ") {
+                    pending_phases += 1;
+                }
+            }
+        }
+    }
+
+    RoadmapProgress {
+        total_phases,
+        pending_phases,
+    }
 }
 
 fn ensure_status_file(paths: &DevelPaths) -> Result<(), String> {
@@ -361,15 +424,108 @@ fn status_content_is_done(content: &str) -> bool {
 }
 
 fn status_is_done(status_path: &Path, legacy_status_path: &Path) -> bool {
-    fs::read_to_string(status_path)
+    read_status_snapshot(status_path, legacy_status_path).done
+}
+
+fn read_status_snapshot(status_path: &Path, legacy_status_path: &Path) -> StatusSnapshot {
+    let content = fs::read_to_string(status_path)
         .ok()
-        .map(|content| status_content_is_done(&content))
-        .or_else(|| {
-            fs::read_to_string(legacy_status_path)
-                .ok()
-                .map(|content| status_content_is_done(&content))
+        .or_else(|| fs::read_to_string(legacy_status_path).ok())
+        .unwrap_or_default();
+
+    let done = status_content_is_done(&content);
+    let next_phase = content.lines().find_map(|line| {
+        let trimmed = line.trim();
+        let lower = trimmed.to_ascii_lowercase();
+        if !lower.starts_with("next_phase:") {
+            return None;
+        }
+        let value = trimmed
+            .split_once(':')
+            .map(|(_, value)| value.trim())
+            .unwrap_or("");
+        if value.is_empty() {
+            None
+        } else {
+            Some(value.to_string())
+        }
+    });
+
+    StatusSnapshot { done, next_phase }
+}
+
+fn prompt_has_actionable_content(prompt_path: &Path) -> bool {
+    fs::read_to_string(prompt_path)
+        .ok()
+        .map(|content| !content.trim().is_empty())
+        .unwrap_or(false)
+}
+
+fn status_next_phase_requires_work(next_phase: Option<&str>) -> bool {
+    next_phase
+        .map(|value| {
+            let normalized = value.trim().to_ascii_lowercase();
+            !normalized.is_empty() && normalized != "none" && normalized != "done"
         })
         .unwrap_or(false)
+}
+
+fn development_required(
+    prompt_actionable: bool,
+    status_done: bool,
+    status_next_phase: Option<&str>,
+    roadmap_has_pending_work: bool,
+) -> bool {
+    if status_done {
+        return false;
+    }
+
+    prompt_actionable || status_next_phase_requires_work(status_next_phase) || roadmap_has_pending_work
+}
+
+fn normalize_completion_state(
+    paths: &DevelPaths,
+    roadmap_progress: &RoadmapProgress,
+) -> Result<(), String> {
+    if roadmap_progress.total_phases == 0 || roadmap_progress.pending_phases > 0 {
+        return Ok(());
+    }
+
+    mark_status_done(&paths.status_path)?;
+    write_if_changed(&paths.legacy_status_path, "done\n")?;
+    write_if_changed(&paths.prompt_path, "")?;
+    Ok(())
+}
+
+fn mark_status_done(status_path: &Path) -> Result<(), String> {
+    let existing = fs::read_to_string(status_path).unwrap_or_default();
+    if status_content_is_done(&existing) {
+        return Ok(());
+    }
+
+    let mut lines = Vec::new();
+    let mut inserted = false;
+    for line in existing.lines() {
+        let trimmed = line.trim().to_ascii_lowercase();
+        if trimmed.starts_with("state:") || trimmed.starts_with("status:") {
+            if !inserted {
+                lines.push("state: done".to_string());
+                inserted = true;
+            }
+            continue;
+        }
+        lines.push(line.to_string());
+    }
+    if !inserted {
+        let insert_at = usize::from(!lines.is_empty());
+        lines.insert(insert_at, "state: done".to_string());
+    }
+
+    let mut content = lines.join("\n");
+    if !content.ends_with('\n') {
+        content.push('\n');
+    }
+    write_if_changed(status_path, &content)
 }
 
 fn remove_task_if_present(task_path: &Path) -> Result<(), String> {
@@ -578,13 +734,15 @@ Required workflow:
 1. Open `.dev_note/DASHBOARD.md`, `.dev_note/STATUS.md`, and `ROADMAP.md` first.
    If earlier devel work looks incomplete or suspicious, verify it before starting new implementation.
 2. Detect whether immediate development is required before waiting for the 30 minute timer.
-   Immediate work exists when `.dev_note/PROMPT.md` or `.dev_note/STATUS.md`
-   has been created or changed, or when `ROADMAP.md` still contains unfinished `[ ]` items.
+   Compare `.dev_note/PROMPT.md` with `.dev_note/STATUS.md` first.
+   Immediate work exists when the prompt is actionable, the status still
+   points to a remaining phase, either file changed, or `ROADMAP.md`
+   still contains unfinished `[ ]` items.
 3. If `.dev_note/PROMPT.md` exists, treat that as the first devel step:
    - analyze PROMPT.md
    - generate or refresh ROADMAP.md and ANALYSIS.md in English
    - refresh any matching analysis context needed for the implementation cycle
-   - remove PROMPT.md after the roadmap/analysis artifacts are updated
+   - keep PROMPT.md intact while roadmap phases remain
 4. Keep `.dev_note/STATUS.md` as the user-facing cycle state snapshot.
    Update it when you choose a target phase, when one phase is completed,
    and when the roadmap reaches done.
@@ -600,6 +758,7 @@ Required workflow:
 9. When every roadmap item is complete:
    - write `state: done` into `.dev_note/STATUS.md`
    - mirror `done` into `.dev_note/.status` for compatibility
+   - overwrite `.dev_note/PROMPT.md` with an empty file
    - stop further devel work
    - do not continue the timer-driven cycle after completion
 
@@ -683,6 +842,36 @@ mod tests {
     }
 
     #[test]
+    fn status_change_requeues_bootstrap_when_prompt_still_exists() {
+        let repo = sample_repo();
+        let tasks = repo.path().join("runtime/tasks");
+        let first = sync_devel_tasks(&tasks, repo.path()).unwrap();
+        std::fs::remove_file(tasks.join(DEVEL_BOOTSTRAP_TASK_FILE_NAME)).unwrap();
+        std::fs::write(repo.path().join(".dev_note/PROMPT.md"), "keep developing\n").unwrap();
+        let second = sync_devel_tasks_with_prompt_state(
+            &tasks,
+            repo.path(),
+            first.last_prompt_fingerprint.as_deref(),
+        )
+        .unwrap();
+        assert!(second.bootstrap_queued);
+
+        std::fs::remove_file(tasks.join(DEVEL_BOOTSTRAP_TASK_FILE_NAME)).unwrap();
+        std::fs::write(
+            repo.path().join(".dev_note/STATUS.md"),
+            "# Devel Status\n\nstate: active\nlast_completed_phase: Phase 1\nnext_phase: Phase 2\n",
+        )
+        .unwrap();
+        let third = sync_devel_tasks_with_prompt_state(
+            &tasks,
+            repo.path(),
+            second.last_prompt_fingerprint.as_deref(),
+        )
+        .unwrap();
+        assert!(third.bootstrap_queued);
+    }
+
+    #[test]
     fn pending_roadmap_alone_does_not_requeue_bootstrap_after_first_sync() {
         let repo = sample_repo();
         let tasks = repo.path().join("runtime/tasks");
@@ -722,6 +911,30 @@ mod tests {
     }
 
     #[test]
+    fn sync_devel_marks_done_and_clears_prompt_when_roadmap_completes() {
+        let repo = sample_repo();
+        let tasks = repo.path().join("runtime/tasks");
+        std::fs::write(repo.path().join(".dev_note/PROMPT.md"), "finish phases\n").unwrap();
+        std::fs::write(repo.path().join(".dev_note/ROADMAP.md"), "[x] Phase 1. Done\n").unwrap();
+
+        let result = sync_devel_tasks(&tasks, repo.path()).unwrap();
+
+        assert!(!result.task_enabled);
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join(".dev_note/PROMPT.md")).unwrap(),
+            ""
+        );
+        assert!(status_is_done(
+            &repo.path().join(".dev_note/STATUS.md"),
+            &repo.path().join(".dev_note/.status")
+        ));
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join(".dev_note/.status")).unwrap(),
+            "done\n"
+        );
+    }
+
+    #[test]
     fn legacy_status_done_is_still_honored() {
         let repo = sample_repo();
         let tasks = repo.path().join("runtime/tasks");
@@ -746,6 +959,12 @@ mod tests {
         let status = devel_status(&tasks, repo.path());
         assert!(status.roadmap_has_pending_work);
         assert!(status.recurring_task_present);
+        assert!(status.prompt_actionable);
+        assert!(status.development_required);
+        assert_eq!(
+            status.status_next_phase.as_deref(),
+            Some("analyze .dev_note/ROADMAP.md")
+        );
         assert_eq!(
             status.telegram_notifications_enabled,
             super::telegram_notifications_enabled()
@@ -819,10 +1038,12 @@ mod tests {
 
         assert!(prompt.contains(".dev_note/PROMPT.md"));
         assert!(prompt.contains(".dev_note/STATUS.md"));
+        assert!(prompt.contains("Compare `.dev_note/PROMPT.md` with `.dev_note/STATUS.md` first"));
         assert!(prompt.contains("Detect whether immediate development is required"));
         assert!(prompt.contains("generate or refresh ROADMAP.md and ANALYSIS.md in English"));
         assert!(prompt.contains("pick exactly one unfinished roadmap phase"));
         assert!(prompt.contains("state: done"));
+        assert!(prompt.contains("overwrite `.dev_note/PROMPT.md` with an empty file"));
         assert!(prompt.contains("telegram stage reports"));
         assert!(prompt.contains("send_outbound_message"));
     }

@@ -19,6 +19,10 @@
           "equals": true
         },
         {
+          "path": "development_required",
+          "equals": true
+        },
+        {
           "path": "status_path",
           "contains": "STATUS.md"
         },
