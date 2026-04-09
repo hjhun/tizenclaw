@@ -126,16 +126,21 @@ pub fn sync_devel_tasks_with_prompt_state(
 
     let current_prompt_fingerprint = current_prompt_fingerprint(&paths.prompt_path);
     let roadmap_has_pending_work = roadmap_has_pending_work(&paths.roadmap_path);
-    let prompt_changed = current_prompt_fingerprint
+    let current_work_fingerprint =
+        current_work_fingerprint(&paths, current_prompt_fingerprint.clone(), roadmap_has_pending_work);
+    let prompt_changed = current_work_fingerprint
         .as_deref()
         .zip(last_prompt_fingerprint)
         .map(|(current, previous)| current != previous)
-        .unwrap_or(current_prompt_fingerprint.is_some());
-    let should_bootstrap =
-        !bootstrap_task_path.exists() && (prompt_changed || roadmap_has_pending_work);
+        .unwrap_or(current_work_fingerprint.is_some());
+    let should_bootstrap = !bootstrap_task_path.exists() && prompt_changed;
 
     if should_bootstrap {
-        let bootstrap_content = render_bootstrap_task_file(&paths.repo_root, &prompt);
+        let bootstrap_content = render_bootstrap_task_file(
+            &paths.repo_root,
+            &prompt,
+            &bootstrap_session_id(current_work_fingerprint.as_deref()),
+        );
         write_if_changed(&bootstrap_task_path, &bootstrap_content)?;
     }
 
@@ -160,7 +165,7 @@ pub fn sync_devel_tasks_with_prompt_state(
         task_path,
         bootstrap_task_path,
         status_path: paths.status_path,
-        last_prompt_fingerprint: current_prompt_fingerprint,
+        last_prompt_fingerprint: current_work_fingerprint,
     })
 }
 
@@ -267,6 +272,26 @@ fn current_prompt_fingerprint(prompt_path: &Path) -> Option<String> {
     Some(format!("{}-{}", metadata.len(), elapsed.as_nanos()))
 }
 
+fn current_work_fingerprint(
+    paths: &DevelPaths,
+    prompt_fingerprint: Option<String>,
+    roadmap_has_pending_work: bool,
+) -> Option<String> {
+    prompt_fingerprint.or_else(|| {
+        roadmap_has_pending_work
+            .then(|| current_file_fingerprint(&paths.roadmap_path))
+            .flatten()
+            .map(|fingerprint| format!("roadmap-{}", fingerprint))
+    })
+}
+
+fn current_file_fingerprint(path: &Path) -> Option<String> {
+    let metadata = path.metadata().ok()?;
+    let modified = metadata.modified().ok()?;
+    let elapsed = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
+    Some(format!("{}-{}", metadata.len(), elapsed.as_nanos()))
+}
+
 fn roadmap_has_pending_work(roadmap_path: &Path) -> bool {
     fs::read_to_string(roadmap_path)
         .ok()
@@ -363,7 +388,7 @@ auto_approve: true
     )
 }
 
-fn render_bootstrap_task_file(repo_root: &Path, prompt: &str) -> String {
+fn render_bootstrap_task_file(repo_root: &Path, prompt: &str, session_id: &str) -> String {
     format!(
         "\
 ---
@@ -372,7 +397,7 @@ schedule: once {}
 interval_secs: 1
 one_shot: true
 enabled: true
-session_id: scheduler_devel_bootstrap
+session_id: {}
 project_dir: {}
 coding_backend: codex
 coding_model: gpt-5.4
@@ -388,9 +413,18 @@ Immediate triggers:
 {}
 ",
         current_local_timestamp_minute(),
+        session_id,
         repo_root.display(),
         prompt
     )
+}
+
+fn bootstrap_session_id(prompt_fingerprint: Option<&str>) -> String {
+    let token = prompt_fingerprint
+        .map(sanitize_session_token)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(current_local_timestamp_compact);
+    format!("scheduler_devel_bootstrap_{}", token)
 }
 
 fn current_local_timestamp_minute() -> String {
@@ -411,6 +445,33 @@ fn current_local_timestamp_minute() -> String {
         tm_buf.tm_hour,
         tm_buf.tm_min
     )
+}
+
+fn current_local_timestamp_compact() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as libc::time_t;
+    let mut tm_buf: libc::tm = unsafe { std::mem::zeroed() };
+    unsafe {
+        libc::localtime_r(&now, &mut tm_buf);
+    }
+
+    format!(
+        "{:04}{:02}{:02}{:02}{:02}{:02}",
+        tm_buf.tm_year + 1900,
+        tm_buf.tm_mon + 1,
+        tm_buf.tm_mday,
+        tm_buf.tm_hour,
+        tm_buf.tm_min,
+        tm_buf.tm_sec
+    )
+}
+
+fn sanitize_session_token(raw: &str) -> String {
+    raw.chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
+        .collect()
 }
 
 fn render_devel_prompt(paths: &DevelPaths) -> String {
@@ -485,8 +546,9 @@ Behavior goals:
 #[cfg(test)]
 mod tests {
     use super::{
-        DEVEL_BOOTSTRAP_TASK_FILE_NAME, DEVEL_TASK_FILE_NAME, detect_repo_root, devel_status,
-        render_devel_prompt, status_is_done, sync_devel_tasks, sync_devel_tasks_with_prompt_state,
+        bootstrap_session_id, DEVEL_BOOTSTRAP_TASK_FILE_NAME, DEVEL_TASK_FILE_NAME,
+        detect_repo_root, devel_status, render_devel_prompt, status_is_done, sync_devel_tasks,
+        sync_devel_tasks_with_prompt_state,
     };
 
     fn sample_repo() -> tempfile::TempDir {
@@ -542,6 +604,25 @@ mod tests {
     }
 
     #[test]
+    fn pending_roadmap_alone_does_not_requeue_bootstrap_after_first_sync() {
+        let repo = sample_repo();
+        let tasks = repo.path().join("runtime/tasks");
+        let first = sync_devel_tasks(&tasks, repo.path()).unwrap();
+        assert!(first.bootstrap_queued);
+
+        std::fs::remove_file(tasks.join(DEVEL_BOOTSTRAP_TASK_FILE_NAME)).unwrap();
+        let second = sync_devel_tasks_with_prompt_state(
+            &tasks,
+            repo.path(),
+            first.last_prompt_fingerprint.as_deref(),
+        )
+        .unwrap();
+
+        assert!(!second.bootstrap_queued);
+        assert!(!tasks.join(DEVEL_BOOTSTRAP_TASK_FILE_NAME).exists());
+    }
+
+    #[test]
     fn sync_devel_task_removes_files_when_status_is_done() {
         let repo = sample_repo();
         let tasks = repo.path().join("runtime/tasks");
@@ -593,6 +674,45 @@ mod tests {
 
         std::fs::write(&config_path, r#"{"bot_token":"abc","allowed_chat_ids":[1]}"#).unwrap();
         assert!(super::telegram_notifications_enabled_for_config(&config_path));
+    }
+
+    #[test]
+    fn bootstrap_session_id_uses_prompt_fingerprint_when_present() {
+        let session_id = bootstrap_session_id(Some("12-345:678"));
+        assert_eq!(session_id, "scheduler_devel_bootstrap_12_345_678");
+    }
+
+    #[test]
+    fn prompt_change_requeues_bootstrap_with_fresh_session_id() {
+        let repo = sample_repo();
+        let tasks = repo.path().join("runtime/tasks");
+        let first = sync_devel_tasks(&tasks, repo.path()).unwrap();
+        let first_bootstrap =
+            std::fs::read_to_string(tasks.join(DEVEL_BOOTSTRAP_TASK_FILE_NAME)).unwrap();
+        let first_session = first_bootstrap
+            .lines()
+            .find(|line| line.starts_with("session_id: "))
+            .unwrap()
+            .to_string();
+
+        std::fs::remove_file(tasks.join(DEVEL_BOOTSTRAP_TASK_FILE_NAME)).unwrap();
+        std::fs::write(repo.path().join(".dev_note/PROMPT.md"), "new prompt\n").unwrap();
+        let second = sync_devel_tasks_with_prompt_state(
+            &tasks,
+            repo.path(),
+            first.last_prompt_fingerprint.as_deref(),
+        )
+        .unwrap();
+        assert!(second.bootstrap_queued);
+
+        let second_bootstrap =
+            std::fs::read_to_string(tasks.join(DEVEL_BOOTSTRAP_TASK_FILE_NAME)).unwrap();
+        let second_session = second_bootstrap
+            .lines()
+            .find(|line| line.starts_with("session_id: "))
+            .unwrap()
+            .to_string();
+        assert_ne!(first_session, second_session);
     }
 
     #[test]

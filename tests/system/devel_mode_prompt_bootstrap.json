@@ -1,0 +1,36 @@
+{
+  "name": "devel-mode-prompt-bootstrap",
+  "steps": [
+    {
+      "name": "inspect-devel-status",
+      "method": "get_devel_status",
+      "params": {},
+      "assertions": [
+        {
+          "path": "status",
+          "equals": "success"
+        },
+        {
+          "path": "prompt_exists",
+          "equals": true
+        },
+        {
+          "path": "roadmap_has_pending_work",
+          "equals": true
+        },
+        {
+          "path": "recurring_task_present",
+          "equals": true
+        },
+        {
+          "path": "telegram_notifications_enabled",
+          "equals": true
+        },
+        {
+          "path": "task_path",
+          "contains": "devel-autonomous-cycle.md"
+        }
+      ]
+    }
+  ]
+}
