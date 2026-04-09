@@ -6,6 +6,8 @@ use std::time::Duration;
 const DEVEL_TASK_FILE_NAME: &str = "devel-autonomous-cycle.md";
 const DEVEL_BOOTSTRAP_TASK_FILE_NAME: &str = "devel-autonomous-bootstrap.md";
 const DEVEL_STATUS_DONE: &str = "done";
+const DEVEL_STATUS_FILE_NAME: &str = "STATUS.md";
+const LEGACY_DEVEL_STATUS_FILE_NAME: &str = ".status";
 const LEGACY_DEFAULT_TASK_SUFFIXES: &[&str] = &[
     "-daily-health-check.md",
     "-memory-watch.md",
@@ -47,6 +49,7 @@ struct DevelPaths {
     dashboard_path: PathBuf,
     prompt_path: PathBuf,
     status_path: PathBuf,
+    legacy_status_path: PathBuf,
 }
 
 impl DevelPaths {
@@ -59,7 +62,8 @@ impl DevelPaths {
             analysis_ko_path: dev_note_dir.join("ANALYSIS_KO.md"),
             dashboard_path: dev_note_dir.join("DASHBOARD.md"),
             prompt_path: dev_note_dir.join("PROMPT.md"),
-            status_path: dev_note_dir.join(".status"),
+            status_path: dev_note_dir.join(DEVEL_STATUS_FILE_NAME),
+            legacy_status_path: dev_note_dir.join(LEGACY_DEVEL_STATUS_FILE_NAME),
             dev_note_dir,
         }
     }
@@ -99,10 +103,11 @@ pub fn sync_devel_tasks_with_prompt_state(
         )
     })?;
     remove_legacy_default_tasks(task_dir)?;
+    ensure_status_file(&paths)?;
 
     let task_path = task_dir.join(DEVEL_TASK_FILE_NAME);
     let bootstrap_task_path = task_dir.join(DEVEL_BOOTSTRAP_TASK_FILE_NAME);
-    if status_is_done(&paths.status_path) {
+    if status_is_done(&paths.status_path, &paths.legacy_status_path) {
         remove_task_if_present(&task_path)?;
         remove_task_if_present(&bootstrap_task_path)?;
         return Ok(DevelSyncResult {
@@ -207,7 +212,7 @@ pub fn devel_status(task_dir: &Path, repo_root: &Path) -> DevelStatus {
         task_path: task_path.clone(),
         bootstrap_task_path: bootstrap_task_path.clone(),
         status_path: paths.status_path.clone(),
-        status_done: status_is_done(&paths.status_path),
+        status_done: status_is_done(&paths.status_path, &paths.legacy_status_path),
         prompt_exists: paths.prompt_path.is_file(),
         roadmap_has_pending_work: roadmap_has_pending_work(&paths.roadmap_path),
         recurring_task_present: task_path.is_file(),
@@ -278,6 +283,8 @@ fn current_work_fingerprint(
     roadmap_has_pending_work: bool,
 ) -> Option<String> {
     prompt_fingerprint.or_else(|| {
+        current_file_fingerprint(&paths.status_path).map(|fingerprint| format!("status-{}", fingerprint))
+    }).or_else(|| {
         roadmap_has_pending_work
             .then(|| current_file_fingerprint(&paths.roadmap_path))
             .flatten()
@@ -303,10 +310,65 @@ fn roadmap_has_pending_work(roadmap_path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn status_is_done(status_path: &Path) -> bool {
+fn ensure_status_file(paths: &DevelPaths) -> Result<(), String> {
+    if paths.status_path.exists() {
+        return Ok(());
+    }
+
+    let content = if paths.legacy_status_path.is_file() {
+        fs::read_to_string(&paths.legacy_status_path).map_err(|err| {
+            format!(
+                "Failed to read legacy devel status '{}': {}",
+                paths.legacy_status_path.display(),
+                err
+            )
+        })?
+    } else {
+        default_status_content()
+    };
+
+    fs::write(&paths.status_path, content).map_err(|err| {
+        format!(
+            "Failed to write canonical devel status '{}': {}",
+            paths.status_path.display(),
+            err
+        )
+    })
+}
+
+fn default_status_content() -> String {
+    "\
+# Devel Status
+
+state: active
+last_completed_phase: none
+next_phase: analyze .dev_note/ROADMAP.md
+notes: updated by tizenclaw --devel autonomous cycles
+"
+    .to_string()
+}
+
+fn status_content_is_done(content: &str) -> bool {
+    let trimmed = content.trim();
+    if trimmed.eq_ignore_ascii_case(DEVEL_STATUS_DONE) {
+        return true;
+    }
+
+    trimmed.lines().any(|line| {
+        let lower = line.trim().to_ascii_lowercase();
+        lower == "state: done" || lower == "status: done"
+    })
+}
+
+fn status_is_done(status_path: &Path, legacy_status_path: &Path) -> bool {
     fs::read_to_string(status_path)
         .ok()
-        .map(|content| content.trim().eq_ignore_ascii_case(DEVEL_STATUS_DONE))
+        .map(|content| status_content_is_done(&content))
+        .or_else(|| {
+            fs::read_to_string(legacy_status_path)
+                .ok()
+                .map(|content| status_content_is_done(&content))
+        })
         .unwrap_or(false)
 }
 
@@ -408,6 +470,7 @@ Before waiting for the 30 minute recurring timer, inspect whether immediate deve
 
 Immediate triggers:
 - `.dev_note/PROMPT.md` was newly created or changed
+- `.dev_note/STATUS.md` was newly created or changed
 - `ROADMAP.md` still contains unfinished `[ ]` items
 
 {}
@@ -494,6 +557,7 @@ Authoritative files:
 - dashboard: {dashboard}
 - prompt: {prompt}
 - status: {status}
+- legacy_status_fallback: {legacy_status}
 - rust rule: .agent/rules/rust.md
 - telegram stage reports: {telegram_stage_reports}
 
@@ -511,24 +575,37 @@ Execution policy:
   key result, and next step. Delivery failure is a warning, not a blocker.
 
 Required workflow:
-1. Open .dev_note/DASHBOARD.md first. If earlier devel work looks incomplete or suspicious, verify it before starting new implementation.
+1. Open `.dev_note/DASHBOARD.md`, `.dev_note/STATUS.md`, and `ROADMAP.md` first.
+   If earlier devel work looks incomplete or suspicious, verify it before starting new implementation.
 2. Detect whether immediate development is required before waiting for the 30 minute timer.
-   Immediate work exists when `.dev_note/PROMPT.md` has been created or changed, or when `ROADMAP.md` still contains unfinished `[ ]` items.
+   Immediate work exists when `.dev_note/PROMPT.md` or `.dev_note/STATUS.md`
+   has been created or changed, or when `ROADMAP.md` still contains unfinished `[ ]` items.
 3. If `.dev_note/PROMPT.md` exists, treat that as the first devel step:
    - analyze PROMPT.md
    - generate or refresh ROADMAP.md and ANALYSIS.md in English
    - refresh any matching analysis context needed for the implementation cycle
    - remove PROMPT.md after the roadmap/analysis artifacts are updated
-4. After the prompt step, analyze DASHBOARD.md and ROADMAP.md and pick the next unfinished roadmap item.
-5. Implement the selected roadmap work, record the 6 AGENTS stages in DASHBOARD.md, and validate with tizenclaw-tests plus ./deploy_host.sh --test.
-6. If development needs the daemon restarted, it may re-run ./deploy_host.sh --devel.
-7. When every roadmap item is complete:
-   - write done into .dev_note/.status
+4. Keep `.dev_note/STATUS.md` as the user-facing cycle state snapshot.
+   Update it when you choose a target phase, when one phase is completed,
+   and when the roadmap reaches done.
+5. After the prompt step, analyze `STATUS.md`, `DASHBOARD.md`, and `ROADMAP.md`
+   and pick exactly one unfinished roadmap phase for this autonomous cycle.
+6. Implement only the selected roadmap phase in this cycle, record the 6 AGENTS
+   stages in DASHBOARD.md, and validate with tizenclaw-tests plus
+   ./deploy_host.sh --test.
+7. After one roadmap phase is completed and committed, update `STATUS.md`
+   with the completed phase and the next target, then stop this cycle so
+   the 30-minute recurring scheduler can start the next analysis later.
+8. If development needs the daemon restarted, it may re-run ./deploy_host.sh --devel.
+9. When every roadmap item is complete:
+   - write `state: done` into `.dev_note/STATUS.md`
+   - mirror `done` into `.dev_note/.status` for compatibility
    - stop further devel work
    - do not continue the timer-driven cycle after completion
 
 Behavior goals:
 - ROADMAP.md is the source of truth for remaining development work.
+- STATUS.md is the source of truth for current devel-cycle progress.
 - ANALYSIS_KO.md contains the Korean development context for the ongoing work.
 - DASHBOARD.md must stay concise but should reflect plan, design, development, build/deploy, test/review, supervisor gates, and commit/push.
 ",
@@ -539,6 +616,7 @@ Behavior goals:
         dashboard = paths.dashboard_path.display(),
         prompt = paths.prompt_path.display(),
         status = paths.status_path.display(),
+        legacy_status = paths.legacy_status_path.display(),
         telegram_stage_reports = telegram_stage_reports,
     )
 }
@@ -580,6 +658,7 @@ mod tests {
 
         assert!(result.task_enabled);
         assert!(result.bootstrap_queued);
+        assert!(repo.path().join(".dev_note/STATUS.md").exists());
         assert!(tasks.join(DEVEL_TASK_FILE_NAME).exists());
         assert!(tasks.join(DEVEL_BOOTSTRAP_TASK_FILE_NAME).exists());
     }
@@ -629,14 +708,32 @@ mod tests {
         std::fs::create_dir_all(&tasks).unwrap();
         std::fs::write(tasks.join(DEVEL_TASK_FILE_NAME), "placeholder\n").unwrap();
         std::fs::write(tasks.join(DEVEL_BOOTSTRAP_TASK_FILE_NAME), "placeholder\n").unwrap();
-        std::fs::write(repo.path().join(".dev_note/.status"), "done\n").unwrap();
+        std::fs::write(repo.path().join(".dev_note/STATUS.md"), "state: done\n").unwrap();
 
         let result = sync_devel_tasks(&tasks, repo.path()).unwrap();
 
         assert!(!result.task_enabled);
         assert!(!tasks.join(DEVEL_TASK_FILE_NAME).exists());
         assert!(!tasks.join(DEVEL_BOOTSTRAP_TASK_FILE_NAME).exists());
-        assert!(status_is_done(&repo.path().join(".dev_note/.status")));
+        assert!(status_is_done(
+            &repo.path().join(".dev_note/STATUS.md"),
+            &repo.path().join(".dev_note/.status")
+        ));
+    }
+
+    #[test]
+    fn legacy_status_done_is_still_honored() {
+        let repo = sample_repo();
+        let tasks = repo.path().join("runtime/tasks");
+        std::fs::write(repo.path().join(".dev_note/.status"), "done\n").unwrap();
+
+        let result = sync_devel_tasks(&tasks, repo.path()).unwrap();
+
+        assert!(!result.task_enabled);
+        assert!(status_is_done(
+            &repo.path().join(".dev_note/STATUS.md"),
+            &repo.path().join(".dev_note/.status")
+        ));
     }
 
     #[test]
@@ -721,9 +818,11 @@ mod tests {
         let prompt = render_devel_prompt(&super::DevelPaths::new(repo.path()));
 
         assert!(prompt.contains(".dev_note/PROMPT.md"));
+        assert!(prompt.contains(".dev_note/STATUS.md"));
         assert!(prompt.contains("Detect whether immediate development is required"));
         assert!(prompt.contains("generate or refresh ROADMAP.md and ANALYSIS.md in English"));
-        assert!(prompt.contains("write done into .dev_note/.status"));
+        assert!(prompt.contains("pick exactly one unfinished roadmap phase"));
+        assert!(prompt.contains("state: done"));
         assert!(prompt.contains("telegram stage reports"));
         assert!(prompt.contains("send_outbound_message"));
     }

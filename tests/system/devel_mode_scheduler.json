@@ -23,6 +23,14 @@
           "equals": false
         },
         {
+          "path": "status_path",
+          "exists": true
+        },
+        {
+          "path": "status_path",
+          "contains": "STATUS.md"
+        },
+        {
           "path": "task_path",
           "exists": true
         },

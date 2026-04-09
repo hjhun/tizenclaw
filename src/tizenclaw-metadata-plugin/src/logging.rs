@@ -16,18 +16,21 @@
 
 //! Tizen dlog-based logging for metadata plugins.
 
-use std::ffi::c_int;
 #[cfg(tizen_native)]
-use std::ffi::CString;
+use std::ffi::{c_int, CString};
 
 /// dlog priority levels from `<dlog.h>`.
+#[cfg(tizen_native)]
 const DLOG_INFO: c_int = 4;
+#[cfg(tizen_native)]
 const DLOG_ERROR: c_int = 6;
 
 /// Log tag for all TizenClaw metadata plugins.
+#[cfg(tizen_native)]
 const TAG: &[u8] = b"TIZENCLAW_METADATA_PLUGIN\0";
 
 /// Printf format string for a single string argument.
+#[cfg(tizen_native)]
 const FMT_STR: &[u8] = b"%s\0";
 
 #[cfg(tizen_native)]
