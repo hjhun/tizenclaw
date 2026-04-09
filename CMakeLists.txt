@@ -76,6 +76,7 @@ INSTALL(FILES "${CMAKE_SOURCE_DIR}/data/sample/tunnel_config.json.sample"
 INSTALL(FILES
         "${CMAKE_SOURCE_DIR}/data/config/agent_roles.json"
         "${CMAKE_SOURCE_DIR}/data/config/system_prompt.txt"
+        "${CMAKE_SOURCE_DIR}/data/config/robotic_vacuum_config.json"
         DESTINATION "${APP_DATA_DIR}/config")
 
 

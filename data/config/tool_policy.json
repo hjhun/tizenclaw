@@ -1,11 +1,11 @@
 {
-    "max_repeat_count": 0,
+    "max_repeat_count": 3,
     "blocked_skills": [],
     "risk_overrides": {},
     "max_iterations": 0,
     "routing_strategy": {
         "enabled": true,
         "fallback_sequence": ["skill", "action", "cli"],
-        "max_retries_per_layer": 0
+        "max_retries_per_layer": 1
     }
 }

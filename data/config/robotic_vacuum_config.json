@@ -1,0 +1,7 @@
+{
+  "client_id": "<SMARTTHINGS_CLIENT_ID>",
+  "client_secret": "<SMARTTHINGS_CLIENT_SECRET>",
+  "access_token": "<INITIAL_ACCESS_TOKEN>",
+  "refresh_token": "<REFRESH_TOKEN>",
+  "device_id": "<JET_BOT_DEVICE_ID>"
+}
