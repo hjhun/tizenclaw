@@ -7,6 +7,7 @@ use super::{Channel, ChannelConfig};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -15,7 +16,7 @@ use tokio::io::AsyncBufReadExt;
 
 const MAX_CONCURRENT_HANDLERS: i32 = 3;
 const DEFAULT_CLI_TIMEOUT_SECS: u64 = 900;
-const CLI_CHAT_ACTION_UPDATE_SECS: u64 = 4;
+const TELEGRAM_CHAT_ACTION_UPDATE_SECS: u64 = 4;
 const CLI_PROGRESS_UPDATE_SECS: u64 = 15;
 const CLI_PROGRESS_MIN_PARTIAL_CHARS: usize = 80;
 const DEFAULT_GEMINI_CLI_MODEL: &str = "gemini-2.5-flash";
@@ -1848,6 +1849,32 @@ impl TelegramClient {
         Self::post_telegram_api(bot_token, "sendChatAction", payload)
             .await
             .map(|_| ())
+    }
+
+    async fn wait_with_typing_indicator<F>(
+        bot_token: &str,
+        chat_id: i64,
+        response_future: F,
+    ) -> String
+    where
+        F: Future<Output = String>,
+    {
+        let _ = Self::send_telegram_chat_action(bot_token, chat_id, "typing").await;
+
+        tokio::pin!(response_future);
+        let mut typing_heartbeat =
+            tokio::time::interval(Duration::from_secs(TELEGRAM_CHAT_ACTION_UPDATE_SECS));
+        typing_heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        typing_heartbeat.tick().await;
+
+        loop {
+            tokio::select! {
+                response = &mut response_future => return response,
+                _ = typing_heartbeat.tick() => {
+                    let _ = Self::send_telegram_chat_action(bot_token, chat_id, "typing").await;
+                }
+            }
+        }
     }
 
     // Static so it can be called inside spawned async tasks easily
@@ -3710,7 +3737,7 @@ Telegram user request:\n{}",
             progress_heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             progress_heartbeat.tick().await;
             let mut typing_heartbeat =
-                tokio::time::interval(Duration::from_secs(CLI_CHAT_ACTION_UPDATE_SECS));
+                tokio::time::interval(Duration::from_secs(TELEGRAM_CHAT_ACTION_UPDATE_SECS));
             typing_heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             typing_heartbeat.tick().await;
 
@@ -4133,7 +4160,12 @@ Telegram user request:\n{}",
                     &cli_backends,
                     text,
                 );
-                let response = agent_core.process_prompt(&session_id, &prompt, None).await;
+                let response = Self::wait_with_typing_indicator(
+                    bot_token,
+                    chat_id,
+                    agent_core.process_prompt(&session_id, &prompt, None),
+                )
+                .await;
                 Self::append_session_transcript(
                     chat_id,
                     TelegramInteractionMode::Chat,
@@ -4162,7 +4194,12 @@ Telegram user request:\n{}",
                     &cli_backends,
                     text,
                 );
-                let response = agent_core.process_prompt(&session_id, &prompt, None).await;
+                let response = Self::wait_with_typing_indicator(
+                    bot_token,
+                    chat_id,
+                    agent_core.process_prompt(&session_id, &prompt, None),
+                )
+                .await;
                 Self::append_session_transcript(
                     chat_id,
                     TelegramInteractionMode::Coding,
@@ -4396,6 +4433,7 @@ mod tests {
     };
     use std::collections::{HashMap, HashSet};
     use std::sync::{Arc, Mutex};
+    use std::time::Duration;
 
     fn backend(value: &str) -> TelegramCliBackend {
         TelegramCliBackend::new(value)
@@ -4946,6 +4984,26 @@ mod tests {
         let body = r#"{"ok":true,"result":{"message_id":77,"text":"hello"}}"#;
 
         assert_eq!(TelegramClient::extract_telegram_message_id(body), Some(77));
+    }
+
+    #[test]
+    fn chat_action_payload_contains_chat_id_and_action() {
+        let payload = TelegramClient::build_chat_action_payload(77, "typing");
+        let value: serde_json::Value = serde_json::from_str(&payload).unwrap();
+
+        assert_eq!(value["chat_id"].as_i64(), Some(77));
+        assert_eq!(value["action"].as_str(), Some("typing"));
+    }
+
+    #[tokio::test]
+    async fn typing_indicator_helper_returns_response_even_without_token() {
+        let response = TelegramClient::wait_with_typing_indicator("", 77, async {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+            "done".to_string()
+        })
+        .await;
+
+        assert_eq!(response, "done");
     }
 
     #[test]

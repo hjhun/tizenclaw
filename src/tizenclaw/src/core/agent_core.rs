@@ -900,6 +900,14 @@ fn extract_relative_file_paths(text: &str) -> Vec<String> {
         {
             continue;
         }
+        if Path::new(matched)
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(|ext| ext.chars().all(|ch| ch.is_ascii_digit()))
+            .unwrap_or(false)
+        {
+            continue;
+        }
         let normalized = matched.trim_start_matches("./").to_string();
         if seen.insert(normalized.clone()) {
             paths.push(normalized);
@@ -910,16 +918,19 @@ fn extract_relative_file_paths(text: &str) -> Vec<String> {
 }
 
 fn prompt_mentions_readme(text: &str) -> bool {
-    text.to_ascii_lowercase().contains("readme")
+    normalize_prompt_intent_text(text)
+        .to_ascii_lowercase()
+        .contains("readme")
 }
 
 fn expected_file_management_targets(prompt: &str) -> Vec<Vec<String>> {
-    let mut groups = extract_relative_file_paths(prompt)
+    let intent_prompt = normalize_prompt_intent_text(prompt);
+    let mut groups = extract_relative_file_paths(intent_prompt)
         .into_iter()
         .map(|path| vec![path])
         .collect::<Vec<_>>();
 
-    if prompt_mentions_readme(prompt)
+    if prompt_mentions_readme(intent_prompt)
         && !groups.iter().any(|group| {
             group.iter().any(|path| {
                 path.eq_ignore_ascii_case("README") || path.eq_ignore_ascii_case("README.md")
@@ -933,7 +944,7 @@ fn expected_file_management_targets(prompt: &str) -> Vec<Vec<String>> {
 }
 
 fn prompt_mentions_history_or_memory(prompt: &str) -> bool {
-    let prompt_lower = prompt.to_ascii_lowercase();
+    let prompt_lower = normalize_prompt_intent_text(prompt).to_ascii_lowercase();
     [
         "history",
         "memory",
@@ -948,8 +959,16 @@ fn prompt_mentions_history_or_memory(prompt: &str) -> bool {
     .any(|keyword| prompt_lower.contains(keyword))
 }
 
+fn normalize_prompt_intent_text(prompt: &str) -> &str {
+    prompt
+        .split_once("Telegram user request:\n")
+        .map(|(_, user_request)| user_request.trim())
+        .filter(|user_request| !user_request.is_empty())
+        .unwrap_or(prompt)
+}
+
 fn prompt_requests_executable_script(prompt: &str) -> bool {
-    let prompt_lower = prompt.to_ascii_lowercase();
+    let prompt_lower = normalize_prompt_intent_text(prompt).to_ascii_lowercase();
     (prompt_lower.contains("script")
         || prompt_lower.contains("python")
         || prompt_lower.contains("bash")
@@ -962,7 +981,7 @@ fn prompt_requests_executable_script(prompt: &str) -> bool {
 }
 
 fn is_simple_file_management_request(prompt: &str) -> bool {
-    let prompt_lower = prompt.to_ascii_lowercase();
+    let prompt_lower = normalize_prompt_intent_text(prompt).to_ascii_lowercase();
     let has_file_action = [
         "create",
         "write",
@@ -979,6 +998,17 @@ fn is_simple_file_management_request(prompt: &str) -> bool {
         "move",
         "rename",
         "mkdir",
+        "open",
+        "display",
+        "print",
+        "view",
+        "읽",
+        "열",
+        "보여",
+        "출력",
+        "확인",
+        "조회",
+        "내용",
     ]
     .iter()
     .any(|keyword| prompt_lower.contains(keyword));
@@ -1000,10 +1030,16 @@ fn is_simple_file_management_request(prompt: &str) -> bool {
         ".ts",
         ".rs",
         "src/",
+        "파일",
+        "디렉터리",
+        "폴더",
+        "경로",
+        ".toml",
+        ".log",
     ]
     .iter()
     .any(|keyword| prompt_lower.contains(keyword))
-        || !extract_explicit_paths(prompt).is_empty();
+        || !extract_explicit_paths(normalize_prompt_intent_text(prompt)).is_empty();
 
     has_file_action && has_file_target && !prompt_requests_executable_script(prompt)
 }
@@ -7341,6 +7377,20 @@ mod tests {
         assert!(!is_simple_file_management_request(
             "Write and execute a Python script that prints the fibonacci sequence."
         ));
+        assert!(is_simple_file_management_request(
+            "config/app.toml 파일을 열어 내용을 보여줘."
+        ));
+    }
+
+    #[test]
+    fn wrapped_telegram_prompt_uses_user_request_for_file_detection() {
+        let wrapped = "You are handling a Telegram request through TizenClaw.\n\nTelegram development preferences:\n- Coding backend: codex\n- Coding model: gpt-5.4\n- Project directory: /home/hjhun/samba/github/tizenclaw\n- Coding execution mode: plan\n- Coding auto approve: on\n\nTelegram user request:\n지금 상태를 요약해서 알려줘.";
+
+        assert!(!is_simple_file_management_request(wrapped));
+
+        let wrapped_file_request = "You are handling a Telegram request through TizenClaw.\n\nTelegram development preferences:\n- Coding backend: codex\n- Coding model: gpt-5.4\n- Project directory: /home/hjhun/samba/github/tizenclaw\n- Coding execution mode: plan\n- Coding auto approve: on\n\nTelegram user request:\nconfig/app.toml 파일을 열어 내용을 보여줘.";
+
+        assert!(is_simple_file_management_request(wrapped_file_request));
     }
 
     #[test]
@@ -7388,6 +7438,20 @@ mod tests {
         );
 
         assert_eq!(missing, vec!["src/app.py".to_string()]);
+    }
+
+    #[test]
+    fn expected_file_management_targets_ignore_telegram_wrapper_metadata() {
+        let wrapped = "You are handling a Telegram request through TizenClaw.\n\nTelegram development preferences:\n- Coding backend: codex\n- Coding model: gpt-5.4\n- Project directory: /home/hjhun/samba/github/tizenclaw\n- Coding execution mode: plan\n- Coding auto approve: on\n\nTelegram user request:\ndata/sample/llm_config.json.sample 파일을 열어 active_backend 값이 무엇인지 보여줘.";
+
+        let targets = expected_file_management_targets(wrapped);
+
+        assert!(targets
+            .iter()
+            .any(|group| group.iter().any(|path| path == "data/sample/llm_config.json.sample")));
+        assert!(!targets
+            .iter()
+            .any(|group| group.iter().any(|path| path == "gpt-5.4")));
     }
 
     #[test]
