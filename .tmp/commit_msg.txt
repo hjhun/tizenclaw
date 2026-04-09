@@ -1,8 +1,0 @@
-Fix Codex assistant history payload
-
-Correct OpenAI Codex Responses history serialization for assistant turns.
-Send assistant replay content as output_text instead of input_text so
-ChatGPT OAuth web and chat sessions no longer fail on follow-up turns.
-
-Add a regression test that locks the assistant and user text-part
-mapping for responses input construction.
