@@ -335,6 +335,35 @@ impl IpcServer {
                 }
             }
 
+            "list_tasks" => {
+                let task_dir = crate::core::runtime_paths::default_data_dir().join("tasks");
+                match crate::core::task_scheduler::TaskScheduler::list_tasks_from_dir(&task_dir) {
+                    Ok(tasks) => json!({
+                        "status": "success",
+                        "count": tasks.len(),
+                        "tasks": tasks.into_iter().map(|task| json!({
+                            "id": task.id,
+                            "name": task.name,
+                            "session_id": task.session_id,
+                            "interval_secs": task.interval_secs,
+                            "schedule": task.schedule_expr,
+                            "one_shot": task.one_shot,
+                            "enabled": task.enabled,
+                            "project_dir": task.project_dir,
+                            "coding_backend": task.coding_backend,
+                            "coding_model": task.coding_model,
+                            "execution_mode": task.execution_mode,
+                            "auto_approve": task.auto_approve,
+                            "prompt": task.prompt,
+                        })).collect::<Vec<_>>(),
+                    }),
+                    Err(err) => {
+                        return json!({"jsonrpc":"2.0","error":{"code":-32000,"message":err},"id":req_id})
+                            .to_string();
+                    }
+                }
+            }
+
             "clear_agent_data" => {
                 let include_memory = params
                     .get("include_memory")

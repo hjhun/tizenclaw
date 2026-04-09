@@ -13,6 +13,7 @@
 #   ./deploy_host.sh --log             # Follow daemon logs
 #   ./deploy_host.sh --dry-run         # Print commands without executing
 #   ./deploy_host.sh --test            # Build + run cargo tests
+#   ./deploy_host.sh --devel           # Start daemon with autonomous devel mode
 #   ./deploy_host.sh -h, --help        # Show this help
 
 set -euo pipefail
@@ -25,6 +26,7 @@ ENTRYPOINT_NAME="${TIZENCLAW_HOST_ENTRYPOINT_NAME:-$(basename "$0")}"
 PKG_NAME="tizenclaw"
 TOOL_EXECUTOR_NAME="tizenclaw-tool-executor"
 CLI_NAME="tizenclaw-cli"
+TEST_TOOL_NAME="tizenclaw-tests"
 WEB_DASHBOARD_NAME="tizenclaw-web-dashboard"
 HOST_DASHBOARD_PORT_DEFAULT=9091
 
@@ -73,6 +75,7 @@ FOLLOW_LOG=false
 DRY_RUN=false
 RUN_TESTS=false
 REMOVE_INSTALL=false
+DEVEL_MODE=false
 LLM_CONFIG=""
 CARGO_TARGET_DIR_HOST="${CARGO_TARGET_DIR:-${CARGO_TARGET_DIR_DEFAULT}}"
 
@@ -237,6 +240,7 @@ ${CYAN}Options:${NC}
       --status            Show current daemon status
       --log               Follow daemon log output
       --dry-run           Print commands without executing
+      --devel             Start the installed daemon with autonomous devel mode
       --build-root <dir>  Override host Cargo target dir
       --llm-config <path> Use specified llm_config.json (sets TIZENCLAW_DATA_DIR)
   -h, --help              Show this help
@@ -248,6 +252,7 @@ ${CYAN}Examples:${NC}
   ${ENTRYPOINT_NAME} --test                    # Run unit/integration tests
   ${ENTRYPOINT_NAME} --status                  # Check daemon status
   ${ENTRYPOINT_NAME} --log                     # Tail daemon logs
+  ${ENTRYPOINT_NAME} --devel                   # Start daemon with devel scheduler
   ${ENTRYPOINT_NAME} -s                        # Stop the daemon
   ${ENTRYPOINT_NAME} --remove                  # Remove host install and stop tools
   ${ENTRYPOINT_NAME} --build-root /tmp/tc-build  # Use external build root
@@ -271,6 +276,7 @@ parse_args() {
       --status)         SHOW_STATUS=true; shift ;;
       --log)            FOLLOW_LOG=true; shift ;;
       --dry-run)        DRY_RUN=true; shift ;;
+      --devel)          DEVEL_MODE=true; shift ;;
       --build-root)
         [[ $# -lt 2 ]] && fail "--build-root requires a path argument"
         CARGO_TARGET_DIR_HOST="$(realpath -m "$2")"; shift 2 ;;
@@ -301,6 +307,7 @@ check_prerequisites() {
   log "Build mode  : ${BUILD_MODE}"
   log "Project dir : ${PROJECT_DIR}"
   log "Build only  : ${BUILD_ONLY}"
+  log "Devel mode  : ${DEVEL_MODE}"
   log "Data dir    : ${DATA_DIR}"
   log "Build root  : ${CARGO_TARGET_DIR_HOST}"
 }
@@ -357,7 +364,7 @@ cleanup_legacy_host_install() {
     ok "No legacy host data tree found"
   fi
 
-  for legacy_bin in "${PKG_NAME}" "${TOOL_EXECUTOR_NAME}" "${CLI_NAME}" "${WEB_DASHBOARD_NAME}"; do
+  for legacy_bin in "${PKG_NAME}" "${TOOL_EXECUTOR_NAME}" "${CLI_NAME}" "${TEST_TOOL_NAME}" "${WEB_DASHBOARD_NAME}"; do
     if [ -f "${LEGACY_HOST_BIN_DIR}/${legacy_bin}" ]; then
       log "Removing legacy binary ${LEGACY_HOST_BIN_DIR}/${legacy_bin}"
       run rm -f "${LEGACY_HOST_BIN_DIR}/${legacy_bin}"
@@ -382,6 +389,7 @@ do_build() {
     "-p" "libtizenclaw"
     "-p" "${TOOL_EXECUTOR_NAME}"
     "-p" "${CLI_NAME}"
+    "-p" "${TEST_TOOL_NAME}"
     "-p" "${WEB_DASHBOARD_NAME}"
   )
 
@@ -466,7 +474,7 @@ do_install() {
     echo -e "  ${YELLOW}[DRY-RUN]${NC} ln -s '${WORKSPACE_DIR}/skills' '${TOOLS_DIR}/skills'"
   fi
 
-  for bin in "${PKG_NAME}" "${TOOL_EXECUTOR_NAME}" "${CLI_NAME}" "${WEB_DASHBOARD_NAME}"; do
+  for bin in "${PKG_NAME}" "${TOOL_EXECUTOR_NAME}" "${CLI_NAME}" "${TEST_TOOL_NAME}" "${WEB_DASHBOARD_NAME}"; do
     local bin_path="${build_dir}/${bin}"
     if [ "${DRY_RUN}" = false ] && [ ! -f "${bin_path}" ]; then
       fail "Binary not found: ${bin_path}"
@@ -697,7 +705,7 @@ remove_installation() {
     ok "Removed host build tree"
   fi
 
-  for legacy_bin in "${PKG_NAME}" "${TOOL_EXECUTOR_NAME}" "${CLI_NAME}" "${WEB_DASHBOARD_NAME}"; do
+  for legacy_bin in "${PKG_NAME}" "${TOOL_EXECUTOR_NAME}" "${CLI_NAME}" "${TEST_TOOL_NAME}" "${WEB_DASHBOARD_NAME}"; do
     if [ -f "${LEGACY_HOST_BIN_DIR}/${legacy_bin}" ]; then
       log "Removing legacy binary ${LEGACY_HOST_BIN_DIR}/${legacy_bin}"
       run rm -f "${LEGACY_HOST_BIN_DIR}/${legacy_bin}"
@@ -823,8 +831,12 @@ do_run() {
 
   # Start main daemon in background
   log "Starting tizenclaw daemon..."
+  local daemon_args=()
+  if [ "${DEVEL_MODE}" = true ]; then
+    daemon_args+=("--devel")
+  fi
   if [ "${DRY_RUN}" = false ]; then
-    setsid "${INSTALL_DIR}/${PKG_NAME}" \
+    setsid "${INSTALL_DIR}/${PKG_NAME}" "${daemon_args[@]}" \
       >> "${LOG_DIR}/tizenclaw.stdout.log" 2>&1 < /dev/null &
     echo $! > "${PID_FILE}"
     sleep 1
@@ -834,7 +846,7 @@ do_run() {
       fail "tizenclaw daemon failed to start — check logs: ${LOG_DIR}/tizenclaw.log"
     fi
   else
-    echo -e "  ${YELLOW}[DRY-RUN]${NC} ${INSTALL_DIR}/${PKG_NAME} &"
+    echo -e "  ${YELLOW}[DRY-RUN]${NC} ${INSTALL_DIR}/${PKG_NAME} ${daemon_args[*]} &"
   fi
 }
 
@@ -862,7 +874,9 @@ show_summary() {
   log "  Status         : ./${ENTRYPOINT_NAME} --status"
   log "  Stop           : ./${ENTRYPOINT_NAME} --stop"
   log "  Remove         : ./${ENTRYPOINT_NAME} --remove"
+  log "  Devel          : ./${ENTRYPOINT_NAME} --devel"
   log "  CLI test       : tizenclaw-cli 'hello'"
+  log "  System test    : tizenclaw-tests scenario --file tests/system/basic_ipc_smoke.json"
   log "  Dashboard URL  : http://localhost:${host_dashboard_port}"
   echo ""
 }

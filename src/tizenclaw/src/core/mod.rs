@@ -23,6 +23,7 @@ pub mod user_profile_store;
 // Batch 2: Skill & Plugin
 pub mod capability_registry;
 pub mod cli_plugin_manager;
+pub mod devel_mode;
 pub mod system_cli_adapter;
 pub mod tool_watcher;
 // Batch 3: Agent Framework

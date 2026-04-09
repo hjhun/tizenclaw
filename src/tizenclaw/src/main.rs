@@ -26,12 +26,41 @@ use std::sync::{Arc, Mutex};
 
 static RUNNING: AtomicBool = AtomicBool::new(true);
 
+#[derive(Debug, Default)]
+struct DaemonOptions {
+    devel_mode: bool,
+}
+
 extern "C" fn signal_handler(_sig: libc::c_int) {
     RUNNING.store(false, Ordering::SeqCst);
 }
 
+fn parse_daemon_options() -> DaemonOptions {
+    let mut options = DaemonOptions::default();
+    let mut args = std::env::args().skip(1);
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--devel" => options.devel_mode = true,
+            "-h" | "--help" => {
+                eprintln!("Usage: tizenclaw [--devel]");
+                std::process::exit(0);
+            }
+            other => {
+                eprintln!("Unknown option: {}", other);
+                eprintln!("Usage: tizenclaw [--devel]");
+                std::process::exit(2);
+            }
+        }
+    }
+
+    options
+}
+
 #[tokio::main]
 async fn main() {
+    let options = parse_daemon_options();
+
     // ── Phase 1: Detect platform & initialize paths ──
     let platform = libtizenclaw_core::framework::PlatformContext::detect();
     platform.paths.ensure_dirs();
@@ -125,7 +154,43 @@ async fn main() {
     let task_scheduler = core::task_scheduler::TaskScheduler::with_agent(agent.clone());
     let task_dir = platform.paths.data_dir.join("tasks");
     let _ = std::fs::create_dir_all(&task_dir);
-    let seeded_tasks = task_scheduler.seed_default_tasks_if_empty(&task_dir.to_string_lossy());
+    let mut devel_sync_handle = None;
+    let mut seeded_tasks = 0usize;
+    let mut devel_detail = None;
+    let mut devel_ok = true;
+
+    if options.devel_mode {
+        let repo_root = std::env::current_dir()
+            .ok()
+            .and_then(|cwd| core::devel_mode::detect_repo_root(&cwd));
+        match repo_root {
+            Some(repo_root) => match core::devel_mode::sync_devel_task(&task_dir, &repo_root) {
+                Ok(sync) => {
+                    devel_detail = Some(sync.detail.clone());
+                    if sync.task_enabled {
+                        devel_sync_handle = Some(core::devel_mode::spawn_devel_task_sync(
+                            task_dir.clone(),
+                            repo_root,
+                        ));
+                    }
+                }
+                Err(err) => {
+                    devel_ok = false;
+                    devel_detail = Some(err);
+                }
+            },
+            None => {
+                devel_ok = false;
+                devel_detail = Some(
+                    "devel mode requested but no repository root with .dev_note was found"
+                        .to_string(),
+                );
+            }
+        }
+    } else {
+        seeded_tasks = task_scheduler.seed_default_tasks_if_empty(&task_dir.to_string_lossy());
+    }
+
     task_scheduler.load_config(&task_dir.to_string_lossy());
     let scheduler_handle = task_scheduler.start();
     boot_logger.record_status(
@@ -133,6 +198,9 @@ async fn main() {
         scheduler_handle.is_some(),
         &format!("seeded {} default task(s)", seeded_tasks),
     );
+    if let Some(detail) = devel_detail.as_deref() {
+        boot_logger.record_status("Devel mode", devel_ok, detail);
+    }
 
     // ── Phase 7: Initialize ChannelRegistry (shared with IPC) ──
     log::info!("[Boot] Initializing channels...");
@@ -205,6 +273,9 @@ async fn main() {
     log::info!("TizenClaw daemon shutting down...");
     channel_registry.lock().unwrap().stop_all();
     task_scheduler.stop();
+    if let Some(handle) = devel_sync_handle {
+        handle.abort();
+    }
     ipc.stop();
     let _ = ipc_handle.join();
     agent.shutdown().await;
