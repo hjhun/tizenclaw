@@ -2097,6 +2097,7 @@ fn extract_option_value(args: &[String], flag: &str) -> Option<String> {
 fn canonical_tool_trace(tc: &backend::LlmToolCall) -> Value {
     let default = json!({
         "type": "toolCall",
+        "tool_call_id": tc.id,
         "name": tc.name,
         "params": tc.args,
         "arguments": tc.args,
@@ -2117,7 +2118,9 @@ fn canonical_tool_trace(tc: &backend::LlmToolCall) -> Value {
                 let path = tc.args.get("path").and_then(|value| value.as_str()).unwrap_or("");
                 json!({
                     "type": "toolCall",
+                    "tool_call_id": tc.id,
                     "name": "read_file",
+                    "actual_tool_name": tc.name,
                     "params": {
                         "path": path,
                         "file_path": path,
@@ -2141,7 +2144,9 @@ fn canonical_tool_trace(tc: &backend::LlmToolCall) -> Value {
                     .unwrap_or("");
                 json!({
                     "type": "toolCall",
+                    "tool_call_id": tc.id,
                     "name": "write_file",
+                    "actual_tool_name": tc.name,
                     "params": {
                         "path": path,
                         "file_path": path,
@@ -2160,7 +2165,9 @@ fn canonical_tool_trace(tc: &backend::LlmToolCall) -> Value {
                 let path = tc.args.get("path").and_then(|value| value.as_str()).unwrap_or(".");
                 json!({
                     "type": "toolCall",
+                    "tool_call_id": tc.id,
                     "name": "list_files",
+                    "actual_tool_name": tc.name,
                     "params": {
                         "path": path,
                         "operation": operation,
@@ -2198,7 +2205,9 @@ fn canonical_tool_trace(tc: &backend::LlmToolCall) -> Value {
                         if let Some(path) = parsed.get(1) {
                             return json!({
                                 "type": "toolCall",
+                                "tool_call_id": tc.id,
                                 "name": "read_file",
+                                "actual_tool_name": tc.name,
                                 "params": {
                                     "path": path.as_str(),
                                     "file_path": path.as_str(),
@@ -2224,7 +2233,9 @@ fn canonical_tool_trace(tc: &backend::LlmToolCall) -> Value {
                             .unwrap_or(".");
                         return json!({
                             "type": "toolCall",
+                            "tool_call_id": tc.id,
                             "name": "list_files",
+                            "actual_tool_name": tc.name,
                             "params": {
                                 "path": path,
                                 "runtime": runtime,
@@ -2240,7 +2251,9 @@ fn canonical_tool_trace(tc: &backend::LlmToolCall) -> Value {
                         let path = parsed.get(1).map(String::as_str).unwrap_or(".");
                         return json!({
                             "type": "toolCall",
+                            "tool_call_id": tc.id,
                             "name": "list_files",
+                            "actual_tool_name": tc.name,
                             "params": {
                                 "path": path,
                                 "runtime": runtime,
@@ -2276,7 +2289,9 @@ fn canonical_tool_trace(tc: &backend::LlmToolCall) -> Value {
             if let Some(path) = extract_option_value(&parsed, "--path") {
                 json!({
                     "type": "toolCall",
+                    "tool_call_id": tc.id,
                     "name": "read_file",
+                    "actual_tool_name": tc.name,
                     "params": {
                         "path": path.as_str(),
                         "file_path": path.as_str(),
@@ -2300,7 +2315,9 @@ fn canonical_tool_trace(tc: &backend::LlmToolCall) -> Value {
                 let content = extract_option_value(&parsed, "--content").unwrap_or_default();
                 json!({
                     "type": "toolCall",
+                    "tool_call_id": tc.id,
                     "name": "write_file",
+                    "actual_tool_name": tc.name,
                     "params": {
                         "path": path.as_str(),
                         "file_path": path.as_str(),
@@ -2323,7 +2340,9 @@ fn canonical_tool_trace(tc: &backend::LlmToolCall) -> Value {
             if let Some(path) = extract_option_value(&parsed, "--path") {
                 json!({
                     "type": "toolCall",
+                    "tool_call_id": tc.id,
                     "name": "list_files",
+                    "actual_tool_name": tc.name,
                     "params": {
                         "path": path.as_str(),
                         "subcommand": subcommand,
@@ -4502,11 +4521,8 @@ impl AgentCore {
 
         let mut messages: Vec<LlmMessage> = history
             .iter()
-            .map(|m| LlmMessage {
-                role: m.role.clone(),
-                text: m.text.clone(),
-                ..Default::default()
-            })
+            .cloned()
+            .map(|m| m.into_llm_message())
             .filter_map(sanitize_message_for_transport)
             .collect();
 
@@ -6215,12 +6231,14 @@ impl AgentCore {
                         use crate::storage::session_store::SessionMessage;
                         let session_msgs: Vec<SessionMessage> = messages
                             .iter()
-                            .map(|m| SessionMessage {
-                                role: m.role.clone(),
-                                text: m.text.clone(),
-                                timestamp: String::new(),
-                            })
+                            .map(SessionMessage::from_llm_message)
                             .collect();
+                        if let Err(e) = store.save_compacted_structured(session_id, &session_msgs) {
+                            log::warn!(
+                                "[ContextEngine] Failed to save compacted structured snapshot: {}",
+                                e
+                            );
+                        }
                         match store.save_compacted(session_id, &session_msgs) {
                             Ok(_) => log::debug!(
                                 "[ContextEngine] compacted.md saved ({} msgs)",

@@ -21,6 +21,7 @@
 //! persists the result via `save_compacted()`. The file is written atomically
 //! (`.compacted.tmp` → rename) to protect against partial writes on flash.
 
+use crate::llm::backend::{LlmMessage, LlmToolCall};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fs::{self, OpenOptions};
@@ -34,7 +35,44 @@ use std::sync::{Arc, RwLock};
 pub struct SessionMessage {
     pub role: String,
     pub text: String,
+    #[serde(default)]
+    pub reasoning_text: String,
+    #[serde(default)]
+    pub tool_calls: Vec<LlmToolCall>,
+    #[serde(default)]
+    pub tool_name: String,
+    #[serde(default)]
+    pub tool_call_id: String,
+    #[serde(default)]
+    pub tool_result: Value,
     pub timestamp: String,
+}
+
+impl SessionMessage {
+    pub fn from_llm_message(message: &LlmMessage) -> Self {
+        Self {
+            role: message.role.clone(),
+            text: message.text.clone(),
+            reasoning_text: message.reasoning_text.clone(),
+            tool_calls: message.tool_calls.clone(),
+            tool_name: message.tool_name.clone(),
+            tool_call_id: message.tool_call_id.clone(),
+            tool_result: message.tool_result.clone(),
+            timestamp: String::new(),
+        }
+    }
+
+    pub fn into_llm_message(self) -> LlmMessage {
+        LlmMessage {
+            role: self.role,
+            text: self.text,
+            reasoning_text: self.reasoning_text,
+            tool_calls: self.tool_calls,
+            tool_name: self.tool_name,
+            tool_call_id: self.tool_call_id,
+            tool_result: self.tool_result,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -197,6 +235,11 @@ impl SessionStore {
         self.session_dir(session_id).join("compacted.md")
     }
 
+    /// Structured compaction snapshot preserving tool-call history.
+    fn compacted_structured_path(&self, session_id: &str) -> PathBuf {
+        self.session_dir(session_id).join("compacted.jsonl")
+    }
+
     /// Session-scoped working directory for file-oriented tasks.
     pub fn session_workdir(&self, session_id: &str) -> PathBuf {
         let dir = self.base_dir.join("workdirs").join(session_id);
@@ -348,20 +391,40 @@ impl SessionStore {
         session_id: &str,
         limit: usize,
     ) -> (Vec<SessionMessage>, bool) {
-        let compacted = self.load_compacted(session_id);
+        let compacted = {
+            let structured = self.load_compacted_structured(session_id);
+            if structured.is_empty() {
+                self.load_compacted(session_id)
+            } else {
+                structured
+            }
+        };
         let from_compacted = !compacted.is_empty();
 
         let merged = if from_compacted {
-            // Load today's file; append only messages that came AFTER the
-            // compaction (avoid re-adding messages already in the snapshot).
-            let today = self.load_file(&self.session_file_today(session_id));
-            let new_msgs = deduplicate_after_compacted(&compacted, &today);
+            // Load the structured transcript and append only messages that came
+            // after the compaction snapshot. Fall back to today's markdown file
+            // for legacy sessions created before transcript logging existed.
+            let transcript = self.load_transcript_messages(session_id);
+            let new_msgs = if transcript.is_empty() {
+                let today = self.load_file(&self.session_file_today(session_id));
+                deduplicate_after_compacted(&compacted, &today)
+            } else {
+                deduplicate_after_compacted(&compacted, &transcript)
+            };
             let mut out = compacted;
             out.extend(new_msgs);
             out
         } else {
-            // No compaction snapshot — collect all day-files for this session
-            self.load_all_historical(session_id, limit * 3) // generous pre-limit
+            // Prefer the structured transcript when available because it keeps
+            // tool calls/results as first-class conversation history.
+            let transcript = self.load_transcript_messages(session_id);
+            if transcript.is_empty() {
+                self.load_all_historical(session_id, limit * 3) // generous pre-limit
+            } else {
+                let skip = transcript.len().saturating_sub(limit * 3);
+                transcript.into_iter().skip(skip).collect()
+            }
         };
 
         // Apply tail-limit
@@ -427,6 +490,39 @@ impl SessionStore {
             session_id,
             messages.len()
         );
+        Ok(())
+    }
+
+    pub fn load_compacted_structured(&self, session_id: &str) -> Vec<SessionMessage> {
+        let path = self.compacted_structured_path(session_id);
+        self.read_structured_messages(&path)
+    }
+
+    pub fn save_compacted_structured(
+        &self,
+        session_id: &str,
+        messages: &[SessionMessage],
+    ) -> Result<(), String> {
+        let dir = self.session_dir(session_id);
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+        let final_path = self.compacted_structured_path(session_id);
+        let tmp_path = dir.join(".compacted_structured.tmp");
+        let serialized = messages
+            .iter()
+            .map(serde_json::to_string)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?
+            .join("\n");
+
+        {
+            let _g = self.lock.write().unwrap();
+            fs::write(&tmp_path, serialized.as_bytes())
+                .map_err(|e| format!("structured tmp write failed: {}", e))?;
+            fs::rename(&tmp_path, &final_path)
+                .map_err(|e| format!("structured rename failed: {}", e))?;
+        }
+
         Ok(())
     }
 
@@ -678,6 +774,47 @@ impl SessionStore {
         parse_session_markdown(&content)
     }
 
+    fn read_structured_messages(&self, path: &PathBuf) -> Vec<SessionMessage> {
+        let content = match fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => return vec![],
+        };
+
+        content
+            .lines()
+            .filter_map(|line| {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    serde_json::from_str::<SessionMessage>(trimmed).ok()
+                }
+            })
+            .collect()
+    }
+
+    fn load_transcript_messages(&self, session_id: &str) -> Vec<SessionMessage> {
+        let path = self.transcript_path(session_id);
+        let content = match fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => return vec![],
+        };
+
+        let mut messages = Vec::new();
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let Ok(event) = serde_json::from_str::<Value>(trimmed) else {
+                continue;
+            };
+            messages.extend(parse_transcript_event(&event));
+        }
+
+        messages
+    }
+
     /// Load all day-files for a session, sorted oldest-first, up to `limit`.
     fn load_all_historical(&self, session_id: &str, limit: usize) -> Vec<SessionMessage> {
         let dir = self.session_dir(session_id);
@@ -729,6 +866,11 @@ fn parse_session_markdown(content: &str) -> Vec<SessionMessage> {
                 messages.push(SessionMessage {
                     role: current_role.clone(),
                     text: current_text.join("\n").trim().to_string(),
+                    reasoning_text: String::new(),
+                    tool_calls: Vec::new(),
+                    tool_name: String::new(),
+                    tool_call_id: String::new(),
+                    tool_result: Value::Null,
                     timestamp: String::new(),
                 });
                 current_text.clear();
@@ -743,10 +885,139 @@ fn parse_session_markdown(content: &str) -> Vec<SessionMessage> {
         messages.push(SessionMessage {
             role: current_role,
             text: current_text.join("\n").trim().to_string(),
+            reasoning_text: String::new(),
+            tool_calls: Vec::new(),
+            tool_name: String::new(),
+            tool_call_id: String::new(),
+            tool_result: Value::Null,
             timestamp: String::new(),
         });
     }
     messages
+}
+
+fn flatten_transcript_content_text(content: &Value) -> String {
+    let mut parts = Vec::new();
+    if let Some(items) = content.as_array() {
+        for item in items {
+            if let Some(text) = item.as_str() {
+                if !text.trim().is_empty() {
+                    parts.push(text.trim().to_string());
+                }
+            } else if let Some(text) = item.get("text").and_then(|value| value.as_str()) {
+                if !text.trim().is_empty() {
+                    parts.push(text.trim().to_string());
+                }
+            }
+        }
+    }
+    parts.join("\n")
+}
+
+fn parse_transcript_tool_calls(content: &Value) -> Vec<LlmToolCall> {
+    let Some(items) = content.as_array() else {
+        return Vec::new();
+    };
+
+    items
+        .iter()
+        .filter(|item| item.get("type").and_then(|value| value.as_str()) == Some("toolCall"))
+        .filter_map(|item| {
+            let name = item
+                .get("actual_tool_name")
+                .or_else(|| item.get("name"))
+                .and_then(|value| value.as_str())?;
+            let args = item
+                .get("arguments")
+                .or_else(|| item.get("params"))
+                .cloned()
+                .unwrap_or(Value::Null);
+            let id = item
+                .get("tool_call_id")
+                .or_else(|| item.get("id"))
+                .and_then(|value| value.as_str())
+                .unwrap_or("")
+                .to_string();
+            Some(LlmToolCall {
+                id,
+                name: name.to_string(),
+                args,
+            })
+        })
+        .collect()
+}
+
+fn parse_tool_result_content(content: &Value) -> Value {
+    let rendered = content
+        .as_array()
+        .and_then(|items| items.first())
+        .cloned()
+        .unwrap_or_else(|| content.clone());
+
+    match rendered {
+        Value::String(text) => serde_json::from_str(&text).unwrap_or(Value::String(text)),
+        other => other,
+    }
+}
+
+fn parse_transcript_event(event: &Value) -> Vec<SessionMessage> {
+    let Some(message) = event.get("message") else {
+        return Vec::new();
+    };
+    let Some(role) = message.get("role").and_then(|value| value.as_str()) else {
+        return Vec::new();
+    };
+
+    match role {
+        "user" => {
+            let text = flatten_transcript_content_text(&message["content"]);
+            if text.is_empty() {
+                Vec::new()
+            } else {
+                vec![SessionMessage {
+                    role: "user".to_string(),
+                    text,
+                    ..SessionMessage::default()
+                }]
+            }
+        }
+        "assistant" => {
+            let text = flatten_transcript_content_text(&message["content"]);
+            let tool_calls = parse_transcript_tool_calls(&message["content"]);
+            let mut out = Vec::new();
+            if !text.is_empty() {
+                out.push(SessionMessage {
+                    role: "assistant".to_string(),
+                    text,
+                    ..SessionMessage::default()
+                });
+            }
+            if !tool_calls.is_empty() {
+                out.push(SessionMessage {
+                    role: "assistant".to_string(),
+                    tool_calls,
+                    ..SessionMessage::default()
+                });
+            }
+            out
+        }
+        "toolResult" => vec![SessionMessage {
+            role: "tool".to_string(),
+            tool_name: message
+                .get("tool_name")
+                .and_then(|value| value.as_str())
+                .unwrap_or("")
+                .to_string(),
+            tool_call_id: message
+                .get("tool_call_id")
+                .and_then(|value| value.as_str())
+                .unwrap_or("")
+                .to_string(),
+            tool_result: parse_tool_result_content(&message["content"]),
+            ..SessionMessage::default()
+        }],
+        _ => Vec::new(),
+    }
 }
 
 /// Return only messages from `today` that are NOT already represented in
@@ -765,20 +1036,38 @@ fn deduplicate_after_compacted(
     // Build a set of (role, first-100-chars) from compacted for fast lookup
     let compacted_set: std::collections::HashSet<(String, String)> = compacted
         .iter()
-        .map(|m| {
-            let preview = m.text.chars().take(100).collect::<String>();
-            (m.role.clone(), preview)
-        })
+        .map(session_message_dedup_key)
         .collect();
 
     today
         .iter()
         .filter(|msg| {
-            let preview = msg.text.chars().take(100).collect::<String>();
-            !compacted_set.contains(&(msg.role.clone(), preview))
+            !compacted_set.contains(&session_message_dedup_key(msg))
         })
         .cloned()
         .collect()
+}
+
+fn session_message_dedup_key(message: &SessionMessage) -> (String, String) {
+    let preview_source = if !message.text.is_empty() {
+        message.text.clone()
+    } else if !message.tool_calls.is_empty() {
+        serde_json::to_string(&message.tool_calls).unwrap_or_default()
+    } else if !message.tool_name.is_empty() || !message.tool_call_id.is_empty() {
+        format!(
+            "{}:{}:{}",
+            message.tool_name,
+            message.tool_call_id,
+            message.tool_result
+        )
+    } else {
+        message.reasoning_text.clone()
+    };
+
+    (
+        message.role.clone(),
+        preview_source.chars().take(100).collect::<String>(),
+    )
 }
 
 fn get_timestamp() -> String {
@@ -900,17 +1189,17 @@ mod tests {
             SessionMessage {
                 role: "system".into(),
                 text: "You are TizenClaw.".into(),
-                timestamp: String::new(),
+                ..SessionMessage::default()
             },
             SessionMessage {
                 role: "user".into(),
                 text: "Original goal".into(),
-                timestamp: String::new(),
+                ..SessionMessage::default()
             },
             SessionMessage {
                 role: "assistant".into(),
                 text: "Got it.".into(),
-                timestamp: String::new(),
+                ..SessionMessage::default()
             },
         ];
 
@@ -936,12 +1225,12 @@ mod tests {
             SessionMessage {
                 role: "user".into(),
                 text: "old question".into(),
-                timestamp: String::new(),
+                ..SessionMessage::default()
             },
             SessionMessage {
                 role: "assistant".into(),
                 text: "old answer".into(),
-                timestamp: String::new(),
+                ..SessionMessage::default()
             },
         ];
         store.save_compacted("s3", &compacted).unwrap();
@@ -961,18 +1250,18 @@ mod tests {
         let compacted = vec![SessionMessage {
             role: "user".into(),
             text: "same message".into(),
-            timestamp: String::new(),
+            ..SessionMessage::default()
         }];
         let today = vec![
             SessionMessage {
                 role: "user".into(),
                 text: "same message".into(),
-                timestamp: String::new(),
+                ..SessionMessage::default()
             },
             SessionMessage {
                 role: "assistant".into(),
                 text: "new reply".into(),
-                timestamp: String::new(),
+                ..SessionMessage::default()
             },
         ];
         let result = deduplicate_after_compacted(&compacted, &today);
@@ -987,7 +1276,7 @@ mod tests {
         let msgs = vec![SessionMessage {
             role: "user".into(),
             text: "test".into(),
-            timestamp: String::new(),
+            ..SessionMessage::default()
         }];
         // Tmp file should not persist after successful save
         store.save_compacted("s4", &msgs).unwrap();
@@ -1008,6 +1297,71 @@ mod tests {
         let store = make_store(tmp.path());
         let loaded = store.load_compacted("nonexistent_session");
         assert!(loaded.is_empty());
+    }
+
+    #[test]
+    fn test_load_session_context_reads_tool_history_from_transcript() {
+        let tmp = tempdir().unwrap();
+        let store = make_store(tmp.path());
+
+        store.add_structured_user_message("tool_hist", "방금 만든 파일을 보여줘");
+        store.add_structured_tool_call_message(
+            "tool_hist",
+            vec![json!({
+                "type": "toolCall",
+                "tool_call_id": "call_1",
+                "name": "read_file",
+                "actual_tool_name": "file_manager",
+                "arguments": {"path": ".tmp/demo.txt"}
+            })],
+        );
+        store.add_structured_tool_result_message(
+            "tool_hist",
+            "read_file",
+            "call_1",
+            &json!({"path": ".tmp/demo.txt", "content": "demo"}),
+        );
+
+        let (msgs, from_compacted) = store.load_session_context("tool_hist", 10);
+        assert!(!from_compacted);
+        assert_eq!(msgs.len(), 3);
+        assert_eq!(msgs[1].role, "assistant");
+        assert_eq!(msgs[1].tool_calls.len(), 1);
+        assert_eq!(msgs[1].tool_calls[0].id, "call_1");
+        assert_eq!(msgs[2].role, "tool");
+        assert_eq!(msgs[2].tool_call_id, "call_1");
+        assert_eq!(msgs[2].tool_result["content"], json!("demo"));
+    }
+
+    #[test]
+    fn test_save_and_load_compacted_structured_preserves_tool_fields() {
+        let tmp = tempdir().unwrap();
+        let store = make_store(tmp.path());
+
+        let messages = vec![
+            SessionMessage {
+                role: "assistant".into(),
+                tool_calls: vec![LlmToolCall {
+                    id: "call_1".into(),
+                    name: "read_file".into(),
+                    args: json!({"path": ".tmp/demo.txt"}),
+                }],
+                ..SessionMessage::default()
+            },
+            SessionMessage {
+                role: "tool".into(),
+                tool_name: "read_file".into(),
+                tool_call_id: "call_1".into(),
+                tool_result: json!({"path": ".tmp/demo.txt", "content": "demo"}),
+                ..SessionMessage::default()
+            },
+        ];
+
+        store
+            .save_compacted_structured("tool_hist2", &messages)
+            .expect("save_compacted_structured must succeed");
+        let loaded = store.load_compacted_structured("tool_hist2");
+        assert_eq!(loaded, messages);
     }
 
     #[test]
