@@ -2,158 +2,137 @@
 
 ## Actual Progress
 
-- Goal: Prompt 18: Safety Guard and Tool Policy
-- Prompt-driven scope: Phase 4. Supervisor Validation, Continuation Loop, and Resume prompt-driven setup for Follow the guidance files below before making changes.
-- Active roadmap focus:
-- Phase 4. Supervisor Validation, Continuation Loop, and Resume
-- Current workflow phase: plan
-- Last completed workflow phase: none
-- Supervisor verdict: `approved`
-- Escalation status: `approved`
-- Resume point: Return to Plan and resume from the first unchecked PLAN item if setup is interrupted
+- Goal: Prompt 19: LLM Types and C FFI Layer
+- Cycle: host-default (`./deploy_host.sh`)
+- Current workflow phase: commit
+- Last completed workflow phase: test-review
+- Supervisor verdict: `PASS` through Stage 5
+- Resume point: Run cleanup and create a scoped commit for the FFI/API files
 
-## In Progress
+## Stage 1: Planning
 
-- Review the prompt-derived goal and success criteria for Prompt 18: Safety Guard and Tool Policy.
-- Review repository guidance from AGENTS.md, .github/workflows/ci.yml, .github/workflows/release-host-bundle.yml
-- Generate DASHBOARD.md and PLAN.md from the active prompt before implementation continues.
+- Status: complete
+- Runtime surface:
+  `src/libtizenclaw-core/src/llm_types.rs`,
+  `src/libtizenclaw/src/api.rs`,
+  `src/libtizenclaw/src/lib.rs`
+- Test scenario decision:
+  No new `tizenclaw-tests` scenario is required because the daemon IPC
+  contract is unchanged. Verification will use `./deploy_host.sh` and
+  `./deploy_host.sh --test` against the existing daemon-facing methods.
+- Plan notes:
+  add compatibility C ABI handles for message/list/response types and
+  align the public Rust client with daemon-backed `ping`, `prompt`,
+  `bridge_list_tools`, and `runtime_status`.
 
-## Progress Notes
+## Supervisor Gate
 
-- This file should show the actual progress of the active scope.
-- workflow_state.json remains machine truth.
-- PLAN.md should list prompt-derived development items in phase order.
-- Repository rules to follow: AGENTS.md
-- Relevant repository workflows: .github/workflows/ci.yml, .github/workflows/release-host-bundle.yml
+- Stage 1 Planning: PASS
+  host-default cycle classified and dashboard updated.
+
+## Stage 2: Design
+
+- Status: complete
+- Ownership boundaries:
+  `libtizenclaw-core` owns opaque heap handles and null-safe C ABI
+  shims; `libtizenclaw` owns daemon JSON-RPC transport only.
+- Persistence and runtime impact:
+  no storage or daemon mutation; only client-side FFI/API behavior
+  changes.
+- IPC-observable assertions:
+  `initialize()` must succeed only when `ping` returns `pong: true`;
+  `process_prompt()` must extract response text from `prompt`;
+  `list_tools()` and `runtime_status()` must return JSON-RPC results.
+- FFI/runtime notes:
+  compatibility getters allocate returned strings with
+  `libc::strdup`; list access returns borrowed message handles owned by
+  the list.
+
+## Supervisor Gate
+
+- Stage 2 Design: PASS
+  boundaries, IPC assertions, and host verification path documented.
+
+## Stage 3: Development
+
+- Status: complete
+- Development checklist:
+  - [x] Review existing FFI and API implementations
+  - [x] Add compatibility C ABI entry points in `llm_types.rs`
+  - [x] Refactor `api::TizenClaw` to daemon-backed `ping`/`call`
+  - [x] Update `libtizenclaw` wrapper call sites for prompt/session order
+  - [x] Run script-driven build verification
+  - [x] Run script-driven test verification
+- Development notes:
+  added the requested `tizenclaw_message_*`,
+  `tizenclaw_messages_list_*`, and `tizenclaw_response_*` symbols while
+  preserving the existing `tizenclaw_llm_*` ABI; `api::TizenClaw` now
+  verifies the daemon with `ping` and exposes `call`, `list_tools`, and
+  `runtime_status`.
+
+## Supervisor Gate
+
+- Stage 3 Development: PASS
+  additive ABI changes compiled and the script-driven verification path
+  was used without direct `cargo` commands.
+
+## Stage 4: Build & Deploy
+
+- Status: complete
+- Command: `./deploy_host.sh`
+- Result:
+  host build, install, daemon restart, and IPC readiness all passed.
+- Survival check:
+  `tizenclaw daemon started (pid 3093609)`
+  `Daemon IPC is ready via abstract socket`
+
+## Supervisor Gate
+
+- Stage 4 Build & Deploy: PASS
+  host-default script path used and the daemon restart was confirmed.
+
+## Stage 5: Test & Review
+
+- Status: complete
+- Repository regression:
+  `./deploy_host.sh --test` passed.
+- Host runtime evidence:
+  `./deploy_host.sh --status` reported `tizenclaw is running` and
+  `tizenclaw-tool-executor is running`.
+- Log evidence:
+  `[4/7] Initialized AgentCore`
+  `[5/7] Started IPC server`
+  `[7/7] Daemon ready`
+- Acceptance probe:
+  installed `libtizenclaw.so` returned `initialize=0` and
+  `process_prompt_text=Hi!` for `"say hi"`.
+- Additional smoke note:
+  `tests/system/basic_ipc_smoke.json` failed on
+  `skills.roots.managed` missing from `session_runtime_status`; this is
+  unrelated to the FFI/API scope and did not affect the acceptance-path
+  library probe.
+- QA verdict:
+  PASS for Prompt 19 scope. No defects found in the new FFI/API path.
+
+## Supervisor Gate
+
+- Stage 5 Test & Review: PASS
+  build/test logs, runtime status, and live library probe were captured.
+
+## Stage 6: Commit
+
+- Status: in progress
+- Planned scope:
+  `.dev/DASHBOARD.md`
+  `src/libtizenclaw-core/src/llm_types.rs`
+  `src/libtizenclaw/src/api.rs`
+  `src/libtizenclaw/src/lib.rs`
+- Commit message path:
+  `.tmp/commit_msg.txt`
 
 ## Risks And Watchpoints
 
-- Do not overwrite existing operator-authored Markdown.
-- Keep JSON merges additive so interrupted runs stay resumable.
-- Keep session-scoped state isolated when multiple workflows run in parallel.
-
-## Prompt 18 Stage Log
-
-### Stage 1: Planning
-
-- Cycle classification: host-default. Build, deploy, and test must use
-  `./deploy_host.sh` unless an explicit Tizen request appears.
-- Affected runtime surface: `SafetyGuard`, `ToolPolicy`, tool execution
-  gating in `AgentCore::process_prompt()`, and IPC `runtime_status`.
-- `tizenclaw-tests` scenario plan: extend the runtime status contract in
-  `tests/system/ipc_jsonrpc_contract.json` to assert `safety` and
-  `tool_policy` sections.
-- Stage status: complete.
-
-### Supervisor Gate: Stage 1
-
-- Verdict: PASS
-- Evidence: host-default cycle classified and the required dashboard
-  planning artifact was recorded.
-
-### Stage 2: Design
-
-- Ownership boundaries: `SafetyGuard` remains the descriptive
-  side-effect/argument gate behind `AgentCore.safety_guard`, while
-  `ToolPolicy` owns repeat-count, iteration-count, aliases, blocked
-  skills, and risk metadata behind `AgentCore.tool_policy`.
-- Runtime and persistence impact: load `tool_policy.json` and
-  `safety_guard.json` as before, add JSON snapshot helpers for IPC, and
-  reset per-session loop counters at prompt start without changing
-  persisted session history.
-- IPC observability: `runtime_status` must expose the active safety
-  configuration and current tool-policy iteration count, and the system
-  scenario will assert those fields.
-- FFI / async boundary note: no new FFI or `libloading` boundary is
-  introduced; the change stays inside core Rust runtime policy paths.
-- Stage status: complete.
-
-### Supervisor Gate: Stage 2
-
-- Verdict: PASS
-- Evidence: subsystem boundaries, runtime-path impact, and IPC-visible
-  assertions were defined in the dashboard.
-
-### Stage 3: Development
-
-- TDD contract update: extended
-  `tests/system/ipc_jsonrpc_contract.json` to require `safety` and
-  `tool_policy` sections in `runtime_status`.
-- Red step: `./deploy_host.sh --test` failed first with missing
-  `ToolPolicy::{from_config,record_call,is_loop_detected,total_calls,
-  is_iteration_limit_reached,reset}` and the updated
-  `SafetyGuard::check_tool_call(...)` signature.
-- Green implementation:
-  `src/tizenclaw/src/core/safety_guard.rs`
-  `src/tizenclaw/src/core/tool_policy.rs`
-  `src/tizenclaw/src/core/agent_core.rs`
-  `src/tizenclaw/src/core/ipc_server.rs`
-- Runtime behavior change: `AgentCore::process_prompt()` now resets
-  policy counters per prompt, resolves aliases for policy checks, applies
-  loop and iteration guards before dispatch, validates safety against the
-  canonical tool name, and records allowed calls.
-- Stage status: complete.
-
-### Supervisor Gate: Stage 3
-
-- Verdict: PASS
-- Evidence: script-driven red/green cycle completed through
-  `./deploy_host.sh --test`; no direct `cargo` or ad-hoc build commands
-  were used outside the repository scripts.
-
-### Stage 4: Build & Deploy
-
-- Command: `./deploy_host.sh`
-- Result: host build, install, and restart completed successfully.
-- Survival check:
-  `tizenclaw daemon started (pid 3083611)`
-  `Daemon IPC is ready via abstract socket`
-- Follow-up status probe: `./deploy_host.sh --status` reported
-  `tizenclaw is running` and `tizenclaw-tool-executor is running`.
-- Stage status: complete.
-
-### Supervisor Gate: Stage 4
-
-- Verdict: PASS
-- Evidence: the host-default script path was used and the daemon restart
-  plus IPC readiness were confirmed.
-
-### Stage 5: Test & Review
-
-- Repository regression command: `./deploy_host.sh --test`
-- Result: all host tests passed.
-- Live system scenario:
-  `~/.tizenclaw/bin/tizenclaw-tests scenario --file tests/system/ipc_jsonrpc_contract.json`
-  Result: 5/5 steps passed, including the updated `runtime-status-shape`.
-- Direct IPC proof:
-  `runtime_status.safety = {"allow_irreversible":false,"blocked_tools":[],"max_tool_calls_per_session":50}`
-  `runtime_status.tool_policy = {"current_iteration_count":0,"max_iterations":0,"max_repeat_count":0}`
-- Runtime log proof from `~/.tizenclaw/logs/tizenclaw.log`:
-  `[4/7] Initialized AgentCore`
-  `[5/7] Started IPC server`
-  `[6/7] Completed startup indexing`
-  `[7/7] Daemon ready`
-- QA verdict: PASS. No review defects found in the new safety/policy
-  flow, and the IPC contract remained stable after the runtime-status
-  call.
-- Stage status: complete.
-
-### Supervisor Gate: Stage 5
-
-- Verdict: PASS
-- Evidence: build logs, daemon status, runtime log excerpts, and the
-  live `tizenclaw-tests` scenario were captured with a PASS verdict.
-
-### Stage 6: Commit
-
-- Cleanup command: `bash .agent/scripts/cleanup_workspace.sh`
-- Commit scope for Prompt 18:
-  `src/tizenclaw/src/core/safety_guard.rs`
-  `src/tizenclaw/src/core/tool_policy.rs`
-  `src/tizenclaw/src/core/agent_core.rs`
-  `src/tizenclaw/src/core/ipc_server.rs`
-  `tests/system/ipc_jsonrpc_contract.json`
-  `.dev/DASHBOARD.md`
-- Commit message path: `.tmp/commit_msg.txt`
-- Commit action: pending local commit with `git commit -F .tmp/commit_msg.txt`
-  and no inline `-m` usage.
+- Repository is already dirty outside this scope; do not touch unrelated
+  files.
+- `llm_types.rs` compatibility handles must remain additive and not break
+  existing `tizenclaw_llm_*` ABI symbols.

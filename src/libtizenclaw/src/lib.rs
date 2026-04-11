@@ -160,7 +160,7 @@ pub unsafe extern "C" fn tizenclaw_process_prompt(
 
     let arc = &*ptr;
     match arc.lock() {
-        Ok(inner) => match inner.agent.process_prompt(sid, p) {
+        Ok(inner) => match inner.agent.process_prompt(p, sid) {
             Ok(resp) => string_to_c(resp),
             Err(e) => {
                 set_last_error(&e);
@@ -213,7 +213,7 @@ pub unsafe extern "C" fn tizenclaw_process_prompt_async(
 
     std::thread::spawn(move || {
         let result = match arc.lock() {
-            Ok(inner) => inner.agent.process_prompt(&sid, &p),
+            Ok(inner) => inner.agent.process_prompt(&p, &sid),
             Err(e) => Err(format!("Lock poisoned: {}", e)),
         };
 

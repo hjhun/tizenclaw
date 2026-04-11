@@ -4,7 +4,7 @@
 //! Matches the C API in `tizenclaw_llm_backend.h`.
 
 use std::ffi::{CStr, CString};
-use std::os::raw::c_char;
+use std::os::raw::{c_char, c_int, c_void};
 
 const OK: i32 = 0;      // TIZENCLAW_ERROR_NONE
 const EINVAL: i32 = -1;  // TIZENCLAW_ERROR_INVALID_PARAMETER
@@ -84,6 +84,34 @@ unsafe fn get_cstr<'a>(ptr: *const c_char) -> &'a str {
     CStr::from_ptr(ptr).to_str().unwrap_or("")
 }
 
+fn new_message_inner() -> MessageInner {
+    MessageInner {
+        role: String::new(),
+        text: String::new(),
+        tool_calls: Vec::new(),
+        tool_name: String::new(),
+        tool_call_id: String::new(),
+        tool_result_json: String::new(),
+    }
+}
+
+fn new_response_inner() -> ResponseInner {
+    ResponseInner {
+        success: false,
+        text: String::new(),
+        error_message: String::new(),
+        tool_calls: Vec::new(),
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        total_tokens: 0,
+        http_status: 0,
+    }
+}
+
+fn len_to_c_int(len: usize) -> Result<c_int, i32> {
+    i32::try_from(len).map_err(|_| EINVAL)
+}
+
 // ═══════════════════════════════════════════
 //  ToolCall
 // ═══════════════════════════════════════════
@@ -155,11 +183,7 @@ pub unsafe extern "C" fn tizenclaw_llm_tool_call_get_args_json(h: *mut libc::c_v
 #[no_mangle]
 pub unsafe extern "C" fn tizenclaw_llm_message_create(out: *mut *mut libc::c_void) -> i32 {
     if out.is_null() { return EINVAL; }
-    let inner = Box::new(MessageInner {
-        role: String::new(), text: String::new(),
-        tool_calls: Vec::new(), tool_name: String::new(),
-        tool_call_id: String::new(), tool_result_json: String::new(),
-    });
+    let inner = Box::new(new_message_inner());
     *out = Box::into_raw(inner) as *mut libc::c_void;
     OK
 }
@@ -394,11 +418,7 @@ pub unsafe extern "C" fn tizenclaw_llm_tools_foreach(
 #[no_mangle]
 pub unsafe extern "C" fn tizenclaw_llm_response_create(out: *mut *mut libc::c_void) -> i32 {
     if out.is_null() { return EINVAL; }
-    let inner = Box::new(ResponseInner {
-        success: false, text: String::new(), error_message: String::new(),
-        tool_calls: Vec::new(), prompt_tokens: 0, completion_tokens: 0,
-        total_tokens: 0, http_status: 0,
-    });
+    let inner = Box::new(new_response_inner());
     *out = Box::into_raw(inner) as *mut libc::c_void;
     OK
 }
@@ -484,6 +504,198 @@ response_int_accessor!(tizenclaw_llm_response_set_prompt_tokens, tizenclaw_llm_r
 response_int_accessor!(tizenclaw_llm_response_set_completion_tokens, tizenclaw_llm_response_get_completion_tokens, completion_tokens);
 response_int_accessor!(tizenclaw_llm_response_set_total_tokens, tizenclaw_llm_response_get_total_tokens, total_tokens);
 response_int_accessor!(tizenclaw_llm_response_set_http_status, tizenclaw_llm_response_get_http_status, http_status);
+
+// ═══════════════════════════════════════════
+//  Compatibility C ABI
+// ═══════════════════════════════════════════
+
+#[no_mangle]
+pub extern "C" fn tizenclaw_messages_list_new() -> *mut c_void {
+    Box::into_raw(Box::new(MessagesListInner { items: Vec::new() })) as *mut c_void
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn tizenclaw_messages_list_free(ptr: *mut c_void) {
+    if !ptr.is_null() {
+        drop(Box::from_raw(ptr as *mut MessagesListInner));
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn tizenclaw_messages_list_add_message(
+    ptr: *mut c_void,
+    msg: *mut c_void,
+) -> c_int {
+    if ptr.is_null() || msg.is_null() {
+        return EINVAL;
+    }
+
+    let list = &mut *(ptr as *mut MessagesListInner);
+    let message = &*(msg as *mut MessageInner);
+    list.items.push(Box::new(message.clone()));
+    OK
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn tizenclaw_messages_list_len(
+    ptr: *mut c_void,
+    out_len: *mut c_int,
+) -> c_int {
+    if ptr.is_null() || out_len.is_null() {
+        return EINVAL;
+    }
+
+    let list = &*(ptr as *mut MessagesListInner);
+    match len_to_c_int(list.items.len()) {
+        Ok(len) => {
+            *out_len = len;
+            OK
+        }
+        Err(code) => code,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn tizenclaw_messages_list_get(
+    ptr: *mut c_void,
+    index: c_int,
+    out_msg: *mut *mut c_void,
+) -> c_int {
+    if ptr.is_null() || out_msg.is_null() || index < 0 {
+        return EINVAL;
+    }
+
+    let list = &mut *(ptr as *mut MessagesListInner);
+    let Some(message) = list.items.get_mut(index as usize) else {
+        return EINVAL;
+    };
+    *out_msg = message.as_mut() as *mut MessageInner as *mut c_void;
+    OK
+}
+
+#[no_mangle]
+pub extern "C" fn tizenclaw_message_new() -> *mut c_void {
+    Box::into_raw(Box::new(new_message_inner())) as *mut c_void
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn tizenclaw_message_free(ptr: *mut c_void) {
+    if !ptr.is_null() {
+        drop(Box::from_raw(ptr as *mut MessageInner));
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn tizenclaw_message_set_role(
+    ptr: *mut c_void,
+    role: *const c_char,
+) -> c_int {
+    if ptr.is_null() || role.is_null() {
+        return EINVAL;
+    }
+
+    let message = &mut *(ptr as *mut MessageInner);
+    message.role = get_cstr(role).to_string();
+    OK
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn tizenclaw_message_set_text(
+    ptr: *mut c_void,
+    text: *const c_char,
+) -> c_int {
+    if ptr.is_null() || text.is_null() {
+        return EINVAL;
+    }
+
+    let message = &mut *(ptr as *mut MessageInner);
+    message.text = get_cstr(text).to_string();
+    OK
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn tizenclaw_message_get_role(
+    ptr: *const c_void,
+    out: *mut *mut c_char,
+) -> c_int {
+    if ptr.is_null() {
+        return EINVAL;
+    }
+
+    let message = &*(ptr as *const MessageInner);
+    set_str(out, &message.role)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn tizenclaw_message_get_text(
+    ptr: *const c_void,
+    out: *mut *mut c_char,
+) -> c_int {
+    if ptr.is_null() {
+        return EINVAL;
+    }
+
+    let message = &*(ptr as *const MessageInner);
+    set_str(out, &message.text)
+}
+
+#[no_mangle]
+pub extern "C" fn tizenclaw_response_new() -> *mut c_void {
+    Box::into_raw(Box::new(new_response_inner())) as *mut c_void
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn tizenclaw_response_free(ptr: *mut c_void) {
+    if !ptr.is_null() {
+        drop(Box::from_raw(ptr as *mut ResponseInner));
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn tizenclaw_response_is_success(
+    ptr: *const c_void,
+    out: *mut c_int,
+) -> c_int {
+    if ptr.is_null() || out.is_null() {
+        return EINVAL;
+    }
+
+    let response = &*(ptr as *const ResponseInner);
+    *out = if response.success { 1 } else { 0 };
+    OK
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn tizenclaw_response_get_text(
+    ptr: *const c_void,
+    out: *mut *mut c_char,
+) -> c_int {
+    if ptr.is_null() {
+        return EINVAL;
+    }
+
+    let response = &*(ptr as *const ResponseInner);
+    set_str(out, &response.text)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn tizenclaw_response_get_tool_calls_count(
+    ptr: *const c_void,
+    out: *mut c_int,
+) -> c_int {
+    if ptr.is_null() || out.is_null() {
+        return EINVAL;
+    }
+
+    let response = &*(ptr as *const ResponseInner);
+    match len_to_c_int(response.tool_calls.len()) {
+        Ok(len) => {
+            *out = len;
+            OK
+        }
+        Err(code) => code,
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -720,5 +932,90 @@ mod tests {
             tizenclaw_llm_response_destroy(h);
         }
     }
-}
 
+    #[test]
+    fn test_compat_message_roundtrip() {
+        unsafe {
+            let msg = tizenclaw_message_new();
+            assert!(!msg.is_null());
+
+            let role = CString::new("user").unwrap();
+            let text = CString::new("hello").unwrap();
+            assert_eq!(tizenclaw_message_set_role(msg, role.as_ptr()), OK);
+            assert_eq!(tizenclaw_message_set_text(msg, text.as_ptr()), OK);
+
+            let mut out_role: *mut c_char = std::ptr::null_mut();
+            let mut out_text: *mut c_char = std::ptr::null_mut();
+            assert_eq!(tizenclaw_message_get_role(msg, &mut out_role), OK);
+            assert_eq!(tizenclaw_message_get_text(msg, &mut out_text), OK);
+            assert_eq!(CStr::from_ptr(out_role).to_str().unwrap(), "user");
+            assert_eq!(CStr::from_ptr(out_text).to_str().unwrap(), "hello");
+
+            libc::free(out_role as *mut libc::c_void);
+            libc::free(out_text as *mut libc::c_void);
+            tizenclaw_message_free(msg);
+        }
+    }
+
+    #[test]
+    fn test_compat_messages_list_len_and_get() {
+        unsafe {
+            let list = tizenclaw_messages_list_new();
+            let msg = tizenclaw_message_new();
+            let text = CString::new("hello").unwrap();
+            assert_eq!(tizenclaw_message_set_text(msg, text.as_ptr()), OK);
+
+            assert_eq!(tizenclaw_messages_list_add_message(list, msg), OK);
+
+            let mut len = 0;
+            assert_eq!(tizenclaw_messages_list_len(list, &mut len), OK);
+            assert_eq!(len, 1);
+
+            let mut out_msg: *mut c_void = std::ptr::null_mut();
+            assert_eq!(tizenclaw_messages_list_get(list, 0, &mut out_msg), OK);
+
+            let mut out_text: *mut c_char = std::ptr::null_mut();
+            assert_eq!(tizenclaw_message_get_text(out_msg, &mut out_text), OK);
+            assert_eq!(CStr::from_ptr(out_text).to_str().unwrap(), "hello");
+
+            libc::free(out_text as *mut libc::c_void);
+            tizenclaw_message_free(msg);
+            tizenclaw_messages_list_free(list);
+        }
+    }
+
+    #[test]
+    fn test_compat_response_defaults() {
+        unsafe {
+            let response = tizenclaw_response_new();
+            assert!(!response.is_null());
+
+            let mut success = -1;
+            let mut tool_calls = -1;
+            assert_eq!(tizenclaw_response_is_success(response, &mut success), OK);
+            assert_eq!(tizenclaw_response_get_tool_calls_count(response, &mut tool_calls), OK);
+            assert_eq!(success, 0);
+            assert_eq!(tool_calls, 0);
+
+            tizenclaw_response_free(response);
+        }
+    }
+
+    #[test]
+    fn test_compat_null_inputs_return_einval() {
+        unsafe {
+            let mut out_len = 0;
+            let mut out_msg: *mut c_void = std::ptr::null_mut();
+            let mut out_success = 0;
+            let mut out_text: *mut c_char = std::ptr::null_mut();
+
+            assert_eq!(tizenclaw_messages_list_add_message(std::ptr::null_mut(), std::ptr::null_mut()), EINVAL);
+            assert_eq!(tizenclaw_messages_list_len(std::ptr::null_mut(), &mut out_len), EINVAL);
+            assert_eq!(tizenclaw_messages_list_get(std::ptr::null_mut(), 0, &mut out_msg), EINVAL);
+            assert_eq!(tizenclaw_message_set_role(std::ptr::null_mut(), std::ptr::null()), EINVAL);
+            assert_eq!(tizenclaw_message_get_text(std::ptr::null(), &mut out_text), EINVAL);
+            assert_eq!(tizenclaw_response_is_success(std::ptr::null(), &mut out_success), EINVAL);
+            assert_eq!(tizenclaw_response_get_tool_calls_count(std::ptr::null(), &mut out_len), EINVAL);
+        }
+    }
+}
