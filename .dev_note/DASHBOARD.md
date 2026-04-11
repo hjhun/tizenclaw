@@ -639,6 +639,128 @@
   - PASS: cleanup script executed, ignored artifacts stayed unstaged,
     and the commit message followed the repository format
 
+## OpenAI OAuth Devel Regression Cycle
+
+- [x] Stage 1: Planning
+  - Request:
+    add a `tizenclaw-tests` regression for the recent OpenAI Codex OAuth
+    expiry hardening and make `./deploy_host.sh --devel` run it
+    automatically when devel mode starts
+  - Cycle classification:
+    host-default (`./deploy_host.sh`)
+  - Runtime surface:
+    `tizenclaw-tests` scenario assertions, a dedicated OAuth regression
+    scenario under `tests/system/`, and the host devel-mode startup path
+    in `deploy_host.sh`
+  - System-test requirement:
+    add a dedicated `tests/system/openai_oauth_regression.json`
+    scenario before implementation and use it as the devel-mode entry
+    gate
+- [x] Supervisor Gate after Planning
+  - PASS: host-default routing, devel entry scope, and system-test
+    planning were recorded
+
+- [x] Stage 2: Design
+  - Ownership boundaries:
+    `tizenclaw-tests` owns scenario assertion semantics,
+    `tests/system/openai_oauth_regression.json` owns the daemon-visible
+    OAuth regression contract, and `deploy_host.sh` owns automatic test
+    invocation during devel startup
+  - Persistence impact:
+    no new runtime state file is required; the scenario reads existing
+    daemon IPC output from `get_llm_config`
+  - Verification design:
+    extend scenario assertions with numeric comparison so the regression
+    can prove `oauth.expires_at > 0`, then have `--devel` fail fast if
+    the dedicated scenario does not pass after daemon startup
+  - Design artifact:
+    `.dev_note/docs/openai_oauth_devel_regression_design_20260411.md`
+- [x] Supervisor Gate after Design
+  - PASS: assertion ownership, persistence impact, and devel-mode
+    verification path are documented
+
+- [x] Stage 3: Development
+  - TDD contract:
+    added `tests/system/openai_oauth_regression.json` before product
+    code changes so the regression contract exists independently from
+    the broader smoke scenario
+  - Red result:
+    the first `./deploy_host.sh --test` run failed because
+    `tizenclaw-tests` did not support the new
+    `greater_than` assertion needed to prove `oauth.expires_at > 0`
+  - Green result:
+    `tizenclaw-tests` now supports numeric `greater_than` assertions,
+    exposes a dedicated `openai-oauth-regression` entry path, and
+    `deploy_host.sh --devel` runs the installed scenario automatically
+    after daemon startup with a bounded startup-race retry window
+  - Regression coverage:
+    added scenario-engine tests for both passing and failing
+    `greater_than` checks
+  - Development verification:
+    `./deploy_host.sh --test` passed after the fix
+- [x] Supervisor Gate after Development
+  - PASS: the dedicated scenario was added first, script-driven red/green
+    validation was used, and the devel entry regression path is covered
+
+- [x] Stage 4: Build & Deploy
+  - Command:
+    `./deploy_host.sh --devel`
+  - Result:
+    host binaries were installed under `/home/hjhun/.tizenclaw`, the
+    daemon restarted in devel mode, and the devel entry regression check
+    passed after one bounded retry during daemon socket startup
+  - Survival check:
+    `./deploy_host.sh --status` reported running daemon, tool executor,
+    and dashboard processes after the devel-mode deploy
+- [x] Supervisor Gate after Build & Deploy
+  - PASS: the host-default devel deployment path completed and the
+    automatic OAuth regression gate executed successfully
+
+- [x] Stage 5: Test & Review
+  - Static review focus:
+    the new regression stays narrow to daemon-visible OAuth metadata,
+    the scenario engine comparison remains numeric-only, and the devel
+    startup retry window is bounded to avoid indefinite hangs
+  - Runtime evidence:
+    `./deploy_host.sh --status` showed healthy daemon, executor, and
+    dashboard processes with port `9091` listening
+  - Log evidence:
+    `~/.tizenclaw/logs/tizenclaw.log` contained
+    `Devel mode (15ms) devel prompt bridge ready` and
+    `Daemon ready (1317ms) startup sequence completed`
+  - Dedicated system test:
+    `~/.tizenclaw/bin/tizenclaw-tests scenario --file tests/system/openai_oauth_regression.json`
+    passed and returned `backends.openai-codex.oauth.expires_at`
+  - Devel-entry proof:
+    `./deploy_host.sh --devel` ran the same scenario automatically and
+    passed after one retry following an initial socket startup race
+  - Repository regression:
+    `./deploy_host.sh --test` passed with all tests green, including the
+    new `tizenclaw-tests` comparison coverage
+  - QA verdict:
+    PASS
+- [x] Supervisor Gate after Test & Review
+  - PASS: devel-mode runtime logs, dedicated OAuth scenario proof, and
+    host regression evidence are captured
+
+- [x] Stage 6: Commit
+  - Workspace cleanup:
+    `bash .agent/scripts/cleanup_workspace.sh` completed before staging
+  - Staged scope:
+    `tizenclaw-tests` assertion and CLI wiring, the dedicated OAuth
+    regression scenario, `deploy_host.sh` devel auto-check wiring, and
+    `.dev_note` tracking only
+  - Ignored-path handling:
+    `.dev_note/docs/openai_oauth_devel_regression_design_20260411.md`
+    is force-added because `.gitignore` ignores the `.dev_note` tree
+  - Commit message path:
+    `.tmp/commit_msg.txt`
+  - Commit title:
+    `Add devel OAuth regression gate`
+- [x] Supervisor Gate after Commit
+  - PASS: cleanup script executed, ignored artifacts stayed unstaged,
+    and the commit message followed the repository format
+
 ## Tool Execution Audit Cycle
 
 - [x] Stage 1: Planning

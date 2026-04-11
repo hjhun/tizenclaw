@@ -27,6 +27,8 @@ pub struct ScenarioAssertion {
     pub equals: Option<Value>,
     #[serde(default)]
     pub contains: Option<String>,
+    #[serde(default)]
+    pub greater_than: Option<Value>,
 }
 
 #[derive(Debug)]
@@ -87,6 +89,22 @@ fn assert_result(result: &Value, assertion: &ScenarioAssertion) -> Result<(), St
             return Err(format!(
                 "Path '{}' did not contain '{}'",
                 assertion.path, expected_substring
+            ));
+        }
+    }
+
+    if let Some(expected_min) = &assertion.greater_than {
+        let actual = value.ok_or_else(|| format!("Path '{}' was not found", assertion.path))?;
+        let actual_num = actual
+            .as_f64()
+            .ok_or_else(|| format!("Path '{}' is not numeric", assertion.path))?;
+        let expected_num = expected_min
+            .as_f64()
+            .ok_or_else(|| format!("greater_than for '{}' is not numeric", assertion.path))?;
+        if actual_num <= expected_num {
+            return Err(format!(
+                "Path '{}' was not greater than {} (actual={})",
+                assertion.path, expected_min, actual
             ));
         }
     }
@@ -208,12 +226,14 @@ mod tests {
                         exists: false,
                         equals: Some(json!("session")),
                         contains: None,
+                        greater_than: None,
                     },
                     ScenarioAssertion {
                         path: "usage.prompt_tokens".into(),
                         exists: true,
                         equals: Some(json!(0)),
                         contains: None,
+                        greater_than: None,
                     },
                 ],
             }],
@@ -223,5 +243,41 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].name, "usage");
         server.join().unwrap();
+    }
+
+    #[test]
+    fn assert_result_supports_greater_than_for_numeric_regressions() {
+        let result = json!({
+            "oauth": {
+                "expires_at": 42
+            }
+        });
+        let assertion = ScenarioAssertion {
+            path: "oauth.expires_at".into(),
+            exists: false,
+            equals: None,
+            contains: None,
+            greater_than: Some(json!(0)),
+        };
+
+        assert!(assert_result(&result, &assertion).is_ok());
+    }
+
+    #[test]
+    fn assert_result_rejects_values_not_greater_than_threshold() {
+        let result = json!({
+            "oauth": {
+                "expires_at": 0
+            }
+        });
+        let assertion = ScenarioAssertion {
+            path: "oauth.expires_at".into(),
+            exists: false,
+            equals: None,
+            contains: None,
+            greater_than: Some(json!(0)),
+        };
+
+        assert!(assert_result(&result, &assertion).is_err());
     }
 }

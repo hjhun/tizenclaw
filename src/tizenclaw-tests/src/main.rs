@@ -9,6 +9,7 @@ fn print_usage() {
     eprintln!("Usage:");
     eprintln!("  tizenclaw-tests call --method <name> [--params '<json>'] [--socket-path <path>] [--socket-name <name>]");
     eprintln!("  tizenclaw-tests scenario --file <path> [--socket-path <path>] [--socket-name <name>]");
+    eprintln!("  tizenclaw-tests openai-oauth-regression [--socket-path <path>] [--socket-name <name>]");
 }
 
 fn parse_json(value: Option<String>) -> Result<Value, String> {
@@ -123,6 +124,15 @@ fn handle_scenario(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn handle_openai_oauth_regression(args: &[String]) -> Result<(), String> {
+    let mut scenario_args = vec![
+        "--file".to_string(),
+        "tests/system/openai_oauth_regression.json".to_string(),
+    ];
+    scenario_args.extend(args.iter().cloned());
+    handle_scenario(&scenario_args)
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() {
@@ -134,6 +144,7 @@ fn main() {
     let result = match command.as_str() {
         "call" => handle_call(&args[1..]),
         "scenario" => handle_scenario(&args[1..]),
+        "openai-oauth-regression" => handle_openai_oauth_regression(&args[1..]),
         _ => {
             print_usage();
             Err(format!("Unknown command: {}", command))

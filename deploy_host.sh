@@ -30,6 +30,7 @@ TEST_TOOL_NAME="tizenclaw-tests"
 WEB_DASHBOARD_NAME="tizenclaw-web-dashboard"
 HOST_DASHBOARD_PORT_DEFAULT=9091
 DEVEL_BRANCH_PREFIX="devel"
+DEVEL_OAUTH_REGRESSION_SCENARIO="tests/system/openai_oauth_regression.json"
 
 HOST_BASE_DIR="${HOME}/.tizenclaw"
 INSTALL_DIR="${HOST_BASE_DIR}/bin"
@@ -875,6 +876,39 @@ do_run() {
   fi
 }
 
+run_devel_entry_tests() {
+  if [ "${DEVEL_MODE}" != true ]; then
+    return 0
+  fi
+
+  header "Devel Entry Regression Check"
+  log "Running: ${INSTALL_DIR}/${TEST_TOOL_NAME} scenario --file ${DEVEL_OAUTH_REGRESSION_SCENARIO}"
+
+  if [ "${DRY_RUN}" = true ]; then
+    echo -e "  ${YELLOW}[DRY-RUN]${NC} ${INSTALL_DIR}/${TEST_TOOL_NAME} scenario --file ${DEVEL_OAUTH_REGRESSION_SCENARIO}"
+    ok "Skipped devel entry regression check (dry-run)"
+    return 0
+  fi
+
+  # Devel mode should fail fast when the linked Codex OAuth cache regresses.
+  # Give the freshly spawned daemon a short readiness window so we validate
+  # the live service rather than racing the socket startup.
+  local attempt
+  local max_attempts=10
+  for attempt in $(seq 1 "${max_attempts}"); do
+    if "${INSTALL_DIR}/${TEST_TOOL_NAME}" scenario --file "${DEVEL_OAUTH_REGRESSION_SCENARIO}"; then
+      ok "Devel entry OAuth regression check passed"
+      return 0
+    fi
+    if [ "${attempt}" -lt "${max_attempts}" ]; then
+      warn "Devel regression check hit a startup race; retrying (${attempt}/${max_attempts})"
+      sleep 1
+    fi
+  done
+
+  fail "Devel entry OAuth regression check failed"
+}
+
 ensure_existing_install() {
   if [ ! -x "${INSTALL_DIR}/${PKG_NAME}" ]; then
     fail "Installed host binary not found: ${INSTALL_DIR}/${PKG_NAME}"
@@ -958,6 +992,7 @@ main() {
 
   do_install
   do_run
+  run_devel_entry_tests
   show_summary
 }
 

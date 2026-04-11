@@ -1,0 +1,34 @@
+{
+  "name": "openai-oauth-regression",
+  "steps": [
+    {
+      "name": "read-openai-codex-oauth",
+      "method": "get_llm_config",
+      "params": {
+        "path": "backends.openai-codex.oauth"
+      },
+      "assertions": [
+        {
+          "path": "status",
+          "equals": "ok"
+        },
+        {
+          "path": "value.source",
+          "equals": "codex_cli"
+        },
+        {
+          "path": "value.auth_path",
+          "contains": ".codex/auth.json"
+        },
+        {
+          "path": "value.account_id",
+          "exists": true
+        },
+        {
+          "path": "value.expires_at",
+          "greater_than": 0
+        }
+      ]
+    }
+  ]
+}
