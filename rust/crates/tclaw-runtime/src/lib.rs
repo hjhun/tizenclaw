@@ -18,6 +18,7 @@ pub mod mcp_client;
 pub mod mcp_lifecycle_hardened;
 pub mod mcp_server;
 pub mod mcp_stdio;
+pub mod mcp_tool_bridge;
 pub mod oauth;
 pub mod permission_enforcer;
 pub mod permissions;
@@ -44,7 +45,7 @@ pub use bash_validation::{BashValidationResult, BashValidationViolation};
 pub use bootstrap::{RuntimeBootstrap, RuntimeModuleMap};
 pub use branch_lock::BranchLockState;
 pub use compact::CompactionPlan;
-pub use config::{RuntimeConfig, RuntimeConfigPatch, RuntimePaths, RuntimeProfile};
+pub use config::{McpRuntimeConfig, RuntimeConfig, RuntimeConfigPatch, RuntimePaths, RuntimeProfile};
 pub use config_validate::{ConfigValidationIssue, ConfigValidationReport};
 pub use conversation::{
     ApiRequest, AssistantEvent, ConversationEngine, ConversationEngineOptions, ConversationEvent,
@@ -60,11 +61,21 @@ pub use hooks::{HookPhase, HookSpec};
 pub use json::{JsonEnvelope, JsonEnvelopeError};
 pub use lane_events::{LaneEvent, LaneEventKind};
 pub use lsp_client::LspClientSpec;
-pub use mcp::McpRuntimeState;
+pub use mcp::{
+    bridged_tool_name, JsonRpcError, JsonRpcId, JsonRpcNotification, JsonRpcRequest,
+    JsonRpcResponse, McpClientMetadata, McpContentBlock, McpInitializeParams,
+    McpInitializeResult, McpListResourcesResult, McpListToolsResult, McpPeerCapabilities,
+    McpReadResourceParams, McpReadResourceResult, McpResourceCapabilities,
+    McpResourceContents, McpResourceDefinition, McpRuntimeState, McpServerInfo,
+    McpToolCallParams, McpToolCallResult, McpToolCapabilities, McpToolDefinition,
+};
 pub use mcp_client::McpClientSpec;
-pub use mcp_lifecycle_hardened::McpLifecyclePolicy;
-pub use mcp_server::McpServerRegistration;
-pub use mcp_stdio::{McpStdioServerSpec, StdioTransportMode};
+pub use mcp_lifecycle_hardened::{ManagedMcpServer, McpLifecyclePolicy, McpServerHealth};
+pub use mcp_server::{McpServerRegistration, McpServerState};
+pub use mcp_stdio::{
+    McpStdioServerSpec, McpTransport, McpTransportError, StdioMcpTransport, StdioTransportMode,
+};
+pub use mcp_tool_bridge::{McpBridgePolicy, McpBridgedToolExecutor, McpToolBridge};
 pub use oauth::{OAuthProvider, OAuthState};
 pub use permission_enforcer::{
     DenyAllPrompter, PermissionEnforcer, PermissionEnforcerState, PermissionPrompter,

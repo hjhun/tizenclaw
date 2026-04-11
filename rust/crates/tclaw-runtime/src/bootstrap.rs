@@ -31,6 +31,7 @@ impl RuntimeModuleMap {
                 "mcp_lifecycle_hardened",
                 "mcp_server",
                 "mcp_stdio",
+                "mcp_tool_bridge",
                 "oauth",
                 "permission_enforcer",
                 "permissions",

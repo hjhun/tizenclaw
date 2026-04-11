@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    mcp_lifecycle_hardened::McpLifecyclePolicy,
+    mcp_stdio::McpStdioServerSpec,
     permissions::PermissionMode,
     policy_engine::PolicyEngineState,
     sandbox::SandboxPolicy,
@@ -33,6 +35,27 @@ impl Default for RuntimePaths {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct McpRuntimeConfig {
+    pub enabled: bool,
+    #[serde(default)]
+    pub servers: Vec<McpStdioServerSpec>,
+    #[serde(default)]
+    pub lifecycle_policy: McpLifecyclePolicy,
+    pub tool_namespace: String,
+}
+
+impl Default for McpRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            servers: Vec::new(),
+            lifecycle_policy: McpLifecyclePolicy::default(),
+            tool_namespace: "mcp".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RuntimeConfig {
     pub profile: RuntimeProfile,
     pub paths: RuntimePaths,
@@ -44,6 +67,8 @@ pub struct RuntimeConfig {
     #[serde(default)]
     pub sandbox_policy: SandboxPolicy,
     pub plugin_roots: Vec<String>,
+    #[serde(default)]
+    pub mcp: McpRuntimeConfig,
 }
 
 impl RuntimeConfig {
@@ -72,6 +97,9 @@ impl RuntimeConfig {
         if let Some(plugin_roots) = patch.plugin_roots {
             self.plugin_roots = plugin_roots;
         }
+        if let Some(mcp) = patch.mcp {
+            self.mcp = mcp;
+        }
     }
 }
 
@@ -86,6 +114,7 @@ impl Default for RuntimeConfig {
             sandbox_enabled: true,
             sandbox_policy: SandboxPolicy::default(),
             plugin_roots: vec!["plugins".to_string()],
+            mcp: McpRuntimeConfig::default(),
         }
     }
 }
@@ -100,6 +129,7 @@ pub struct RuntimeConfigPatch {
     pub sandbox_enabled: Option<bool>,
     pub sandbox_policy: Option<SandboxPolicy>,
     pub plugin_roots: Option<Vec<String>>,
+    pub mcp: Option<McpRuntimeConfig>,
 }
 
 #[cfg(test)]
