@@ -5991,6 +5991,7 @@ impl AgentCore {
                             store.add_structured_tool_result_message(
                                 session_id,
                                 trace_name,
+                                &result.tool_name,
                                 &result.tool_call_id,
                                 &result.tool_result,
                             );

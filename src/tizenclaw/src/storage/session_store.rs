@@ -356,6 +356,7 @@ impl SessionStore {
         &self,
         session_id: &str,
         tool_name: &str,
+        actual_tool_name: &str,
         tool_call_id: &str,
         result: &Value,
     ) {
@@ -372,6 +373,7 @@ impl SessionStore {
                 "message": {
                     "role": "toolResult",
                     "tool_name": tool_name,
+                    "actual_tool_name": actual_tool_name,
                     "tool_call_id": tool_call_id,
                     "content": [rendered]
                 }
@@ -1053,7 +1055,8 @@ fn parse_transcript_event(event: &Value) -> Vec<SessionMessage> {
         "toolResult" => vec![SessionMessage {
             role: "tool".to_string(),
             tool_name: message
-                .get("tool_name")
+                .get("actual_tool_name")
+                .or_else(|| message.get("tool_name"))
                 .and_then(|value| value.as_str())
                 .unwrap_or("")
                 .to_string(),
@@ -1367,6 +1370,7 @@ mod tests {
         store.add_structured_tool_result_message(
             "tool_hist",
             "read_file",
+            "file_manager",
             "call_1",
             &json!({"path": ".tmp/demo.txt", "content": "demo"}),
         );
@@ -1378,8 +1382,30 @@ mod tests {
         assert_eq!(msgs[1].tool_calls.len(), 1);
         assert_eq!(msgs[1].tool_calls[0].id, "call_1");
         assert_eq!(msgs[2].role, "tool");
+        assert_eq!(msgs[2].tool_name, "file_manager");
         assert_eq!(msgs[2].tool_call_id, "call_1");
         assert_eq!(msgs[2].tool_result["content"], json!("demo"));
+    }
+
+    #[test]
+    fn test_load_session_context_prefers_actual_tool_name_for_tool_results() {
+        let tmp = tempdir().unwrap();
+        let store = make_store(tmp.path());
+
+        store.add_structured_tool_result_message(
+            "tool_hist_alias",
+            "list_files",
+            "file_manager",
+            "call_alias",
+            &json!({"entries": []}),
+        );
+
+        let (msgs, from_compacted) = store.load_session_context("tool_hist_alias", 10);
+        assert!(!from_compacted);
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].role, "tool");
+        assert_eq!(msgs[0].tool_name, "file_manager");
+        assert_eq!(msgs[0].tool_call_id, "call_alias");
     }
 
     #[test]
@@ -1514,6 +1540,7 @@ mod tests {
         store.add_structured_tool_result_message(
             "bench_s2",
             "read_file",
+            "file_manager",
             "call_1",
             &json!({"content": "demo"}),
         );

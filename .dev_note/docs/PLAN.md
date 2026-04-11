@@ -8,7 +8,7 @@ registration metadata, and IPC visibility
 `tizenclaw-tests` scenario updates for the runtime-visible slice
 [O] Phase 4. Extend the same ownership model into agent-loop control,
 resume state, and broader observability seams
-[ ] Phase 5. Refactor memory and session persistence to align with the
+[O] Phase 5. Refactor memory and session persistence to align with the
 runtime topology contract
 [ ] Phase 6. Rebuild tool and skill loading around richer capability
 activation and registry metadata

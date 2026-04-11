@@ -209,6 +209,24 @@
   - PASS: runtime logs, IPC scenario proof, and repository-wide
     regression evidence are captured
 
+## Post-cycle Alignment
+
+- Plan synchronization:
+  `.dev_note/docs/PLAN.md` now marks phase 5 complete so the canonical
+  plan matches the committed memory/session runtime slice.
+- Supervisor continuation alignment:
+  the saved `.dev` workflow pointers had been advanced to `phase_6`,
+  but the latest supervisor report expects this continuation to remain
+  on `phase_4`; `.dev/ROADMAP.md`, `.dev/session.json`,
+  `.dev/workflow_state.json`, and the active session state files were
+  corrected so the saved-state roadmap focus matches the completed
+  phase-4 control-plane slice while leaving phase 6 as later work.
+- Host runtime refresh:
+  a continuation `./deploy_host.sh --status` showed the host daemon down,
+  so `./deploy_host.sh` was re-run and `./deploy_host.sh --status`
+  confirmed healthy daemon, tool executor, dashboard, and port `9091`
+  listeners with a fresh `Daemon ready (1358ms)` log line.
+
 - [x] Stage 6: Commit
   - Workspace cleanup:
     `bash .agent/scripts/cleanup_workspace.sh` completed before staging
@@ -236,6 +254,154 @@
     and the phase-4 observability slice closed cleanly
 
 ## Phase 5 Runtime Alignment Cycle
+
+## OpenAI Codex OAuth Diagnostic Cycle
+
+- [x] Stage 1: Planning
+  - Cycle classification:
+    host-default (`./deploy_host.sh`)
+  - Diagnostic scope:
+    verify whether the current `openai-codex` failure is caused by
+    OAuth/session linkage, daemon runtime state, or request-history
+    reconstruction
+- [x] Supervisor Gate after Planning
+  - PASS: host-default routing and diagnostic scope recorded
+
+- [x] Stage 2: Design
+  - Inspection focus:
+    compare the persisted transcript format with the reconstructed
+    Codex Responses input shape
+  - Boundary hypothesis:
+    alias-style tool trace names may diverge from runtime tool
+    declaration names during history replay
+- [x] Supervisor Gate after Design
+  - PASS: runtime boundary and replay hypothesis recorded
+
+- [x] Stage 4: Build & Deploy
+  - Command:
+    `./deploy_host.sh --status`
+  - Result:
+    host daemon, tool executor, and dashboard were all healthy on port
+    `9091`, so the failure is not a dead daemon or missing deployment
+- [x] Supervisor Gate after Build & Deploy
+  - PASS: host runtime availability was confirmed
+
+- [x] Stage 5: Test & Review
+  - Auth status evidence:
+    `~/.tizenclaw/bin/tizenclaw-cli auth openai-codex status --json`
+    reported `status=ok`, `codex_login_state=logged_in`, and
+    `linked=true`
+  - Runtime evidence:
+    `~/.tizenclaw/logs/tizenclaw.stdout.log` shows
+    `Primary LLM backend 'openai-codex' initialized`
+  - Failure evidence:
+    the same log shows `openai-codex (HTTP 400): No tool output found
+    for function call call_j3niCJPuIaJQxpBH5jkPWMWA`
+  - Transcript evidence:
+    session `tg_8728390535_chat-0004` persisted the tool call with
+    `actual_tool_name=file_manager` but stored the paired tool result
+    with `tool_name=list_files`
+  - Code-path finding:
+    `session_store::parse_transcript_tool_calls` restores assistant
+    tool calls from `actual_tool_name`, while
+    `build_responses_input` downgrades tool results whose `tool_name`
+    is not in the active tool declaration set. Because the active tool
+    is `file_manager`, the historical `toolResult(tool_name=list_files)`
+    is replayed as plain user text instead of `function_call_output`.
+    That leaves the restored `function_call(call_j3...)` without a
+    matching tool output, which explains the upstream HTTP 400.
+  - QA verdict:
+    PASS: OAuth linkage is healthy; the live failure is a
+    tool-history replay mismatch, not an authentication outage
+- [x] Supervisor Gate after Test & Review
+  - PASS: auth state, runtime state, transcript evidence, and root
+    cause were captured
+
+## OpenAI Codex Replay Fix Cycle
+
+- [x] Stage 1: Planning
+  - Cycle classification:
+    host-default (`./deploy_host.sh`)
+  - Runtime surface:
+    Codex Responses history replay for persisted tool calls and tool
+    results
+  - System-test note:
+    no dedicated IPC method exposes transcript replay internals, so this
+    cycle uses unit regression coverage plus the existing host IPC smoke
+    scenario as the closest script-driven runtime proof
+- [x] Supervisor Gate after Planning
+  - PASS: host-default routing, runtime surface, and verification plan
+    were recorded
+
+- [x] Stage 2: Design
+  - Compatibility design:
+    accept legacy alias names such as `list_files` during Responses
+    replay, but normalize them back to the active runtime tool name
+    `file_manager`
+  - Persistence design:
+    tool result transcript events now store both the trace alias and the
+    actual runtime tool name so future session loads can reconstruct the
+    canonical tool identity directly
+- [x] Supervisor Gate after Design
+  - PASS: replay normalization and persistence compatibility are
+    documented
+
+- [x] Stage 3: Development
+  - Product-code result:
+    added Responses replay alias normalization, persisted
+    `actual_tool_name` on tool result events, and restored tool results
+    from `actual_tool_name` when loading transcripts
+  - Regression coverage:
+    added unit coverage proving that historical `list_files` results are
+    replayed as `function_call_output` for `file_manager`, and that
+    session transcript loading prefers `actual_tool_name`
+  - Development verification:
+    `./deploy_host.sh -b` passed
+- [x] Supervisor Gate after Development
+  - PASS: script-driven build verification succeeded and the replay fix
+    is covered by focused unit tests
+
+- [x] Stage 4: Build & Deploy
+  - Command:
+    `./deploy_host.sh`
+  - Result:
+    host binaries were reinstalled and the daemon restarted cleanly
+  - Survival check:
+    `./deploy_host.sh --status` reported healthy daemon, executor, and
+    dashboard on port `9091`
+- [x] Supervisor Gate after Build & Deploy
+  - PASS: host deployment completed and the updated runtime came back
+    online
+
+- [x] Stage 5: Test & Review
+  - Repository regression:
+    `./deploy_host.sh --test` passed with all tests green, including the
+    new Responses replay and session transcript compatibility coverage
+  - Runtime proof:
+    `~/.tizenclaw/bin/tizenclaw-tests scenario --file tests/system/basic_ipc_smoke.json`
+    passed after redeploy
+  - QA verdict:
+    PASS
+- [x] Supervisor Gate after Test & Review
+  - PASS: regression, runtime smoke proof, and replay compatibility
+    evidence are captured
+
+- [x] Stage 6: Commit
+  - Workspace cleanup:
+    `bash .agent/scripts/cleanup_workspace.sh` completed before staging
+  - Staged scope:
+    Codex replay compatibility fixes, transcript persistence updates,
+    `.dev_note` tracking updates, and the synchronized plan document
+  - Excluded untracked scope:
+    `.dev/` session snapshots remain unstaged because they are generated
+    workflow state, not product-source changes
+  - Commit message path:
+    `.tmp/commit_msg.txt`
+  - Push target:
+    `origin/develRust`
+- [x] Supervisor Gate after Commit
+  - PASS: cleanup completed, generated session state stayed unstaged,
+    and the cycle is ready for commit and push
 
 - [x] Stage 1: Planning
   - Runtime surface:

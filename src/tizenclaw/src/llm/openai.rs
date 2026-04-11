@@ -96,6 +96,27 @@ impl OpenAiBackend {
         text.trim().to_string()
     }
 
+    fn resolve_responses_tool_name<'a>(
+        tool_name: &'a str,
+        valid_tools: &std::collections::HashSet<String>,
+    ) -> Option<&'a str> {
+        let has_tool = |candidate: &str| valid_tools.iter().any(|name| name == candidate);
+        let trimmed = tool_name.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        if has_tool(trimmed) {
+            return Some(trimmed);
+        }
+
+        let canonical = match trimmed {
+            "read_file" | "write_file" | "list_files" => "file_manager",
+            other => other,
+        };
+
+        has_tool(canonical).then_some(canonical)
+    }
+
     fn config_string<'a>(config: &'a Value, path: &[&str]) -> Option<&'a str> {
         let mut cursor = config;
         for segment in path {
@@ -474,7 +495,7 @@ impl OpenAiBackend {
     ) -> Vec<Value> {
         let mut valid_tools = std::collections::HashSet::new();
         for tool in tools {
-            valid_tools.insert(tool.name.as_str());
+            valid_tools.insert(tool.name.clone());
         }
 
         let mut msgs = Vec::new();
@@ -485,14 +506,19 @@ impl OpenAiBackend {
         for msg in messages {
             let text = Self::trimmed_text(&msg.text);
             let mut is_downgraded = false;
-            if msg.role == "tool" && !valid_tools.contains(msg.tool_name.as_str()) {
+            if msg.role == "tool"
+                && Self::resolve_responses_tool_name(msg.tool_name.as_str(), &valid_tools).is_none()
+            {
                 is_downgraded = true;
             }
             if !msg.tool_calls.is_empty()
                 && msg
                     .tool_calls
                     .iter()
-                    .any(|tool_call| !valid_tools.contains(tool_call.name.as_str()))
+                    .any(|tool_call| {
+                        Self::resolve_responses_tool_name(tool_call.name.as_str(), &valid_tools)
+                            .is_none()
+                    })
             {
                 is_downgraded = true;
             }
@@ -588,7 +614,7 @@ impl OpenAiBackend {
     fn build_responses_input(&self, messages: &[LlmMessage], tools: &[LlmToolDecl]) -> Vec<Value> {
         let mut valid_tools = std::collections::HashSet::new();
         for tool in tools {
-            valid_tools.insert(tool.name.as_str());
+            valid_tools.insert(tool.name.clone());
         }
 
         let mut input = Vec::new();
@@ -596,14 +622,19 @@ impl OpenAiBackend {
         for msg in messages {
             let text = Self::trimmed_text(&msg.text);
             let mut is_downgraded = false;
-            if msg.role == "tool" && !valid_tools.contains(msg.tool_name.as_str()) {
+            if msg.role == "tool"
+                && Self::resolve_responses_tool_name(msg.tool_name.as_str(), &valid_tools).is_none()
+            {
                 is_downgraded = true;
             }
             if !msg.tool_calls.is_empty()
                 && msg
                     .tool_calls
                     .iter()
-                    .any(|tool_call| !valid_tools.contains(tool_call.name.as_str()))
+                    .any(|tool_call| {
+                        Self::resolve_responses_tool_name(tool_call.name.as_str(), &valid_tools)
+                            .is_none()
+                    })
             {
                 is_downgraded = true;
             }
@@ -659,10 +690,15 @@ impl OpenAiBackend {
                         input.push(Self::responses_message("assistant", &text));
                     }
                     for tool_call in &msg.tool_calls {
+                        let resolved_name = Self::resolve_responses_tool_name(
+                            tool_call.name.as_str(),
+                            &valid_tools,
+                        )
+                        .unwrap_or(tool_call.name.as_str());
                         input.push(json!({
                             "type": "function_call",
                             "call_id": tool_call.id,
-                            "name": tool_call.name,
+                            "name": resolved_name,
                             "arguments": tool_call.args.to_string()
                         }));
                     }
@@ -1347,8 +1383,7 @@ mod tests {
         OpenAiBackend, OpenAiTransport, CHATGPT_BACKEND_API, OPENAI_CODEX_RESPONSES_PATH,
         OPENAI_RESPONSES_PATH,
     };
-    use crate::llm::backend::LlmBackend;
-    use crate::llm::backend::LlmMessage;
+    use crate::llm::backend::{LlmBackend, LlmMessage, LlmToolCall, LlmToolDecl};
     use base64::Engine;
     use serde_json::{json, Value};
     use tempfile::tempdir;
@@ -1545,6 +1580,40 @@ mod tests {
         assert_eq!(input[0]["content"][0]["type"], json!("input_text"));
         assert_eq!(input[1]["content"][0]["type"], json!("output_text"));
         assert_eq!(input[2]["content"][0]["type"], json!("input_text"));
+    }
+
+    #[test]
+    fn responses_input_preserves_file_manager_alias_history_as_tool_io() {
+        let backend = OpenAiBackend::new("openai-codex");
+        let input = backend.build_responses_input(
+            &[
+                LlmMessage {
+                    role: "assistant".to_string(),
+                    tool_calls: vec![LlmToolCall {
+                        id: "call_1".to_string(),
+                        name: "file_manager".to_string(),
+                        args: json!({"operation": "list", "path": "/tmp"}),
+                    }],
+                    ..Default::default()
+                },
+                LlmMessage::tool_result(
+                    "call_1",
+                    "list_files",
+                    json!({"entries": [{"path": "/tmp/demo.txt"}]}),
+                ),
+            ],
+            &[LlmToolDecl {
+                name: "file_manager".to_string(),
+                description: "Manage files".to_string(),
+                parameters: json!({}),
+            }],
+        );
+
+        assert_eq!(input.len(), 2);
+        assert_eq!(input[0]["type"], json!("function_call"));
+        assert_eq!(input[0]["name"], json!("file_manager"));
+        assert_eq!(input[1]["type"], json!("function_call_output"));
+        assert_eq!(input[1]["call_id"], json!("call_1"));
     }
 
     #[test]
