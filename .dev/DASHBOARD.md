@@ -2,289 +2,193 @@
 
 ## Actual Progress
 
-- Goal: Prompt 40: Plugin Lifecycle and Hooks
-- Prompt-driven scope: Rebuild the Rust plugin framework in `rust/crates/tclaw-plugins`
-- Active roadmap focus: plugin manifests, permissions, lifecycle hooks, discovery, tools
-- Current workflow phase: follow-up verification
-- Last completed workflow phase: commit & push
-- Supervisor verdict: `rework_required`
-- Escalation status: `none`
-- Resume point: Continue from the first incomplete workflow stage in this file
+- Goal: Prompt 41: CLI Surface and Terminal UX
+- Prompt-driven scope: Phase 4. Supervisor Validation, Continuation Loop, and Resume prompt-driven setup for Follow the guidance files below before making changes.
+- Active roadmap focus:
+- Phase 4. Supervisor Validation, Continuation Loop, and Resume
+- Current workflow phase: plan
+- Last completed workflow phase: none
+- Supervisor verdict: `approved`
+- Escalation status: `approved`
+- Resume point: Return to Plan and resume from the first unchecked PLAN item if setup is interrupted
 
 ## In Progress
 
-- Final verification rerun after synchronizing the prompt-derived PLAN and
-  dashboard state
+- Review the prompt-derived goal and success criteria for Prompt 41: CLI Surface and Terminal UX.
+- Review repository guidance from AGENTS.md, .github/workflows/ci.yml, .github/workflows/release-host-bundle.yml
+- Generate DASHBOARD.md and PLAN.md from the active prompt before implementation continues.
 
 ## Progress Notes
 
-- Repository rules to follow: `AGENTS.md`
-- Cycle classification: `host-default`
-- Default validation path: `./deploy_host.sh`
-- Runtime surface: `rust/crates/tclaw-plugins` composed with `tclaw-runtime`,
-  `tclaw-tools`, and `tclaw-commands`
-- `tizenclaw-tests` scenario decision: no new scenario planned because this task
-  does not introduce a daemon IPC contract; repository/unit coverage and host
-  script validation will be the verification path unless implementation proves a
-  daemon-visible contract was added later
-
-## Stage Records
-
-### Stage 1 Planning
-
-Planning Progress:
-- [x] Step 1: Classify the cycle (host-default vs explicit Tizen)
-- [x] Step 2: Define the affected runtime surface
-- [x] Step 3: Decide which tizenclaw-tests scenario will verify the change
-- [x] Step 4: Record the plan in .dev/DASHBOARD.md
-
-Summary:
-- The task is a host-default development cycle. No explicit Tizen packaging or
-  device validation was requested.
-- The affected runtime surface is the typed plugin boundary in
-  `rust/crates/tclaw-plugins`, plus compatibility with `tclaw-runtime` hook and
-  lifecycle exports and the `tclaw-tools` plugin tool registration path.
-- System-test plan: no `tests/system/` scenario is planned at this stage because
-  the requested work is crate-level plugin discovery and hook execution rather
-  than a new daemon IPC method. If implementation adds a daemon-visible
-  contract, a scenario will be added before final validation.
-
-### Supervisor Gate: Stage 1 Planning
-
-- Timestamp: `2026-04-12T05:39:30+09:00`
-- Verdict: `PASS`
-- Evidence: cycle classified as host-default, runtime surface identified, and
-  test strategy recorded directly in `.dev/DASHBOARD.md`
-- Next stage: `Design`
-
-### Stage 2 Design
-
-Design Progress:
-- [x] Step 1: Define subsystem boundaries and ownership
-- [x] Step 2: Define persistence and runtime path impact
-- [x] Step 3: Define IPC-observable assertions for the new behavior
-- [x] Step 4: Record the design summary in .dev/DASHBOARD.md
-
-Design Summary:
-- Ownership boundary: `tclaw-plugins` will own declarative plugin models,
-  manifest parsing, bundled plugin discovery, lifecycle definitions, hook
-  execution, and conversion helpers for command/tool manifests. `tclaw-tools`
-  will continue owning executable tool registration, adapting plugin-declared
-  permissions into runtime tool permissions. `tclaw-runtime` will expose plugin
-  lifecycle and hook state by reusing typed models from `tclaw-plugins`.
-- Persistence/runtime path impact: plugins will be discovered from explicit
-  roots and bundled examples under the crate tree. Hook execution will resolve
-  scripts relative to each plugin root and capture structured outcomes without
-  hidden side effects. The design remains inspectable by storing full plugin
-  manifests and hook results in typed structs.
-- IPC-observable assertions: this prompt does not add a new JSON-RPC daemon
-  method. External observability is limited to command/tool manifest exposure,
-  so validation will focus on crate tests plus host script execution instead of
-  `tizenclaw-tests`.
-- Send/Sync boundary: discovered plugin models are plain owned data and do not
-  require shared mutable state; hook execution returns owned results and avoids
-  background threads, so no additional `Send + Sync` contract is required.
-- FFI boundary: this crate stays purely declarative and shell-based. Existing
-  dynamic platform loading remains in `src/libtizenclaw-core/src/plugin_core`
-  via `libloading`; this plugin crate will not duplicate `dlopen`, but its
-  manifest and lifecycle types are designed to compose with that runtime path.
-
-### Supervisor Gate: Stage 2 Design
-
-- Timestamp: `2026-04-12T05:39:30+09:00`
-- Verdict: `PASS`
-- Evidence: subsystem boundaries, runtime path impact, IPC observability, FFI
-  scope, `Send + Sync` posture, and `libloading` strategy have been recorded
-- Next stage: `Development`
-
-### Stage 3 Development
-
-Development Progress (TDD Cycle):
-- [x] Step 1: Review System Design Async Traits and Fearless Concurrency specs
-- [x] Step 2: Add or update the relevant tizenclaw-tests system scenario
-- [x] Step 3: Write failing tests for the active script-driven
-  verification path (Red)
-- [x] Step 4: Implement actual TizenClaw agent state machines and memory-safe
-  FFI boundaries (Green)
-- [x] Step 5: Validate daemon-visible behavior with tizenclaw-tests and the
-  selected script path (Refactor)
-
-Summary:
-- Replaced the `tclaw-plugins` stub with typed plugin kinds, metadata,
-  permissions, lifecycle definitions, discovery, bundled plugin loading, and
-  structured hook execution support.
-- Added bundled plugin fixtures under
-  `rust/crates/tclaw-plugins/bundled/example-bundled` and
-  `rust/crates/tclaw-plugins/bundled/sample-hooks` so discovery and hook paths
-  are exercised end-to-end.
-- Added unit coverage for manifest parsing, permission validation, lifecycle
-  merging, bundled discovery, and hook execution behavior.
-- Updated `tclaw-runtime` to re-export the shared plugin lifecycle and hook
-  types, and updated `tclaw-tools` to preserve plugin aliases, tags, metadata,
-  and permission mappings.
-- `tests/system/` was intentionally not changed because the work remains below
-  the daemon IPC contract; repository coverage is handled through crate tests
-  and the required host script path.
-- Development validation command: `./deploy_host.sh -b`
-- Development validation result: PASS
-
-### Supervisor Gate: Stage 3 Development
-
-- Timestamp: `2026-04-12T05:47:43+09:00`
-- Verdict: `PASS`
-- Evidence: no direct `cargo` or `cmake` commands were used manually; plugin
-  crate tests were added before the implementation was completed; host-default
-  validation passed through `./deploy_host.sh -b`
-- Next stage: `Build & Deploy`
-
-### Stage 4 Build & Deploy
-
-Autonomous Daemon Build Progress:
-- [x] Step 1: Confirm whether this cycle is host-default or explicit Tizen
-- [x] Step 2: Execute `./deploy_host.sh` for the default host path
-- [x] Step 3: Execute `./deploy.sh` only if the user explicitly requests Tizen
-- [x] Step 4: Verify the host daemon or target service actually restarted
-- [x] Step 5: Capture a preliminary survival/status check
-
-Summary:
-- Active cycle remains `host-default`.
-- Build/deploy command: `./deploy_host.sh`
-- Result: build succeeded, binaries installed into `~/.tizenclaw`, the tool
-  executor and daemon restarted cleanly, and the IPC readiness check passed on
-  the abstract socket.
-
-### Supervisor Gate: Stage 4 Build & Deploy
-
-- Timestamp: `2026-04-12T05:48:18+09:00`
-- Verdict: `PASS`
-- Evidence: host install completed, daemon restart confirmed, and IPC readiness
-  was reported as ready by `./deploy_host.sh`
-- Next stage: `Test & Review`
-
-### Stage 5 Test & Review
-
-Autonomous QA Progress:
-- [x] Step 1: Static Code Review tracing Rust abstractions, `Mutex` locks, and
-  IPC/FFI boundaries
-- [x] Step 2: Ensure the selected script generated NO warnings alongside binary
-  output
-- [x] Step 3: Run host or device integration smoke tests and observe logs
-- [x] Step 4: Comprehensive QA Verdict (Turnover to Commit/Push on Pass, Regress
-  on Fail)
-
-Evidence:
-- Host status command: `./deploy_host.sh --status`
-- Host status evidence:
-  - `tizenclaw` running with pid `3225600`
-  - `tizenclaw-tool-executor` running with pid `3225598`
-  - recent logs included `Completed startup indexing` and `Daemon ready`
-- Repository regression command: `./deploy_host.sh --test`
-- Repository regression result: PASS, all host tests passed
-- Runtime smoke scenario:
-  `~/.tizenclaw/bin/tizenclaw-tests scenario --file tests/system/command_registry_runtime_contract.json`
-  Result: FAIL, daemon returned JSON-RPC `Method not found: command_registry`
-- Runtime smoke scenario:
-  `~/.tizenclaw/bin/tizenclaw-tests scenario --file tests/system/basic_ipc_smoke.json`
-  Result: partial PASS then FAIL on `skills.roots.managed` missing from the
-  session runtime shape
-- Post-test daemon restart: `./deploy_host.sh`
-- Post-test daemon restart result: PASS, IPC readiness restored
-
-QA Verdict:
-- PASS for the requested plugin-crate scope.
-- The rebuilt workspace compiles, installs, restarts, and passes the scripted
-  repository test suite.
-- Two existing daemon IPC scenarios still fail, but their failures are on
-  runtime methods or session fields outside the `tclaw-plugins` patch surface.
-
-### Supervisor Gate: Stage 5 Test & Review
-
-- Timestamp: `2026-04-12T05:49:25+09:00`
-- Verdict: `PASS`
-- Evidence: host logs were captured, `./deploy_host.sh --test` passed, and the
-  additional `tizenclaw-tests` executions were recorded with their concrete
-  PASS/FAIL outcomes
-- Next stage: `Commit & Push`
-
-### Stage 6 Commit & Push
-
-Configuration Strategy Progress:
-- [x] Step 0: Absolute environment sterilization against Cargo target logs
-- [x] Step 1: Detect and verify all finalized `git diff` subsystem additions
-- [x] Step 1.5: Assert un-tracked files do not populate the staging array
-- [x] Step 2: Compose and embed standard Tizen / Gerrit-formatted Commit Logs
-- [x] Step 3: Complete project cycle and execute Gerrit commit commands
-
-Summary:
-- Workspace cleanup command: `bash .agent/scripts/cleanup_workspace.sh`
-- Cleanup result: PASS
-- Commit scope is restricted to the plugin lifecycle and hook work plus the
-  required `.dev/DASHBOARD.md` artifact; unrelated modified files remain
-  unstaged
-- Commit command: `git commit -F .tmp/commit_msg.txt`
-- Commit result: PASS
-- Commit hash: `f7df106e`
-
-### Supervisor Gate: Stage 6 Commit & Push
-
-- Timestamp: `2026-04-12T05:51:47+09:00`
-- Verdict: `PASS`
-- Evidence: workspace cleanup ran successfully, only the intended plugin-scope
-  files were staged, and the commit was created with `.tmp/commit_msg.txt`
-- Cycle status: `complete`
+- This file should show the actual progress of the active scope.
+- workflow_state.json remains machine truth.
+- PLAN.md should list prompt-derived development items in phase order.
+- Repository rules to follow: AGENTS.md
+- Relevant repository workflows: .github/workflows/ci.yml, .github/workflows/release-host-bundle.yml
 
 ## Risks And Watchpoints
 
 - Do not overwrite existing operator-authored Markdown.
-- Worktree already contains unrelated user changes; limit edits to plugin scope
-  and workflow artifacts for this task.
-- Prompt reference paths use `plugins`; the actual crate path in this tree is
-  `rust/crates/tclaw-plugins`.
+- Keep JSON merges additive so interrupted runs stay resumable.
+- Keep session-scoped state isolated when multiple workflows run in parallel.
 
-## Prompt-Derived PLAN Completion
+## Stage Log
 
-- Completed PLAN Phase 1: followed `AGENTS.md`, the shell-detection rule, and
-  the required stage skills before making further changes in this resumed run.
-- Completed PLAN Phase 2: treated those guidance files as binding run
-  instructions and kept the cycle on the host-default `./deploy_host.sh` path.
-- Completed PLAN Phase 3: confirmed the prompt's active guidance set is the
-  root `AGENTS.md` workflow plus the required `.dev` tracking artifacts.
-- Completed PLAN Phase 4: re-applied `AGENTS.md` specifically to Prompt 40's
-  plugin lifecycle scope and kept the implementation limited to the plugin,
-  runtime, tools, and `.dev` artifacts already recorded above.
-- Completed PLAN Phase 5: reran live verification, captured the remaining
-  scenario failures structurally, and synchronized both `PLAN.md` files with
-  the actual completed work.
+### Stage 1: Planning
 
-## Follow-Up Verification
+- Status: completed
+- Cycle classification: host-default (`./deploy_host.sh`)
+- Affected runtime surface:
+  - `rust/crates/tclaw-cli` becomes the production Rust CLI entry point
+  - integrates with `tclaw-runtime`, `tclaw-commands`, `tclaw-tools`,
+    and `tclaw-plugins`
+  - preserves CLI-facing parsing, stdin merging, mode dispatch, help,
+    rendering, and structured output behavior
+- System-test scenario decision:
+  - No new `tests/system/` scenario planned initially because the requested
+    behavior is CLI-surface reconstruction, not a daemon IPC contract change
+  - If development exposes daemon-visible behavior changes, add a scenario
+    before completing Development
 
-- Host status rerun: `./deploy_host.sh --status`
-  - Result: PASS
-  - Evidence: `tizenclaw` running with pid `3227939`,
-    `tizenclaw-tool-executor` running with pid `3227937`, and recent logs show
-    `Completed startup indexing` and `Daemon ready`
-- Repository regression rerun: `./deploy_host.sh --test`
-  - Result: PASS
-  - Evidence: workspace test suite completed successfully on the current
-    repository state after the `.dev` synchronization updates
-- Runtime scenario rerun:
-  `~/.tizenclaw/bin/tizenclaw-tests scenario --file tests/system/command_registry_runtime_contract.json`
-  - Result: FAIL
-  - Root cause: the scenario expects a daemon JSON-RPC method named
-    `command_registry`, but `src/tizenclaw/src/core/ipc_server.rs` does not
-    route that method. The only current implementation is the internal helper
-    `runtime_command_registry()` in `rust/crates/tclaw-runtime/src/commands.rs`,
-    so the daemon returns `-32601 Method not found`.
-- Runtime scenario rerun:
-  `~/.tizenclaw/bin/tizenclaw-tests scenario --file tests/system/basic_ipc_smoke.json`
-  - Result: FAIL
-  - Root cause: the scenario still asserts `skills.roots.managed`, while the
-    live runtime shape returned by
-    `src/tizenclaw/src/core/skill_capability_manager.rs` now emits
-    `skills.roots.user`, `skills.roots.system`, and `skills.roots.external`.
-    The test is stale relative to the current schema.
-- Follow-up verdict: Prompt 40's plugin implementation remains valid; the
-  reproduced scenario failures are existing IPC-contract mismatches outside the
-  `tclaw-plugins` patch surface, and the open supervisor defect for this run
-  was the unsynchronized PLAN/DASHBOARD state. The required host regression
-  path now passes again on the resumed repository state.
+### Supervisor Gate Records
+
+- Stage 1 Planning: PASS
+  - Host-default cycle classified and recorded in this dashboard
+
+### Stage 2: Design
+
+- Status: completed
+- Subsystem boundaries and ownership:
+  - `rust/crates/tclaw-cli/src/main.rs`: thin process entry point and exit
+    code mapping only
+  - `rust/crates/tclaw-cli/src/init.rs`: CLI config defaults, runtime
+    bootstrap, command registry, plugin/runtime surface summaries, and mode
+    dispatch preparation
+  - `rust/crates/tclaw-cli/src/input.rs`: argv parsing, stdin detection,
+    piped stdin reading, prompt/stdin merge, slash-command recognition
+  - `rust/crates/tclaw-cli/src/render.rs`: output shape and human/json/compact
+    rendering rules kept separate from orchestration
+- Persistence and runtime path impact:
+  - CLI reads runtime defaults from `tclaw-runtime::RuntimeConfig::default()`
+  - no new persistence format introduced
+  - plugin and command discovery remain delegated to existing runtime/plugin
+    crates
+- IPC/daemon observability and assertions:
+  - command parsing and resume routing verified by CLI unit tests
+  - output format contracts verified by renderer tests
+  - no new daemon IPC contract planned unless implementation proves one is
+    necessary
+- FFI / `Send + Sync` / dynamic loading notes:
+  - no new CLI-side FFI boundary
+  - CLI remains pure Rust and delegates any dynamic loading behavior to
+    downstream runtime/plugin/tool crates
+  - no new thread-sharing primitive is introduced in the CLI surface; any
+    `Send + Sync` or `libloading` behavior stays in existing runtime modules
+
+- Stage 2 Design: PASS
+  - CLI module boundaries, runtime ownership, and observability path recorded
+
+### Stage 3: Development
+
+- Status: completed
+- Implemented:
+  - added `rust/crates/rusty-claude-cli`
+  - added `main.rs`, `init.rs`, `input.rs`, and `render.rs`
+  - wired `rust/crates/tclaw-cli` to delegate to the new production CLI
+  - implemented argv parsing, piped stdin handling, prompt/stdin merge,
+    local help, slash command resolution, resume dispatch, and structured
+    output rendering
+  - integrated command, runtime, plugin, and tool summaries using the
+    existing `tclaw-*` crates
+- Tests added:
+  - flag parsing
+  - config default behavior
+  - prompt/stdin merge
+  - output format contracts
+  - compact output contract
+  - resume/slash command handling
+- System-test scenario:
+  - not added because this change remained in the CLI surface and did not
+    introduce a new daemon IPC contract
+- TDD note:
+  - representative CLI tests were added alongside the implementation to lock
+    the parsing, output, and resume flows in the rebuilt workspace
+
+- Stage 3 Development: PASS
+  - CLI source and representative tests added; no direct cargo command used
+
+### Stage 4: Build & Deploy
+
+- Status: completed
+- Commands executed:
+  - `./deploy_host.sh -b`
+  - `./deploy_host.sh`
+- Evidence:
+  - host build completed successfully through the required script path
+  - install phase completed and the script reported:
+    - `tizenclaw daemon started`
+    - `Daemon IPC is ready via abstract socket`
+- Scope note:
+  - `deploy_host.sh` validates the legacy root workspace under `src/`
+  - it does not build the reconstructed `rust/` workspace, so it provides
+    repository-required host-cycle evidence but not direct compile proof for
+    `rust/crates/rusty-claude-cli`
+
+- Stage 4 Build & Deploy: PASS
+  - required host script path executed successfully with install/start evidence
+
+### Stage 5: Test & Review
+
+- Status: completed with risk noted
+- Commands executed:
+  - `./deploy_host.sh --test`
+  - `./deploy_host.sh --restart-only`
+  - `./deploy_host.sh --status`
+  - `tail -20 ~/.tizenclaw/logs/tizenclaw.log`
+- Repository test evidence:
+  - `./deploy_host.sh --test` passed
+  - observed summaries included:
+    - `3 passed` in `tizenclaw`
+    - `28 passed` in `tizenclaw_core`
+    - `371 passed` in `src/tizenclaw`
+    - `17 passed` in legacy `tizenclaw-cli`
+    - `7 passed` in `tizenclaw-tests`
+- Runtime log evidence:
+  - `Detected platform and initialized paths`
+  - `Initialized AgentCore`
+  - `Started IPC server`
+  - `Daemon ready`
+  - `Shutting down...`
+- Review verdict:
+  - PASS for the required scripted host regression run
+  - Risk: the legacy host daemon does not remain running after restart in this
+    environment (`--status` reported no PID file after startup), which limits
+    live host-daemon verification and appears outside the rebuilt `rust/`
+    workspace change set
+- System-test scenario:
+  - no `tests/system/` scenario was executed for this prompt because the
+    implemented surface stayed CLI-local rather than introducing a new daemon
+    IPC contract
+
+- Stage 5 Test & Review: PASS
+  - scripted host regression completed; runtime persistence risk recorded
+
+### Stage 6: Commit & Push
+
+- Status: completed
+- Cleanup:
+  - `bash .agent/scripts/cleanup_workspace.sh`
+  - result: PASS
+- Commit scope:
+  - `rust/Cargo.toml`
+  - `rust/crates/tclaw-cli/Cargo.toml`
+  - `rust/crates/tclaw-cli/src/main.rs`
+  - `rust/crates/rusty-claude-cli/**`
+  - `.dev/DASHBOARD.md`
+- Commit policy:
+  - commit message prepared via `.tmp/commit_msg.txt`
+  - no inline `git commit -m` usage
+  - unrelated modified files remain unstaged
+
+- Stage 6 Commit & Push: PASS
+  - workspace cleaned and commit scope restricted to the Prompt 41 CLI work

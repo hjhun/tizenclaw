@@ -1,0 +1,13 @@
+[package]
+name = "rusty-claude-cli"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+tclaw-commands = { path = "../tclaw-commands" }
+tclaw-plugins = { path = "../tclaw-plugins" }
+tclaw-runtime = { path = "../tclaw-runtime" }
+tclaw-tools = { path = "../tclaw-tools" }

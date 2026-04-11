@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/rusty-claude-cli",
     "crates/tclaw-api",
     "crates/tclaw-cli",
     "crates/tclaw-commands",

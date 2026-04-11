@@ -5,4 +5,4 @@ license.workspace = true
 version.workspace = true
 
 [dependencies]
-tclaw-runtime = { path = "../tclaw-runtime" }
+rusty-claude-cli = { path = "../rusty-claude-cli" }
