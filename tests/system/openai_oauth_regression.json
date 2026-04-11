@@ -29,6 +29,21 @@
           "greater_than": 0
         }
       ]
+    },
+    {
+      "name": "read-llm-runtime-status",
+      "method": "get_llm_runtime",
+      "params": {},
+      "assertions": [
+        {
+          "path": "status",
+          "equals": "ok"
+        },
+        {
+          "path": "runtime_primary_backend",
+          "equals": "openai-codex"
+        }
+      ]
     }
   ]
 }

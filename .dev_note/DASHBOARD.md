@@ -761,6 +761,46 @@
   - PASS: cleanup script executed, ignored artifacts stayed unstaged,
     and the commit message followed the repository format
 
+## OpenAI OAuth Preference Recovery Cycle
+
+- [x] Stage 1: Planning
+  - Request:
+    reinforce the recurring OpenAI OAuth path again and raise the usage
+    priority when valid auth information is present
+  - Cycle classification:
+    host-default (`./deploy_host.sh`)
+  - Runtime surface:
+    backend candidate prioritization in `agent_core`, runtime-visible
+    LLM backend status over IPC, and the existing OAuth regression
+    scenario in `tizenclaw-tests`
+  - System-test requirement:
+    extend `tests/system/openai_oauth_regression.json` before product
+    changes so it asserts the daemon chooses `openai-codex` as the live
+    runtime backend when OAuth auth is available
+- [x] Supervisor Gate after Planning
+  - PASS: host-default routing, OAuth preference scope, and system-test
+    planning were recorded
+
+- [x] Stage 2: Design
+  - Ownership boundaries:
+    `agent_core` owns backend priority decisions,
+    `ipc_server` exposes runtime backend status for verification, and
+    `tests/system/openai_oauth_regression.json` owns the daemon-visible
+    regression contract
+  - Persistence impact:
+    no new persistence file is required; the priority boost derives from
+    existing config or Codex auth state already present on disk
+  - Verification design:
+    add an IPC method that reports the configured and active runtime
+    backends, then boost `openai-codex` candidate priority whenever a
+    usable OAuth auth source is detected so the scenario can assert the
+    live runtime backend directly
+  - Design artifact:
+    `.dev_note/docs/openai_oauth_preference_recovery_design_20260411.md`
+- [x] Supervisor Gate after Design
+  - PASS: priority ownership, persistence impact, and IPC verification
+    path are documented
+
 ## Tool Execution Audit Cycle
 
 - [x] Stage 1: Planning
@@ -2144,3 +2184,105 @@
   - PASS: generated artifacts remain unstaged, the dashboard evidence is
     prepared as the only tracked delta, and the prompt outcome now has
     explicit repository-visible completion evidence
+
+## OpenAI OAuth Preference Recovery Cycle
+
+- [x] Stage 1: Planning
+  - Request:
+    OAuth 연동이 다시 흔들리는 구간을 보강하고, 인증 정보가
+    있으면 해당 백엔드를 우선 사용하도록 복구
+  - Cycle classification:
+    host-default (`./deploy_host.sh`)
+  - Runtime contract:
+    인증 가능한 `openai-codex`가 런타임 primary backend로
+    승격되는지 IPC로 검증해야 함
+  - System-test requirement:
+    `tests/system/openai_oauth_regression.json`에 런타임 primary
+    backend 확인을 추가한 뒤 실제 호스트 데몬에서 검증
+- [x] Supervisor Gate after Planning
+  - PASS: host-default 경로, OAuth 우선순위 강화 범위, live IPC
+    회귀 검증 계획이 기록됨
+
+- [x] Stage 2: Design
+  - Design artifact:
+    `.dev_note/docs/openai_oauth_preference_recovery_design_20260411.md`
+  - Priority boundary:
+    `AgentCore` 후보 정렬에서 인증 정보가 있는 backend를
+    감지해 우선순위를 끌어올리고, `openai-codex`는 Codex CLI
+    auth file 경로까지 확인
+  - Observability boundary:
+    IPC에 `get_llm_runtime`을 추가해 설정값과 실제 primary
+    backend를 바로 비교 가능하게 설계
+- [x] Supervisor Gate after Design
+  - PASS: 우선순위 계산 위치, auth-file 보강 전략, IPC 관측점이
+    설계 산출물과 함께 정리됨
+
+- [x] Stage 3: Development
+  - System-test contract:
+    `tests/system/openai_oauth_regression.json`에
+    `get_llm_runtime` step을 추가해 `runtime_primary_backend ==
+    openai-codex`를 고정
+  - Code changes:
+    `src/tizenclaw/src/core/agent_core.rs`에 인증 정보 감지
+    헬퍼와 우선순위 boost를 추가하고, 런타임 상태 조회 함수와
+    회귀 단위 테스트를 보강
+  - IPC change:
+    `src/tizenclaw/src/core/ipc_server.rs`에
+    `get_llm_runtime` method를 추가
+  - TDD evidence:
+    새 시스템 시나리오를 먼저 확장한 뒤 구현을 붙였고,
+    `backend_has_preferred_auth_*`,
+    `authenticated_codex_backend_is_promoted_above_defaults`
+    단위 테스트로 정렬 규칙을 고정
+- [x] Supervisor Gate after Development
+  - PASS: daemon-visible 계약이 먼저 갱신됐고, forbidden direct
+    cargo 명령 없이 우선순위/관측 로직과 회귀 테스트가 추가됨
+
+- [x] Stage 4: Build & Deploy
+  - Command:
+    `./deploy_host.sh`
+  - Result:
+    host release build/install이 완료됐고
+    `tizenclaw-tool-executor` pid `2750145`,
+    `tizenclaw` pid `2750148`로 재기동됨
+  - Survival check:
+    `./deploy_host.sh --status`에서 dashboard listener와
+    `Daemon ready (1312ms) startup sequence completed`를 확인
+- [x] Supervisor Gate after Build & Deploy
+  - PASS: host-default script로 build/install/restart가 완료됐고
+    daemon survival evidence가 확보됨
+
+- [x] Stage 5: Test & Review
+  - Static review focus:
+    인증 정보가 없으면 기존 정렬을 유지하고, auth file 또는
+    explicit oauth/api key가 있을 때만 priority boost가 적용되는지
+    코드 경계를 재검토
+  - Repository regression:
+    `./deploy_host.sh --test` 통과
+  - Runtime scenario:
+    `~/.tizenclaw/bin/tizenclaw-tests scenario --file tests/system/openai_oauth_regression.json`
+    통과, `runtime_primary_backend=openai-codex` 확인
+  - Runtime log evidence:
+    `./deploy_host.sh --status`에서
+    `Daemon ready (1312ms) startup sequence completed` 확인
+  - QA verdict:
+    PASS
+- [x] Supervisor Gate after Test & Review
+  - PASS: repository regression, live IPC scenario, runtime log evidence가
+    모두 수집되어 OAuth 우선순위 회귀가 재현/검증됨
+
+- [x] Stage 6: Commit
+  - Workspace cleanup:
+    `bash .agent/scripts/cleanup_workspace.sh`
+  - Staged scope:
+    `src/tizenclaw/src/core/agent_core.rs`,
+    `src/tizenclaw/src/core/ipc_server.rs`,
+    `tests/system/openai_oauth_regression.json`,
+    `.dev_note/DASHBOARD.md`,
+    `.dev_note/docs/openai_oauth_preference_recovery_design_20260411.md`
+  - Commit message path:
+    `.tmp/commit_msg.txt`
+  - Commit title:
+    `Prefer authenticated Codex backend`
+  - Excluded generated scope:
+    `.dev/`, `DORMAMMU.log`

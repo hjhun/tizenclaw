@@ -71,6 +71,7 @@ const CONTEXT_COMPACT_THRESHOLD: f32 = 0.90;
 const MAX_PREFETCHED_SKILLS: usize = 3;
 const MAX_OUTBOUND_DASHBOARD_MESSAGES: usize = 200;
 const MAX_TELEGRAM_OUTBOUND_CHARS: usize = 4000;
+const AUTHENTICATED_BACKEND_PRIORITY_BOOST: i64 = 10_000;
 
 #[derive(Clone, Debug, Default)]
 struct SessionPromptProfile {
@@ -3063,6 +3064,82 @@ fn merge_backend_auth(mut cfg: Value, name: &str, ks: &crate::infra::key_store::
     cfg
 }
 
+fn config_string<'a>(config: &'a Value, path: &[&str]) -> Option<&'a str> {
+    let mut cursor = config;
+    for segment in path {
+        cursor = cursor.get(*segment)?;
+    }
+    cursor
+        .as_str()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+fn backend_has_direct_auth(cfg: &Value) -> bool {
+    config_string(cfg, &["api_key"]).is_some()
+        || config_string(cfg, &["oauth", "access_token"]).is_some()
+        || config_string(cfg, &["oauth", "refresh_token"]).is_some()
+}
+
+fn codex_auth_path_from_config(cfg: &Value) -> Option<PathBuf> {
+    config_string(cfg, &["oauth", "auth_path"]).map(PathBuf::from)
+}
+
+fn codex_default_auth_path() -> Option<PathBuf> {
+    let home = std::env::var("HOME").ok()?;
+    let home = home.trim();
+    if home.is_empty() {
+        return None;
+    }
+    Some(Path::new(home).join(".codex").join("auth.json"))
+}
+
+fn codex_auth_file_has_tokens(path: &Path) -> bool {
+    let Ok(contents) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(doc) = serde_json::from_str::<Value>(&contents) else {
+        return false;
+    };
+
+    doc.get("tokens")
+        .and_then(Value::as_object)
+        .map(|tokens| {
+            ["access_token", "refresh_token"].iter().all(|key| {
+                tokens
+                    .get(*key)
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .map(|value| !value.is_empty())
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or_else(|| {
+            ["access_token", "refresh_token"].iter().all(|key| {
+                doc.get(*key)
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .map(|value| !value.is_empty())
+                    .unwrap_or(false)
+            })
+        })
+}
+
+fn backend_has_preferred_auth(name: &str, cfg: &Value) -> bool {
+    if backend_has_direct_auth(cfg) {
+        return true;
+    }
+
+    if name != "openai-codex" {
+        return false;
+    }
+
+    codex_auth_path_from_config(cfg)
+        .or_else(codex_default_auth_path)
+        .map(|path| codex_auth_file_has_tokens(&path))
+        .unwrap_or(false)
+}
+
 #[derive(Debug, Clone)]
 struct CircuitBreakerState {
     consecutive_failures: u32,
@@ -3072,6 +3149,101 @@ struct CircuitBreakerState {
 struct BackendCandidate {
     name: String,
     priority: i64,
+}
+
+fn sort_backend_candidates(candidates: &mut [BackendCandidate], config: &LlmConfig) {
+    candidates.sort_by(|a, b| {
+        let p_res = b.priority.cmp(&a.priority);
+        if p_res != std::cmp::Ordering::Equal {
+            return p_res;
+        }
+
+        // Tie-breaker: active_backend > fallback_backends (in array order) > others
+        let score = |name: &str| -> i32 {
+            if name == config.active_backend {
+                1000
+            } else if let Some(idx) = config.fallback_backends.iter().position(|r| r == name) {
+                900 - (idx as i32)
+            } else {
+                0
+            }
+        };
+        score(&b.name).cmp(&score(&a.name))
+    });
+}
+
+fn build_backend_candidates(
+    config: &LlmConfig,
+    plugin_manager: &crate::llm::plugin_manager::PluginManager,
+    ks: &crate::infra::key_store::KeyStore,
+) -> Vec<BackendCandidate> {
+    let mut candidates = Vec::new();
+    let mut all_names: Vec<String> = Vec::new();
+
+    if let Some(obj) = config.backends.as_object() {
+        for key in obj.keys() {
+            all_names.push(key.clone());
+        }
+    }
+    if !all_names.contains(&config.active_backend) {
+        all_names.push(config.active_backend.clone());
+    }
+    for fb in &config.fallback_backends {
+        if !all_names.contains(fb) {
+            all_names.push(fb.clone());
+        }
+    }
+
+    for plugin_name in plugin_manager.available_plugins() {
+        if !all_names.contains(&plugin_name) {
+            all_names.push(plugin_name);
+        }
+    }
+
+    for name in all_names {
+        let mut priority = 0;
+        let mut is_explicitly_in_config = false;
+        let effective_cfg = merge_backend_auth(config.backend_config(&name), &name, ks);
+
+        if name == config.active_backend
+            || config.fallback_backends.contains(&name)
+            || config.backends.get(&name).is_some()
+        {
+            priority = 1;
+            is_explicitly_in_config = true;
+        }
+
+        if let Some(p) = config
+            .backends
+            .get(&name)
+            .and_then(|v| v.get("priority"))
+            .and_then(|v| v.as_i64())
+        {
+            priority = p;
+            is_explicitly_in_config = true;
+        }
+
+        if !is_explicitly_in_config {
+            if let Some(cfg) = plugin_manager.get_plugin_config(&name) {
+                priority = cfg.get("priority").and_then(|v| v.as_i64()).unwrap_or(0);
+            }
+        }
+
+        if backend_has_preferred_auth(&name, &effective_cfg) {
+            // OAuth-backed Codex sessions are more fragile than API-key
+            // backends because the daemon may restart while the CLI auth
+            // file remains the only surviving credential source. Give any
+            // authenticated backend a strong priority lift so valid auth is
+            // consumed first instead of silently falling back to a weaker
+            // default backend.
+            priority = priority.max(AUTHENTICATED_BACKEND_PRIORITY_BOOST);
+        }
+
+        candidates.push(BackendCandidate { name, priority });
+    }
+
+    sort_backend_candidates(&mut candidates, config);
+    candidates
 }
 
 /// Thread-safe AgentCore with fine-grained internal locking.
@@ -4271,6 +4443,10 @@ impl AgentCore {
 
         // Properly update fallback backends
         *self.fallback_backends.write().await = fallbacks;
+
+        if let Ok(mut stored_config) = self.llm_config.lock() {
+            *stored_config = config;
+        }
     }
 
     /// Create and initialize an LLM backend by name using the provided merged config.
@@ -4300,86 +4476,8 @@ impl AgentCore {
         config: &LlmConfig,
         plugin_manager: &crate::llm::plugin_manager::PluginManager,
     ) -> Vec<BackendCandidate> {
-        let mut candidates = Vec::new();
-        let mut all_names: Vec<String> = Vec::new();
-
-        // 1. Gather backend names from llm_config.json
-        if let Some(obj) = config.backends.as_object() {
-            for key in obj.keys() {
-                all_names.push(key.clone());
-            }
-        }
-        if !all_names.contains(&config.active_backend) {
-            all_names.push(config.active_backend.clone());
-        }
-        for fb in &config.fallback_backends {
-            if !all_names.contains(fb) {
-                all_names.push(fb.clone());
-            }
-        }
-
-        // 2. Append plugin backends
-        for plugin_name in plugin_manager.available_plugins() {
-            if !all_names.contains(&plugin_name) {
-                all_names.push(plugin_name);
-            }
-        }
-
-        for name in all_names {
-            let mut priority = 0;
-            let mut is_explicitly_in_config = false;
-
-            // Priority 1 by default if it originates from llm_config.json
-            if name == config.active_backend
-                || config.fallback_backends.contains(&name)
-                || config.backends.get(&name).is_some()
-            {
-                priority = 1;
-                is_explicitly_in_config = true;
-            }
-
-            // Manual priority override from llm_config.json
-            if let Some(p) = config
-                .backends
-                .get(&name)
-                .and_then(|v| v.get("priority"))
-                .and_then(|v| v.as_i64())
-            {
-                priority = p;
-                is_explicitly_in_config = true;
-            }
-
-            // Fallback to internal plugin config priority if NOT in llm_config.json
-            if !is_explicitly_in_config {
-                if let Some(cfg) = plugin_manager.get_plugin_config(&name) {
-                    priority = cfg.get("priority").and_then(|v| v.as_i64()).unwrap_or(0);
-                }
-            }
-
-            candidates.push(BackendCandidate { name, priority });
-        }
-
-        // Sort descending by priority, then by configuration precedence
-        candidates.sort_by(|a, b| {
-            let p_res = b.priority.cmp(&a.priority);
-            if p_res != std::cmp::Ordering::Equal {
-                return p_res;
-            }
-
-            // Tie-breaker: active_backend > fallback_backends (in array order) > others
-            let score = |name: &str| -> i32 {
-                if name == config.active_backend {
-                    1000
-                } else if let Some(idx) = config.fallback_backends.iter().position(|r| r == name) {
-                    900 - (idx as i32)
-                } else {
-                    0
-                }
-            };
-            score(&b.name).cmp(&score(&a.name))
-        });
-
-        candidates
+        let ks_guard = self.key_store.lock().unwrap_or_else(|e| e.into_inner());
+        build_backend_candidates(config, plugin_manager, &ks_guard)
     }
 
     fn is_backend_available(&self, name: &str) -> bool {
@@ -6590,6 +6688,34 @@ impl AgentCore {
         self.get_llm_config(None)
     }
 
+    pub fn get_llm_runtime(&self) -> Value {
+        let (configured_active_backend, configured_fallback_backends) =
+            match self.llm_config.lock() {
+                Ok(config) => (
+                    config.active_backend.clone(),
+                    config.fallback_backends.clone(),
+                ),
+                Err(err) => {
+                    let config = err.into_inner();
+                    (
+                        config.active_backend.clone(),
+                        config.fallback_backends.clone(),
+                    )
+                }
+            };
+        let runtime_primary_backend = match self.backend_name.read() {
+            Ok(name) => name.clone(),
+            Err(err) => err.into_inner().clone(),
+        };
+
+        json!({
+            "configured_active_backend": configured_active_backend,
+            "configured_fallback_backends": configured_fallback_backends,
+            "runtime_primary_backend": runtime_primary_backend,
+            "runtime_has_primary_backend": !runtime_primary_backend.is_empty()
+        })
+    }
+
     pub fn clear_agent_data(
         &self,
         include_memory: bool,
@@ -7085,6 +7211,7 @@ impl<'a> SessionStoreRef<'a> {
 mod tests {
     use super::{
         append_dashboard_outbound_message, build_authoritative_problem_requirements_context,
+        backend_has_preferred_auth, build_backend_candidates,
         build_prefetched_prompt_file_context, build_prefetched_prompt_file_messages,
         build_progress_marker, build_role_supervisor_hint, build_skill_prefetch_message,
         collect_grounded_csv_headers, collect_grounded_paths, dashboard_outbound_queue_path,
@@ -7097,13 +7224,15 @@ mod tests {
         prompt_mode_from_doc,
         reasoning_policy_from_doc, role_relevance_score, sanitize_generated_code_name,
         select_delegate_roles, select_relevant_skills, should_skip_memory_for_prompt,
-        utf8_safe_preview, expected_file_management_targets,
+        utf8_safe_preview, expected_file_management_targets, LlmConfig,
         validate_generated_code_execution_output, validate_generated_code_grounding, AgentRole,
-        MAX_OUTBOUND_DASHBOARD_MESSAGES,
+        AUTHENTICATED_BACKEND_PRIORITY_BOOST, MAX_OUTBOUND_DASHBOARD_MESSAGES,
     };
     use crate::core::prompt_builder::{PromptMode, ReasoningPolicy};
     use crate::core::textual_skill_scanner::TextualSkill;
+    use crate::infra::key_store::KeyStore;
     use crate::llm::backend::{LlmMessage, LlmToolCall};
+    use crate::llm::plugin_manager::PluginManager;
     use serde_json::json;
     use std::collections::HashSet;
     use tempfile::tempdir;
@@ -7183,6 +7312,78 @@ mod tests {
 
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].file_name, "battery_monitor");
+    }
+
+    #[test]
+    fn backend_has_preferred_auth_accepts_codex_auth_file() {
+        let dir = tempdir().unwrap();
+        let auth_path = dir.path().join("auth.json");
+        std::fs::write(
+            &auth_path,
+            r#"{"tokens":{"access_token":"token-a","refresh_token":"token-b"}}"#,
+        )
+        .unwrap();
+
+        let cfg = json!({
+            "oauth": {
+                "auth_path": auth_path
+            }
+        });
+
+        assert!(backend_has_preferred_auth("openai-codex", &cfg));
+    }
+
+    #[test]
+    fn backend_has_preferred_auth_rejects_empty_codex_auth_file() {
+        let dir = tempdir().unwrap();
+        let auth_path = dir.path().join("auth.json");
+        std::fs::write(&auth_path, r#"{"tokens":{"access_token":"","refresh_token":""}}"#).unwrap();
+
+        let cfg = json!({
+            "oauth": {
+                "auth_path": auth_path
+            }
+        });
+
+        assert!(!backend_has_preferred_auth("openai-codex", &cfg));
+    }
+
+    #[test]
+    fn authenticated_codex_backend_is_promoted_above_defaults() {
+        let dir = tempdir().unwrap();
+        let auth_path = dir.path().join("auth.json");
+        std::fs::write(
+            &auth_path,
+            r#"{"tokens":{"access_token":"token-a","refresh_token":"token-b"}}"#,
+        )
+        .unwrap();
+
+        let config = LlmConfig {
+            active_backend: "gemini".into(),
+            fallback_backends: vec!["openai".into()],
+            backends: json!({
+                "gemini": {
+                    "model": "gemini-2.5-flash"
+                },
+                "openai": {
+                    "api_key": ""
+                },
+                "openai-codex": {
+                    "oauth": {
+                        "auth_path": auth_path
+                    }
+                }
+            }),
+        };
+        let candidates =
+            build_backend_candidates(&config, &PluginManager::new(), &KeyStore::new());
+
+        assert_eq!(candidates.first().map(|candidate| candidate.name.as_str()), Some("openai-codex"));
+        assert!(candidates
+            .iter()
+            .find(|candidate| candidate.name == "openai-codex")
+            .map(|candidate| candidate.priority >= AUTHENTICATED_BACKEND_PRIORITY_BOOST)
+            .unwrap_or(false));
     }
 
     #[test]
