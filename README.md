@@ -36,8 +36,11 @@ layout for future reconstruction work. Later prompts should add runtime code to
 ## Key Documents
 
 - [ROADMAP.md](/home/hjhun/samba/github/tizenclaw/ROADMAP.md)
+- [docs/ONBOARDING.md](/home/hjhun/samba/github/tizenclaw/docs/ONBOARDING.md)
+- [.claude/CLAUDE.md](/home/hjhun/samba/github/tizenclaw/.claude/CLAUDE.md)
 - [docs/claw-code-analysis/README.md](/home/hjhun/samba/github/tizenclaw/docs/claw-code-analysis/README.md)
 - [docs/STRUCTURE.md](/home/hjhun/samba/github/tizenclaw/docs/STRUCTURE.md)
+- [prompt/README.md](/home/hjhun/samba/github/tizenclaw/prompt/README.md)
 
 ## Build And Test Bootstrap
 

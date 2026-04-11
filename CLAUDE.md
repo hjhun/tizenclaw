@@ -1,7 +1,9 @@
 # TizenClaw — Claude Code Project Rules
 
-This file is the authoritative guide for Claude Code operating in this
-repository. All rules here are binding.
+This file is the entrypoint for Claude-oriented repository guidance.
+The durable project instructions now live in `.claude/CLAUDE.md`.
+Read that file first, then use the sections below as the repository-level
+workflow guardrails.
 
 > **Language Rule**: Always respond in the same language as the user's input.
 > Korean input → Korean response. English input → English response.
@@ -13,8 +15,11 @@ repository. All rules here are binding.
 **TizenClaw** is a Rust-based Autonomous AI Agent daemon for Tizen OS
 (embedded Linux) and Ubuntu/WSL host development. The default workflow
 uses `./deploy_host.sh`; the Tizen GBS workflow uses `./deploy.sh` when
-explicitly requested. The project is a Cargo workspace with 9 crates
-under `src/`.
+explicitly requested. The repository is currently split across:
+
+- the canonical reconstruction workspace under `rust/`
+- the Python parity workspace under `src/tizenclaw_py` and `tests/python`
+- the still-active legacy Rust implementation under `src/tizenclaw*`
 
 **Active branch**: `develRust`  
 **Target device**: `emulator-26101` (x86_64) — auto-detected via `sdb`
@@ -68,7 +73,7 @@ All tasks must follow these stages **sequentially**. Skipping is forbidden.
 ```
 
 Each stage has a corresponding skill in `.agent/skills/`. After each stage,
-update `.dev_note/DASHBOARD.md` with the stage status.
+update `.dev/DASHBOARD.md` with the stage status.
 
 | Stage | Skill | Key Output |
 |-------|-------|------------|
@@ -139,6 +144,20 @@ update `.dev_note/DASHBOARD.md` with the stage status.
 
 ## Workspace Crates
 
+### Canonical Rust Workspace (`rust/`)
+
+| Crate | Role |
+|-------|------|
+| `tclaw-runtime` | Forward-looking runtime orchestration |
+| `tclaw-api` | Shared contracts and stable types |
+| `tclaw-cli` | Canonical CLI surface |
+| `tclaw-tools` | Tool adapters and registries |
+| `tclaw-plugins` | Plugin boundaries |
+| `tclaw-commands` | Shared command-layer support |
+| `rusty-claude-cli` | Claude-oriented CLI reconstruction |
+
+### Legacy Rust Workspace (`src/`)
+
 | Crate | Role |
 |-------|------|
 | `tizenclaw` | Main daemon — AgentCore, PromptBuilder, IPC |
@@ -153,7 +172,7 @@ update `.dev_note/DASHBOARD.md` with the stage status.
 ## Operation Log
 
 All stage progress and Supervisor audit records are tracked in:
-`.dev_note/DASHBOARD.md`
+`.dev/DASHBOARD.md`
 
 ---
 
