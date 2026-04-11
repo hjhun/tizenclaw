@@ -47,7 +47,9 @@ static RELATIVE_FILE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(r"\b((?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+\.[A-Za-z0-9_-]+)\b").unwrap()
 });
 
-use crate::core::agent_loop_state::{AgentLoopState, AgentPhase, EvalVerdict};
+use crate::core::agent_loop_state::{
+    AgentLoopState, AgentPhase, EvalVerdict, LoopTransitionReason,
+};
 use crate::core::agent_role::{AgentRole, AgentRoleRegistry};
 use crate::core::context_engine::{
     ContextEngine, SizedContextEngine, DEFAULT_TOOL_RESULT_BUDGET_CHARS,
@@ -4760,6 +4762,10 @@ impl AgentCore {
             let has_fallback = !self.fallback_backends.read().await.is_empty();
             if !has_primary && !has_fallback {
                 loop_state.last_error = Some("No LLM backend configured".into());
+                loop_state.mark_terminal(
+                    LoopTransitionReason::NoBackendConfigured,
+                    "no primary or fallback backend is configured",
+                );
                 self.persist_loop_snapshot(&loop_state);
                 return "Error: No LLM backend configured".into();
             }
@@ -5509,7 +5515,13 @@ impl AgentCore {
                 // ── Phase 5: ToolDispatching ─────────────────────────────
                 loop_state.transition(AgentPhase::ToolDispatching);
                 loop_state.total_tool_calls += detected_tool_calls.len();
-                loop_state.set_follow_up(true);
+                loop_state.mark_follow_up(
+                    LoopTransitionReason::ToolCallsRequested,
+                    format!(
+                        "assistant requested {} tool call(s)",
+                        detected_tool_calls.len()
+                    ),
+                );
                 log::debug!(
                     "[AgentLoop] Round {} dispatching {} tool(s)",
                     loop_state.round,
@@ -6385,6 +6397,13 @@ impl AgentCore {
                         }
                         loop_state.last_error =
                             Some("Agent is stuck in an execution loop.".into());
+                        loop_state.mark_terminal(
+                            LoopTransitionReason::StuckLoopAbort,
+                            format!(
+                                "idle loop detected after {} repeated retries",
+                                loop_state.stuck_retry_count
+                            ),
+                        );
                         self.persist_loop_snapshot(&loop_state);
                         return "Error: Agent is stuck in an execution loop.".into();
                     } else {
@@ -6392,7 +6411,13 @@ impl AgentCore {
                             "[AgentLoop] Idle loop detected (round {}) - Triggering Dynamic Fallback RePlanning.",
                             loop_state.round
                         );
-                        loop_state.set_follow_up(true);
+                        loop_state.mark_follow_up(
+                            LoopTransitionReason::IdleRecovery,
+                            format!(
+                                "stuck verdict triggered retry {}",
+                                loop_state.stuck_retry_count
+                            ),
+                        );
                         messages.push(LlmMessage {
                             role: "user".into(),
                             text: "System Error: You are stuck in a loop. Re-evaluate your plan and try a completely different approach using different tools. Do not repeat the previous action.".into(),
@@ -6420,6 +6445,14 @@ impl AgentCore {
                                 .workflow_vars
                                 .insert(step.output_var.clone(), output_val);
                             loop_state.current_workflow_step += 1;
+                            loop_state.mark_follow_up(
+                                LoopTransitionReason::WorkflowStepAdvance,
+                                format!(
+                                    "workflow '{}' advanced to step {}",
+                                    wf_id,
+                                    loop_state.current_workflow_step
+                                ),
+                            );
                         }
                     }
                     continue; // Immediately start next round to pick up next workflow step
@@ -6428,7 +6461,10 @@ impl AgentCore {
                 if is_file_management_request
                     && collect_successful_file_management_actions(&messages) == 0
                 {
-                    loop_state.set_follow_up(true);
+                    loop_state.mark_follow_up(
+                        LoopTransitionReason::FileActionRequired,
+                        "file task still requires direct file_manager or file_write actions",
+                    );
                     messages.push(LlmMessage {
                         role: "assistant".into(),
                         text: response.text.clone(),
@@ -6447,7 +6483,13 @@ impl AgentCore {
                     let missing_targets =
                         missing_file_management_targets(prompt, &session_workdir, &messages);
                     if !missing_targets.is_empty() {
-                        loop_state.set_follow_up(true);
+                        loop_state.mark_follow_up(
+                            LoopTransitionReason::FileTargetsMissing,
+                            format!(
+                                "{} requested file target(s) are still missing",
+                                missing_targets.len()
+                            ),
+                        );
                         messages.push(LlmMessage {
                             role: "assistant".into(),
                             text: response.text.clone(),
@@ -6471,7 +6513,13 @@ impl AgentCore {
                         .collect::<Vec<_>>();
 
                     if !missing_output_paths.is_empty() {
-                        loop_state.set_follow_up(true);
+                        loop_state.mark_follow_up(
+                            LoopTransitionReason::PersistedOutputsMissing,
+                            format!(
+                                "{} persisted output file(s) are still missing",
+                                missing_output_paths.len()
+                            ),
+                        );
                         messages.push(LlmMessage {
                             role: "assistant".into(),
                             text: response.text.clone(),
@@ -6500,7 +6548,13 @@ impl AgentCore {
                     }
                 }
                 if advance_workflow {
-                    loop_state.set_follow_up(true);
+                    loop_state.mark_follow_up(
+                        LoopTransitionReason::WorkflowStepAdvance,
+                        format!(
+                            "workflow text step advanced to {}",
+                            loop_state.current_workflow_step
+                        ),
+                    );
                     // Push the prompt assistant response so context isn't lost
                     messages.push(LlmMessage {
                         role: "assistant".into(),
@@ -6518,7 +6572,10 @@ impl AgentCore {
                     "[Evaluating] Round {} verdict=GoalAchieved (no tool calls)",
                     loop_state.round
                 );
-                loop_state.set_follow_up(false);
+                loop_state.mark_terminal(
+                    LoopTransitionReason::GoalAchieved,
+                    "assistant produced a terminal response without tool calls",
+                );
 
                 // Enforce reasoning extraction for final user response
                 let final_text = extract_final_text(&response.text);
@@ -6615,7 +6672,13 @@ impl AgentCore {
                     loop_state.max_tool_rounds,
                     session_id
                 );
-                loop_state.set_follow_up(false);
+                loop_state.mark_terminal(
+                    LoopTransitionReason::RoundLimitReached,
+                    format!(
+                        "max tool rounds {} reached",
+                        loop_state.max_tool_rounds
+                    ),
+                );
                 break;
             }
 
@@ -6807,6 +6870,8 @@ impl AgentCore {
             "max_tool_rounds": snapshot.max_tool_rounds,
             "last_eval_verdict": snapshot.last_eval_verdict,
             "needs_follow_up": snapshot.needs_follow_up,
+            "last_transition_reason": snapshot.last_transition_reason,
+            "last_transition_detail": snapshot.last_transition_detail,
             "last_error": snapshot.last_error,
             "total_tool_calls": snapshot.total_tool_calls,
             "stuck_retry_count": snapshot.stuck_retry_count,
@@ -6856,7 +6921,31 @@ impl AgentCore {
         std::fs::read_to_string(&path)
             .ok()
             .and_then(|content| serde_json::from_str::<Value>(&content).ok())
-            .unwrap_or(Value::Null)
+            .unwrap_or_else(|| {
+                json!({
+                    "session_id": session_id,
+                    "phase": AgentPhase::GoalParsing.as_str(),
+                    "original_goal": "",
+                    "plan_step_count": 0,
+                    "current_step": 0,
+                    "round": 0,
+                    "error_count": 0,
+                    "tool_retry_count": 0,
+                    "max_tool_rounds": AgentLoopState::DEFAULT_MAX_TOOL_ROUNDS,
+                    "last_eval_verdict": EvalVerdict::NotStarted.as_str(),
+                    "needs_follow_up": false,
+                    "last_transition_reason": LoopTransitionReason::LoopInitialized.as_str(),
+                    "last_transition_detail": "",
+                    "last_error": Value::Null,
+                    "total_tool_calls": 0,
+                    "stuck_retry_count": 0,
+                    "tool_budget_events": 0,
+                    "active_workflow_id": Value::Null,
+                    "current_workflow_step": 0,
+                    "updated_at_unix_secs": unix_timestamp_secs(),
+                    "resumable": false,
+                })
+            })
     }
 
     pub fn session_runtime_status(&self, session_id: &str) -> Value {

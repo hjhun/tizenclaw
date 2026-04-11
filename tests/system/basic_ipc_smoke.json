@@ -188,6 +188,14 @@
         {
           "path": "loop_snapshot",
           "exists": true
+        },
+        {
+          "path": "loop_snapshot.last_transition_reason",
+          "exists": true
+        },
+        {
+          "path": "loop_snapshot.last_transition_detail",
+          "exists": true
         }
       ]
     },
