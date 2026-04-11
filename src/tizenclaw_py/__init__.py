@@ -1,4 +1,4 @@
-"""Python parity surface for the TizenClaw reconstruction."""
+"""Compatibility exports for the legacy Python parity package."""
 
 from .api import API_SURFACE
 from .cli import CLI_SURFACE

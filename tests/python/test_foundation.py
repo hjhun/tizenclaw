@@ -3,9 +3,8 @@ from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-SRC = ROOT / "src"
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from tizenclaw_py import (
     API_SURFACE,
@@ -29,6 +28,13 @@ class FoundationTest(unittest.TestCase):
             [surface["name"] for surface in surfaces],
             ["api", "cli", "plugins", "runtime", "tools"],
         )
+
+    def test_compatibility_package_exposes_real_inventory(self) -> None:
+        self.assertIn("manifest", CLI_SURFACE["commands"])
+        self.assertGreater(TOOL_SURFACE["tool_count"], 0)
+        self.assertIn("src.main", RUNTIME_SURFACE["summary"]["python_modules"])
+        self.assertGreater(len(PLUGIN_SURFACE["plugins"]), 0)
+        self.assertIn("build_port_manifest", API_SURFACE["entrypoints"])
 
 
 if __name__ == "__main__":
