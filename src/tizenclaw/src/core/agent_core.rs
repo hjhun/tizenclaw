@@ -491,7 +491,10 @@ fn collect_tool_roots(paths: &libtizenclaw_core::framework::paths::PlatformPaths
 }
 
 fn collect_skill_roots(paths: &libtizenclaw_core::framework::paths::PlatformPaths) -> Vec<String> {
-    let mut roots = vec![paths.skills_dir.to_string_lossy().to_string()];
+    let mut roots = vec![
+        paths.skills_dir.to_string_lossy().to_string(),
+        paths.skill_hubs_dir.to_string_lossy().to_string(),
+    ];
     roots.extend(
         paths
             .discover_skill_hub_roots()

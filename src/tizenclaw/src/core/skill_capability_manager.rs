@@ -255,6 +255,11 @@ fn collect_skill_roots(paths: &PlatformPaths, registrations: &RegisteredPaths) -
         kind: "user".to_string(),
         external: false,
     });
+    roots.push(SkillRoot {
+        path: paths.skill_hubs_dir.to_string_lossy().to_string(),
+        kind: "system".to_string(),
+        external: false,
+    });
     for root in paths.discover_skill_hub_roots() {
         roots.push(SkillRoot {
             path: root.to_string_lossy().to_string(),
@@ -403,8 +408,42 @@ mod tests {
         let summary = snapshot.summary_json();
         assert_eq!(
             summary["roots"]["system"][0],
+            json!(paths.skill_hubs_dir.to_string_lossy().to_string())
+        );
+        assert_eq!(
+            summary["roots"]["system"][1],
             json!(hub_root.to_string_lossy().to_string())
         );
+    }
+
+    #[test]
+    fn snapshot_scans_direct_skills_under_skill_hubs_dir() {
+        let temp = tempdir().unwrap();
+        let paths = PlatformPaths::from_base(temp.path().join("runtime"));
+        paths.ensure_dirs();
+
+        let direct_skill = paths.skill_hubs_dir.join("direct_helper");
+        fs::create_dir_all(&direct_skill).unwrap();
+        fs::write(
+            direct_skill.join("SKILL.md"),
+            "---\ndescription: Direct hub helper\nrequires: hub_tool\n---\n# Skill\n",
+        )
+        .unwrap();
+        fs::write(
+            paths.tools_dir.join("hub_tool.json"),
+            r#"{
+  "name": "hub_tool",
+  "description": "Hub tool",
+  "binary_path": "/bin/echo"
+}"#,
+        )
+        .unwrap();
+
+        let snapshot = build_skill_snapshot(&paths, &RegisteredPaths::default());
+        let entry = snapshot.find_skill("direct_helper").unwrap();
+        assert_eq!(entry.root_kind, "system");
+        assert_eq!(entry.source_root, paths.skill_hubs_dir.to_string_lossy());
+        assert!(entry.dependency_ready);
     }
 
     #[test]

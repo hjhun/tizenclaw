@@ -3,18 +3,24 @@
 ## Actual Progress
 
 - Goal: Prompt 15: Skill System — TextualSkillScanner, SkillCapabilityManager
-- Prompt-driven scope: Phase 4. Supervisor Validation, Continuation Loop, and Resume prompt-driven setup for Follow the guidance files below before making changes.
+- Prompt-driven scope:
+  resumed Prompt 15 rework to clear the supervisor's prompt-derived PLAN
+  completion failure and revalidate the textual skill slice
 - Active roadmap focus:
-- Phase 4. Supervisor Validation, Continuation Loop, and Resume
-- Current workflow phase: plan
-- Last completed workflow phase: none
-- Supervisor verdict: `approved`
-- Escalation status: `approved`
-- Resume point: Return to Plan and resume from the first unchecked PLAN item if setup is interrupted
+- Prompt 15 textual skill resume and final verification
+- Current workflow phase: commit
+- Last completed workflow phase: test_review
+- Supervisor verdict: `rework_required` resolved locally; ready for final
+  revalidation
+- Escalation status: `rework_closed`
+- Resume point:
+  Prompt 15 repository state is synchronized again; resume from the next
+  user task after final verification
 
 ## In Progress
 
-- Workflow complete for Prompt 15. Awaiting next prompt or follow-up.
+- Finalizing Prompt 15 rework artifacts and isolated commit after host
+  validation passed.
 
 ## Progress Notes
 
@@ -23,6 +29,32 @@
 - PLAN.md should list prompt-derived development items in phase order.
 - Repository rules to follow: AGENTS.md
 - Relevant repository workflows: .github/workflows/ci.yml, .github/workflows/release-host-bundle.yml
+- Root cause of the supervisor failure:
+  the prior run committed code and a completion record, but `.dev/PLAN.md`
+  still left all prompt-derived items unchecked and the dashboard header
+  still pointed at the planning phase.
+
+## Prompt 15 PLAN Completion
+
+- Phase 1 complete:
+  reread `AGENTS.md`, `shell-detection.md`, and the stage skill files
+  before changing the repository for this resume cycle
+- Phase 2 complete:
+  continued under the same required instructions with the host-default
+  script path and no direct ad-hoc cargo commands outside
+  `./deploy_host.sh`
+- Phase 3 complete:
+  preserved the existing skill-system implementation and extended
+  `TextualSkillScanner` to parse top-level `requires:` and `install:`
+  metadata in addition to `metadata.openclaw.*`
+- Phase 4 complete:
+  aligned skill root handling so `skill_hubs_dir` is scanned directly in
+  both capability snapshots and `AgentCore` skill resolution while
+  keeping discovered hub subroots intact
+- Phase 5 complete:
+  reran `./deploy_host.sh`, `./deploy_host.sh --test`, and
+  `./deploy_host.sh --status`; host build, unit/doc tests, IPC startup,
+  and daemon status all passed for the textual skill slice
 
 ## Risks And Watchpoints
 
@@ -77,11 +109,17 @@
   parsing, multi-root deduplication, deterministic searchable text,
   underscore-based name normalization, dispatcher-backed dependency
   readiness, and prompt ranking helpers
+- Rework update:
+  added support for top-level `requires:` / `install:` metadata and kept
+  compatibility with nested `metadata.openclaw.*` parsing
 - Compatibility notes:
   kept `load_snapshot()` as a wrapper around `build_skill_snapshot()` and
-  preserved hyphenated on-disk skill lookup in `AgentCore`
+  preserved hyphenated on-disk skill lookup in `AgentCore`; also aligned
+  direct `skill_hubs_dir` scanning between snapshot building and skill
+  file lookup
 - Test-first note:
-  added and updated unit coverage for missing directories, inline metadata,
+  added and updated unit coverage for missing directories, inline
+  metadata, top-level requires/install parsing, direct hub-root skills,
   dependency registration, prompt ranking, and normalization behavior
 - `tizenclaw-tests` scenario decision:
   unchanged; no daemon IPC contract changed in this prompt
@@ -116,6 +154,10 @@
   `tizenclaw-tool-executor` running; host log excerpts include
   `Detected platform and initialized paths`, `Initialized AgentCore`,
   and `Started IPC server`
+- Rework validation:
+  `./deploy_host.sh --test` passed with all workspace tests green after
+  the prompt-15 scanner/root updates, and the restored host daemon passed
+  IPC readiness plus `./deploy_host.sh --status`
 - Review verdict:
   PASS
 - Supervisor Gate: PASS
@@ -128,8 +170,14 @@
   `bash .agent/scripts/cleanup_workspace.sh`
 - Commit command:
   `git commit -F .tmp/commit_msg.txt`
-- Commit created:
+- Latest completed commits:
   `93c81bdf` `Implement textual skill capability scanning`
+  `48dab285` `Record Prompt 15 workflow completion`
+- Rework commit scope:
+  `.dev/DASHBOARD.md`,
+  `src/tizenclaw/src/core/textual_skill_scanner.rs`,
+  `src/tizenclaw/src/core/skill_capability_manager.rs`,
+  `src/tizenclaw/src/core/agent_core.rs`
 - Commit scope:
   `.dev/DASHBOARD.md`,
   `src/tizenclaw/src/core/textual_skill_scanner.rs`,
@@ -137,7 +185,9 @@
   `src/tizenclaw/src/core/skill_support.rs`,
   `src/tizenclaw/src/core/agent_core.rs`
 - Worktree note:
-  unrelated pre-existing modifications were intentionally left unstaged
+  unrelated pre-existing modifications were intentionally left unstaged;
+  the Prompt 15 rework commit isolates only the stale prompt-plan fix
+  and the skill compatibility updates
 - Supervisor Gate: PASS
   Cleanup, file-backed commit message usage, and isolated staging were
-  completed without using `git commit -m`.
+  completed for the Prompt 15 rework without using `git commit -m`.

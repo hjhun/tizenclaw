@@ -130,10 +130,10 @@ fn extract_skill_metadata(content: &str, skill_name: &str) -> SkillMetadata {
                 Some("tags") if !item.is_empty() => metadata.tags.push(item),
                 Some("triggers") if !item.is_empty() => metadata.triggers.push(item),
                 Some("examples") if !item.is_empty() => metadata.examples.push(item),
-                Some("metadata.openclaw.requires") if !item.is_empty() => {
+                Some("requires") | Some("metadata.openclaw.requires") if !item.is_empty() => {
                     metadata.openclaw_requires.push(item)
                 }
-                Some("metadata.openclaw.install") if !item.is_empty() => {
+                Some("install") | Some("metadata.openclaw.install") if !item.is_empty() => {
                     metadata.openclaw_install.push(item)
                 }
                 _ => {}
@@ -163,7 +163,9 @@ fn extract_skill_metadata(content: &str, skill_name: &str) -> SkillMetadata {
 
             if value.is_empty() {
                 section_stack.push((indent, key));
-                if full_key == "metadata.openclaw.requires"
+                if full_key == "requires"
+                    || full_key == "install"
+                    || full_key == "metadata.openclaw.requires"
                     || full_key == "metadata.openclaw.install"
                     || full_key == "tags"
                     || full_key == "triggers"
@@ -182,6 +184,10 @@ fn extract_skill_metadata(content: &str, skill_name: &str) -> SkillMetadata {
                 metadata.triggers.extend(parse_inline_list(&value));
             } else if full_key == "examples" {
                 metadata.examples.extend(parse_inline_list(&value));
+            } else if full_key == "requires" {
+                metadata.openclaw_requires.extend(parse_inline_list(&value));
+            } else if full_key == "install" {
+                metadata.openclaw_install.extend(parse_inline_list(&value));
             } else if full_key == "metadata.openclaw.requires" {
                 metadata.openclaw_requires.extend(parse_inline_list(&value));
             } else if full_key == "metadata.openclaw.install" {
@@ -433,6 +439,26 @@ mod tests {
         assert_eq!(
             skills[0].openclaw_requires,
             vec!["battery_tool", "power_tool"]
+        );
+    }
+
+    #[test]
+    fn test_extracts_top_level_requires_and_install_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let skill_dir = dir.path().join("battery_requires");
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\ndescription: Battery helper\nrequires:\n  - battery_tool\ninstall: sudo apt install battery-tool\n---\n# Skill\n",
+        )
+        .unwrap();
+
+        let skills = scan_textual_skills(dir.path().to_string_lossy().as_ref());
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].openclaw_requires, vec!["battery_tool"]);
+        assert_eq!(
+            skills[0].openclaw_install,
+            vec!["sudo apt install battery-tool"]
         );
     }
 
