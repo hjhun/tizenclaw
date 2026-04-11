@@ -610,3 +610,22 @@
 - [x] Supervisor Gate after Test & Review
   - PASS: runtime logs, IPC scenario proof, regression coverage, and
     follow-up comparison artifacts are captured
+
+- [x] Stage 6: Commit
+  - Workspace cleanup:
+    `bash .agent/scripts/cleanup_workspace.sh` completed before staging
+  - Staged scope:
+    runtime capability code, linux-utility file-manager updates, IPC
+    scenario updates, comparison notes, and the follow-up prompt
+    artifact only
+  - Excluded untracked scope:
+    `.dev/` session state and `DORMAMMU.log` remained unstaged
+  - Commit message path:
+    `.tmp/commit_msg.txt`
+  - Commit title:
+    `Align runtime tooling capabilities`
+  - Commit hash:
+    `54b2e552`
+- [x] Supervisor Gate after Commit
+  - PASS: cleanup completed, ignored and generated session state stayed
+    unstaged, and the runtime tooling capability cycle is committed
