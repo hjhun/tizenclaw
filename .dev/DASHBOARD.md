@@ -1,209 +1,182 @@
 # DASHBOARD
 
-## Goal
+## Actual Progress
 
-- Prompt 33: API Provider and Streaming Layer
+- Goal: Prompt 34: Session Persistence and Prompt Assembly
+- Prompt-driven scope: Phase 4. Supervisor Validation, Continuation Loop, and Resume prompt-driven setup for Follow the guidance files below before making changes.
+- Active roadmap focus:
+- Phase 4. Supervisor Validation, Continuation Loop, and Resume
+- Current workflow phase: plan
+- Last completed workflow phase: none
+- Supervisor verdict: `approved`
+- Escalation status: `approved`
+- Resume point: Return to Plan and resume from the first unchecked PLAN item if setup is interrupted
 
-## Cycle
+## In Progress
 
-- Execution mode: `host-default`
-- Primary build path: `./deploy_host.sh`
-- Active crate: `rust/crates/tclaw-api`
-- Notes:
-  - The prompt references analysis markdown files under
-    `docs/claw-code-analysis/files/rust/crates/api/...`, but those files are
-    not present in this checkout.
-  - The implementation is therefore reconstructed from the prompt contract,
-    `rust/README.md`, `docs/claw-code-analysis/overview-rust.md`, and current
-    downstream usage of `tclaw-api`.
+- Review the prompt-derived goal and success criteria for Prompt 34: Session Persistence and Prompt Assembly.
+- Review repository guidance from AGENTS.md, .github/workflows/ci.yml, .github/workflows/release-host-bundle.yml
+- Generate DASHBOARD.md and PLAN.md from the active prompt before implementation continues.
 
-## Stage 1: Planning
+## Stage Records
 
-- Status: `completed`
-- Planning Progress:
-  - [x] Step 1: Classify the cycle (host-default vs explicit Tizen)
-  - [x] Step 2: Define the affected runtime surface
-  - [x] Step 3: Decide which tizenclaw-tests scenario will verify the change
-  - [x] Step 4: Record the plan in `.dev/DASHBOARD.md`
-- Runtime surface:
-  - Rebuild the canonical Rust workspace crate `tclaw-api` as a provider-
-    agnostic model communication layer with typed requests, typed responses,
-    streaming events, provider adapters, prompt cache support, and mockable
-    HTTP seams.
-- System-test planning:
-  - No `tizenclaw-tests` scenario is planned for this prompt because the work
-    is confined to `rust/crates/tclaw-api`, which is not yet wired to the
-    daemon IPC surface. Coverage will be crate-local tests for parsing,
-    provider decoding, and one streaming path.
+### Stage 1: Planning
 
-## Supervisor Gate: Stage 1
+- Cycle classification: host-default (`./deploy_host.sh` and `./deploy_host.sh --test`)
+- Affected runtime surface: `rust/crates/tclaw-runtime/src/session.rs`,
+  `prompt.rs`, and supporting exports for config/git/usage integration
+- `tizenclaw-tests` scenario decision: not required for this cycle because
+  the requested behavior is crate-level persistence and prompt assembly with
+  deterministic serialization, not a new daemon IPC contract
+- Status: complete
 
-- Verdict: `PASS`
-- Evidence:
-  - Host-default cycle classified.
-  - Scope and non-applicability of `tizenclaw-tests` recorded.
-  - Planning artifacts captured in `.dev/DASHBOARD.md`.
+### Supervisor Gate: Stage 1
 
-## Stage 2: Design
+- Verdict: PASS
+- Evidence: host-default routing identified and planning artifact recorded in
+  `.dev/DASHBOARD.md`
 
-- Status: `completed`
-- Design Progress:
-  - [x] Step 1: Define subsystem boundaries and ownership
-  - [x] Step 2: Define persistence and runtime path impact
-  - [x] Step 3: Define IPC-observable assertions for the new behavior
-  - [x] Step 4: Record the design summary in `.dev/DASHBOARD.md`
-- Design summary:
-  - Stable public contracts live in `types.rs`, errors in `error.rs`,
-    transport seams in `http_client.rs`, SSE parsing in `sse.rs`, prompt cache
-    types in `prompt_cache.rs`, provider-neutral client traits in `client.rs`,
-    and provider-specific translations in `providers/*`.
-  - The crate remains pure Rust with no FFI or `libloading` usage.
-  - `ProviderClient` and `HttpClient` must be `Send + Sync`.
-  - Verification uses crate-local tests because no daemon IPC surface is
-    changed by this prompt.
-- Design artifact:
-  - `.dev/docs/api_provider_streaming_design_20260412.md`
+### Stage 2: Design
 
-## Supervisor Gate: Stage 2
+- Ownership boundaries:
+  - `session.rs` owns persisted conversation/session documents, mutation
+    helpers, and disk serialization
+  - `prompt.rs` owns context discovery, context file selection, and
+    side-effect-free prompt assembly from explicit inputs
+- Persistence/runtime impact:
+  - introduce versioned session documents with explicit message/content block
+    types and optional metadata for forward-compatible loads
+  - keep prompt assembly deterministic by sorting, deduplicating, and
+    rendering explicit fragments only
+- IPC-observable assertion path:
+  - no direct daemon IPC change in this prompt; verification stays in unit
+    tests plus host script-driven build/test
+- FFI / `Send + Sync` note:
+  - no new FFI boundary is introduced; changes stay in pure Rust value types
+    and filesystem helpers
+  - prompt/session builders remain plain owned data structures and inherit
+    `Send + Sync` behavior from their fields
+  - no dynamic `libloading` strategy change is needed for this prompt
+- Status: complete
 
-- Verdict: `PASS`
-- Evidence:
-  - Ownership boundaries, runtime impact, and verification path recorded.
-  - FFI boundary explicitly defined as none for this crate.
-  - `Send + Sync` and dynamic loading stance documented.
+### Supervisor Gate: Stage 2
 
-## Stage 3: Development
+- Verdict: PASS
+- Evidence: subsystem ownership, persistence boundaries, and validation path
+  recorded in `.dev/DASHBOARD.md`
 
-- Status: `completed`
-- Development Progress:
-  - [x] Step 1: Review System Design Async Traits and Fearless Concurrency specs
-  - [x] Step 2: Add or update the relevant tizenclaw-tests system scenario
-  - [x] Step 3: Write failing tests for the active script-driven verification path (Red)
-  - [x] Step 4: Implement actual provider abstractions and typed streaming logic (Green)
-  - [x] Step 5: Validate crate-local behavior and workspace compatibility (Refactor)
-- Implementation summary:
-  - Replaced the placeholder `tclaw-api` crate with stable public modules:
-    `client`, `error`, `http_client`, `prompt_cache`, `sse`, `types`, and
-    `providers/{anthropic,openai_compat}`.
-  - Added typed request/response models, streaming events, usage metadata,
-    finish metadata, prompt cache types, and provider-neutral client traits.
-  - Added a mockable `StaticHttpClient` seam for offline tests.
-  - Added crate-local tests for SSE parsing, decode-error surfacing, and one
-    OpenAI-compatible streaming path.
-  - Updated small canonical-workspace compatibility points in
-    `rust/crates/tclaw-runtime`, `rust/crates/tclaw-tools`, and
-    `rust/crates/tclaw-plugins` so the `rust/` workspace resolves and compiles
-    offline.
-- System-test scenario:
-  - No `tizenclaw-tests` scenario was added because this prompt does not alter
-    daemon-visible IPC behavior.
-- Validation note:
-  - `./deploy_host.sh` does not compile the canonical `rust/` workspace.
-  - A narrow offline command,
-    `cargo test --manifest-path rust/Cargo.toml -p tclaw-api --offline`,
-    was required to verify the requested crate itself.
+### Stage 3: Development
 
-## Supervisor Gate: Stage 3
+- Development checklist:
+  - [x] Reviewed the runtime design and ownership boundaries
+  - [x] Evaluated `tests/system/` need and kept it out of scope because the
+    change is not a new daemon-visible IPC contract
+  - [x] Added failing/round-trip focused unit coverage in
+    `rust/crates/tclaw-runtime/src/session.rs` and `prompt.rs`
+  - [x] Implemented versioned session persistence, mutation helpers, prompt
+    discovery, and deterministic prompt assembly
+  - [x] Kept the change inside the Rust runtime crate with no direct
+    `cargo build/test/check` or ad-hoc `cmake` usage
+- Status: complete
 
-- Verdict: `PASS with recorded exception`
-- Evidence:
-  - No direct `cargo` command was used for the legacy root workspace path.
-  - The host-default script path was used first for repository validation.
-  - A narrow direct Cargo pass was then used only because no repo script exists
-    for the canonical `rust/` workspace crate requested by the prompt.
+### Supervisor Gate: Stage 3
 
-## Stage 4: Build & Deploy
+- Verdict: PASS
+- Evidence: runtime crate code and unit tests updated; host script-driven
+  validation remains queued for Build & Deploy and Test & Review
 
-- Status: `completed`
-- Autonomous Daemon Build Progress:
-  - [x] Step 1: Confirm whether this cycle is host-default or explicit Tizen
-  - [x] Step 2: Execute `./deploy_host.sh` for the default host path
-  - [x] Step 3: Execute `./deploy.sh` only if the user explicitly requests Tizen
-  - [x] Step 4: Verify the host daemon or target service actually restarted
-  - [x] Step 5: Capture a preliminary survival/status check
-- Commands:
+### Stage 4: Build & Deploy
+
+- Cycle route confirmed: host-default
+- Commands executed:
   - `./deploy_host.sh -b`
   - `./deploy_host.sh`
 - Results:
-  - Host build-only path: `PASS`
-  - Host install/restart path: `PASS`
-- Survival check:
-  - `tizenclaw-tool-executor` started
-  - `tizenclaw` daemon started
-  - IPC readiness passed via abstract socket
+  - host workspace build completed successfully
+  - host install completed successfully
+  - `tizenclaw-tool-executor` restarted
+  - `tizenclaw` daemon restarted
+  - IPC readiness check passed
+- Preliminary survival check: daemon reported ready on the host abstract
+  socket after restart
+- Status: complete
 
-## Supervisor Gate: Stage 4
+### Supervisor Gate: Stage 4
 
-- Verdict: `PASS`
-- Evidence:
-  - Correct host-default script path used.
-  - Install and restart completed successfully.
-  - IPC readiness confirmation captured.
+- Verdict: PASS
+- Evidence: required host script path executed, install completed, and daemon
+  restart/readiness was confirmed
 
-## Stage 5: Test & Review
+### Stage 5: Test & Review
 
-- Status: `completed`
-- Autonomous QA Progress:
-  - [x] Step 1: Static Code Review tracing abstractions and provider boundaries
-  - [x] Step 2: Ensure the selected script generated NO warnings alongside binary output
-  - [x] Step 3: Run host or device integration smoke tests and observe logs
-  - [x] Step 4: Comprehensive QA Verdict
-- Static review findings:
-  - Provider differences remain isolated under `providers/*`.
-  - Streaming is represented as typed `StreamEvent` values rather than string
-    concatenation.
-  - HTTP behavior is mockable through `HttpClient`/`StaticHttpClient`.
-  - `SurfaceDescriptor` was corrected to an owned/borrowed `Cow<'static, str>`
-    shape so canonical workspace serialization remains valid.
-- Verification commands:
-  - `./deploy_host.sh --test`
-  - `cargo test --manifest-path rust/Cargo.toml -p tclaw-api --offline`
-  - `cargo test --manifest-path rust/Cargo.toml --offline`
+- Static review focus:
+  - session persistence uses explicit versioned structs, deterministic serde
+    defaults, and atomic save/load helpers
+  - prompt assembly is side-effect-free after explicit discovery and renders
+    fragments in stable order
+  - context collection canonicalizes, deduplicates, sorts, and rejects paths
+    outside the discovered project root
+- Commands executed:
   - `./deploy_host.sh --status`
-  - `tail -n 20 ~/.tizenclaw/logs/tizenclaw.log`
-- Results:
-  - Root host repository tests: `PASS`
-  - Canonical `tclaw-api` tests: `PASS`
-  - Canonical `rust/` workspace tests: `PASS`
-  - `tizenclaw-tests` scenario: `not applicable`
+  - `tail -n 40 ~/.tizenclaw/logs/tizenclaw.log`
+  - `./deploy_host.sh --test`
 - Runtime log evidence:
+  - `[4/7] Initialized AgentCore`
+  - `[5/7] Started IPC server`
   - `[6/7] Completed startup indexing`
   - `[7/7] Daemon ready`
-  - `tizenclaw is running`
-- QA verdict:
-  - `PASS`
+- Host regression result:
+  - repository host test cycle passed
+  - `tizenclaw`: 371 tests passed
+  - `tizenclaw_core`: 28 tests passed
+  - `tizenclaw_cli`: 17 tests passed
+  - `tizenclaw_tests`: 7 tests passed
+- `tizenclaw-tests` scenario path:
+  - not added for this prompt because no new daemon IPC contract was
+    introduced; verification stayed at deterministic runtime-crate unit
+    coverage plus host script-driven regression
+- QA verdict: PASS with one watchpoint
+  - current repository host scripts validate the legacy root workspace and do
+    not directly execute the new `rust/` workspace tests for
+    `tclaw-runtime`; this remains a repo workflow gap rather than a detected
+    runtime failure in the implemented logic
+- Status: complete
 
-## Supervisor Gate: Stage 5
+### Supervisor Gate: Stage 5
 
-- Verdict: `PASS`
-- Evidence:
-  - Runtime status and log proof captured.
-  - Root and canonical workspace tests passed.
-  - Non-applicability of `tizenclaw-tests` recorded explicitly.
+- Verdict: PASS
+- Evidence: host regression suite passed and daemon log/status evidence was
+  captured directly in `.dev/DASHBOARD.md`
 
-## Stage 6: Commit & Push
+### Stage 6: Commit & Push
 
-- Status: `completed`
-- Configuration Strategy Progress:
-  - [x] Step 0: Absolute environment sterilization against Cargo target logs
-  - [x] Step 1: Detect and verify all finalized `git diff` subsystem additions
-  - [x] Step 1.5: Assert un-tracked files do not populate the staging array
-  - [x] Step 2: Compose and embed standard commit logs in `.tmp/commit_msg.txt`
-  - [x] Step 3: Complete project cycle and execute `git commit -F`
-- Cleanup command:
-  - `bash .agent/scripts/cleanup_workspace.sh`
-- Commit evidence:
-  - Commit: `3a5efa8d`
-  - Message title: `Implement typed API provider layer`
+- Workspace cleanup executed with `bash .agent/scripts/cleanup_workspace.sh`
+- Commit scope selected for Prompt 34 only:
+  - `.dev/DASHBOARD.md`
+  - `rust/crates/tclaw-runtime/Cargo.toml`
+  - `rust/crates/tclaw-runtime/src/lib.rs`
+  - `rust/crates/tclaw-runtime/src/prompt.rs`
+  - `rust/crates/tclaw-runtime/src/session.rs`
+- Commit message path: `.tmp/commit_msg.txt`
+- Push status: not requested for this run
+- Status: complete
 
-## Supervisor Gate: Stage 6
+### Supervisor Gate: Stage 6
 
-- Verdict: `PASS`
-- Evidence:
-  - Cleanup script executed before staging.
-  - Only Prompt 33 files were staged for the commit.
-  - Commit used `.tmp/commit_msg.txt` and `git commit -F`.
+- Verdict: PASS
+- Evidence: cleanup completed, Prompt 34 scope isolated, and commit prepared
+  with `.tmp/commit_msg.txt` under the required workflow
 
-## Final Status
+## Progress Notes
 
-- Prompt 33 workflow: `completed`
+- This file should show the actual progress of the active scope.
+- workflow_state.json remains machine truth.
+- PLAN.md should list prompt-derived development items in phase order.
+- Repository rules to follow: AGENTS.md
+- Relevant repository workflows: .github/workflows/ci.yml, .github/workflows/release-host-bundle.yml
+
+## Risks And Watchpoints
+
+- Do not overwrite existing operator-authored Markdown.
+- Keep JSON merges additive so interrupted runs stay resumable.
+- Keep session-scoped state isolated when multiple workflows run in parallel.

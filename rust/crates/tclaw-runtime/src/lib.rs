@@ -64,22 +64,28 @@ pub use permission_enforcer::PermissionEnforcerState;
 pub use permissions::{PermissionDecision, PermissionMode, PermissionRequest, PermissionScope};
 pub use plugin_lifecycle::{PluginLifecyclePhase, PluginLifecycleState};
 pub use policy_engine::{PolicyEngineState, PolicyRule};
-pub use prompt::{PromptAssembly, PromptFragment, PromptFragmentKind};
+pub use prompt::{
+    collect_context_files, ContextFile, ProjectContext, PromptAssembly, PromptBuilder,
+    PromptEnvironmentContext, PromptError, PromptFragment, PromptFragmentKind,
+};
 pub use recovery_recipes::RecoveryRecipe;
 pub use remote::RemoteRuntimeSpec;
 pub use sandbox::SandboxPolicy;
-pub use session::{SessionRecord, SessionState, SessionStore};
+pub use session::{
+    ConversationMessage, SessionCompactionMetadata, SessionContentBlock, SessionError,
+    SessionForkMetadata, SessionMessageRole, SessionRecord, SessionState, SessionStore,
+};
 pub use session_control::{SessionControlCommand, SessionControlResult};
 pub use stale_base::StaleBaseReport;
 pub use stale_branch::StaleBranchReport;
 pub use summary_compression::SummaryCompressionResult;
 pub use task_packet::{TaskPacket, TaskPriority};
 pub use task_registry::TaskRegistrySnapshot;
+pub use tclaw_api::{canonical_surfaces, SurfaceDescriptor};
 pub use team_cron_registry::{TeamCronEntry, TeamCronRegistry};
 pub use trust_resolver::{TrustLevel, TrustResolution};
 pub use usage::{TokenUsage, UsageSnapshot};
 pub use worker_boot::{WorkerBootSpec, WorkerBootState, WorkerIdentity, WorkerKind};
-pub use tclaw_api::{canonical_surfaces, SurfaceDescriptor};
 
 #[cfg(test)]
 mod tests {
@@ -90,10 +96,7 @@ mod tests {
         let bootstrap = RuntimeBootstrap::new();
 
         assert_eq!(bootstrap.canonical_runtime, "rust");
-        assert!(bootstrap
-            .modules
-            .modules
-            .contains(&"config".to_string()));
+        assert!(bootstrap.modules.modules.contains(&"config".to_string()));
         assert!(bootstrap
             .surfaces
             .iter()
