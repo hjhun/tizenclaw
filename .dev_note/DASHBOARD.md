@@ -2387,3 +2387,6 @@
     `Recover Telegram Codex history replay`
   - Excluded generated scope:
     `.dev/`, `DORMAMMU.log`
+- [x] Supervisor Gate after Commit
+  - PASS: cleanup script, formatted commit flow, and generated-file
+    exclusion were all preserved for the Telegram recovery slice
