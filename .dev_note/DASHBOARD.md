@@ -513,6 +513,132 @@
   - PASS: the saved-state recovery is documented with commit-scope
     restrictions and is ready for final version-control execution
 
+## OpenAI Codex OAuth Expiry Hardening Cycle
+
+- [x] Stage 1: Planning
+  - Request:
+    harden the recurring OAuth-based OpenAI link path so repeated code
+    changes do not reintroduce auth breakage, and add guard comments
+  - Cycle classification:
+    host-default (`./deploy_host.sh`)
+  - Runtime surface:
+    `tizenclaw-cli` Codex OAuth snapshot export,
+    `tizenclaw` runtime fallback loading for `openai-codex`, and daemon
+    IPC-visible OAuth metadata under `get_llm_config`
+  - System-test requirement:
+    update `tests/system/basic_ipc_smoke.json` before implementation to
+    assert `backends.openai-codex.oauth.expires_at` is present
+- [x] Supervisor Gate after Planning
+  - PASS: host-default routing, OAuth expiry hardening scope, and
+    system-test planning were recorded
+
+- [x] Stage 2: Design
+  - Ownership boundaries:
+    `tizenclaw-cli` must export a complete OAuth snapshot including a
+    usable expiry hint, while `tizenclaw` must treat placeholder config
+    values such as `expires_at=0` as missing and derive JWT expiry
+    instead of forcing a spurious refresh
+  - Persistence design:
+    preserve `~/.codex/auth.json` as source-of-truth, keep
+    `~/.tizenclaw/config/llm_config.json` as runtime cache, and ensure
+    cached OAuth metadata stays self-consistent after reconnects
+  - IPC assertions:
+    `get_llm_config` for `backends.openai-codex.oauth` must expose
+    `source`, `auth_path`, `account_id`, and `expires_at`
+  - Design artifact:
+    `.dev_note/docs/openai_oauth_expiry_hardening_design_20260411.md`
+- [x] Supervisor Gate after Design
+  - PASS: ownership, persistence, and daemon-visible expiry assertions
+    are documented
+
+- [x] Stage 3: Development
+  - TDD contract:
+    updated `tests/system/basic_ipc_smoke.json` before product-code
+    changes to assert `backends.openai-codex.oauth.expires_at`
+  - Red result:
+    the first `./deploy_host.sh --test` cycle failed on the new
+    `openai_codex_ignores_placeholder_config_expiry` regression and
+    proved that `expires_at=0` survived into runtime auth state
+  - Green result:
+    `tizenclaw-cli` now derives `oauth.expires_at` from the imported
+    JWT when connect/import rewrites the runtime cache, `tizenclaw`
+    ignores non-positive cached expiry placeholders and falls back to
+    JWT expiry, and refreshed Codex auth writes keep an explicit expiry
+    hint for later reconnect/import paths
+  - Guard comments:
+    added inline comments in the CLI snapshot path and runtime config
+    loader explaining why `expires_at=0` must never be treated as a real
+    expiry
+  - Regression coverage:
+    added CLI coverage for JWT-derived snapshot expiry and runtime
+    coverage for placeholder-expiry fallback
+  - Development verification:
+    `./deploy_host.sh --test` passed after the fix
+- [x] Supervisor Gate after Development
+  - PASS: system scenario updated first, script-driven red/green
+    validation used, and the OAuth expiry regression is covered
+
+- [x] Stage 4: Build & Deploy
+  - Command:
+    `./deploy_host.sh`
+  - Result:
+    host binaries were installed under `/home/hjhun/.tizenclaw`, the
+    daemon restarted, and the dashboard remained reachable on `9091`
+  - Survival check:
+    `./deploy_host.sh --status` reported running daemon, tool executor,
+    and dashboard processes after the OAuth hardening build
+- [x] Supervisor Gate after Build & Deploy
+  - PASS: the host-default deployment path completed and the updated
+    daemon restarted cleanly
+
+- [x] Stage 5: Test & Review
+  - Static review focus:
+    the CLI runtime cache now exports a self-contained OAuth expiry
+    value, runtime fallback no longer trusts placeholder `expires_at=0`,
+    and the persisted auth refresh path preserves an explicit expiry
+    hint for later reconnects
+  - Runtime evidence:
+    `./deploy_host.sh --status` showed healthy daemon, executor, and
+    dashboard processes with port `9091` listening
+  - Log evidence:
+    `~/.tizenclaw/logs/tizenclaw.log` contained
+    `Daemon ready (1287ms) startup sequence completed`
+  - Cache repair evidence:
+    `~/.tizenclaw/bin/tizenclaw-cli auth openai-codex connect --json`
+    rewrote `~/.tizenclaw/config/llm_config.json` so
+    `oauth.expires_at=1776136892`
+  - System test:
+    `~/.tizenclaw/bin/tizenclaw-tests scenario --file tests/system/basic_ipc_smoke.json`
+    passed and returned `backends.openai-codex.oauth.expires_at`
+  - Repository regression:
+    `./deploy_host.sh --test` passed with all tests green, including the
+    new CLI and runtime OAuth expiry regressions
+  - Operator check:
+    `~/.tizenclaw/bin/tizenclaw-cli --stream=false "짧게 ok만 답해줘"`
+    returned `ok`
+  - QA verdict:
+    PASS
+- [x] Supervisor Gate after Test & Review
+  - PASS: runtime logs, cache repair evidence, IPC scenario proof, and
+    host regression evidence are captured
+
+- [x] Stage 6: Commit
+  - Workspace cleanup:
+    `bash .agent/scripts/cleanup_workspace.sh` completed before staging
+  - Staged scope:
+    Codex OAuth expiry hardening in CLI/runtime code, system smoke
+    scenario update, and `.dev_note` cycle tracking only
+  - Ignored-path handling:
+    `.dev_note/docs/openai_oauth_expiry_hardening_design_20260411.md`
+    is force-added because `.gitignore` ignores the `.dev_note` tree
+  - Commit message path:
+    `.tmp/commit_msg.txt`
+  - Commit title:
+    `Harden Codex OAuth expiry handling`
+- [x] Supervisor Gate after Commit
+  - PASS: cleanup script executed, ignored artifacts stayed unstaged,
+    and the commit message followed the repository format
+
 ## Tool Execution Audit Cycle
 
 - [x] Stage 1: Planning

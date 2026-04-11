@@ -574,13 +574,99 @@ fn codex_auth_string(auth_doc: &Value, key: &str) -> Option<String> {
         })
 }
 
+fn codex_auth_i64(auth_doc: &Value, key: &str) -> Option<i64> {
+    auth_doc
+        .get("tokens")
+        .and_then(Value::as_object)
+        .and_then(|tokens| tokens.get(key))
+        .and_then(Value::as_i64)
+        .or_else(|| auth_doc.get(key).and_then(Value::as_i64))
+        .filter(|value| *value > 0)
+}
+
+fn decode_base64url_nopad(input: &str) -> Option<Vec<u8>> {
+    fn decode_char(byte: u8) -> Option<u8> {
+        match byte {
+            b'A'..=b'Z' => Some(byte - b'A'),
+            b'a'..=b'z' => Some(byte - b'a' + 26),
+            b'0'..=b'9' => Some(byte - b'0' + 52),
+            b'-' => Some(62),
+            b'_' => Some(63),
+            _ => None,
+        }
+    }
+
+    let bytes = input.as_bytes();
+    if bytes.is_empty() {
+        return Some(Vec::new());
+    }
+
+    let mut decoded = Vec::with_capacity((bytes.len() * 3) / 4 + 3);
+    let mut chunk = [0u8; 4];
+    let mut chunk_len = 0usize;
+
+    for &byte in bytes {
+        chunk[chunk_len] = decode_char(byte)?;
+        chunk_len += 1;
+        if chunk_len == 4 {
+            decoded.push((chunk[0] << 2) | (chunk[1] >> 4));
+            decoded.push((chunk[1] << 4) | (chunk[2] >> 2));
+            decoded.push((chunk[2] << 6) | chunk[3]);
+            chunk_len = 0;
+        }
+    }
+
+    match chunk_len {
+        0 => {}
+        2 => {
+            decoded.push((chunk[0] << 2) | (chunk[1] >> 4));
+        }
+        3 => {
+            decoded.push((chunk[0] << 2) | (chunk[1] >> 4));
+            decoded.push((chunk[1] << 4) | (chunk[2] >> 2));
+        }
+        _ => return None,
+    }
+
+    Some(decoded)
+}
+
+fn decode_jwt_payload(token: &str) -> Option<Value> {
+    let payload = token.split('.').nth(1)?;
+    let decoded = decode_base64url_nopad(payload)?;
+    serde_json::from_slice::<Value>(&decoded).ok()
+}
+
+fn jwt_exp(token: &str) -> Option<i64> {
+    decode_jwt_payload(token)?
+        .get("exp")
+        .and_then(Value::as_i64)
+        .filter(|value| *value > 0)
+}
+
 fn codex_oauth_snapshot(auth_doc: &Value) -> Value {
     let mut oauth = Map::new();
+    let access_token = codex_auth_string(auth_doc, "access_token");
 
     for key in ["access_token", "refresh_token", "id_token", "account_id"] {
-        if let Some(value) = codex_auth_string(auth_doc, key) {
+        if let Some(value) = access_token
+            .as_ref()
+            .filter(|_| key == "access_token")
+            .cloned()
+            .or_else(|| codex_auth_string(auth_doc, key))
+        {
             oauth.insert(key.to_string(), Value::String(value));
         }
+    }
+
+    // `llm_config.json` starts with `expires_at=0`. If connect/import
+    // leaves that placeholder behind, later daemon restarts can treat a
+    // still-valid Codex session as already expired and force an avoidable
+    // OAuth refresh path.
+    if let Some(expires_at) = codex_auth_i64(auth_doc, "expires_at")
+        .or_else(|| access_token.as_deref().and_then(jwt_exp))
+    {
+        oauth.insert("expires_at".to_string(), Value::from(expires_at));
     }
 
     oauth.insert(
@@ -1827,6 +1913,20 @@ mod tests {
         assert_eq!(snapshot["refresh_token"], json!("flat-refresh-token"));
         assert_eq!(snapshot["id_token"], json!("flat-id-token"));
         assert_eq!(snapshot["account_id"], json!("acct-flat"));
+    }
+
+    #[test]
+    fn codex_oauth_snapshot_derives_expires_at_from_access_token() {
+        let auth_doc = json!({
+            "tokens": {
+                "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJleHAiOjQxMDI0NDQ4MDAsImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6eyJjaGF0Z3B0X2FjY291bnRfaWQiOiJhY2N0LWV4cCJ9fQ.sig",
+                "refresh_token": "refresh-token"
+            }
+        });
+
+        let snapshot = codex_oauth_snapshot(&auth_doc);
+
+        assert_eq!(snapshot["expires_at"], json!(4102444800i64));
     }
 
     #[test]

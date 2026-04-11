@@ -136,6 +136,10 @@ impl OpenAiBackend {
         cursor.as_i64()
     }
 
+    fn positive_config_i64(config: &Value, path: &[&str]) -> Option<i64> {
+        Self::config_i64(config, path).filter(|value| *value > 0)
+    }
+
     fn json_string(value: &Value, key: &str) -> Option<String> {
         value
             .get(key)
@@ -155,6 +159,16 @@ impl OpenAiBackend {
             .filter(|entry| !entry.is_empty())
             .map(ToString::to_string)
             .or_else(|| Self::json_string(value, key))
+    }
+
+    fn codex_auth_i64(value: &Value, key: &str) -> Option<i64> {
+        value
+            .get("tokens")
+            .and_then(Value::as_object)
+            .and_then(|tokens| tokens.get(key))
+            .and_then(Value::as_i64)
+            .or_else(|| value.get(key).and_then(Value::as_i64))
+            .filter(|entry| *entry > 0)
     }
 
     fn decode_jwt_payload(token: &str) -> Option<Value> {
@@ -213,7 +227,11 @@ impl OpenAiBackend {
         let id_token = Self::codex_auth_string(&doc, "id_token");
         let account_id = Self::codex_auth_string(&doc, "account_id")
             .or_else(|| Self::jwt_account_id(&access_token));
-        let expires_at = Self::jwt_exp(&access_token);
+        let expires_at = Self::json_string(&doc, "expires_at")
+            .and_then(|value| value.parse::<i64>().ok())
+            .filter(|value| *value > 0)
+            .or_else(|| Self::codex_auth_i64(&doc, "expires_at"))
+            .or_else(|| Self::jwt_exp(&access_token));
         let last_refresh = doc
             .get("last_refresh")
             .and_then(Value::as_str)
@@ -247,7 +265,11 @@ impl OpenAiBackend {
         let account_id = Self::config_string(config, &["oauth", "account_id"])
             .map(ToString::to_string)
             .or_else(|| Self::jwt_account_id(&access_token));
-        let expires_at = Self::config_i64(config, &["oauth", "expires_at"])
+        // The default config template uses `expires_at=0` as a placeholder.
+        // Treat non-positive values as "missing" so a valid JWT-backed
+        // Codex session does not get forced into an unnecessary refresh
+        // after reconnects or auth-file fallback.
+        let expires_at = Self::positive_config_i64(config, &["oauth", "expires_at"])
             .or_else(|| Self::jwt_exp(&access_token));
         Some(CodexAuthState {
             access_token,
@@ -325,6 +347,13 @@ impl OpenAiBackend {
         }
         if let Some(account_id) = &state.account_id {
             root["tokens"]["account_id"] = json!(account_id);
+        }
+        if let Some(expires_at) = state.expires_at.filter(|value| *value > 0) {
+            // Keep an explicit expiry hint beside the JWT so future
+            // reconnect/import paths do not fall back to placeholder
+            // values when the auth file is the only surviving source.
+            root["expires_at"] = json!(expires_at);
+            root["tokens"]["expires_at"] = json!(expires_at);
         }
 
         if let Some(parent) = path.parent() {
@@ -1550,6 +1579,38 @@ mod tests {
         }));
 
         assert!(initialized);
+    }
+
+    #[test]
+    fn openai_codex_ignores_placeholder_config_expiry() {
+        let mut backend = OpenAiBackend::new("openai-codex");
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let access_token = create_jwt(json!({
+            "exp": now + 3600,
+            "https://api.openai.com/auth": {
+                "chatgpt_account_id": "acct-expiry"
+            }
+        }));
+        let initialized = backend.initialize(&json!({
+            "oauth": {
+                "source": "config",
+                "access_token": access_token,
+                "refresh_token": "refresh-token",
+                "expires_at": 0
+            }
+        }));
+        let expires_at = backend
+            .codex_auth
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|state| state.expires_at);
+
+        assert!(initialized);
+        assert_eq!(expires_at, Some(now + 3600));
     }
 
     #[test]

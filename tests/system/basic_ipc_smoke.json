@@ -40,6 +40,10 @@
         {
           "path": "value.account_id",
           "exists": true
+        },
+        {
+          "path": "value.expires_at",
+          "exists": true
         }
       ]
     },
