@@ -265,10 +265,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "tclaw-commands"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "tclaw-plugins"
 version = "0.1.0"
 dependencies = [
  "tclaw-api",
+ "tclaw-commands",
 ]
 
 [[package]]
@@ -278,6 +287,8 @@ dependencies = [
  "serde",
  "serde_json",
  "tclaw-api",
+ "tclaw-commands",
+ "tclaw-plugins",
  "tempfile",
  "thiserror",
 ]

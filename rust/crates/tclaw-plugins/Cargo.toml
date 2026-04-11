@@ -6,3 +6,4 @@ version.workspace = true
 
 [dependencies]
 tclaw-api = { path = "../tclaw-api" }
+tclaw-commands = { path = "../tclaw-commands" }

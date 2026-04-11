@@ -3,6 +3,7 @@ pub mod bash_validation;
 pub mod bootstrap;
 pub mod branch_lock;
 pub mod compact;
+pub mod commands;
 pub mod config;
 pub mod config_validate;
 pub mod conversation;
@@ -45,6 +46,7 @@ pub use bash_validation::{BashValidationResult, BashValidationViolation};
 pub use bootstrap::{RuntimeBootstrap, RuntimeModuleMap};
 pub use branch_lock::BranchLockState;
 pub use compact::CompactionPlan;
+pub use commands::{runtime_command_manifests, runtime_command_registry};
 pub use config::{McpRuntimeConfig, RuntimeConfig, RuntimeConfigPatch, RuntimePaths, RuntimeProfile};
 pub use config_validate::{ConfigValidationIssue, ConfigValidationReport};
 pub use conversation::{
@@ -108,6 +110,13 @@ pub use summary_compression::SummaryCompressionResult;
 pub use task_packet::{TaskPacket, TaskPriority};
 pub use task_registry::TaskRegistrySnapshot;
 pub use tclaw_api::{canonical_surfaces, SurfaceDescriptor};
+pub use tclaw_commands::{
+    built_in_command_manifests, parse_slash_command, CommandManifestEntry, CommandRegistry,
+    CommandRegistryBuilder, CommandRegistryError, CommandSource, InputValidationError,
+    ParsedCommandArgument, RawSlashCommand, RegistryParseError, RegistryParseOutcome,
+    ResolvedSlashCommand, ResumeBehavior, SlashCommandArgHint, SlashCommandMetadata,
+    SlashCommandParseError, SlashCommandParseOutcome,
+};
 pub use team_cron_registry::{TeamCronEntry, TeamCronRegistry};
 pub use trust_resolver::{TrustLevel, TrustResolution};
 pub use usage::{TokenUsage, UsageSnapshot};
@@ -122,10 +131,21 @@ mod tests {
         let bootstrap = RuntimeBootstrap::new();
 
         assert_eq!(bootstrap.canonical_runtime, "rust");
+        assert!(bootstrap
+            .modules
+            .modules
+            .contains(&"commands".to_string()));
         assert!(bootstrap.modules.modules.contains(&"config".to_string()));
         assert!(bootstrap
             .surfaces
             .iter()
             .any(|surface| surface.name == "runtime"));
+    }
+
+    #[test]
+    fn runtime_registry_is_available_from_the_root_module() {
+        let registry = runtime_command_registry().expect("registry");
+        assert!(registry.resolve("plugin").is_some());
+        assert!(registry.resolve("metadata.resume").is_some());
     }
 }

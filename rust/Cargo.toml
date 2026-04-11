@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/tclaw-api",
     "crates/tclaw-cli",
+    "crates/tclaw-commands",
     "crates/tclaw-plugins",
     "crates/tclaw-runtime",
     "crates/tclaw-tools",

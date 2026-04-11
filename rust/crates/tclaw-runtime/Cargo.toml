@@ -6,6 +6,8 @@ version.workspace = true
 
 [dependencies]
 tclaw-api = { path = "../tclaw-api" }
+tclaw-commands = { path = "../tclaw-commands" }
+tclaw-plugins = { path = "../tclaw-plugins" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

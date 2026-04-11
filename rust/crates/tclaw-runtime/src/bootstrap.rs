@@ -16,6 +16,7 @@ impl RuntimeModuleMap {
                 "bootstrap",
                 "branch_lock",
                 "compact",
+                "commands",
                 "config",
                 "config_validate",
                 "conversation",

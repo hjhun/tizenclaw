@@ -1,0 +1,48 @@
+{
+  "name": "command-registry-runtime-contract",
+  "steps": [
+    {
+      "name": "builtins-are-listed",
+      "method": "command_registry",
+      "params": {
+        "source": "built_in"
+      },
+      "assertions": [
+        {
+          "path": "commands",
+          "exists": true
+        },
+        {
+          "path": "commands.0.source",
+          "equals": "built_in"
+        }
+      ]
+    },
+    {
+      "name": "plugin-commands-remain-distinguishable",
+      "method": "command_registry",
+      "params": {
+        "source": "plugin"
+      },
+      "assertions": [
+        {
+          "path": "commands.0.source.plugin_name",
+          "exists": true
+        }
+      ]
+    },
+    {
+      "name": "resume-metadata-is-discoverable",
+      "method": "command_registry",
+      "params": {
+        "command": "resume"
+      },
+      "assertions": [
+        {
+          "path": "command.metadata.resume_behavior",
+          "equals": "resume_only"
+        }
+      ]
+    }
+  ]
+}

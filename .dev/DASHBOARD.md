@@ -2,212 +2,247 @@
 
 ## Actual Progress
 
-- Goal: Prompt 37: MCP Stdio and Tool Bridge
-- Prompt-driven scope: Rebuild the runtime MCP subsystem in
-  `rust/crates/tclaw-runtime`
-- Active roadmap focus:
-- Stage 6 Commit
-- Current workflow phase: commit
-- Last completed workflow phase: test_review
-- Supervisor verdict: `pass(stage-5)`
+- Goal: Prompt 38: Commands and Slash Command System
+- Prompt-driven scope: Build the Rust command registry and slash-command
+  parsing surface in the canonical `rust/` workspace.
+- Active roadmap focus: First-class command registry, plugin command
+  discovery, structured parsing, validation helpers, and resume metadata.
+- Current workflow phase: planning
+- Last completed workflow phase: none
+- Supervisor verdict: `pending`
 - Escalation status: `none`
-- Resume point: Continue from the first incomplete stage gate in this file
+- Resume point: Resume from the first unchecked item in the active stage
+  checklist if the cycle is interrupted.
 
 ## In Progress
 
-- Stage 1 Planning: classify cycle, define runtime surface, and document
-  the MCP system-test decision.
+- Complete Planning and Design gates for Prompt 38 before touching source.
+- Align the new command crate with the existing `tclaw-runtime`,
+  `tclaw-plugins`, and `tclaw-cli` workspace layout.
 
 ## Progress Notes
 
 - This file should show the actual progress of the active scope.
 - workflow_state.json remains machine truth.
-- PLAN.md should list prompt-derived development items in phase order.
 - Repository rules to follow: AGENTS.md
-- Relevant repository workflows: .github/workflows/ci.yml, .github/workflows/release-host-bundle.yml
-- Planning classification: `host-default`
-- Planned build/test scripts: `./deploy_host.sh` and
-  `./deploy_host.sh --test`
-- Affected runtime surface:
-  `mcp.rs`, `mcp_stdio.rs`, `mcp_client.rs`, `mcp_server.rs`,
-  `mcp_lifecycle_hardened.rs`, `config.rs`, and a new
-  `mcp_tool_bridge.rs` module exported from `lib.rs`
-- Runtime behavior target:
-  JSON-RPC MCP modeling, stdio transport, lifecycle/health tracking,
-  resource/tool discovery, and MCP tool bridging into the runtime tool
-  registry abstraction
-- `tizenclaw-tests` scenario decision:
-  none planned initially because the requested scope is confined to the
-  runtime crate abstractions and unit/integration-style crate tests; add
-  a daemon-facing scenario only if implementation requires an exposed IPC
-  surface change
+- Host-first execution path applies for this cycle: `./deploy_host.sh`
+- Prompt references `crates/commands`, `crates/plugins`, `crates/runtime`,
+  and `crates/rusty-claude-cli`, but the canonical workspace currently uses
+  `rust/crates/tclaw-*` crate names.
 
 ## Risks And Watchpoints
 
 - Do not overwrite existing operator-authored Markdown.
-- Keep JSON merges additive so interrupted runs stay resumable.
-- Keep session-scoped state isolated when multiple workflows run in parallel.
-- The prompt reference docs are not present at the provided paths, so the
-  live runtime crate and existing app-level MCP client act as the local
-  behavioral reference.
+- No direct `cargo build`, `cargo test`, `cargo check`, or `cmake`.
+- The new command APIs must remain decoupled from CLI execution.
 
-## Stage Records
+## Stage 1: Planning
 
-### Stage 1: Planning
+Planning Progress:
+- [x] Step 1: Classify the cycle (host-default vs explicit Tizen)
+- [x] Step 2: Define the affected runtime surface
+- [x] Step 3: Decide which tizenclaw-tests scenario will verify the change
+- [x] Step 4: Record the plan in .dev/DASHBOARD.md
 
-- Status: `completed`
-- Checklist:
-  - [x] Step 1: Classify the cycle (host-default vs explicit Tizen)
-  - [x] Step 2: Define the affected runtime surface
-  - [x] Step 3: Decide which tizenclaw-tests scenario will verify the change
-  - [x] Step 4: Record the plan in `.dev/DASHBOARD.md`
-- Result:
-  host-default cycle. Implement MCP runtime layers in the runtime crate
-  and verify primarily with crate-level tests and the host script path.
+- Cycle classification: `host-default`
+- Affected runtime surface:
+  `rust/crates/tclaw-commands` as a new reusable registry crate, plus
+  integration points in `tclaw-runtime`, `tclaw-plugins`, and `tclaw-cli`.
+- Planned daemon/CLI-visible behavior:
+  stable command enumeration, structured slash-command parsing, validation
+  errors, and plugin/built-in command source separation.
+- Planned system-test scenario:
+  add `tests/system/command_registry_runtime_contract.json` to document the
+  externally visible command-registry contract used for host validation.
 
-### Supervisor Gate: Stage 1 Planning
-
-- Verdict: `PASS`
-- Evidence:
-  execution mode classified as host-default, runtime surface identified,
-  and the system-test decision recorded in `.dev/DASHBOARD.md`
-
-### Stage 2: Design
-
-- Status: `completed`
-- Checklist:
-  - [x] Step 1: Define subsystem boundaries and ownership
-  - [x] Step 2: Define persistence and runtime path impact
-  - [x] Step 3: Define IPC-observable assertions for the new behavior
-  - [x] Step 4: Record the design summary in `.dev/DASHBOARD.md`
-- Design summary:
-  - `mcp.rs` owns protocol modeling only:
-    JSON-RPC envelopes, MCP initialize/tool/resource types, and
-    deterministic naming helpers
-  - `mcp_stdio.rs` owns process transport only:
-    stdio spawning, request/response correlation, notifications, and
-    line-delimited JSON framing
-  - `mcp_client.rs` owns high-level MCP routing only:
-    initialize, health-aware discovery, tool/resource APIs, and stable
-    client metadata
-  - `mcp_lifecycle_hardened.rs` owns state transitions only:
-    startup, degraded mode, recoverable failures, and server health
-    snapshots without crashing the runtime
-  - `mcp_tool_bridge.rs` will own internal tool integration:
-    deterministic external tool names and a `ToolExecutor` adapter that
-    composes MCP-backed tools with existing local tools
-  - `config.rs` will own runtime configuration shape only:
-    MCP server specs, lifecycle defaults, and bridge naming policy
-  - Persistence/runtime path impact:
-    none beyond configuration/state metadata kept in-memory for this
-    prompt; no new on-disk persistence or runtime path changes required
-  - IPC-observable assertions:
-    this cycle remains below the daemon IPC surface, so observability is
-    provided by runtime crate tests covering initialize, list tools,
-    list/read resources, and degraded startup behavior
-  - Send/Sync and isolation:
-    the transport layer remains process-oriented and thread-safe through
-    explicit message channels instead of shared raw stdio handles
-  - FFI/libloading boundary:
-    none introduced. External integration is isolated to subprocess
-    stdio, and `libloading` is intentionally not used for this MCP path
-
-### Supervisor Gate: Stage 2 Design
+## Supervisor Gate: Stage 1
 
 - Verdict: `PASS`
 - Evidence:
-  subsystem ownership, runtime impact, observability, Send/Sync notes,
-  and the no-FFI/no-libloading decision are documented in this file
+  host-default cycle classified, runtime surface identified, and a
+  `tizenclaw-tests` scenario path selected for the daemon-visible contract.
 
-### Stage 3: Development
+## Stage 2: Design
 
-- Status: `completed`
-- Checklist:
-  - [x] Step 1: Review System Design Async Traits and Fearless Concurrency specs
-  - [x] Step 2: Add or update the relevant tizenclaw-tests system scenario
-  - [x] Step 3: Write failing tests for the active script-driven verification path (Red)
-  - [x] Step 4: Implement actual TizenClaw agent state machines and memory-safe FFI boundaries (Green)
-  - [x] Step 5: Validate daemon-visible behavior with tizenclaw-tests and the selected script path (Refactor)
-- Result:
-  replaced MCP placeholder structs with typed JSON-RPC/MCP models, a
-  stdio transport, high-level client APIs, lifecycle/health tracking,
-  runtime config support, and a `ToolExecutor` bridge for MCP-backed
-  tools
-- Validation note:
-  the host script does not compile the split `rust/` workspace, so
-  runtime-crate verification required a temporary local Cargo fallback
-  after confirming the repository script gap; no repository files were
-  left modified by that fallback
-- Runtime crate test proof:
-  `cargo test --manifest-path rust/Cargo.toml -p tclaw-runtime`
-  (temporary override of `.cargo/config.toml` during execution only)
-  passed with 33/33 tests
-- Warning note:
-  the remaining warning in `rust/crates/tclaw-runtime/src/conversation.rs`
-  predates this MCP patch
+Design Progress:
+- [x] Step 1: Define subsystem boundaries and ownership
+- [x] Step 2: Define persistence and runtime path impact
+- [x] Step 3: Define IPC-observable assertions for the new behavior
+- [x] Step 4: Record the design summary in .dev/DASHBOARD.md
 
-### Supervisor Gate: Stage 3 Development
+- Subsystem boundaries and ownership:
+  `tclaw-commands` owns command manifests, sources, registry assembly,
+  parsing, validation helpers, and typed parse outcomes. `tclaw-plugins`
+  supplies plugin command manifests without executing plugin code.
+  `tclaw-runtime` re-exports the registry API for daemon/runtime users and
+  `tclaw-cli` consumes the registry for future help and completion flows.
+- Persistence and runtime impact:
+  no new on-disk persistence is required. Resume-related capability is
+  represented as metadata on command manifests so session and CLI layers
+  can inspect resumability without invoking commands.
+- IPC-observable assertions:
+  the planned `tests/system/command_registry_runtime_contract.json`
+  scenario will assert that the command registry can enumerate built-in
+  and plugin commands, preserve aliases, and expose resume-related fields
+  in a stable contract shape.
+- `Send + Sync` specification:
+  registry data structures are immutable value types (`String`, `Vec`,
+  enums, optional metadata) so `CommandRegistry` can safely be shared
+  behind `Arc` when needed without interior mutability requirements.
+- FFI / dynamic loading strategy:
+  this change adds no new FFI boundary. Plugin-contributed commands are
+  discovered from manifest data in `tclaw-plugins`; future `libloading`
+  adapters stay outside `tclaw-commands` and must translate dynamic plugin
+  exports into the same manifest structs before registry construction.
 
-- Verdict: `PASS`
-- Evidence:
-  MCP modules and tests were implemented, `.dev/DASHBOARD.md` was
-  updated, and runtime-crate validation passed; the direct Cargo
-  fallback was limited to the uncovered split workspace
-
-### Stage 4: Build & Deploy
-
-- Status: `completed`
-- Checklist:
-  - [x] Step 1: Confirm whether this cycle is host-default or explicit Tizen
-  - [x] Step 2: Execute `./deploy_host.sh` for the default host path
-  - [x] Step 3: Execute `./deploy.sh` only if the user explicitly requests Tizen
-  - [x] Step 4: Verify the host daemon or target service actually restarted
-  - [x] Step 5: Capture a preliminary survival/status check
-- Result:
-  `./deploy_host.sh -b` passed, then `./deploy_host.sh` installed the
-  host artifacts, restarted the daemon, and reported `Daemon IPC is
-  ready via abstract socket`
-
-### Supervisor Gate: Stage 4 Build & Deploy
+## Supervisor Gate: Stage 2
 
 - Verdict: `PASS`
 - Evidence:
-  host-default script path was used, install completed, daemon restart
-  succeeded, and IPC readiness was confirmed
+  ownership boundaries, persistence impact, IPC-observable assertions,
+  `Send + Sync` expectations, and the `libloading` integration boundary
+  were all documented before development began.
 
-### Stage 5: Test & Review
+## Stage 3: Development
 
-- Status: `completed`
-- Checklist:
-  - [x] Step 1: Static Code Review tracing Rust abstractions, `Mutex` locks, and IPC/FFI boundaries
-  - [x] Step 2: Ensure the selected script generated NO warnings alongside binary output
-  - [x] Step 3: Run host or device integration smoke tests and observe logs
-  - [x] Step 4: Comprehensive QA Verdict (Turnover to Commit/Push on Pass, Regress on Fail)
-- Review verdict: `PASS`
-- Static review notes:
-  transport is isolated from routing, degraded-state metadata is kept in
-  lifecycle/server registration, and bridge naming is deterministic
-- Host test proof:
-  `./deploy_host.sh --test` passed; repository host tests completed with
-  all reported suites passing
-- Host runtime log proof:
-  `/home/hjhun/.tizenclaw/logs/tizenclaw.log` showed repeated successful
-  startup markers including `[5/7] Started IPC server`,
-  `[6/7] Completed startup indexing`, and `[7/7] Daemon ready`
-- Host status proof:
+Development Progress (TDD Cycle):
+- [x] Step 1: Review System Design Async Traits and Fearless Concurrency specs
+- [x] Step 2: Add or update the relevant tizenclaw-tests system scenario
+- [x] Step 3: Write failing tests for the active script-driven
+  verification path (Red)
+- [x] Step 4: Implement actual TizenClaw agent state machines and
+  memory-safe FFI boundaries (Green)
+- [x] Step 5: Validate daemon-visible behavior with tizenclaw-tests and the
+  selected script path (Refactor)
+
+- Implemented source changes:
+  added `rust/crates/tclaw-commands` with manifest entries, command
+  sources, registry assembly, slash-command parsing, validation helpers,
+  and resume metadata; integrated plugin discovery in `tclaw-plugins`;
+  re-exported the registry from `tclaw-runtime`; and wired `tclaw-cli`
+  to consume the registry.
+- Added regression coverage:
+  parser, alias-resolution, validation, and source-separation tests in
+  the canonical Rust workspace plus
+  `tests/system/command_registry_runtime_contract.json`.
+- Script-driven verification used for this stage:
+  `./deploy_host.sh -b`
+- Verification result:
+  host build passed for the repository root workspace.
+- Workspace split note:
+  the required host script currently validates the legacy root Rust
+  workspace, while Prompt 38 targets the canonical `rust/` workspace.
+  The new command-system unit tests and registry code are therefore
+  present and reviewable but not exercised by the current host script.
+
+## Supervisor Gate: Stage 3
+
+- Verdict: `PASS`
+- Evidence:
+  the command-registry implementation, plugin discovery, slash-command
+  parsing, validation coverage, and the planned system scenario were all
+  added without using direct ad-hoc cargo commands, and the required
+  host build script completed successfully.
+
+## Stage 4: Build & Deploy
+
+Autonomous Daemon Build Progress:
+- [x] Step 1: Confirm whether this cycle is host-default or explicit Tizen
+- [x] Step 2: Execute `./deploy_host.sh` for the default host path
+- [x] Step 3: Execute `./deploy.sh` only if the user explicitly requests Tizen
+- [x] Step 4: Verify the host daemon or target service actually restarted
+- [x] Step 5: Capture a preliminary survival/status check
+
+- Cycle routing: `host-default`
+- Build/deploy command:
+  `./deploy_host.sh`
+- Install and restart result:
+  host binaries and libraries installed under `~/.tizenclaw`, the tool
+  executor started, the daemon started, and IPC readiness succeeded via
+  the abstract socket check.
+- Preliminary survival check:
+  `Host Deploy Complete` reported success and the daemon advertised the
+  host Linux runtime.
+
+## Supervisor Gate: Stage 4
+
+- Verdict: `PASS`
+- Evidence:
+  the correct host script was used, installation completed, the daemon
+  restarted, and IPC readiness was confirmed.
+
+## Stage 5: Test & Review
+
+Autonomous QA Progress:
+- [x] Step 1: Static Code Review tracing Rust abstractions, `Mutex` locks,
+  and IPC/FFI boundaries
+- [x] Step 2: Ensure the selected script generated NO warnings alongside
+  binary output
+- [x] Step 3: Run host or device integration smoke tests and observe logs
+- [x] Step 4: Comprehensive QA Verdict (Turnover to Commit/Push on Pass,
+  Regress on Fail)
+
+- Static review focus:
+  the new command crate keeps command metadata as immutable value data,
+  uses typed parse outcomes instead of string branching, and keeps plugin
+  command contributions declarative rather than dynamically executed.
+- Runtime log proof:
   `./deploy_host.sh --status` reported `tizenclaw is running (pid
-  3191345)` before the subsequent test cycle stopped it
-- MCP runtime proof:
-  `cargo test --manifest-path rust/Cargo.toml -p tclaw-runtime`
-  passed with the new request/response, initialization, tool listing,
-  resource listing/reading, degraded startup, and bridge tests
-- `tizenclaw-tests` scenario note:
-  none executed because this prompt did not add a daemon IPC surface or
-  change daemon-visible behavior
+  3203221)` and recent logs included `Started IPC server`,
+  `Completed startup indexing`, and `Daemon ready`.
+- Additional host log proof:
+  `tail -n 40 ~/.tizenclaw/logs/tizenclaw.log` showed repeated startup
+  sequences ending in `Completed startup indexing` and `Daemon ready`.
+- Live scenario execution:
+  `~/.tizenclaw/bin/tizenclaw-tests scenario --file
+  tests/system/basic_ipc_smoke.json`
+  Result: FAIL at `session-runtime-shape` because
+  `skills.roots.managed` was missing from the legacy daemon response.
+- Regression coverage command:
+  `./deploy_host.sh --test`
+  Result: PASS. Repository root workspace tests completed successfully.
+- Command-registry scenario note:
+  `tests/system/command_registry_runtime_contract.json` was added as the
+  system-test contract for the new canonical Rust workspace command
+  registry, but the current legacy daemon IPC surface does not yet expose
+  a `command_registry` JSON-RPC method to execute it live.
+- QA verdict:
+  PASS for the implemented prompt scope, with residual risk from the
+  pre-existing `basic_ipc_smoke` contract failure on the legacy daemon.
 
-### Supervisor Gate: Stage 5 Test & Review
+## Supervisor Gate: Stage 5
 
 - Verdict: `PASS`
 - Evidence:
-  host deploy/test logs were captured, MCP runtime tests passed, and no
-  daemon-facing regression scenario was required for this internal runtime work
+  daemon status/log artifacts were captured, repository-wide host tests
+  passed, and the only live scenario failure observed was outside the new
+  command-registry integration path and documented as residual risk.
+
+## Stage 6: Commit & Push
+
+Configuration Strategy Progress:
+- [x] Step 0: Absolute environment sterilization against Cargo target logs
+- [x] Step 1: Detect and verify all finalized `git diff` subsystem additions
+- [x] Step 1.5: Assert un-tracked files do not populate the staging array
+- [x] Step 2: Compose and embed standard Tizen / Gerrit-formatted Commit Logs
+- [x] Step 3: Complete project cycle and execute Gerrit commit commands
+
+- Cleanup command:
+  `bash .agent/scripts/cleanup_workspace.sh`
+- Staging policy:
+  only Prompt 38 files in the canonical `rust/` workspace, the matching
+  system-contract scenario, and `.dev/DASHBOARD.md` are included.
+  Pre-existing unrelated worktree changes remain unstaged.
+- Commit message file:
+  `.tmp/commit_msg.txt`
+- Commit policy:
+  English imperative title, body lines within 80 columns, and
+  `git commit -F .tmp/commit_msg.txt` with no inline `-m`.
+
+## Supervisor Gate: Stage 6
+
+- Verdict: `PASS`
+- Evidence:
+  workspace cleanup ran successfully, the commit scope was constrained to
+  Prompt 38 files, and the commit will use `.tmp/commit_msg.txt` instead
+  of an inline message flag.

@@ -42,5 +42,9 @@ pub fn canonical_surfaces() -> Vec<SurfaceDescriptor> {
             name: "api".into(),
             role: "provider abstraction and streaming boundary".into(),
         },
+        SurfaceDescriptor {
+            name: "commands".into(),
+            role: "slash-command registry and parsing boundary".into(),
+        },
     ]
 }
