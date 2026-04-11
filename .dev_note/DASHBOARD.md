@@ -2286,3 +2286,6 @@
     `Prefer authenticated Codex backend`
   - Excluded generated scope:
     `.dev/`, `DORMAMMU.log`
+- [x] Supervisor Gate after Commit
+  - PASS: cleanup script, force-staged dashboard artifacts, and the
+    formatted commit flow completed without staging generated files
