@@ -1,0 +1,8 @@
+[package]
+name = "tclaw-cli"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+tclaw-runtime = { path = "../tclaw-runtime" }
