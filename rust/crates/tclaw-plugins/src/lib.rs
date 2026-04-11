@@ -2,6 +2,8 @@ use tclaw_api::SurfaceDescriptor;
 use tclaw_commands::{
     CommandManifestEntry, CommandSource, ResumeBehavior, SlashCommandArgHint,
 };
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginManifest {
@@ -58,6 +60,38 @@ pub fn plugin_command_manifests() -> Vec<CommandManifestEntry> {
         .collect()
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PluginToolManifest {
+    pub name: String,
+    pub description: String,
+    pub input_schema: serde_json::Value,
+}
+
+pub fn plugin_tool_manifests() -> Vec<PluginToolManifest> {
+    vec![
+        PluginToolManifest {
+            name: "metadata.sync".to_string(),
+            description: "Refresh metadata-derived tool annotations".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "scope": {"type": "string"}
+                }
+            }),
+        },
+        PluginToolManifest {
+            name: "metadata.resume".to_string(),
+            description: "Inspect plugin-provided resume markers".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "session": {"type": "string"}
+                }
+            }),
+        },
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -73,5 +107,13 @@ mod tests {
         assert!(commands
             .iter()
             .any(|command| command.canonical_name == "metadata.resume"));
+    }
+
+    #[test]
+    fn plugin_tools_publish_input_schemas() {
+        let tools = plugin_tool_manifests();
+
+        assert!(tools.iter().any(|tool| tool.name == "metadata.sync"));
+        assert_eq!(tools[0].input_schema["type"], "object");
     }
 }

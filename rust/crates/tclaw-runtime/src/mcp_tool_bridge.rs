@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::conversation::{
     ToolCallRequest, ToolDefinition, ToolExecutionOutput, ToolExecutor, ToolRuntimeError,
@@ -25,10 +26,21 @@ impl Default for McpBridgePolicy {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BridgedMcpToolManifest {
+    pub full_name: String,
+    pub server_name: String,
+    pub original_name: String,
+    pub description: String,
+    pub input_schema: Value,
+    pub permission_scope: PermissionScope,
+    pub minimum_permission_level: PermissionLevel,
+}
+
 pub struct McpToolBridge {
     policy: McpBridgePolicy,
     servers: BTreeMap<String, ManagedMcpServer>,
-    tool_index: BTreeMap<String, (String, String, String)>,
+    tool_index: BTreeMap<String, BridgedMcpToolManifest>,
 }
 
 impl Default for McpToolBridge {
@@ -53,21 +65,27 @@ impl McpToolBridge {
 
     pub fn tool_definitions(&self) -> Vec<ToolDefinition> {
         self.tool_index
-            .iter()
-            .map(|(full_name, (_, _, description))| ToolDefinition {
-                name: full_name.clone(),
-                description: description.clone(),
-                permission_scope: self.policy.permission_scope.clone(),
-                minimum_permission_level: self.policy.minimum_permission_level,
+            .values()
+            .map(|manifest| ToolDefinition {
+                name: manifest.full_name.clone(),
+                description: manifest.description.clone(),
+                permission_scope: manifest.permission_scope.clone(),
+                minimum_permission_level: manifest.minimum_permission_level,
             })
             .collect()
+    }
+
+    pub fn bridged_tool_manifests(&self) -> Vec<BridgedMcpToolManifest> {
+        self.tool_index.values().cloned().collect()
     }
 
     pub fn execute(
         &mut self,
         call: &ToolCallRequest,
     ) -> Option<Result<ToolExecutionOutput, ToolRuntimeError>> {
-        let (server_name, original_name, _) = self.tool_index.get(&call.name)?.clone();
+        let manifest = self.tool_index.get(&call.name)?.clone();
+        let server_name = manifest.server_name;
+        let original_name = manifest.original_name;
         let server = self.servers.get_mut(&server_name)?;
 
         Some(
@@ -122,11 +140,15 @@ impl McpToolBridge {
                 let full_name = bridged_tool_name(server_name, &tool.name);
                 self.tool_index.insert(
                     full_name,
-                    (
-                        server_name.clone(),
-                        tool.name.clone(),
-                        tool.description.clone(),
-                    ),
+                    BridgedMcpToolManifest {
+                        full_name: bridged_tool_name(server_name, &tool.name),
+                        server_name: server_name.clone(),
+                        original_name: tool.name.clone(),
+                        description: tool.description.clone(),
+                        input_schema: tool.input_schema.clone(),
+                        permission_scope: self.policy.permission_scope.clone(),
+                        minimum_permission_level: self.policy.minimum_permission_level,
+                    },
                 );
             }
         }
