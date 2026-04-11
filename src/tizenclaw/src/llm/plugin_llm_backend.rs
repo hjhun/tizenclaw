@@ -284,7 +284,7 @@ impl PluginLlmBackend {
         resp.prompt_tokens = prompt_tokens;
         resp.completion_tokens = completion_tokens;
         resp.total_tokens = total_tokens;
-        resp.http_status = http_status as u16;
+        resp.http_status = http_status;
 
         // tool calls
         unsafe extern "C" fn collect_tool_call(
@@ -413,7 +413,7 @@ impl LlmBackend for PluginLlmBackend {
                     success: false,
                     error_message: "Plugin not loaded".into(),
                     ..Default::default()
-                }
+                };
             }
         };
 
@@ -425,7 +425,7 @@ impl LlmBackend for PluginLlmBackend {
                         success: false,
                         error_message: "Plugin missing TIZENCLAW_LLM_BACKEND_CHAT symbol".into(),
                         ..Default::default()
-                    }
+                    };
                 }
             };
 

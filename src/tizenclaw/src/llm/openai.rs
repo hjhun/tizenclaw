@@ -4,10 +4,10 @@
 
 use super::backend::*;
 use crate::infra::http_client;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use futures_util::StreamExt;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -147,6 +147,17 @@ impl OpenAiBackend {
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(ToString::to_string)
+    }
+
+    fn configured_api_key(config: &Value) -> Option<String> {
+        Self::config_string(config, &["api_key"])
+            .map(ToString::to_string)
+            .or_else(|| {
+                std::env::var("OPENAI_API_KEY")
+                    .ok()
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+            })
     }
 
     fn codex_auth_string(value: &Value, key: &str) -> Option<String> {
@@ -530,13 +541,10 @@ impl OpenAiBackend {
                 is_downgraded = true;
             }
             if !msg.tool_calls.is_empty()
-                && msg
-                    .tool_calls
-                    .iter()
-                    .any(|tool_call| {
-                        Self::resolve_responses_tool_name(tool_call.name.as_str(), &valid_tools)
-                            .is_none()
-                    })
+                && msg.tool_calls.iter().any(|tool_call| {
+                    Self::resolve_responses_tool_name(tool_call.name.as_str(), &valid_tools)
+                        .is_none()
+                })
             {
                 is_downgraded = true;
             }
@@ -666,13 +674,10 @@ impl OpenAiBackend {
                 is_downgraded = true;
             }
             if !msg.tool_calls.is_empty()
-                && msg
-                    .tool_calls
-                    .iter()
-                    .any(|tool_call| {
-                        Self::resolve_responses_tool_name(tool_call.name.as_str(), &valid_tools)
-                            .is_none()
-                    })
+                && msg.tool_calls.iter().any(|tool_call| {
+                    Self::resolve_responses_tool_name(tool_call.name.as_str(), &valid_tools)
+                        .is_none()
+                })
             {
                 is_downgraded = true;
             }
@@ -740,10 +745,9 @@ impl OpenAiBackend {
                             // a matching function_call_output. Keep the context
                             // as plain assistant history instead of reviving an
                             // abandoned call.
-                            assistant_fragments
-                                .push(Self::summarize_historical_tool_calls(std::slice::from_ref(
-                                    tool_call,
-                                )));
+                            assistant_fragments.push(Self::summarize_historical_tool_calls(
+                                std::slice::from_ref(tool_call),
+                            ));
                             continue;
                         }
                         let resolved_name = Self::resolve_responses_tool_name(
@@ -1021,7 +1025,7 @@ impl OpenAiBackend {
 
         let status = http_response.status();
         let mut response = LlmResponse {
-            http_status: status.as_u16(),
+            http_status: status.as_u16() as i32,
             ..LlmResponse::default()
         };
 
@@ -1071,11 +1075,9 @@ impl OpenAiBackend {
                 if line.is_empty() {
                     let joined = data_lines.join("\n");
                     if !event_type.is_empty() || !joined.is_empty() {
-                        if let Err(err) = Self::apply_codex_stream_event(
-                            &mut response,
-                            &event_type,
-                            &joined,
-                        ) {
+                        if let Err(err) =
+                            Self::apply_codex_stream_event(&mut response, &event_type, &joined)
+                        {
                             response.error_message = err;
                             return response;
                         }
@@ -1100,8 +1102,7 @@ impl OpenAiBackend {
         }
         if !event_type.is_empty() || !data_lines.is_empty() {
             let joined = data_lines.join("\n");
-            if let Err(err) = Self::apply_codex_stream_event(&mut response, &event_type, &joined)
-            {
+            if let Err(err) = Self::apply_codex_stream_event(&mut response, &event_type, &joined) {
                 response.error_message = err;
                 return response;
             }
@@ -1110,7 +1111,10 @@ impl OpenAiBackend {
         if response.success && response.error_message.is_empty() {
             return response;
         }
-        if response.text.is_empty() && response.tool_calls.is_empty() && response.error_message.is_empty() {
+        if response.text.is_empty()
+            && response.tool_calls.is_empty()
+            && response.error_message.is_empty()
+        {
             response.error_message = "Codex stream completed without a final response".to_string();
         }
         response
@@ -1312,8 +1316,8 @@ impl LlmBackend for OpenAiBackend {
             self.service_tier = Some(service_tier.to_string());
         }
 
-        if let Some(key) = Self::config_string(config, &["api_key"]) {
-            self.api_key = key.into();
+        if let Some(key) = Self::configured_api_key(config) {
+            self.api_key = key;
         } else if let Some(key) = Self::config_string(config, &["oauth", "access_token"]) {
             self.api_key = key.into();
         }
@@ -1329,7 +1333,8 @@ impl LlmBackend for OpenAiBackend {
         system_prompt: &str,
         max_tokens: Option<u32>,
     ) -> LlmResponse {
-        if self.provider_name == "openai-codex" && matches!(self.transport, OpenAiTransport::Responses)
+        if self.provider_name == "openai-codex"
+            && matches!(self.transport, OpenAiTransport::Responses)
         {
             return self
                 .chat_codex_responses(messages, tools, system_prompt)
@@ -1415,7 +1420,7 @@ impl LlmBackend for OpenAiBackend {
             http_client::http_post(&url, &header_refs, &request.to_string(), 1, 60).await;
 
         let mut response = LlmResponse::default();
-        response.http_status = http_response.status_code;
+        response.http_status = http_response.status_code as i32;
         if !http_response.success {
             response.error_message = http_response.error;
             if let Ok(error_json) = serde_json::from_str::<Value>(&http_response.body) {
@@ -1438,24 +1443,36 @@ impl LlmBackend for OpenAiBackend {
             }
             OpenAiTransport::Responses => Self::parse_responses_response(&http_response.body),
         };
-        response.http_status = http_response.status_code;
+        response.http_status = http_response.status_code as i32;
         response
     }
 
     fn get_name(&self) -> &str {
         &self.provider_name
     }
+
+    fn is_configured(&self) -> bool {
+        if self.provider_name == "openai-codex" {
+            return self
+                .codex_auth
+                .lock()
+                .unwrap_or_else(|err| err.into_inner())
+                .is_some();
+        }
+
+        !self.api_key.trim().is_empty()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        CodexAuthSource, OpenAiBackend, OpenAiTransport, CHATGPT_BACKEND_API,
-        OPENAI_CODEX_RESPONSES_PATH, OPENAI_RESPONSES_PATH,
+        CHATGPT_BACKEND_API, CodexAuthSource, OPENAI_CODEX_RESPONSES_PATH, OPENAI_RESPONSES_PATH,
+        OpenAiBackend, OpenAiTransport,
     };
     use crate::llm::backend::{LlmBackend, LlmMessage, LlmToolCall, LlmToolDecl};
     use base64::Engine;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     use tempfile::tempdir;
 
     fn create_jwt(payload: Value) -> String {
@@ -1519,13 +1536,17 @@ mod tests {
         .unwrap();
 
         let previous_home = std::env::var("HOME").ok();
-        std::env::set_var("HOME", home);
+        unsafe {
+            std::env::set_var("HOME", home);
+        }
 
         let mut backend = OpenAiBackend::new("openai-codex");
         let initialized = backend.initialize(&json!({}));
 
         if let Some(home) = previous_home {
-            std::env::set_var("HOME", home);
+            unsafe {
+                std::env::set_var("HOME", home);
+            }
         }
 
         assert!(initialized);
@@ -1556,7 +1577,9 @@ mod tests {
         .unwrap();
 
         let previous_home = std::env::var("HOME").ok();
-        std::env::set_var("HOME", home);
+        unsafe {
+            std::env::set_var("HOME", home);
+        }
 
         let mut backend = OpenAiBackend::new("openai-codex");
         let initialized = backend.initialize(&json!({}));
@@ -1568,7 +1591,9 @@ mod tests {
             .and_then(|state| state.account_id.clone());
 
         if let Some(home) = previous_home {
-            std::env::set_var("HOME", home);
+            unsafe {
+                std::env::set_var("HOME", home);
+            }
         }
 
         assert!(initialized);
@@ -1607,6 +1632,23 @@ mod tests {
         }));
 
         assert!(initialized);
+    }
+
+    #[test]
+    fn openai_reads_api_key_from_env() {
+        unsafe {
+            std::env::set_var("OPENAI_API_KEY", "env-openai-key");
+        }
+
+        let mut backend = OpenAiBackend::new("openai");
+        let initialized = backend.initialize(&json!({}));
+
+        unsafe {
+            std::env::remove_var("OPENAI_API_KEY");
+        }
+
+        assert!(initialized);
+        assert!(backend.is_configured());
     }
 
     #[test]
@@ -1676,10 +1718,12 @@ mod tests {
     #[test]
     fn openai_codex_request_matches_codex_route_contract() {
         let backend = OpenAiBackend::new("openai-codex");
-        let request =
-            backend.build_codex_responses_request(&[LlmMessage::user("안녕")], &[], "");
+        let request = backend.build_codex_responses_request(&[LlmMessage::user("안녕")], &[], "");
 
-        assert_eq!(request["instructions"], json!("You are a helpful assistant."));
+        assert_eq!(
+            request["instructions"],
+            json!("You are a helpful assistant.")
+        );
         assert_eq!(request["store"], json!(false));
         assert_eq!(request["stream"], json!(true));
         assert!(request.get("max_output_tokens").is_none());
@@ -1786,10 +1830,12 @@ mod tests {
         assert_eq!(input.len(), 1);
         assert_eq!(input[0]["type"], json!("message"));
         assert_eq!(input[0]["role"], json!("assistant"));
-        assert!(input[0]["content"][0]["text"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("Historical tool call 'run_coding_agent'"));
+        assert!(
+            input[0]["content"][0]["text"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("Historical tool call 'run_coding_agent'")
+        );
     }
 
     #[test]

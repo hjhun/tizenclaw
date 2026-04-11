@@ -13,7 +13,7 @@
 
 use super::backend::*;
 use crate::infra::http_client;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::RwLock;
 
 pub struct GeminiBackend {
@@ -43,7 +43,7 @@ impl GeminiBackend {
     pub fn new() -> Self {
         GeminiBackend {
             api_key: String::new(),
-            model: "gemini-2.5-flash".into(),
+            model: "gemini-2.0-flash".into(),
             endpoint: "https://generativelanguage.googleapis.com/v1beta".into(),
             temperature: None,
             default_max_tokens: None,
@@ -51,6 +51,21 @@ impl GeminiBackend {
             cached_content_name: RwLock::new(None),
             prompt_cache_enabled: false,
         }
+    }
+
+    fn configured_api_key(config: &Value) -> String {
+        config["api_key"]
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string)
+            .or_else(|| {
+                std::env::var("GEMINI_API_KEY")
+                    .ok()
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+            })
+            .unwrap_or_default()
     }
 
     /// Gemini 3.x models require `thoughtSignature` on all functionCall parts.
@@ -82,7 +97,8 @@ impl GeminiBackend {
         let mut req = json!({});
 
         let resolved_tokens = max_tokens.or(self.default_max_tokens);
-        if resolved_tokens.is_some() || self.temperature.is_some() || self.thinking_level.is_some() {
+        if resolved_tokens.is_some() || self.temperature.is_some() || self.thinking_level.is_some()
+        {
             let mut generation_config = json!({});
             if let Some(tokens) = resolved_tokens {
                 generation_config["maxOutputTokens"] = json!(tokens);
@@ -218,7 +234,11 @@ impl GeminiBackend {
         {
             for part in parts {
                 if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
-                    if part.get("thought").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    if part
+                        .get("thought")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                    {
                         resp.reasoning_text.push_str(text);
                     } else {
                         resp.text.push_str(text);
@@ -260,17 +280,6 @@ impl GeminiBackend {
     /// so that chat() falls back to inline system_instruction.
     pub async fn create_or_refresh_cache(&self, system_prompt: &str) -> bool {
         if self.api_key.is_empty() || system_prompt.is_empty() {
-            return false;
-        }
-
-        // Gemini requires at least 32,768 tokens in the cached content to be
-        // eligible for caching. For shorter prompts we skip the cache.
-        // Rough heuristic: < 1,000 chars ≈ < 300 tokens — skip cache.
-        if system_prompt.len() < 1_000 {
-            log::debug!(
-                "[GeminiCache] System prompt too short for caching ({} chars), skipping",
-                system_prompt.len()
-            );
             return false;
         }
 
@@ -338,9 +347,7 @@ impl GeminiBackend {
 #[async_trait::async_trait]
 impl LlmBackend for GeminiBackend {
     fn initialize(&mut self, config: &Value) -> bool {
-        if let Some(k) = config["api_key"].as_str() {
-            self.api_key = k.into();
-        }
+        self.api_key = Self::configured_api_key(config);
         if let Some(m) = config["model"].as_str() {
             self.model = m.into();
         }
@@ -355,6 +362,9 @@ impl LlmBackend for GeminiBackend {
         }
         if let Some(tl) = config["thinking_level"].as_str() {
             self.thinking_level = Some(tl.into());
+        }
+        if let Some(enabled) = config["prompt_cache_enabled"].as_bool() {
+            self.prompt_cache_enabled = enabled;
         }
         !self.api_key.is_empty()
     }
@@ -404,7 +414,7 @@ impl LlmBackend for GeminiBackend {
             );
             r
         };
-        resp.http_status = http_resp.status_code;
+        resp.http_status = http_resp.status_code as i32;
         resp
     }
 
@@ -418,6 +428,10 @@ impl LlmBackend for GeminiBackend {
 
     fn get_name(&self) -> &str {
         "gemini"
+    }
+
+    fn is_configured(&self) -> bool {
+        !self.api_key.is_empty()
     }
 }
 
@@ -463,5 +477,25 @@ mod tests {
         backend.clear_cache();
         let guard = backend.cached_content_name.read().unwrap();
         assert!(guard.is_none());
+    }
+
+    #[test]
+    fn initialize_reads_env_and_prompt_cache_flag() {
+        unsafe {
+            std::env::set_var("GEMINI_API_KEY", "env-key");
+        }
+
+        let mut backend = GeminiBackend::new();
+        let ok = backend.initialize(&json!({
+            "prompt_cache_enabled": true
+        }));
+
+        unsafe {
+            std::env::remove_var("GEMINI_API_KEY");
+        }
+
+        assert!(ok);
+        assert!(backend.prompt_cache_enabled);
+        assert!(backend.is_configured());
     }
 }

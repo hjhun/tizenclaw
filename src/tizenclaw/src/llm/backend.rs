@@ -93,7 +93,7 @@ pub struct LlmResponse {
     pub total_tokens: i32,
     pub cache_creation_input_tokens: i32,
     pub cache_read_input_tokens: i32,
-    pub http_status: u16,
+    pub http_status: i32,
 }
 
 impl LlmResponse {
@@ -113,7 +113,10 @@ pub struct LlmToolDecl {
 /// Abstract LLM backend interface.
 #[async_trait::async_trait]
 pub trait LlmBackend: Send + Sync {
+    /// Compatibility entry point used by AgentCore today.
     fn initialize(&mut self, config: &Value) -> bool;
+
+    /// Compatibility entry point used by AgentCore today.
     async fn chat(
         &self,
         messages: &[LlmMessage],
@@ -122,8 +125,35 @@ pub trait LlmBackend: Send + Sync {
         system_prompt: &str,
         max_tokens: Option<u32>,
     ) -> LlmResponse;
+
+    /// Compatibility entry point used by AgentCore today.
     fn get_name(&self) -> &str;
     fn shutdown(&mut self) {}
+
+    /// Prompt-compatible metadata helper.
+    fn name(&self) -> &str {
+        self.get_name()
+    }
+
+    /// Prompt-compatible configuration helper.
+    fn configure(&mut self, config: &Value) -> Result<(), String> {
+        if self.initialize(config) {
+            Ok(())
+        } else {
+            Err(format!("Backend '{}' is not configured", self.get_name()))
+        }
+    }
+
+    /// Prompt-compatible readiness helper. Backends with stronger
+    /// reachability checks should override this.
+    fn is_configured(&self) -> bool {
+        true
+    }
+
+    /// Optional backend priority hook for future selection logic.
+    fn priority(&self) -> i64 {
+        0
+    }
 
     /// Optionally pre-cache the system prompt server-side before the first
     /// `chat()` call. Returns `true` if a cache was successfully prepared

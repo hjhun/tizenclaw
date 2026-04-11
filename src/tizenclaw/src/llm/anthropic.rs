@@ -4,7 +4,7 @@
 
 use super::backend::*;
 use crate::infra::http_client;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const ANTHROPIC_REQUIRED_FALLBACK_MAX_TOKENS: u32 = 4096;
 
@@ -105,14 +105,27 @@ impl AnthropicBackend {
             .and_then(Value::as_str)
             .map(|message| message.to_string())
     }
+
+    fn configured_api_key(config: &Value) -> String {
+        config["api_key"]
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string)
+            .or_else(|| {
+                std::env::var("ANTHROPIC_API_KEY")
+                    .ok()
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+            })
+            .unwrap_or_default()
+    }
 }
 
 #[async_trait::async_trait]
 impl LlmBackend for AnthropicBackend {
     fn initialize(&mut self, config: &Value) -> bool {
-        if let Some(k) = config["api_key"].as_str() {
-            self.api_key = k.into();
-        }
+        self.api_key = Self::configured_api_key(config);
         if let Some(m) = config["model"].as_str() {
             self.model = m.into();
         }
@@ -125,7 +138,10 @@ impl LlmBackend for AnthropicBackend {
         if let Some(tokens) = config["max_tokens"].as_u64() {
             self.default_max_tokens = Some(tokens as u32);
         }
-        if let Some(enabled) = config["prompt_cache"].as_bool() {
+        if let Some(enabled) = config["prompt_cache_enabled"]
+            .as_bool()
+            .or_else(|| config["prompt_cache"].as_bool())
+        {
             self.prompt_cache_enabled = enabled;
         }
         if let Some(tl) = config["thinking_level"].as_str() {
@@ -297,7 +313,7 @@ impl LlmBackend for AnthropicBackend {
         };
 
         let mut resp = LlmResponse::default();
-        resp.http_status = http_resp.status_code;
+        resp.http_status = http_resp.status_code as i32;
         if !http_resp.success {
             resp.error_message = Self::extract_error_message(&http_resp.body)
                 .map(|message| format!("{} ({})", message, http_resp.error))
@@ -337,6 +353,10 @@ impl LlmBackend for AnthropicBackend {
 
     fn get_name(&self) -> &str {
         "anthropic"
+    }
+
+    fn is_configured(&self) -> bool {
+        !self.api_key.is_empty()
     }
 }
 
@@ -406,12 +426,29 @@ mod tests {
         let mut backend = AnthropicBackend::new();
         let ok = backend.initialize(&json!({
             "api_key": "test-key",
-            "prompt_cache": true,
+            "prompt_cache_enabled": true,
             "thinking_level": "medium"
         }));
 
         assert!(ok);
         assert!(backend.prompt_cache_enabled);
         assert_eq!(backend.thinking_level.as_deref(), Some("medium"));
+    }
+
+    #[test]
+    fn initialize_reads_api_key_from_env() {
+        unsafe {
+            std::env::set_var("ANTHROPIC_API_KEY", "env-key");
+        }
+
+        let mut backend = AnthropicBackend::new();
+        let ok = backend.initialize(&json!({}));
+
+        unsafe {
+            std::env::remove_var("ANTHROPIC_API_KEY");
+        }
+
+        assert!(ok);
+        assert!(backend.is_configured());
     }
 }

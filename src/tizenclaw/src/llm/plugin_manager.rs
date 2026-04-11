@@ -17,6 +17,15 @@ pub struct PluginManager {
     plugin_configs: HashMap<String, Value>,
 }
 
+/// Directory-based plugin loader requested by the LLM backend prompt.
+///
+/// This is additive to the existing package-manager-driven `PluginManager`
+/// used by `AgentCore`, so current runtime wiring remains unchanged.
+pub struct LlmPluginManager {
+    plugins_dir: PathBuf,
+    loaded: Vec<Box<dyn LlmBackend + Send + Sync>>,
+}
+
 impl Default for PluginManager {
     fn default() -> Self {
         Self::new()
@@ -208,5 +217,46 @@ impl PluginManager {
     /// List all available plugin backend names.
     pub fn available_plugins(&self) -> Vec<String> {
         self.plugin_registry.keys().cloned().collect()
+    }
+}
+
+impl LlmPluginManager {
+    pub fn discover_and_load(plugins_dir: &Path) -> Self {
+        let mut loaded: Vec<Box<dyn LlmBackend + Send + Sync>> = Vec::new();
+
+        if let Ok(entries) = std::fs::read_dir(plugins_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let is_shared_object = path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| ext.eq_ignore_ascii_case("so"))
+                    .unwrap_or(false);
+                if !is_shared_object {
+                    continue;
+                }
+
+                let path_str = path.to_string_lossy().to_string();
+                let mut backend = PluginLlmBackend::new(&path_str, None);
+                if backend.initialize(&serde_json::json!({})) {
+                    loaded.push(Box::new(backend));
+                } else {
+                    log::warn!("Skipping LLM plugin at '{}'", path.display());
+                }
+            }
+        }
+
+        Self {
+            plugins_dir: plugins_dir.to_path_buf(),
+            loaded,
+        }
+    }
+
+    pub fn backends(&self) -> &[Box<dyn LlmBackend + Send + Sync>] {
+        &self.loaded
+    }
+
+    pub fn plugins_dir(&self) -> &Path {
+        &self.plugins_dir
     }
 }

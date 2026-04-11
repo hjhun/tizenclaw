@@ -4,11 +4,14 @@
 
 use super::backend::*;
 use crate::infra::http_client;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
+use std::sync::RwLock;
 
 pub struct OllamaBackend {
     model: String,
     endpoint: String,
+    default_max_tokens: Option<u32>,
+    reachable: RwLock<Option<bool>>,
 }
 
 impl Default for OllamaBackend {
@@ -20,9 +23,24 @@ impl Default for OllamaBackend {
 impl OllamaBackend {
     pub fn new() -> Self {
         OllamaBackend {
-            model: "llama3".into(),
+            model: "llama3.2".into(),
             endpoint: "http://localhost:11434".into(),
+            default_max_tokens: None,
+            reachable: RwLock::new(None),
         }
+    }
+
+    fn status_url(&self) -> String {
+        format!("{}/api/version", self.endpoint.trim_end_matches('/'))
+    }
+
+    fn probe_endpoint(&self) -> bool {
+        let response = http_client::http_get_sync(&self.status_url(), &[], 0, 2);
+        let reachable = response.success;
+        if let Ok(mut guard) = self.reachable.write() {
+            *guard = Some(reachable);
+        }
+        reachable
     }
 
     fn build_request(
@@ -44,7 +62,7 @@ impl OllamaBackend {
             "messages": msgs,
             "stream": false
         });
-        if let Some(tokens) = max_tokens {
+        if let Some(tokens) = max_tokens.or(self.default_max_tokens) {
             req["options"] = json!({
                 "num_predict": tokens
             });
@@ -62,7 +80,10 @@ impl LlmBackend for OllamaBackend {
         if let Some(e) = config["endpoint"].as_str() {
             self.endpoint = e.into();
         }
-        true
+        if let Some(tokens) = config["max_tokens"].as_u64() {
+            self.default_max_tokens = Some(tokens as u32);
+        }
+        self.probe_endpoint()
     }
 
     async fn chat(
@@ -79,7 +100,7 @@ impl LlmBackend for OllamaBackend {
         let http_resp = http_client::http_post(&url, &[], &req.to_string(), 1, 120).await;
 
         let mut resp = LlmResponse::default();
-        resp.http_status = http_resp.status_code;
+        resp.http_status = http_resp.status_code as i32;
         if !http_resp.success {
             resp.error_message = http_resp.error;
             return resp;
@@ -95,6 +116,14 @@ impl LlmBackend for OllamaBackend {
     fn get_name(&self) -> &str {
         "ollama"
     }
+
+    fn is_configured(&self) -> bool {
+        self.reachable
+            .read()
+            .ok()
+            .and_then(|guard| *guard)
+            .unwrap_or_else(|| self.probe_endpoint())
+    }
 }
 
 #[cfg(test)]
@@ -107,5 +136,16 @@ mod tests {
         let req = backend.build_request(&[LlmMessage::user("hello")], "", None);
 
         assert!(req.get("options").is_none());
+    }
+
+    #[test]
+    fn ollama_reports_unconfigured_when_endpoint_is_down() {
+        let mut backend = OllamaBackend::new();
+        let ok = backend.initialize(&json!({
+            "endpoint": "http://127.0.0.1:9"
+        }));
+
+        assert!(!ok);
+        assert!(!backend.is_configured());
     }
 }

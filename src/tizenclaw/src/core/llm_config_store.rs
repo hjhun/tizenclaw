@@ -1,4 +1,4 @@
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::path::{Path, PathBuf};
 
 fn ensure_object(value: &mut Value) -> &mut Map<String, Value> {
@@ -45,13 +45,17 @@ pub fn default_document() -> Value {
         "backends": {
             "gemini": {
                 "api_key": "",
-                "model": "gemini-2.5-flash",
-                "temperature": 0.7
+                "model": "gemini-2.0-flash",
+                "temperature": 0.7,
+                "max_tokens": 8192,
+                "thinking_level": "off",
+                "prompt_cache_enabled": false
             },
             "openai": {
                 "api_key": "",
                 "model": "gpt-4o",
-                "endpoint": "https://api.openai.com/v1"
+                "endpoint": "https://api.openai.com/v1",
+                "max_tokens": 4096
             },
             "openai-codex": {
                 "auth_mode": "oauth",
@@ -73,7 +77,10 @@ pub fn default_document() -> Value {
                 "api_key": "",
                 "model": "claude-sonnet-4-20250514",
                 "endpoint": "https://api.anthropic.com/v1",
-                "temperature": 0.7
+                "temperature": 0.7,
+                "thinking_level": "off",
+                "prompt_cache_enabled": false,
+                "max_tokens": 4096
             },
             "xai": {
                 "api_key": "",
@@ -81,8 +88,9 @@ pub fn default_document() -> Value {
                 "endpoint": "https://api.x.ai/v1"
             },
             "ollama": {
-                "model": "llama3",
-                "endpoint": "http://localhost:11434"
+                "model": "llama3.2",
+                "endpoint": "http://localhost:11434",
+                "max_tokens": 4096
             }
         },
         "features": {
@@ -195,7 +203,7 @@ mod tests {
     fn get_value_reads_nested_fields() {
         let doc = default_document();
         let value = get_value(&doc, Some("backends.gemini.model")).unwrap();
-        assert_eq!(value, json!("gemini-2.5-flash"));
+        assert_eq!(value, json!("gemini-2.0-flash"));
     }
 
     #[test]
