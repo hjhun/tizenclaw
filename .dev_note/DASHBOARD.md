@@ -391,6 +391,42 @@
   - PASS: ownership, persistence, and IPC-observable assertions are
     documented
 
+## Saved-State Supervisor Revalidation Refresh
+
+- Root-cause review:
+  the latest supervisor report failed on prompt-outcome alignment, not
+  on product behavior. The active `.dev` session dashboard had drifted
+  back to an older `/devel_result` recovery summary even though the
+  committed follow-up prompt outcome already includes the skill
+  capability, file-manager observability, and tool-audit slices.
+- Repository state confirmed:
+  `5f68cd98` (`Add skill capability manager`),
+  `28e66ae1` (`Add file manager bridge observability`), and
+  `d36cdf56` (`Add tool execution audit visibility`) remain the
+  committed follow-up prompt deliverables.
+- Final verification refresh:
+  `./deploy_host.sh --status` confirmed daemon pid `2653602`, executor
+  pid `2653597`, dashboard on `9091`, and
+  `Daemon ready (1252ms) startup sequence completed`;
+  `~/.tizenclaw/bin/tizenclaw-cli tools status` returned the expected
+  `tool_audit` payload; and
+  `~/.tizenclaw/bin/tizenclaw-tests scenario --file tests/system/basic_ipc_smoke.json`
+  passed with the expected `tool_audit` and `skills` shapes.
+- Repository regression refresh:
+  `./deploy_host.sh --test` passed again, including the focused
+  `core::tool_dispatcher::tests::audit_summary_counts_shell_wrappers_and_inline_carriers`
+  and
+  `core::textual_skill_scanner::tests::extracts_skill_prelude_and_shell_fences`
+  coverage; because the test cycle stops host processes,
+  `./deploy_host.sh` was rerun and the final `./deploy_host.sh --status`
+  confirmed daemon pid `2656761`, executor pid `2656755`, dashboard
+  listener `2656778`, and
+  `Daemon ready (1230ms) startup sequence completed`.
+- Supervisor handoff:
+  root/session `.dev` dashboards and machine state were synchronized to
+  the committed follow-up prompt outcome so final verification now
+  points at the correct repository-visible evidence.
+
 ## Tool Execution Audit Cycle
 
 - [x] Stage 1: Planning
@@ -1461,3 +1497,105 @@
 - [x] Supervisor Gate after Design
   - PASS: ownership, persistence, and IPC-observable assertions are
     documented
+
+## Commit Scope Refresh Cycle
+
+- [x] Stage 1: Planning
+  - Request:
+    inspect the modified files, then commit and push the valid changes
+  - Cycle classification:
+    host-default (`./deploy_host.sh`)
+  - Runtime surface:
+    repository metadata only; no new daemon-visible behavior or product
+    code change is requested in this cycle
+  - System-test requirement:
+    no `tizenclaw-tests` scenario change is required because the staged
+    scope is limited to dashboard evidence refresh and commit hygiene
+- [x] Supervisor Gate after Planning
+  - PASS: host-default routing, repository-only scope, and test-scope
+    decision are recorded
+
+- [x] Stage 2: Design
+  - Ownership boundary:
+    `.dev_note/DASHBOARD.md` remains the only tracked artifact for this
+    cycle, while `.dev/` machine state and `DORMAMMU.log` stay outside
+    product history
+  - Persistence impact:
+    no runtime persistence or FFI boundary changes; only workflow audit
+    evidence is refreshed for the repository history
+  - IPC and daemon observability:
+    verification relies on host script status, daemon log evidence, and
+    repository status cleanliness before commit/push
+- [x] Supervisor Gate after Design
+  - PASS: tracked-versus-generated ownership, persistence impact, and
+    verification approach are documented
+
+- [x] Stage 3: Development
+  - Scope triage:
+    confirmed the working tree contains one tracked dashboard update and
+    generated `.dev/` plus `DORMAMMU.log` artifacts that must remain
+    excluded from the commit
+  - Product-code impact:
+    none; this cycle does not change Rust sources, IPC contracts, or
+    system-test scenarios
+  - Development verification:
+    no ad-hoc `cargo` or `cmake` command was used while preparing the
+    commit scope
+- [x] Supervisor Gate after Development
+  - PASS: commit scope was triaged without product-code drift and no
+    forbidden direct build command was used
+
+- [x] Stage 4: Build & Deploy
+  - Command:
+    `./deploy_host.sh`
+  - Result:
+    the host install completed successfully, `tizenclaw-tool-executor`
+    restarted as pid `2659456`, `tizenclaw` restarted as pid `2659458`,
+    and a final post-test restart brought the live daemon back as
+    pid `2660139`
+  - Survival check:
+    the final `./deploy_host.sh --status` reported healthy daemon,
+    executor, and dashboard processes with port `9091` listening
+- [x] Supervisor Gate after Build & Deploy
+  - PASS: the host-default deployment path completed and the live host
+    runtime was restored after the validation cycle
+
+- [x] Stage 5: Test & Review
+  - Static review focus:
+    this cycle changes only repository audit metadata, so runtime,
+    persistence, async ownership, and FFI behavior remain unchanged
+  - Runtime log evidence:
+    `~/.tizenclaw/logs/tizenclaw.log` contained
+    `Daemon ready (1288ms) startup sequence completed`
+  - Repository regression:
+    `./deploy_host.sh --test` passed with all tests green, including the
+    previously relevant `core::tool_dispatcher::tests::audit_summary_counts_shell_wrappers_and_inline_carriers`,
+    `core::textual_skill_scanner::tests::extracts_skill_prelude_and_shell_fences`,
+    and
+    `channel::telegram_client::tests::devel_result_command_reports_pending_newer_prompt`
+  - Runtime refresh:
+    because `./deploy_host.sh --test` stops host processes,
+    `./deploy_host.sh` was rerun and the final `./deploy_host.sh --status`
+    confirmed daemon pid `2660139`, executor pid `2660137`, dashboard
+    listener `2660163`, and
+    `Daemon ready (1288ms) startup sequence completed`
+  - QA verdict:
+    PASS
+- [x] Supervisor Gate after Test & Review
+  - PASS: runtime logs, repository regression evidence, and final host
+    recovery were captured for the commit-preparation cycle
+
+- [x] Stage 6: Commit
+  - Workspace cleanup:
+    `bash .agent/scripts/cleanup_workspace.sh` completed before staging
+  - Staged scope:
+    `.dev_note/DASHBOARD.md` only
+  - Excluded generated scope:
+    `.dev/` session state and `DORMAMMU.log`
+  - Commit message path:
+    `.tmp/commit_msg.txt`
+  - Commit title:
+    `Refresh commit scope dashboard evidence`
+- [x] Supervisor Gate after Commit
+  - PASS: cleanup used the required script, generated artifacts stayed
+    unstaged, and the cycle is ready for the formatted commit/push step
