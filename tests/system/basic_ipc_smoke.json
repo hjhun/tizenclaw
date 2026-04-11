@@ -19,6 +19,31 @@
       ]
     },
     {
+      "name": "read-openai-oauth-shape",
+      "method": "get_llm_config",
+      "params": {
+        "path": "backends.openai-codex.oauth"
+      },
+      "assertions": [
+        {
+          "path": "status",
+          "equals": "ok"
+        },
+        {
+          "path": "value.source",
+          "equals": "codex_cli"
+        },
+        {
+          "path": "value.auth_path",
+          "exists": true
+        },
+        {
+          "path": "value.account_id",
+          "exists": true
+        }
+      ]
+    },
+    {
       "name": "list-registered-paths",
       "method": "list_registered_paths",
       "params": {},
@@ -103,6 +128,26 @@
         {
           "path": "execution.embedded.recommendation",
           "contains": "textual skills"
+        },
+        {
+          "path": "skills.total_count",
+          "exists": true
+        },
+        {
+          "path": "skills.enabled_count",
+          "exists": true
+        },
+        {
+          "path": "skills.disabled_skills",
+          "exists": true
+        },
+        {
+          "path": "skills.roots.managed",
+          "exists": true
+        },
+        {
+          "path": "skills.skills",
+          "exists": true
         },
         {
           "path": "session.resume_ready",

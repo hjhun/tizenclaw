@@ -555,20 +555,31 @@ fn read_codex_auth_doc() -> Result<Value, String> {
         .map_err(|err| format!("Failed to parse '{}': {}", path.display(), err))
 }
 
-fn codex_oauth_snapshot(auth_doc: &Value) -> Value {
-    let tokens = auth_doc
+fn codex_auth_string(auth_doc: &Value, key: &str) -> Option<String> {
+    auth_doc
         .get("tokens")
         .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
+        .and_then(|tokens| tokens.get(key))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .or_else(|| {
+            auth_doc
+                .get(key)
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string)
+        })
+}
+
+fn codex_oauth_snapshot(auth_doc: &Value) -> Value {
     let mut oauth = Map::new();
 
     for key in ["access_token", "refresh_token", "id_token", "account_id"] {
-        if let Some(value) = tokens.get(key).and_then(Value::as_str) {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                oauth.insert(key.to_string(), Value::String(trimmed.to_string()));
-            }
+        if let Some(value) = codex_auth_string(auth_doc, key) {
+            oauth.insert(key.to_string(), Value::String(value));
         }
     }
 
@@ -656,12 +667,7 @@ fn codex_login_status() -> Value {
     }
 
     if let Some(doc) = auth_doc {
-        let account_id = doc
-            .get("tokens")
-            .and_then(|value| value.get("account_id"))
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string();
+        let account_id = codex_auth_string(&doc, "account_id").unwrap_or_default();
         if !account_id.is_empty() {
             state["account_id"] = Value::String(account_id);
         }
@@ -694,13 +700,72 @@ fn codex_login_status() -> Value {
     state
 }
 
+fn should_retry_reload_error(error: &str) -> bool {
+    let normalized = error.to_ascii_lowercase();
+    normalized.contains("connection refused") || normalized.contains("failed to connect to daemon")
+}
+
+fn reload_attempt() -> Result<(), String> {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let result = match create_client() {
+            Ok(client) => client.reload_llm_backends().map(|_| ()),
+            Err(err) => Err(err),
+        };
+        let _ = sender.send(result);
+    });
+
+    receiver
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .unwrap_or_else(|_| Err("Daemon backend reload timed out after 2 seconds".to_string()))
+}
+
+fn try_reload_llm_backends_with<F>(mut reload: F) -> (bool, Option<String>)
+where
+    F: FnMut() -> Result<(), String>,
+{
+    let mut last_error = None;
+    for attempt in 0..5 {
+        match reload() {
+            Ok(()) => return (true, None),
+            Err(err) => {
+                let retryable = should_retry_reload_error(&err) && attempt < 4;
+                last_error = Some(err);
+                if retryable {
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                    continue;
+                }
+                break;
+            }
+        }
+    }
+
+    (false, last_error)
+}
+
 fn try_reload_llm_backends() -> (bool, Option<String>) {
-    match create_client() {
-        Ok(client) => match client.reload_llm_backends() {
-            Ok(_) => (true, None),
-            Err(err) => (false, Some(err)),
-        },
-        Err(err) => (false, Some(err)),
+    try_reload_llm_backends_with(reload_attempt)
+}
+
+fn reload_message(reloaded: bool, reload_error: Option<&str>) -> String {
+    if reloaded {
+        "TizenClaw is now linked to the Codex CLI session and the daemon reloaded the backend."
+            .to_string()
+    } else if reload_error
+        .map(should_retry_reload_error)
+        .unwrap_or(false)
+    {
+        "TizenClaw is now linked to the Codex CLI session. The daemon did not answer the first reload window, so restart or retry once if the new backend is not visible yet."
+            .to_string()
+    } else if reload_error
+        .map(|error| error.contains("timed out"))
+        .unwrap_or(false)
+    {
+        "TizenClaw is now linked to the Codex CLI session. The daemon reload did not finish in time, so verify the backend from the dashboard or retry once."
+            .to_string()
+    } else {
+        "TizenClaw is now linked to the Codex CLI session. Start or reload the daemon to activate it."
+            .to_string()
     }
 }
 
@@ -781,6 +846,7 @@ fn connect_codex_session() -> Result<Value, String> {
 
     write_pretty_json(&config_path, &doc)?;
     let (reloaded, reload_error) = try_reload_llm_backends();
+    let message = reload_message(reloaded, reload_error.as_deref());
 
     Ok(json!({
         "status": "ok",
@@ -791,11 +857,7 @@ fn connect_codex_session() -> Result<Value, String> {
         "reloaded": reloaded,
         "reload_error": reload_error,
         "dashboard_url": dashboard_url(),
-        "message": if reloaded {
-            "TizenClaw is now linked to the Codex CLI session and the daemon reloaded the backend."
-        } else {
-            "TizenClaw is now linked to the Codex CLI session. Start or reload the daemon to activate it."
-        }
+        "message": message
     }))
 }
 
@@ -1443,6 +1505,8 @@ fn print_usage() {
     eprintln!("  tizenclaw-cli auth openai-codex status [--json]");
     eprintln!("  tizenclaw-cli auth openai-codex connect [--json]");
     eprintln!("  tizenclaw-cli auth openai-codex login [--json]\n");
+    eprintln!("Inspection commands:");
+    eprintln!("  tizenclaw-cli skills status\n");
     eprintln!("If no prompt given, starts interactive mode.");
 }
 
@@ -1476,6 +1540,13 @@ fn cmd_list_tasks(client: &TizenClaw) {
 
 fn cmd_devel_status(client: &TizenClaw) {
     match client.get_devel_status() {
+        Ok(result) => print_json(&result),
+        Err(error) => print_error_and_exit(&error),
+    }
+}
+
+fn cmd_skill_status(client: &TizenClaw) {
+    match client.get_skill_capabilities() {
         Ok(result) => print_json(&result),
         Err(error) => print_error_and_exit(&error),
     }
@@ -1555,6 +1626,11 @@ fn main() {
                 cmd_devel_status(&client);
                 return;
             }
+            "skills" if i + 1 < args.len() && args[i + 1] == "status" => {
+                let client = create_client().unwrap_or_else(|err| print_error_and_exit(&err));
+                cmd_skill_status(&client);
+                return;
+            }
             "config" => {
                 let client = create_client().unwrap_or_else(|err| print_error_and_exit(&err));
                 cmd_config(&client, &args[i + 1..]);
@@ -1591,6 +1667,10 @@ fn main() {
             }
             "devel" => {
                 eprintln!("Usage: tizenclaw-cli devel status");
+                std::process::exit(1);
+            }
+            "skills" => {
+                eprintln!("Usage: tizenclaw-cli skills status");
                 std::process::exit(1);
             }
             _ => {
@@ -1631,7 +1711,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        codex_oauth_snapshot, dashboard_port_from_doc, merge_missing, parse_chat_ids,
+        codex_auth_string, codex_oauth_snapshot, dashboard_port_from_doc, merge_missing,
+        parse_chat_ids, reload_message, should_retry_reload_error, try_reload_llm_backends_with,
         parse_codex_login_state,
     };
     use serde_json::json;
@@ -1712,5 +1793,85 @@ mod tests {
             .as_str()
             .map(|value| value.ends_with("/.codex/auth.json"))
             .unwrap_or(false));
+    }
+
+    #[test]
+    fn codex_oauth_snapshot_accepts_flat_auth_shape() {
+        let auth_doc = json!({
+            "access_token": "flat-access-token",
+            "refresh_token": "flat-refresh-token",
+            "id_token": "flat-id-token",
+            "account_id": "acct-flat"
+        });
+
+        let snapshot = codex_oauth_snapshot(&auth_doc);
+
+        assert_eq!(snapshot["access_token"], json!("flat-access-token"));
+        assert_eq!(snapshot["refresh_token"], json!("flat-refresh-token"));
+        assert_eq!(snapshot["id_token"], json!("flat-id-token"));
+        assert_eq!(snapshot["account_id"], json!("acct-flat"));
+    }
+
+    #[test]
+    fn codex_auth_string_prefers_nested_tokens_but_falls_back_to_root() {
+        let auth_doc = json!({
+            "access_token": "root-access",
+            "tokens": {
+                "access_token": "nested-access"
+            }
+        });
+
+        assert_eq!(
+            codex_auth_string(&auth_doc, "access_token").as_deref(),
+            Some("nested-access")
+        );
+        assert_eq!(
+            codex_auth_string(&json!({"refresh_token": "root-refresh"}), "refresh_token")
+                .as_deref(),
+            Some("root-refresh")
+        );
+    }
+
+    #[test]
+    fn retry_reload_llm_backends_retries_connection_refused_errors() {
+        let attempts = std::cell::Cell::new(0);
+        let (reloaded, error) = try_reload_llm_backends_with(|| {
+            attempts.set(attempts.get() + 1);
+            if attempts.get() < 3 {
+                Err("Failed to connect to daemon. Is tizenclaw running? Connection refused (os error 111)".to_string())
+            } else {
+                Ok(())
+            }
+        });
+
+        assert!(reloaded);
+        assert!(error.is_none());
+        assert_eq!(attempts.get(), 3);
+    }
+
+    #[test]
+    fn reload_retry_detection_matches_connection_failures() {
+        assert!(should_retry_reload_error(
+            "Failed to connect to daemon. Is tizenclaw running? Connection refused (os error 111)"
+        ));
+        assert!(!should_retry_reload_error("Backend reload is not allowed"));
+    }
+
+    #[test]
+    fn reload_message_explains_retryable_failures() {
+        let message = reload_message(
+            false,
+            Some("Failed to connect to daemon. Is tizenclaw running? Connection refused (os error 111)"),
+        );
+        assert!(message.contains("restart or retry once"));
+    }
+
+    #[test]
+    fn reload_message_explains_timeouts() {
+        let message = reload_message(
+            false,
+            Some("Daemon backend reload timed out after 2 seconds"),
+        );
+        assert!(message.contains("did not finish in time"));
     }
 }

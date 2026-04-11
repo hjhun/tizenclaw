@@ -145,6 +145,18 @@ impl OpenAiBackend {
             .map(ToString::to_string)
     }
 
+    fn codex_auth_string(value: &Value, key: &str) -> Option<String> {
+        value
+            .get("tokens")
+            .and_then(Value::as_object)
+            .and_then(|tokens| tokens.get(key))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|entry| !entry.is_empty())
+            .map(ToString::to_string)
+            .or_else(|| Self::json_string(value, key))
+    }
+
     fn decode_jwt_payload(token: &str) -> Option<Value> {
         let payload = token.split('.').nth(1)?;
         let decoded = URL_SAFE_NO_PAD.decode(payload.as_bytes()).ok()?;
@@ -192,37 +204,14 @@ impl OpenAiBackend {
     ) -> Result<CodexAuthState, String> {
         let doc = serde_json::from_str::<Value>(contents)
             .map_err(|err| format!("Failed to parse Codex auth.json: {}", err))?;
-        let tokens = doc
-            .get("tokens")
-            .and_then(Value::as_object)
-            .ok_or_else(|| "Codex auth.json is missing the tokens object".to_string())?;
-
-        let access_token = tokens
-            .get("access_token")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+        let access_token = Self::codex_auth_string(&doc, "access_token")
             .ok_or_else(|| "Codex auth.json is missing access_token".to_string())?
             .to_string();
-        let refresh_token = tokens
-            .get("refresh_token")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+        let refresh_token = Self::codex_auth_string(&doc, "refresh_token")
             .ok_or_else(|| "Codex auth.json is missing refresh_token".to_string())?
             .to_string();
-        let id_token = tokens
-            .get("id_token")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToString::to_string);
-        let account_id = tokens
-            .get("account_id")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToString::to_string)
+        let id_token = Self::codex_auth_string(&doc, "id_token");
+        let account_id = Self::codex_auth_string(&doc, "account_id")
             .or_else(|| Self::jwt_account_id(&access_token));
         let expires_at = Self::jwt_exp(&access_token);
         let last_refresh = doc
@@ -1380,8 +1369,8 @@ impl LlmBackend for OpenAiBackend {
 #[cfg(test)]
 mod tests {
     use super::{
-        OpenAiBackend, OpenAiTransport, CHATGPT_BACKEND_API, OPENAI_CODEX_RESPONSES_PATH,
-        OPENAI_RESPONSES_PATH,
+        CodexAuthSource, OpenAiBackend, OpenAiTransport, CHATGPT_BACKEND_API,
+        OPENAI_CODEX_RESPONSES_PATH, OPENAI_RESPONSES_PATH,
     };
     use crate::llm::backend::{LlmBackend, LlmMessage, LlmToolCall, LlmToolDecl};
     use base64::Engine;
@@ -1459,6 +1448,50 @@ mod tests {
         }
 
         assert!(initialized);
+    }
+
+    #[test]
+    fn openai_codex_imports_flat_codex_auth_json() {
+        let dir = tempdir().unwrap();
+        let home = dir.path();
+        let auth_dir = home.join(".codex");
+        std::fs::create_dir_all(&auth_dir).unwrap();
+        std::fs::write(
+            auth_dir.join("auth.json"),
+            json!({
+                "auth_mode": "chatgpt",
+                "access_token": create_jwt(json!({
+                    "exp": 4_000_000_000i64,
+                    "https://api.openai.com/auth": {
+                        "chatgpt_account_id": "acct-flat"
+                    }
+                })),
+                "refresh_token": "refresh-token",
+                "id_token": "id-token",
+                "last_refresh": "2026-04-11T00:00:00Z"
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let previous_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", home);
+
+        let mut backend = OpenAiBackend::new("openai-codex");
+        let initialized = backend.initialize(&json!({}));
+        let account_id = backend
+            .codex_auth
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|state| state.account_id.clone());
+
+        if let Some(home) = previous_home {
+            std::env::set_var("HOME", home);
+        }
+
+        assert!(initialized);
+        assert_eq!(account_id.as_deref(), Some("acct-flat"));
     }
 
     #[test]

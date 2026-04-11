@@ -238,6 +238,107 @@
   - Commit title:
     `Align memory session runtime summaries`
 
+## OAuth Recovery Cycle
+
+- [x] Stage 1: Planning
+  - Request:
+    fix the recurring OpenAI OAuth failure, add related regression
+    coverage, and keep the workflow in a fail-then-fix loop
+  - Cycle classification:
+    host-default (`./deploy_host.sh`)
+  - Runtime surface:
+    Codex/OpenAI OAuth import in `tizenclaw-cli`, runtime OAuth loading
+    in `tizenclaw`, and daemon-observable auth configuration visibility
+  - System-test requirement:
+    update `tests/system/basic_ipc_smoke.json` before implementation to
+    assert the `openai-codex` OAuth configuration shape exposed through
+    daemon IPC
+- [x] Supervisor Gate after Planning
+  - PASS: host-default routing, OAuth runtime scope, and system-test
+    planning were recorded
+
+- [x] Stage 2: Design
+  - Ownership boundaries:
+    `tizenclaw-cli` imports Codex CLI auth, `tizenclaw` runtime resolves
+    and refreshes OAuth state, and daemon IPC exposes read-only config
+    shape for verification
+  - Persistence design:
+    keep `~/.codex/auth.json` as the source of truth and
+    `~/.tizenclaw/config/llm_config.json` as the imported runtime config
+  - Recovery strategy:
+    make OAuth extraction resilient to auth.json schema drift while
+    preserving JWT-derived account fallback and shared token semantics
+  - IPC assertions:
+    `get_llm_config` must expose `backends.openai-codex.oauth.source`,
+    `auth_path`, and `account_id` after linking
+  - Design artifact:
+    `.dev_note/docs/openai_oauth_recovery_design_20260411.md`
+- [x] Supervisor Gate after Design
+  - PASS: ownership, persistence, and IPC-visible OAuth assertions are
+    documented
+
+- [x] Stage 3: Development
+  - TDD contract:
+    updated `tests/system/basic_ipc_smoke.json` before product-code
+    changes to assert the `openai-codex` OAuth config shape
+  - Red result:
+    the first `./deploy_host.sh --test` run failed before OAuth checks
+    because `skill_capability_manager` test code missed a `serde_json`
+    macro import, and the next run exposed that flat `auth.json`
+    layouts broke `openai-codex` initialization
+  - Green result:
+    fixed the blocking test import, made CLI and runtime OAuth loading
+    accept either nested `tokens.*` fields or flat root-level fields,
+    added regression coverage for both paths, and bounded CLI backend
+    reload attempts so `auth openai-codex connect` no longer hangs
+  - Development verification:
+    `./deploy_host.sh --test` passed with the new OAuth regression tests
+- [x] Supervisor Gate after Development
+  - PASS: the system scenario was updated first, script-driven red/green
+    validation was used, and the OAuth recovery logic is covered by host
+    regression tests
+
+- [x] Stage 4: Build & Deploy
+  - Command:
+    `./deploy_host.sh`
+  - Result:
+    host binaries were installed under `/home/hjhun/.tizenclaw`, the
+    daemon restarted, and the dashboard stayed reachable on `9091`
+  - Survival check:
+    `./deploy_host.sh --status` reported running daemon, tool executor,
+    and dashboard processes after the OAuth recovery build
+- [x] Supervisor Gate after Build & Deploy
+  - PASS: the host-default deployment path completed and the updated
+    runtime restarted cleanly
+
+- [x] Stage 5: Test & Review
+  - Static review focus:
+    OAuth import remains file-based, runtime account fallback still uses
+    JWT claims, and CLI reload retries are bounded to avoid operator
+    hangs when the daemon misses the first reload window
+  - Runtime evidence:
+    `./deploy_host.sh --status` showed healthy daemon, executor, and
+    dashboard processes with port `9091` listening
+  - Log evidence:
+    `~/.tizenclaw/logs/tizenclaw.log` contained
+    `Daemon ready (1300ms) startup sequence completed`
+  - System test:
+    `~/.tizenclaw/bin/tizenclaw-tests scenario --file tests/system/basic_ipc_smoke.json`
+    passed and returned `backends.openai-codex.oauth.source`,
+    `auth_path`, and `account_id`
+  - Repository regression:
+    `./deploy_host.sh --test` passed with all tests green, including the
+    new flat-auth and reload-retry coverage
+  - Operator check:
+    `~/.tizenclaw/bin/tizenclaw-cli auth openai-codex connect --json`
+    now returns promptly with a bounded timeout note instead of hanging
+    when daemon reload does not finish in the first 2-second window
+  - QA verdict:
+    PASS
+- [x] Supervisor Gate after Test & Review
+  - PASS: runtime logs, OAuth IPC scenario proof, and host regression
+    evidence are captured
+
 - [x] Stage 6: Commit
   - Workspace cleanup:
     `bash .agent/scripts/cleanup_workspace.sh` completed before staging
@@ -258,6 +359,174 @@
 ## OpenAI Codex OAuth Diagnostic Cycle
 
 - [x] Stage 1: Planning
+
+## Telegram Devel Result Revalidation Cycle
+
+- [x] Stage 1: Planning
+  - Cycle classification:
+    host-default (`./deploy_host.sh`)
+  - Runtime surface:
+    telegram command registration and routing for `/devel_result`,
+    devel-result file lookup under `~/.tizenclaw/devel/result`,
+    and IPC exposure through `get_devel_result`
+  - System-test requirement:
+    revalidate `tests/system/devel_mode_prompt_flow.json` because the
+    behavior is daemon-visible
+- [x] Supervisor Gate after Planning
+  - PASS: host-default routing, runtime surface, and system-test target
+    are recorded
+
+- [x] Stage 2: Design
+  - Ownership boundary:
+    `core/devel_mode.rs` owns latest result discovery,
+    `core/ipc_server.rs` exposes `get_devel_result`,
+    and `channel/telegram_client.rs` registers/routes the telegram
+    command without duplicating filesystem logic
+  - Persistence impact:
+    read-only lookup over `~/.tizenclaw/devel/result`; no new state file
+    or registry change
+  - Design artifact:
+    `.dev_note/docs/telegram_devel_result_command_design_20260411.md`
+- [x] Supervisor Gate after Design
+  - PASS: ownership, persistence, and IPC-observable assertions are
+    documented
+
+- [x] Stage 3: Development
+  - TDD contract:
+    updated `tests/system/basic_ipc_smoke.json` before product-code
+    changes to assert the new `skills` summary shape
+  - Product-code result:
+    added `core/skill_capability_manager.rs`, disabled-skill config
+    loading from `config/skill_capabilities.json`, dependency checks
+    from textual skill metadata, dedicated IPC/API/CLI skill-capability
+    reporting, and `get_session_runtime.skills`
+  - Prompt-inventory result:
+    `AgentCore` now filters disabled or dependency-blocked skills out of
+    the turn skill pool and injects only prefetched relevant skills into
+    the prompt builder instead of the full scanned inventory
+  - Development verification:
+    `./deploy_host.sh -b` passed
+- [x] Supervisor Gate after Development
+  - PASS: the system scenario changed first, script-driven build
+    verification passed, and the skill-capability slice stayed within
+    the host-default workflow
+
+- [x] Stage 4: Build & Deploy
+  - Command:
+    `./deploy_host.sh`
+  - Result:
+    host binaries were installed under `/home/hjhun/.tizenclaw`, the
+    daemon restarted, and the dashboard remained reachable on `9091`
+  - Survival checks:
+    `./deploy_host.sh --status` reported healthy daemon, tool executor,
+    dashboard, and `tizenclaw-cli skills status` returned the new skill
+    capability summary with managed roots and enabled-count metadata
+- [x] Supervisor Gate after Build & Deploy
+  - PASS: the host deployment path completed and the new skill
+    capability surface is live through the deployed daemon and CLI
+
+- [x] Stage 5: Test & Review
+  - Static review focus:
+    skill capability ownership stays outside prompt assembly, disabled
+    and dependency-blocked skills are filtered before turn selection,
+    and no FFI boundary changed
+  - Runtime log evidence:
+    `~/.tizenclaw/logs/tizenclaw.log` contained
+    `Daemon ready (1316ms) startup sequence completed`
+  - System test:
+    `~/.tizenclaw/bin/tizenclaw-tests scenario --file tests/system/basic_ipc_smoke.json`
+    passed and returned the new `skills.total_count`,
+    `skills.enabled_count`, `skills.roots.managed`, and `skills.skills`
+    fields from `get_session_runtime`
+  - Repository regression:
+    `./deploy_host.sh --test` passed with all tests green, including the
+    new `core::skill_capability_manager` coverage
+  - Runtime refresh:
+    because `./deploy_host.sh --test` stops host processes, `./deploy_host.sh`
+    was rerun and `./deploy_host.sh --status` confirmed healthy daemon,
+    tool executor, dashboard, and port `9091` listeners
+  - QA verdict:
+    PASS
+- [x] Supervisor Gate after Test & Review
+  - PASS: log evidence, IPC scenario proof, repository regression, and
+    final host runtime recovery were captured
+
+- [x] Stage 6: Commit
+  - Workspace cleanup:
+    `bash .agent/scripts/cleanup_workspace.sh` completed before staging
+  - Intended staged scope:
+    skill capability manager core changes, IPC/API/CLI exposure, the
+    focused `basic_ipc_smoke` assertions for `skills`, and the new
+    design artifact only
+  - Excluded existing unrelated scope:
+    `src/tizenclaw/src/channel/telegram_client.rs`,
+    `src/tizenclaw/src/core/devel_mode.rs`,
+    `src/tizenclaw/src/llm/openai.rs`,
+    `tests/system/devel_mode_prompt_flow.json`, `.dev/`, and
+    `DORMAMMU.log`
+  - Commit message path:
+    `.tmp/commit_msg.txt`
+  - Commit title:
+    `Add skill capability manager`
+
+- [x] Stage 3: Development
+  - Root-cause finding:
+    supervisor failure came from incomplete prompt-derived PLAN evidence,
+    not from a missing `/devel_result` implementation
+  - Existing implementation confirmed:
+    telegram command menu/help/handler,
+    `latest_devel_result`, `get_devel_result`, system scenario, and
+    unit coverage are already present in the repository state
+  - Development verification:
+    `./deploy_host.sh -b` passed with the current repository state
+- [x] Supervisor Gate after Development
+  - PASS: current implementation path was rechecked under the mandated
+    script-driven build path and the missing evidence cause was isolated
+
+- [x] Stage 4: Build & Deploy
+  - Command:
+    `./deploy_host.sh`
+  - Result:
+    host binaries were reinstalled under `/home/hjhun/.tizenclaw`,
+    `tizenclaw-tool-executor` and `tizenclaw` restarted, and the
+    dashboard port `9091` came back up
+  - Survival check:
+    `./deploy_host.sh --status` reported daemon pid `2608518`,
+    executor pid `2608514`, and a dashboard listener on `9091`
+- [x] Supervisor Gate after Build & Deploy
+  - PASS: host deployment and restart evidence were captured
+
+- [x] Stage 5: Test & Review
+  - Runtime log evidence:
+    `~/.tizenclaw/logs/tizenclaw.log` contained
+    `Daemon ready (1336ms) startup sequence completed`
+  - System test:
+    `~/.tizenclaw/bin/tizenclaw-tests scenario --file tests/system/devel_mode_prompt_flow.json`
+    passed and returned `result_dir=/home/hjhun/.tizenclaw/devel/result`,
+    `available=true`, `latest_result_path`, and `content`
+  - Repository regression:
+    `./deploy_host.sh --test` passed, including
+    `channel::telegram_client::tests::devel_result_command_reads_latest_result_file`
+  - Review note:
+    `./deploy_host.sh --test` stops host processes during the cycle, so
+    a final runtime-ready proof requires one more host restart
+  - QA verdict:
+    PASS
+- [x] Supervisor Gate after Test & Review
+  - PASS: log evidence, system-test proof, and repository regression
+    evidence are captured
+
+## Telegram Devel Result Final Operation Proof
+
+- Host runtime refresh:
+  after `./deploy_host.sh --test`, `./deploy_host.sh` was rerun and
+  `./deploy_host.sh --status` confirmed daemon pid `2610213`, executor
+  pid `2610207`, dashboard listener on `9091`, and
+  `Daemon ready (1298ms) startup sequence completed`
+- Final verification note:
+  the repository already contained the `/devel_result` implementation;
+  this cycle repaired the missing supervisor evidence and synchronized
+  the active `.dev` session state with the validated repository state
   - Cycle classification:
     host-default (`./deploy_host.sh`)
   - Diagnostic scope:
@@ -813,3 +1082,90 @@
     `.tmp/commit_msg.txt`
   - Commit title:
     `Add telegram devel result command`
+
+## Devel Result Prompt Alignment Cycle
+
+- [x] Stage 1: Planning
+  - Cycle classification:
+    host-default (`./deploy_host.sh`)
+  - Runtime surface:
+    devel prompt/result correlation through `get_devel_result` and
+    Telegram `/devel_result`
+  - Repository evidence:
+    `core/devel_mode.rs` resolves the latest prompt and latest result
+    independently, while `DORMAMMU.log` shows the external daemonize
+    loop can process numbered aliases and later timestamped prompts in
+    separate runs
+  - System-test requirement:
+    update `tests/system/devel_mode_prompt_flow.json` because the IPC
+    result shape is daemon-visible
+- [x] Supervisor Gate after Planning
+  - PASS: host-default routing, evidence-backed scope, and the updated
+    system-test target are recorded
+
+- [x] Stage 2: Design
+  - Ownership boundary:
+    `core/devel_mode.rs` now owns prompt-to-result correlation metadata,
+    and `telegram_client.rs` must only surface that shared state
+  - Persistence impact:
+    read-only reuse of existing `~/.tizenclaw/devel/prompt` and
+    `~/.tizenclaw/devel/result` directories; no new queue state
+  - Design artifact:
+    `.dev_note/docs/devel_result_prompt_alignment_design_20260411.md`
+- [x] Supervisor Gate after Design
+  - PASS: ownership, persistence scope, and daemon-visible assertions
+    are documented
+
+- [x] Stage 3: Development
+  - TDD contract:
+    updated `tests/system/devel_mode_prompt_flow.json` before the
+    product-code fix to assert the richer `get_devel_result` shape
+  - Root cause:
+    the repository returned the newest completed result file without
+    checking whether it belonged to the newest prompt, so a pending
+    timestamped prompt could be reported alongside an older numbered
+    result file
+  - Product-code result:
+    `latest_devel_result` now exposes latest-prompt mapping metadata,
+    and Telegram `/devel_result` explicitly marks a pending newer prompt
+    instead of implying the completed result is current
+  - Unit coverage:
+    added stale-result correlation coverage in `devel_mode` and pending
+    prompt messaging coverage in `telegram_client`
+  - Development verification:
+    pending build/test validation through the host script path
+- [x] Supervisor Gate after Development
+  - PASS: the system scenario changed first, the devel-result
+    correlation fix is implemented, and no ad-hoc cargo command was used
+
+## Skill Capability Manager Cycle
+
+- [x] Stage 1: Planning
+  - Cycle classification:
+    host-default (`./deploy_host.sh`)
+  - Runtime surface:
+    textual skill capability state, disabled-skill configuration,
+    dependency visibility, and minimal turn-level skill injection
+  - System-test requirement:
+    update `tests/system/basic_ipc_smoke.json` before implementation to
+    assert the new `skills` summary under `get_session_runtime`
+- [x] Supervisor Gate after Planning
+  - PASS: host-default routing, runtime surface, and system-test plan
+    are recorded
+
+- [x] Stage 2: Design
+  - Ownership boundary:
+    `core/skill_capability_manager.rs` owns capability config, root
+    discovery, dependency checks, and enabled/disabled filtering while
+    `AgentCore` remains the composition root for prompt assembly and IPC
+  - Persistence impact:
+    add `config/skill_capabilities.json` for disabled skill names and
+    reuse the existing managed, hub, and registered skill roots
+  - IPC and CLI contract:
+    expose daemon-reported skill capability summaries through
+    `get_session_runtime` and a dedicated CLI inspection path
+  - Design artifact:
+    `.dev_note/docs/skill_capability_manager_design_20260411.md`
+- [x] Supervisor Gate after Design
+  - PASS: ownership, persistence, and IPC-observable assertions are
+    documented
