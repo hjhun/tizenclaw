@@ -98,8 +98,9 @@ journal.txt
 # Claude Code (local dev only)
 .claude/
 
-# Dev notes
-/.dev_note/
+# Dev workspace
+/.dev/
+DORMAMMU.log
 docs/
 !docs/
 docs/*
