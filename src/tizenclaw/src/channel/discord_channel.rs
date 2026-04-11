@@ -1,44 +1,90 @@
-//! Discord channel — sends/receives messages via Discord Bot HTTP API.
-//!
-//! Exclusively uses Tokio Async Reactor (epoll) to poll the messages endpoint
-//! without blocking or allocating OS threads.
+//! Discord channel — outbound Discord webhook sender.
 
-use super::{Channel, ChannelConfig};
+use super::{split_message_chunks, Channel, ChannelConfig};
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+
+const DISCORD_MAX_MESSAGE_CHARS: usize = 2000;
+const HTTP_TIMEOUT_SECS: u64 = 10;
 
 pub struct DiscordChannel {
     name: String,
     webhook_url: String,
-    bot_token: String,
-    channel_id: String,
-    running: Arc<AtomicBool>,
+    username: String,
+    active: AtomicBool,
 }
 
 impl DiscordChannel {
+    pub fn from_config(config: &Value) -> Result<Self, String> {
+        let webhook_url = config
+            .get("webhook_url")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| "discord webhook_url is required".to_string())?;
+
+        let username = config
+            .get("username")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("TizenClaw");
+
+        Ok(Self {
+            name: config
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("discord")
+                .to_string(),
+            webhook_url: webhook_url.to_string(),
+            username: username.to_string(),
+            active: AtomicBool::new(true),
+        })
+    }
+
     pub fn new(config: &ChannelConfig) -> Self {
-        DiscordChannel {
+        let mut settings = config.settings.clone();
+        if let Some(object) = settings.as_object_mut() {
+            object
+                .entry("name".to_string())
+                .or_insert_with(|| Value::String(config.name.clone()));
+        }
+
+        Self::from_config(&settings).unwrap_or_else(|_| Self {
             name: config.name.clone(),
-            webhook_url: config
-                .settings
-                .get("webhook_url")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            bot_token: config
-                .settings
-                .get("bot_token")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            channel_id: config
-                .settings
-                .get("channel_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            running: Arc::new(AtomicBool::new(false)),
+            webhook_url: String::new(),
+            username: "TizenClaw".to_string(),
+            active: AtomicBool::new(false),
+        })
+    }
+
+    fn send_chunk(&self, chunk: &str) -> Result<(), String> {
+        let body = json!({
+            "content": chunk,
+            "username": self.username,
+        });
+
+        let response = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|err| err.to_string())?
+            .block_on(async {
+                reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(HTTP_TIMEOUT_SECS))
+                    .build()
+                    .map_err(|err| err.to_string())?
+                    .post(&self.webhook_url)
+                    .header("Content-Type", "application/json")
+                    .body(body.to_string())
+                    .send()
+                    .await
+                    .map_err(|err| err.to_string())
+            })?;
+
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(format!("HTTP {}", response.status().as_u16()))
         }
     }
 }
@@ -49,111 +95,113 @@ impl Channel for DiscordChannel {
     }
 
     fn start(&mut self) -> bool {
-        if self.running.load(Ordering::SeqCst) {
-            return true;
-        }
-        if self.bot_token.is_empty() && self.webhook_url.is_empty() {
-            log::warn!("DiscordChannel: no bot_token or webhook_url configured");
-            return false;
-        }
-
-        self.running.store(true, Ordering::SeqCst);
-
-        if !self.bot_token.is_empty() && !self.channel_id.is_empty() {
-            let running = self.running.clone();
-            let channel_id = self.channel_id.clone();
-            let bot_token = self.bot_token.clone(); // In Discord API, token is needed for Authorization headers. Wait, our generic HttpClient doesn't have custom headers easily, but we'll leave it as is per legacy code.
-
-            tokio::spawn(async move {
-                log::info!(
-                    "DiscordChannel: async epoll started for channel {}",
-                    channel_id
-                );
-                let mut last_message_id: Option<String> = None;
-
-                while running.load(Ordering::SeqCst) {
-                    let url = if let Some(ref after) = last_message_id {
-                        format!(
-                            "https://discord.com/api/v10/channels/{}/messages?after={}&limit=10",
-                            channel_id, after
-                        )
-                    } else {
-                        format!(
-                            "https://discord.com/api/v10/channels/{}/messages?limit=1",
-                            channel_id
-                        )
-                    };
-
-                    let client = crate::infra::http_client::HttpClient::new();
-
-                    // Native async GET via epoll
-                    match client.get(&url).await {
-                        Ok(resp) => {
-                            if let Ok(messages) = serde_json::from_str::<Value>(&resp.body) {
-                                if let Some(arr) = messages.as_array() {
-                                    for msg in arr {
-                                        let msg_id = msg["id"].as_str().unwrap_or("").to_string();
-                                        let content = msg["content"].as_str().unwrap_or("");
-                                        let author =
-                                            msg["author"]["username"].as_str().unwrap_or("unknown");
-                                        let is_bot =
-                                            msg["author"]["bot"].as_bool().unwrap_or(false);
-
-                                        if !is_bot && !content.is_empty() {
-                                            log::debug!("Discord msg from {}: {}", author, content);
-                                        }
-                                        if !msg_id.is_empty() {
-                                            last_message_id = Some(msg_id);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            log::error!("Discord polling error: {}", e);
-                        }
-                    }
-
-                    // Async sleep yields to the epoll reactor!
-                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-                }
-                log::info!("DiscordChannel: async epoll stopped");
-            });
-        }
-
-        log::info!("DiscordChannel started");
-        true
+        let ready = !self.webhook_url.is_empty();
+        self.active.store(ready, Ordering::SeqCst);
+        ready
     }
 
     fn stop(&mut self) {
-        self.running.store(false, Ordering::SeqCst);
+        self.active.store(false, Ordering::SeqCst);
+    }
+
+    fn is_running(&self) -> bool {
+        self.active.load(Ordering::SeqCst)
     }
 
     fn send_message(&self, msg: &str) -> Result<(), String> {
         if self.webhook_url.is_empty() {
+            log::warn!("Discord channel '{}' is not configured", self.name);
             return Err("Discord webhook not configured".into());
         }
 
-        let safe_msg = if msg.len() > 1950 {
-            format!("{}\n...(truncated)", &msg[..1950])
+        let mut errors = Vec::new();
+        for chunk in split_message_chunks(msg, DISCORD_MAX_MESSAGE_CHARS) {
+            if let Err(err) = self.send_chunk(&chunk) {
+                log::warn!("Discord channel '{}' send failed: {}", self.name, err);
+                errors.push(err);
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
         } else {
-            msg.to_string()
-        };
-
-        let body = json!({"content": safe_msg}).to_string();
-        let webhook_url = self.webhook_url.clone();
-
-        // Use Async PUSH
-        tokio::spawn(async move {
-            let _ = crate::infra::http_client::HttpClient::new()
-                .post(&webhook_url, &body)
-                .await;
-        });
-
-        Ok(())
+            Err(errors.join("; "))
+        }
     }
 
-    fn is_running(&self) -> bool {
-        self.running.load(Ordering::SeqCst)
+    fn status(&self) -> Value {
+        json!({
+            "name": self.name(),
+            "running": self.is_running(),
+            "username": self.username,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DiscordChannel;
+    use crate::channel::{split_message_chunks, Channel};
+    use serde_json::json;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::{Arc, Mutex};
+
+    fn spawn_http_recorder(response_body: &'static str) -> (String, Arc<Mutex<Vec<String>>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind recorder");
+        let addr = listener.local_addr().expect("local addr");
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let captured = Arc::clone(&requests);
+
+        std::thread::spawn(move || {
+            for _ in 0..4 {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    break;
+                };
+                let mut buffer = [0_u8; 8192];
+                let size = stream.read(&mut buffer).unwrap_or(0);
+                captured
+                    .lock()
+                    .unwrap()
+                    .push(String::from_utf8_lossy(&buffer[..size]).to_string());
+
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                    response_body.len(),
+                    response_body
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+
+        (format!("http://{}", addr), requests)
+    }
+
+    #[test]
+    fn discord_messages_split_at_word_boundaries() {
+        let chunk = "word ".repeat(600);
+        let parts = split_message_chunks(&chunk, 2000);
+
+        assert!(parts.len() > 1);
+        assert!(parts.iter().all(|part| part.chars().count() <= 2000));
+        assert!(parts.iter().all(|part| !part.ends_with(' ')));
+    }
+
+    #[test]
+    fn send_message_posts_username_and_content() {
+        let (url, requests) = spawn_http_recorder("{}");
+        let mut channel = DiscordChannel::from_config(&json!({
+            "name": "discord",
+            "webhook_url": url,
+            "username": "Bridge",
+        }))
+        .expect("discord config");
+
+        assert!(channel.start());
+        channel.send_message("hello discord").expect("send");
+
+        let request_dump = requests.lock().unwrap().join("\n");
+        assert!(request_dump.contains("\"content\":\"hello discord\""));
+        assert!(request_dump.contains("\"username\":\"Bridge\""));
     }
 }

@@ -1,0 +1,65 @@
+{
+  "name": "channel-registry-runtime-contract",
+  "steps": [
+    {
+      "name": "dashboard-is-registered",
+      "method": "channel_status",
+      "params": {
+        "name": "web_dashboard"
+      },
+      "assertions": [
+        {
+          "path": "name",
+          "equals": "web_dashboard"
+        },
+        {
+          "path": "running",
+          "exists": true
+        }
+      ]
+    },
+    {
+      "name": "start-dashboard-through-registry",
+      "method": "start_channel",
+      "params": {
+        "name": "web_dashboard"
+      },
+      "assertions": [
+        {
+          "path": "status",
+          "equals": "ok"
+        },
+        {
+          "path": "name",
+          "equals": "web_dashboard"
+        }
+      ]
+    },
+    {
+      "name": "dashboard-status-after-start",
+      "method": "channel_status",
+      "params": {
+        "name": "web_dashboard"
+      },
+      "assertions": [
+        {
+          "path": "running",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "name": "stop-dashboard-through-registry",
+      "method": "stop_channel",
+      "params": {
+        "name": "web_dashboard"
+      },
+      "assertions": [
+        {
+          "path": "status",
+          "equals": "ok"
+        }
+      ]
+    }
+  ]
+}

@@ -3,7 +3,7 @@
 //! Uses `getUpdates` long-polling to receive messages. Polls natively
 //! on the Tokio async reactor (epoll) avoiding expensive thread allocation.
 
-use super::{Channel, ChannelConfig};
+use super::{split_message_chunks, Channel, ChannelConfig};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -20,6 +20,7 @@ const TELEGRAM_CHAT_ACTION_UPDATE_SECS: u64 = 4;
 const CLI_PROGRESS_UPDATE_SECS: u64 = 15;
 const CLI_PROGRESS_MIN_PARTIAL_CHARS: usize = 80;
 const DEFAULT_GEMINI_CLI_MODEL: &str = "gemini-2.5-flash";
+const TELEGRAM_MAX_MESSAGE_CHARS: usize = 4000;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1124,6 +1125,7 @@ pub struct TelegramClient {
     name: String,
     bot_token: String,
     allowed_chat_ids: Arc<HashSet<i64>>,
+    max_message_chars: usize,
     running: Arc<AtomicBool>,
     active_handlers: Arc<AtomicI32>,
     agent: Option<Arc<crate::core::agent_core::AgentCore>>,
@@ -1138,16 +1140,81 @@ pub struct TelegramClient {
 }
 
 impl TelegramClient {
+    pub fn from_config(config: &Value) -> Result<Self, String> {
+        let bot_token = config
+            .get("bot_token")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| "telegram bot_token is required".to_string())?;
+        let chat_id = config
+            .get("chat_id")
+            .and_then(Value::as_i64)
+            .or_else(|| {
+                config
+                    .get("chat_id")
+                    .and_then(Value::as_str)
+                    .and_then(|value| value.parse::<i64>().ok())
+            });
+        let allowed_chat_ids = config.get("allowed_chat_ids").and_then(Value::as_array);
+        if chat_id.is_none() && allowed_chat_ids.is_none() {
+            return Err("telegram chat_id or allowed_chat_ids is required".to_string());
+        }
+
+        let mut settings = serde_json::Map::new();
+        settings.insert("bot_token".to_string(), Value::String(bot_token.to_string()));
+        if let Some(chat_id) = chat_id {
+            settings.insert(
+                "allowed_chat_ids".to_string(),
+                Value::Array(vec![Value::Number(chat_id.into())]),
+            );
+        } else if let Some(ids) = allowed_chat_ids {
+            settings.insert("allowed_chat_ids".to_string(), Value::Array(ids.to_vec()));
+        }
+        if let Some(max_chars) = config.get("max_message_chars").cloned() {
+            settings.insert("max_message_chars".to_string(), max_chars);
+        }
+
+        let channel_config = ChannelConfig {
+            name: config
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("telegram")
+                .to_string(),
+            channel_type: "telegram".to_string(),
+            enabled: true,
+            settings: Value::Object(settings),
+        };
+
+        Ok(Self::new(&channel_config, None))
+    }
+
     pub fn new(
         config: &ChannelConfig,
         agent: Option<Arc<crate::core::agent_core::AgentCore>>,
     ) -> Self {
+        let explicit_bot_token = config
+            .settings
+            .get("bot_token")
+            .and_then(|v| v.as_str())
+            .is_some_and(|value| !value.trim().is_empty());
+        let explicit_allowed_ids = config
+            .settings
+            .get("allowed_chat_ids")
+            .and_then(|v| v.as_array())
+            .is_some_and(|value| !value.is_empty());
         let mut bot_token = config
             .settings
             .get("bot_token")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
+        let max_message_chars = config
+            .settings
+            .get("max_message_chars")
+            .and_then(|v| v.as_u64())
+            .and_then(|value| usize::try_from(value).ok())
+            .unwrap_or(TELEGRAM_MAX_MESSAGE_CHARS);
 
         let mut allowed_ids = HashSet::new();
         if let Some(arr) = config
@@ -1182,18 +1249,22 @@ impl TelegramClient {
         let telegram_config = config_dir.join("telegram_config.json");
         if let Ok(content) = std::fs::read_to_string(&telegram_config) {
             if let Ok(json) = serde_json::from_str::<Value>(&content) {
-                if let Some(token) = json.get("bot_token").and_then(|v| v.as_str()) {
-                    if !token.is_empty() {
-                        bot_token = token.to_string();
-                        log::info!("TelegramClient: loaded bot_token override");
+                if !explicit_bot_token {
+                    if let Some(token) = json.get("bot_token").and_then(|v| v.as_str()) {
+                        if !token.is_empty() {
+                            bot_token = token.to_string();
+                            log::info!("TelegramClient: loaded bot_token override");
+                        }
                     }
                 }
-                if let Some(arr) = json.get("allowed_chat_ids").and_then(|v| v.as_array()) {
-                    if !arr.is_empty() {
-                        allowed_ids.clear();
-                        for id in arr {
-                            if let Some(n) = id.as_i64() {
-                                allowed_ids.insert(n);
+                if !explicit_allowed_ids {
+                    if let Some(arr) = json.get("allowed_chat_ids").and_then(|v| v.as_array()) {
+                        if !arr.is_empty() {
+                            allowed_ids.clear();
+                            for id in arr {
+                                if let Some(n) = id.as_i64() {
+                                    allowed_ids.insert(n);
+                                }
                             }
                         }
                     }
@@ -1225,6 +1296,7 @@ impl TelegramClient {
             name: config.name.clone(),
             bot_token,
             allowed_chat_ids: Arc::new(allowed_ids),
+            max_message_chars,
             running: Arc::new(AtomicBool::new(false)),
             active_handlers: Arc::new(AtomicI32::new(0)),
             agent,
@@ -1902,16 +1974,66 @@ impl TelegramClient {
             return;
         }
 
-        let safe_text = Self::truncate_chars(&message.text, 4000);
+        Self::send_telegram_chunks(
+            bot_token,
+            chat_id,
+            &message.text,
+            TELEGRAM_MAX_MESSAGE_CHARS,
+            message.reply_markup.clone(),
+        );
+    }
 
+    fn send_telegram_chunks(
+        bot_token: &str,
+        chat_id: i64,
+        text: &str,
+        max_message_chars: usize,
+        reply_markup: Option<Value>,
+    ) {
         let url = format!("https://api.telegram.org/bot{}/sendMessage", bot_token);
-        let payload =
-            Self::build_send_message_payload(chat_id, &safe_text, message.reply_markup.clone());
+        let chunks = split_message_chunks(text, max_message_chars.max(1));
 
-        let client = crate::infra::http_client::HttpClient::new();
-        tokio::spawn(async move {
-            if let Err(e) = client.post(&url, &payload).await {
-                log::error!("Telegram sendMessage failed: {}", e);
+        std::thread::spawn(move || {
+            let runtime = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(runtime) => runtime,
+                Err(err) => {
+                    log::warn!("Telegram send runtime init failed: {}", err);
+                    return;
+                }
+            };
+
+            for (index, chunk) in chunks.into_iter().enumerate() {
+                let payload = TelegramClient::build_send_message_payload(
+                    chat_id,
+                    &chunk,
+                    if index == 0 { reply_markup.clone() } else { None },
+                );
+
+                let send_result = runtime.block_on(async {
+                    let client = reqwest::Client::builder()
+                        .timeout(Duration::from_secs(10))
+                        .build()
+                        .map_err(|err| err.to_string())?;
+                    let response = client
+                        .post(&url)
+                        .header("Content-Type", "application/json")
+                        .body(payload)
+                        .send()
+                        .await
+                        .map_err(|err| err.to_string())?;
+                    if response.status().is_success() {
+                        Ok(())
+                    } else {
+                        Err(format!("HTTP {}", response.status().as_u16()))
+                    }
+                });
+
+                if let Err(err) = send_result {
+                    log::warn!("Telegram sendMessage failed: {}", err);
+                }
             }
         });
     }
@@ -2461,7 +2583,7 @@ impl TelegramClient {
                 return TelegramOutgoingMessage::with_markup(
                     "Choose [on] or [off].",
                     Self::auto_approve_keyboard(),
-                )
+                );
             }
         };
 
@@ -4631,10 +4753,12 @@ impl Channel for TelegramClient {
 
     fn send_message(&self, msg: &str) -> Result<(), String> {
         for chat_id in self.allowed_chat_ids.iter() {
-            Self::send_telegram_message(
+            Self::send_telegram_chunks(
                 &self.bot_token,
                 *chat_id,
-                &TelegramOutgoingMessage::plain(msg),
+                msg,
+                self.max_message_chars,
+                None,
             );
         }
         Ok(())
@@ -4651,6 +4775,7 @@ mod tests {
         TelegramChatState, TelegramCliActualUsage, TelegramCliBackend, TelegramCliBackendRegistry,
         TelegramCliUsageStats, TelegramClient, TelegramExecutionMode, TelegramInteractionMode,
     };
+    use serde_json::json;
     use std::collections::{HashMap, HashSet};
     use std::fs;
     use std::sync::{Arc, Mutex};
@@ -5125,8 +5250,8 @@ mod tests {
         let temp = tempdir().unwrap();
         let repo_root = temp.path().join("repo");
         let data_root = temp.path().join("runtime");
-        fs::create_dir_all(repo_root.join(".dev_note")).unwrap();
-        fs::write(repo_root.join(".dev_note/ROADMAP.md"), "- [ ] next\n").unwrap();
+        fs::create_dir_all(repo_root.join(".dev")).unwrap();
+        fs::write(repo_root.join(".dev/ROADMAP.md"), "- [ ] next\n").unwrap();
         fs::create_dir_all(&data_root).unwrap();
 
         let previous_data_dir = std::env::var("TIZENCLAW_DATA_DIR").ok();
@@ -5166,8 +5291,8 @@ mod tests {
         let temp = tempdir().unwrap();
         let repo_root = temp.path().join("repo");
         let data_root = temp.path().join("runtime");
-        fs::create_dir_all(repo_root.join(".dev_note")).unwrap();
-        fs::write(repo_root.join(".dev_note/ROADMAP.md"), "- [ ] next\n").unwrap();
+        fs::create_dir_all(repo_root.join(".dev")).unwrap();
+        fs::write(repo_root.join(".dev/ROADMAP.md"), "- [ ] next\n").unwrap();
         fs::create_dir_all(data_root.join("devel/result")).unwrap();
         fs::write(
             data_root.join("devel/result/01_prompt_RESULT.md"),
@@ -5198,9 +5323,7 @@ mod tests {
 
         assert!(reply.text.contains("DevelResult: [loaded]"));
         assert!(reply.text.contains("latest result"));
-        assert!(reply
-            .text
-            .contains(&latest_path.display().to_string()));
+        assert!(reply.text.contains(&latest_path.display().to_string()));
 
         std::env::set_current_dir(previous_dir).unwrap();
         if let Some(previous_data_dir) = previous_data_dir {
@@ -5215,8 +5338,8 @@ mod tests {
         let temp = tempdir().unwrap();
         let repo_root = temp.path().join("repo");
         let data_root = temp.path().join("runtime");
-        fs::create_dir_all(repo_root.join(".dev_note")).unwrap();
-        fs::write(repo_root.join(".dev_note/ROADMAP.md"), "- [ ] next\n").unwrap();
+        fs::create_dir_all(repo_root.join(".dev")).unwrap();
+        fs::write(repo_root.join(".dev/ROADMAP.md"), "- [ ] next\n").unwrap();
         fs::create_dir_all(data_root.join("devel/prompt")).unwrap();
         fs::create_dir_all(data_root.join("devel/result")).unwrap();
         fs::write(
@@ -5251,9 +5374,7 @@ mod tests {
         assert!(reply
             .text
             .contains("latest prompt pending; showing latest completed result"));
-        assert!(reply
-            .text
-            .contains(&pending_prompt.display().to_string()));
+        assert!(reply.text.contains(&pending_prompt.display().to_string()));
 
         std::env::set_current_dir(previous_dir).unwrap();
         if let Some(previous_data_dir) = previous_data_dir {
@@ -5973,5 +6094,18 @@ mod tests {
 
         let second = TelegramClient::start_new_session(&chat_states, &state_path, 77);
         assert!(second.text.contains("Session: [0002]"));
+    }
+
+    #[test]
+    fn from_config_accepts_single_chat_id() {
+        let client = TelegramClient::from_config(&json!({
+            "bot_token": "token",
+            "chat_id": "12345",
+            "max_message_chars": 128
+        }))
+        .expect("telegram config");
+
+        assert!(client.allowed_chat_ids.contains(&12345));
+        assert_eq!(client.max_message_chars, 128);
     }
 }

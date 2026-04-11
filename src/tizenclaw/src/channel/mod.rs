@@ -37,6 +37,81 @@ pub trait Channel: Send {
     }
 }
 
+pub(crate) fn channel_settings_from_entry(entry: &Value) -> Value {
+    if let Some(settings) = entry.get("settings") {
+        return settings.clone();
+    }
+
+    let mut settings = serde_json::Map::new();
+    if let Some(object) = entry.as_object() {
+        for (key, value) in object {
+            if matches!(key.as_str(), "name" | "type" | "enabled" | "settings") {
+                continue;
+            }
+            settings.insert(key.clone(), value.clone());
+        }
+    }
+    Value::Object(settings)
+}
+
+pub(crate) fn split_message_chunks(text: &str, max_chars: usize) -> Vec<String> {
+    if max_chars == 0 {
+        return Vec::new();
+    }
+
+    let mut remaining = text.trim();
+    if remaining.is_empty() {
+        return vec![String::new()];
+    }
+
+    let mut chunks = Vec::new();
+    while remaining.chars().count() > max_chars {
+        let split_at = nth_char_boundary(remaining, max_chars);
+        let candidate = &remaining[..split_at];
+        let boundary = preferred_split_index(candidate)
+            .filter(|index| *index > 0)
+            .unwrap_or(split_at);
+        let chunk = remaining[..boundary].trim();
+        if chunk.is_empty() {
+            let hard_split = &remaining[..split_at];
+            chunks.push(hard_split.trim().to_string());
+            remaining = remaining[split_at..].trim_start();
+        } else {
+            chunks.push(chunk.to_string());
+            remaining = remaining[boundary..].trim_start();
+        }
+    }
+
+    if !remaining.is_empty() {
+        chunks.push(remaining.to_string());
+    }
+
+    chunks
+}
+
+fn nth_char_boundary(text: &str, max_chars: usize) -> usize {
+    text.char_indices()
+        .nth(max_chars)
+        .map(|(idx, _)| idx)
+        .unwrap_or(text.len())
+}
+
+fn preferred_split_index(candidate: &str) -> Option<usize> {
+    let mut whitespace = None;
+    let mut punctuation = None;
+
+    for (idx, ch) in candidate.char_indices() {
+        if ch.is_whitespace() {
+            whitespace = Some(idx);
+        }
+        if matches!(ch, '.' | '!' | '?' | ';' | ':' | ',' | '\n') {
+            punctuation = Some(idx + ch.len_utf8());
+        }
+    }
+
+    punctuation.or(whitespace)
+}
+
 /// Registry of active channels.
 ///
 /// Each channel entry tracks an `auto_start` flag derived from
@@ -147,9 +222,15 @@ impl ChannelRegistry {
     pub fn broadcast(&self, text: &str) {
         for ch in &self.channels {
             if ch.is_running() {
-                let _ = ch.send_message(text);
+                if let Err(err) = ch.send_message(text) {
+                    log::warn!("Channel '{}' send failed: {}", ch.name(), err);
+                }
             }
         }
+    }
+
+    pub fn status_all(&self) -> Value {
+        Value::Array(self.channels.iter().map(|channel| channel.status()).collect())
     }
 
     pub fn send_to(&self, channel_name: &str, text: &str) -> Result<(), String> {
@@ -185,7 +266,7 @@ impl ChannelRegistry {
                     name: ch["name"].as_str().unwrap_or("").to_string(),
                     channel_type: ch["type"].as_str().unwrap_or("").to_string(),
                     enabled,
-                    settings: ch.get("settings").cloned().unwrap_or(Value::Null),
+                    settings: channel_settings_from_entry(ch),
                 };
                 if cfg.channel_type == "telegram" {
                     telegram_loaded = true;

@@ -2,230 +2,185 @@
 
 ## Actual Progress
 
-- Goal: Prompt 11: Build System — deploy_host.sh, CMakeLists.txt, GBS
-- Cycle classification: host-default for execution, with Tizen packaging
-  files updated but not deployed unless explicitly requested
-- Current workflow phase: final_verification
-- Last completed workflow phase: commit
-- Supervisor verdict: `PASS`
-- Resume point: Prompt-derived PLAN and refreshed verification are
-  synchronized; this slice is ready to stop
-
-## Prompt-Derived PLAN Completion
-
-- Root cause of the rollback:
-  the previous run finished the build-system implementation and host
-  validation, but left every prompt-derived PLAN item unchecked in both
-  root and session `PLAN.md`, so supervisor final verification failed on
-  plan completion instead of on build behavior.
-- Phase 1 completed:
-  followed the required guidance before any new edits by re-reading
-  `AGENTS.md`, `.agent/rules/shell-detection.md`, and the stage skills
-  relevant to planning, design, development, build/deploy, review, and
-  supervision.
-- Phase 2 completed:
-  treated the guidance as authoritative for this rerun by keeping the
-  cycle host-default, avoiding direct ad-hoc `cargo build/test/check`
-  outside repository scripts, and preserving the stage-gated workflow
-  notes in this dashboard.
-- Phase 3 completed:
-  verified the required guidance-file scope for this prompt remained the
-  root `AGENTS.md` instruction set and confirmed the active slice still
-  centers on `deploy_host.sh`, `deploy.sh`, `CMakeLists.txt`,
-  `packaging/tizenclaw.spec`, and `repo_config.ini`.
-- Phase 4 completed:
-  applied the AGENTS rules directly to the saved repository state by
-  resuming from the supervisor-indicated develop/final-verification path
-  instead of restarting the task from scratch.
-- Phase 5 completed:
-  synchronized root/session `.dev` operator state with the completed work
-  and reran host-side verification so the repository state and dashboard
-  evidence now match the finished PLAN items.
-
-## Stage Log
-
-### Stage 1: Planning
-
-- Status: `[x] completed`
-- Execution mode: host-default via `./deploy_host.sh`
-- Affected runtime surface:
-  host install/restart flow, IPC readiness check, GBS packaging inputs,
-  Tizen deploy routing from `repo_config.ini`
-- `tizenclaw-tests` contract:
-  reuse `tests/system/ipc_jsonrpc_contract.json` and direct
-  `tizenclaw-tests call --method ping` for host daemon readiness
-- Notes:
-  the prompt changes deployment and packaging behavior, but not the JSON-RPC
-  contract itself; existing ping coverage remains the system-test contract
-
-### Supervisor Gate: Stage 1 Planning
-
-- Verdict: `PASS`
-- Evidence:
-  cycle classified as host-default, runtime surface identified, and
-  system-test contract recorded in this dashboard
-
-### Stage 2: Design
-
-- Status: `[x] completed`
-- Subsystem boundaries and ownership:
-  `deploy_host.sh` owns workspace build, host install, process stop/start,
-  and IPC readiness; `deploy.sh` owns GBS build, RPM discovery, device
-  selection, device install, and service restart; `CMakeLists.txt` and the
-  RPM spec own packaging-time build/install paths only
-- Persistence and runtime path impact:
-  host binaries stay under `~/.tizenclaw/bin`; Tizen packages install
-  executables under `/usr/bin` and shared data under
-  `/opt/usr/share/tizenclaw`; the platform plugin installs under the Tizen
-  plugins directory so runtime plugin discovery still resolves it
-- IPC-observable assertions:
-  host deploy completion is validated by `tizenclaw-tests call --method ping`
-  and the existing `tests/system/ipc_jsonrpc_contract.json` scenario
-- FFI and plugin packaging boundary:
-  packaging installs the Rust-built platform plugin `.so` only; runtime
-  loading remains dynamic through the existing plugin discovery path
-
-### Supervisor Gate: Stage 2 Design
-
-- Verdict: `PASS`
-- Evidence:
-  ownership boundaries, install paths, and IPC-visible validation path are
-  recorded before implementation
-
-### Stage 3: Development
-
-- Status: `[x] completed`
-- Files updated:
-  `deploy_host.sh`, `deploy.sh`, `CMakeLists.txt`,
-  `packaging/tizenclaw.spec`, `repo_config.ini`
-- Development checklist:
-  reviewed existing runtime/build boundaries, reused
-  `tests/system/ipc_jsonrpc_contract.json` as the daemon contract,
-  implemented host workspace build plus IPC readiness polling, aligned Tizen
-  deploy routing to `repo_config.ini`, and updated packaging paths for
-  `/usr/bin` plus `/opt/usr/share/tizenclaw/plugins/libtizenclaw_plugin.so`
-- TDD/system-test note:
-  no JSON-RPC surface changed; the existing `ping` contract remains the
-  externally visible system-test contract for deploy readiness
-- Guardrail confirmation:
-  no ad-hoc direct cargo or cmake commands were executed outside repository
-  scripts; only shell syntax checks were run directly
-
-### Supervisor Gate: Stage 3 Development
-
-- Verdict: `PASS`
-- Evidence:
-  build-system files updated, dashboard reflects the stage, and the
-  daemon-facing contract for validation is recorded
-
-### Stage 4: Build & Deploy
-
-- Status: `[x] completed`
-- Commands executed:
-  `./deploy_host.sh`
-  `./deploy_host.sh --no-restart`
-  `./deploy_host.sh --release --no-restart`
-- Result:
-  host deploy completed, binaries were installed under `~/.tizenclaw`,
-  the daemon restarted successfully, and IPC readiness passed before the
-  script returned
-- Additional Tizen packaging check:
-  `./deploy.sh --dry-run --skip-deploy` was exercised after fixing an
-  invalid automatic `gbs -P standard` pass-through; the script now emits
-  `gbs build -A x86_64 --include-all` and treats `profile = standard` as
-  configuration metadata instead of a broken CLI flag
-
-### Supervisor Gate: Stage 4 Build & Deploy
-
-- Verdict: `PASS`
-- Evidence:
-  default host script path was used for the active cycle, restart was
-  confirmed, and the option-specific acceptance paths were exercised
-
-### Stage 5: Test & Review
-
-- Status: `[x] completed`
-- Commands executed:
-  `~/.tizenclaw/bin/tizenclaw-tests call --method ping`
-  `~/.tizenclaw/bin/tizenclaw-tests scenario --file tests/system/ipc_jsonrpc_contract.json`
-  `./deploy_host.sh --status`
-  `tail -n 20 ~/.tizenclaw/logs/tizenclaw.log`
-  `./deploy_host.sh --test`
-- Runtime evidence:
-  ping returned `{"pong":true}`;
-  the IPC scenario passed all 5 steps;
-  status showed `tizenclaw` and `tizenclaw-tool-executor` running;
-  log evidence included `[5/7] Started IPC server` and `[7/7] Daemon ready`
-- QA verdict:
-  `PASS`
-- Review note:
-  the host dashboard process was not running during the captured status check,
-  but this predates the current build-system edits and does not block the
-  daemon IPC acceptance criteria in this prompt
-
-### Supervisor Gate: Stage 5 Test & Review
-
-- Verdict: `PASS`
-- Evidence:
-  runtime logs were captured, IPC validation passed, and repository tests
-  passed through `./deploy_host.sh --test`
-
-### Stage 6: Commit & Push
-
-- Status: `[x] completed`
-- Workspace hygiene:
-  ran `bash .agent/scripts/cleanup_workspace.sh` before staging
-- Commit scope:
-  stage only `.dev/DASHBOARD.md`, `deploy_host.sh`, `deploy.sh`,
-  `CMakeLists.txt`, `packaging/tizenclaw.spec`, and `repo_config.ini`
-- Commit flow:
-  write `.tmp/commit_msg.txt` and use `git commit -F .tmp/commit_msg.txt`
-- Push status:
-  not requested for this prompt
-
-### Supervisor Gate: Stage 6 Commit & Push
-
-- Verdict: `PASS`
-- Evidence:
-  cleanup was executed, targeted staging scope was defined, and the commit
-  uses the required message file workflow
-
-## Final Verification Refresh
-
-- Additional failure found during rerun:
-  `./deploy.sh --dry-run --skip-deploy` exited early in `find_rpm()`
-  because the script tried to parse the previous GBS build log before the
-  dry-run fallback path, and `set -euo pipefail` treated a missing grep
-  match as fatal.
-- Corrective change:
-  updated `deploy.sh` so dry-run mode returns assumed RPM paths before any
-  log parsing, and made the log-based RPMS directory extraction tolerant of
-  missing matches.
-- Refreshed validation commands:
-  `./deploy_host.sh --no-restart`
-  `./deploy_host.sh`
-  `./deploy_host.sh --release --no-restart`
-  `~/.tizenclaw/bin/tizenclaw-tests call --method ping`
-  `./deploy_host.sh --test`
-  `./deploy_host.sh`
-  `./deploy_host.sh --status`
-  `./deploy.sh --dry-run --skip-deploy`
-- Refreshed validation evidence:
-  host build/install still passed in debug and release;
-  ping returned `{"pong":true}`;
-  repository tests passed again through `./deploy_host.sh --test`;
-  status showed `tizenclaw` and `tizenclaw-tool-executor` running with
-  recent log lines ending at `Started IPC server`;
-  the Tizen dry-run path now completes and prints the expected
-  `gbs build -A x86_64 --include-all` plus RPM/device restart flow.
+- Goal: Prompt 12: Channels — Telegram, Discord, MCP, Voice
+- Prompt-driven scope: Extend channel integrations under
+  `src/tizenclaw/src/channel/` without breaking the existing daemon
+  lifecycle and IPC model.
+- Active roadmap focus: Prompt 12 channel registry, outbound channels,
+  MCP stdio client, and config-driven factory loading.
+- Current workflow phase: test_review
+- Last completed workflow phase: test_review
+- Supervisor verdict: `pass through stage 5`
+- Escalation status: `none`
+- Resume point: Continue from the current stage gate recorded below.
 
 ## In Progress
 
-- None.
+- Stage 1 Planning
+- Stage 2 Design
+- Stage 6 Commit & Push
+
+## Progress Notes
+
+- Repository rules to follow: AGENTS.md
+- Build path classification: host-default cycle using `./deploy_host.sh`
+- Existing channel API diverges from the prompt:
+  `Channel` uses `start/stop/is_running/send_message`, registry is
+  lifecycle-oriented, and Telegram is already a large bidirectional
+  client. Changes must fit that architecture.
+- Runtime surface to change:
+  `channel/mod.rs`, `channel/channel_factory.rs`,
+  `channel/telegram_client.rs`, `channel/discord_channel.rs`,
+  `channel/slack_channel.rs`, `channel/webhook_channel.rs`,
+  `channel/mcp_client.rs`, and supporting tests.
+- Planned IPC-observable system scenario:
+  `tests/system/channel_registry_runtime_contract.json`
+  covering registry-managed channel lifecycle through existing IPC.
+- External network integrations with real credentials will be validated
+  through deterministic unit tests and script-driven host regression,
+  not live third-party endpoints.
 
 ## Risks And Watchpoints
 
-- Preserve unrelated user changes outside the build-system files.
-- Do not use direct ad-hoc cargo or cmake commands outside repository scripts.
-- Keep host validation on `./deploy_host.sh`; do not switch to Tizen deploy
-  unless explicitly requested by the user.
+- Do not log channel secrets such as bot tokens or webhook URLs.
+- Outbound sends must stay non-fatal even when HTTP calls fail.
+- Keep message splitting on safe boundaries instead of truncating
+  mid-word.
+- MCP changes must preserve current stdio client-manager behavior while
+  adding prompt-required connection and tool-call coverage.
+
+## Stage Records
+
+### Stage 1: Planning
+
+- Status: PASS
+- Cycle classification: host-default
+- Affected runtime surface:
+  registry-managed outbound channels plus MCP stdio tool discovery/call
+- Required test contract:
+  add `tests/system/channel_registry_runtime_contract.json` for
+  registry-visible behavior and add unit coverage for outbound channel
+  splitting, webhook method/headers, config loading, and MCP stdio
+  discovery.
+
+### Supervisor Gate: Stage 1 Planning
+
+- Verdict: PASS
+- Evidence:
+  host-default cycle selected, runtime surface identified, dashboard
+  updated, and system-test contract selected for daemon-visible changes.
+
+### Stage 2: Design
+
+- Status: PASS
+- Subsystem boundaries and ownership:
+  keep `ChannelRegistry` as the daemon-owned lifecycle container; extend
+  it with status aggregation and config-oriented construction helpers
+  instead of replacing it with a new shared-map API.
+- Channel runtime boundaries:
+  Telegram, Discord, Slack, and generic webhook remain outbound channel
+  implementations behind `Channel::send_message`; `start()` for
+  outbound-only channels becomes lightweight activation rather than
+  background polling.
+- Persistence and config boundaries:
+  config parsing stays in `channel_factory` and `ChannelRegistry`; each
+  channel gets a `from_value` or equivalent parsing path that validates
+  required fields, applies safe defaults, and never logs secrets.
+- HTTP boundary:
+  outbound HTTP calls use `ureq` with a 10-second timeout and explicit
+  headers; message splitting is shared by helper logic so Telegram uses
+  4000 chars and Discord uses 2000 chars.
+- MCP boundary:
+  preserve existing `McpClientManager`, but extend `McpClient` with a
+  config-driven connect path and a tool declaration type alias compatible
+  with current LLM tool wiring. Stdio remains the primary implemented
+  transport, with HTTP config parsing modeled without breaking current
+  callers.
+- IPC-observable verification:
+  the new system scenario will validate registry-managed channel status
+  through existing JSON-RPC `channel_status` / `start_channel` /
+  `stop_channel`; outbound channel HTTP specifics and MCP stdio exchange
+  will be covered by unit tests.
+
+### Supervisor Gate: Stage 2 Design
+
+- Verdict: PASS
+- Evidence:
+  ownership boundaries, runtime/config boundaries, dynamic stdio MCP
+  loading strategy, and verification path were defined and recorded.
+
+### Stage 3: Development
+
+- Status: PASS
+- System-test scenario added:
+  `tests/system/channel_registry_runtime_contract.json`
+- Unit coverage added for:
+  channel config parsing, Discord splitting/webhook payloads,
+  Slack webhook payloads, generic webhook method/headers,
+  Telegram single-chat config parsing, and MCP stdio discovery/call.
+- Implementation summary:
+  normalized flat-vs-nested channel config parsing, added registry
+  `status_all()`, hardened broadcast error handling, refit outbound
+  Discord/Slack/Webhook semantics to the existing `Channel` lifecycle,
+  added Telegram config parsing plus safe chunked sends, and refactored
+  MCP client setup around config-driven stdio/http transport parsing.
+- Script-driven validation used:
+  `./deploy_host.sh -b`
+- Development note:
+  the prompt asked for `ureq`, but the workspace builds in offline
+  vendored mode and does not vendor `ureq`. The implementation was
+  adapted to use the repo's existing vendored HTTP stack so the required
+  host build path remains green.
+
+### Supervisor Gate: Stage 3 Development
+
+- Verdict: PASS
+- Evidence:
+  no direct cargo commands were used outside the repository script,
+  development artifacts and tests were added, and `./deploy_host.sh -b`
+  completed successfully.
+
+### Stage 4: Build & Deploy
+
+- Status: PASS
+- Script used:
+  `./deploy_host.sh`
+- Deployment evidence:
+  host install completed, `tizenclaw-tool-executor` started, `tizenclaw`
+  started, and IPC readiness passed on the host abstract socket.
+
+### Supervisor Gate: Stage 4 Build & Deploy
+
+- Verdict: PASS
+- Evidence:
+  default host script path was used, install completed, daemon restart
+  succeeded, and IPC readiness was confirmed.
+
+### Stage 5: Test & Review
+
+- Status: PASS
+- Runtime proof:
+  `./deploy_host.sh --status` reported `tizenclaw` running with pid
+  `3008841` and `tizenclaw-tool-executor` running with pid `3008839`.
+- Runtime log proof:
+  host log excerpts include `[5/7] Started IPC server` and
+  `[7/7] Daemon ready`.
+- System scenario command:
+  `~/.tizenclaw/bin/tizenclaw-tests scenario --file tests/system/channel_registry_runtime_contract.json`
+- System scenario result:
+  4/4 steps passed for registry-managed channel lifecycle.
+- Regression command:
+  `./deploy_host.sh --test`
+- Regression result:
+  repository-wide host test cycle passed, including the new channel and
+  MCP tests.
+- QA verdict:
+  PASS. No blocking defects remain in the modified channel paths.
+
+### Supervisor Gate: Stage 5 Test & Review
+
+- Verdict: PASS
+- Evidence:
+  runtime status and log proof were captured, the planned system
+  scenario passed against the live daemon, and the script-driven host
+  regression cycle passed cleanly.
