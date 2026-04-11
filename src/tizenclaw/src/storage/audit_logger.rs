@@ -41,6 +41,41 @@ impl AuditLogger {
         );
     }
 
+    pub fn query_recent(&self, limit: usize) -> Vec<Value> {
+        let mut stmt = match self.db.prepare(
+            "SELECT id, event_type, session_id, details, timestamp
+             FROM audit_events
+             ORDER BY timestamp DESC, id DESC
+             LIMIT ?1",
+        ) {
+            Ok(stmt) => stmt,
+            Err(_) => return Vec::new(),
+        };
+
+        stmt.query_map(params![limit as i64], map_audit_event_row)
+            .ok()
+            .map(|rows| rows.filter_map(|row| row.ok()).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn query_by_type(&self, event_type: &str, limit: usize) -> Vec<Value> {
+        let mut stmt = match self.db.prepare(
+            "SELECT id, event_type, session_id, details, timestamp
+             FROM audit_events
+             WHERE event_type = ?1
+             ORDER BY timestamp DESC, id DESC
+             LIMIT ?2",
+        ) {
+            Ok(stmt) => stmt,
+            Err(_) => return Vec::new(),
+        };
+
+        stmt.query_map(params![event_type, limit as i64], map_audit_event_row)
+            .ok()
+            .map(|rows| rows.filter_map(|row| row.ok()).collect())
+            .unwrap_or_default()
+    }
+
     pub fn log_ipc_auth(&self, uid: u32, pid: u32, allowed: bool) {
         let details = serde_json::json!({
             "uid": uid, "pid": pid, "allowed": allowed
@@ -68,5 +103,58 @@ impl AuditLogger {
             "completion_tokens": completion_tokens
         });
         self.log("llm_call", session_id, &details);
+    }
+}
+
+fn map_audit_event_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
+    let details_raw: String = row.get(3)?;
+    let details = serde_json::from_str(&details_raw).unwrap_or_else(|_| Value::String(details_raw));
+
+    Ok(serde_json::json!({
+        "id": row.get::<_, i64>(0)?,
+        "event_type": row.get::<_, String>(1)?,
+        "session_id": row.get::<_, String>(2)?,
+        "details": details,
+        "timestamp": row.get::<_, String>(4)?,
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_log_and_query_recent_roundtrip() {
+        let tmp = tempdir().unwrap();
+        let db_path = tmp.path().join("audit.db");
+        let logger = AuditLogger::new(db_path.to_str().unwrap()).unwrap();
+
+        logger.log(
+            "tool_call",
+            "sess-1",
+            &serde_json::json!({"tool": "read_file", "status": "ok"}),
+        );
+
+        let rows = logger.query_recent(5);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["event_type"], "tool_call");
+        assert_eq!(rows[0]["session_id"], "sess-1");
+        assert_eq!(rows[0]["details"]["tool"], "read_file");
+    }
+
+    #[test]
+    fn test_query_by_type_filters_rows() {
+        let tmp = tempdir().unwrap();
+        let db_path = tmp.path().join("audit.db");
+        let logger = AuditLogger::new(db_path.to_str().unwrap()).unwrap();
+
+        logger.log("tool_call", "sess-1", &serde_json::json!({"tool": "read_file"}));
+        logger.log("error", "sess-2", &serde_json::json!({"message": "boom"}));
+
+        let rows = logger.query_by_type("error", 10);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["event_type"], "error");
+        assert_eq!(rows[0]["details"]["message"], "boom");
     }
 }

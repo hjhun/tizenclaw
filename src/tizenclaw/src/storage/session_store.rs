@@ -24,7 +24,7 @@
 use crate::llm::backend::{LlmMessage, LlmToolCall};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::fs::{self, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -301,6 +301,25 @@ impl SessionStore {
         }
     }
 
+    pub fn append_message(&self, session_id: &str, message: &SessionMessage) -> Result<(), String> {
+        self.ensure_session(session_id);
+
+        let rendered = render_session_message_body(message);
+        let Some(normalized) = normalize_markdown_block(&rendered) else {
+            return Ok(());
+        };
+
+        let path = self.session_file_today(session_id);
+        let block = format!("## {}\n{}\n\n", message.role, normalized);
+
+        let _g = self.lock.write().unwrap();
+        OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .and_then(|mut file| file.write_all(block.as_bytes()))
+            .map_err(|e| e.to_string())
+    }
+
     pub fn add_structured_user_message(&self, session_id: &str, content: &str) {
         let Some(normalized) = normalize_markdown_block(content) else {
             return;
@@ -439,6 +458,10 @@ impl SessionStore {
         (result, from_compacted)
     }
 
+    pub fn load(&self, session_id: &str, limit: usize) -> Vec<SessionMessage> {
+        self.load_session_context(session_id, limit).0
+    }
+
     // ── Compaction persistence ────────────────────────────────────────────────
 
     /// Load `compacted.md` snapshot. Returns empty Vec if not present.
@@ -482,9 +505,7 @@ impl SessionStore {
         // Write temp → rename (atomic on POSIX/Tizen)
         {
             let _g = self.lock.write().unwrap();
-            fs::write(&tmp_path, content.as_bytes())
-                .map_err(|e| format!("tmp write failed: {}", e))?;
-            fs::rename(&tmp_path, &final_path).map_err(|e| format!("rename failed: {}", e))?;
+            atomic_write(&tmp_path, &final_path, content.as_bytes())?;
         }
 
         log::debug!(
@@ -534,6 +555,24 @@ impl SessionStore {
     pub fn get_messages(&self, session_id: &str, limit: usize) -> Vec<SessionMessage> {
         let (msgs, _) = self.load_session_context(session_id, limit);
         msgs
+    }
+
+    pub fn list_sessions(&self) -> Vec<String> {
+        let sessions_root = self.base_dir.join("sessions");
+        let mut sessions: Vec<String> = fs::read_dir(&sessions_root)
+            .ok()
+            .into_iter()
+            .flat_map(|entries| entries.filter_map(|entry| entry.ok()))
+            .filter_map(|entry| {
+                if entry.path().is_dir() {
+                    entry.file_name().into_string().ok()
+                } else {
+                    None
+                }
+            })
+            .collect();
+        sessions.sort();
+        sessions
     }
 
     /// Remove today's session file. Does NOT delete the session directory
@@ -1072,6 +1111,50 @@ fn parse_transcript_event(event: &Value) -> Vec<SessionMessage> {
     }
 }
 
+fn render_session_message_body(message: &SessionMessage) -> String {
+    if let Some(normalized) = normalize_markdown_block(&message.text) {
+        return normalized;
+    }
+
+    if !message.tool_calls.is_empty() {
+        return serde_json::to_string(&message.tool_calls).unwrap_or_default();
+    }
+
+    if !message.tool_name.is_empty() || !message.tool_call_id.is_empty() || !message.tool_result.is_null()
+    {
+        return json!({
+            "tool_name": message.tool_name,
+            "tool_call_id": message.tool_call_id,
+            "tool_result": message.tool_result,
+        })
+        .to_string();
+    }
+
+    message.timestamp.clone()
+}
+
+fn atomic_write(tmp_path: &Path, final_path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let mut tmp_file =
+        File::create(tmp_path).map_err(|e| format!("tmp write failed: {}", e))?;
+    tmp_file
+        .write_all(bytes)
+        .map_err(|e| format!("tmp write failed: {}", e))?;
+    tmp_file
+        .sync_all()
+        .map_err(|e| format!("tmp sync failed: {}", e))?;
+    drop(tmp_file);
+
+    fs::rename(tmp_path, final_path).map_err(|e| format!("rename failed: {}", e))?;
+
+    if let Some(parent) = final_path.parent() {
+        File::open(parent)
+            .and_then(|dir| dir.sync_all())
+            .map_err(|e| format!("dir sync failed: {}", e))?;
+    }
+
+    Ok(())
+}
+
 /// Return only messages from `today` that are NOT already represented in
 /// `compacted` — prevents re-adding messages already in the snapshot.
 ///
@@ -1086,16 +1169,12 @@ fn deduplicate_after_compacted(
         return today.to_vec();
     }
     // Build a set of (role, first-100-chars) from compacted for fast lookup
-    let compacted_set: std::collections::HashSet<(String, String)> = compacted
-        .iter()
-        .map(session_message_dedup_key)
-        .collect();
+    let compacted_set: std::collections::HashSet<(String, String)> =
+        compacted.iter().map(session_message_dedup_key).collect();
 
     today
         .iter()
-        .filter(|msg| {
-            !compacted_set.contains(&session_message_dedup_key(msg))
-        })
+        .filter(|msg| !compacted_set.contains(&session_message_dedup_key(msg)))
         .cloned()
         .collect()
 }
@@ -1108,9 +1187,7 @@ fn session_message_dedup_key(message: &SessionMessage) -> (String, String) {
     } else if !message.tool_name.is_empty() || !message.tool_call_id.is_empty() {
         format!(
             "{}:{}:{}",
-            message.tool_name,
-            message.tool_call_id,
-            message.tool_result
+            message.tool_name, message.tool_call_id, message.tool_result
         )
     } else {
         message.reasoning_text.clone()
@@ -1344,6 +1421,29 @@ mod tests {
     }
 
     #[test]
+    fn test_append_message_and_load_alias_roundtrip() {
+        let tmp = tempdir().unwrap();
+        let store = make_store(tmp.path());
+
+        store
+            .append_message(
+                "alias_s1",
+                &SessionMessage {
+                    role: "user".into(),
+                    text: "hello from append_message".into(),
+                    timestamp: get_timestamp(),
+                    ..SessionMessage::default()
+                },
+            )
+            .unwrap();
+
+        let loaded = store.load("alias_s1", 10);
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].role, "user");
+        assert_eq!(loaded[0].text, "hello from append_message");
+    }
+
+    #[test]
     fn test_load_compacted_returns_empty_if_not_exists() {
         let tmp = tempdir().unwrap();
         let store = make_store(tmp.path());
@@ -1453,18 +1553,14 @@ mod tests {
         assert_eq!(summary["resume_ready"], true);
         assert_eq!(summary["message_file_count"], 1);
         assert_eq!(summary["transcript_exists"], true);
-        assert!(
-            summary["session_dir"]
-                .as_str()
-                .unwrap()
-                .ends_with("/sessions/runtime")
-        );
-        assert!(
-            summary["workdir_path"]
-                .as_str()
-                .unwrap()
-                .ends_with("/workdirs/runtime")
-        );
+        assert!(summary["session_dir"]
+            .as_str()
+            .unwrap()
+            .ends_with("/sessions/runtime"));
+        assert!(summary["workdir_path"]
+            .as_str()
+            .unwrap()
+            .ends_with("/workdirs/runtime"));
     }
 
     #[test]
@@ -1579,6 +1675,18 @@ mod tests {
         assert!(tmp.path().join("workdirs").exists());
         assert!(store.load_session_context("wipe_s1", 10).0.is_empty());
         assert_eq!(store.load_token_usage("wipe_s1").total_requests, 0);
+    }
+
+    #[test]
+    fn test_list_sessions_reads_session_ids_from_disk() {
+        let tmp = tempdir().unwrap();
+        let store = make_store(tmp.path());
+
+        store.add_message("list_a", "user", "hello");
+        store.add_message("list_b", "assistant", "world");
+
+        let sessions = store.list_sessions();
+        assert_eq!(sessions, vec!["list_a".to_string(), "list_b".to_string()]);
     }
 
     #[test]

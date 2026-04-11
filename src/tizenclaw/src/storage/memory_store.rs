@@ -211,6 +211,19 @@ impl MemoryStore {
         .ok()
     }
 
+    pub fn list_keys(&self) -> Vec<String> {
+        let conn = self.db.lock().unwrap();
+        let mut stmt = match conn.prepare("SELECT key FROM memories ORDER BY key ASC") {
+            Ok(stmt) => stmt,
+            Err(_) => return Vec::new(),
+        };
+
+        stmt.query_map([], |row| row.get::<_, String>(0))
+            .ok()
+            .map(|rows| rows.filter_map(|row| row.ok()).collect())
+            .unwrap_or_default()
+    }
+
     pub fn get_by_category(&self, category: &str, limit: usize) -> Vec<(String, String, String)> {
         let conn = self.db.lock().unwrap();
         let mut stmt = match conn.prepare(
@@ -300,15 +313,19 @@ impl MemoryStore {
         {
             let _g = self.file_lock.write().unwrap();
             if self.base_dir.exists() {
-                for entry in fs::read_dir(&self.base_dir)
-                    .map_err(|err| format!("Failed to read '{}': {}", self.base_dir.display(), err))?
-                {
+                for entry in fs::read_dir(&self.base_dir).map_err(|err| {
+                    format!("Failed to read '{}': {}", self.base_dir.display(), err)
+                })? {
                     let path = entry
                         .map_err(|err| format!("Failed to inspect memory entry: {}", err))?
                         .path();
                     if path.is_dir() {
                         fs::remove_dir_all(&path).map_err(|err| {
-                            format!("Failed to remove memory directory '{}': {}", path.display(), err)
+                            format!(
+                                "Failed to remove memory directory '{}': {}",
+                                path.display(),
+                                err
+                            )
                         })?;
                     } else {
                         fs::remove_file(&path).map_err(|err| {
@@ -751,11 +768,31 @@ mod tests {
         assert_eq!(summary["categories"]["preferences"], 1);
         assert_eq!(summary["categories"]["episodic"], 1);
         assert_eq!(summary["categories"]["general"], 1);
-        assert!(
-            summary["summary_path"]
-                .as_str()
-                .unwrap()
-                .ends_with("/memory/memory.md")
+        assert!(summary["summary_path"]
+            .as_str()
+            .unwrap()
+            .ends_with("/memory/memory.md"));
+    }
+
+    #[test]
+    fn test_list_keys_returns_sorted_memory_keys() {
+        let tmp = tempdir().unwrap();
+        let md_dir = tmp.path().join("memory");
+        let db_path = tmp.path().join("mem.db");
+
+        let store = MemoryStore::new(
+            md_dir.to_str().unwrap(),
+            db_path.to_str().unwrap(),
+            tmp.path().to_str().unwrap(),
+        )
+        .unwrap();
+
+        store.set("pref::tone", "Concise", "preferences");
+        store.set("fact::alpha", "Alpha", "facts");
+
+        assert_eq!(
+            store.list_keys(),
+            vec!["fact::alpha".to_string(), "pref::tone".to_string()]
         );
     }
 }

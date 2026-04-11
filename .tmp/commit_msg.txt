@@ -1,12 +1,9 @@
-Implement platform plugin metadata loading
+Implement storage audit persistence contracts
 
-Add metadata-driven shared library discovery to libtizenclaw-core.
-PlatformContext now retains discovered plugins, works without plugins,
-and reports capabilities from loaded plugin metadata.
+Add audit log query APIs and SQLite bootstrap settings for WAL mode.
+Extend the session store with prompt-compatible load and append helpers,
+atomic compacted snapshot writes, and on-disk session listing.
 
-Export claw_plugin_info and claw_plugin_free_string from the
-standalone Tizen metadata plugin and add discovery metadata to the
-CLI, skill, and LLM backend metadata plugin crates.
-
-Refresh the host build flow to compile the reference metadata plugin,
-update Cargo.lock, and record the full six-stage workflow in DASHBOARD.
+Add memory key listing and a vector embedding persistence/search layer.
+Cover the new storage contracts with unit tests and validate them with
+the host deploy and host test scripts.
