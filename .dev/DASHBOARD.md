@@ -2,208 +2,198 @@
 
 ## Actual Progress
 
-- Goal: Prompt 12: Channels — Telegram, Discord, MCP, Voice
-- Prompt-driven scope: Extend channel integrations under
-  `src/tizenclaw/src/channel/` without breaking the existing daemon
-  lifecycle and IPC model.
-- Active roadmap focus: Prompt 12 channel registry, outbound channels,
-  MCP stdio client, and config-driven factory loading.
-- Current workflow phase: commit
-- Last completed workflow phase: commit
-- Supervisor verdict: `PASS`
-- Escalation status: `none`
-- Resume point: Continue from the current stage gate recorded below.
+- Goal: Prompt 13: Key Store and API Key Management
+- Prompt-driven scope: Phase 4. Supervisor Validation, Continuation Loop, and Resume prompt-driven setup for Follow the guidance files below before making changes.
+- Active roadmap focus:
+- Phase 4. Supervisor Validation, Continuation Loop, and Resume
+- Current workflow phase: plan
+- Last completed workflow phase: none
+- Supervisor verdict: `approved`
+- Escalation status: `approved`
+- Resume point: Return to Plan and resume from the first unchecked PLAN item if setup is interrupted
 
 ## In Progress
 
-- Stage 1 Planning
-- Stage 2 Design
-- Workflow complete
+- Review the prompt-derived goal and success criteria for Prompt 13: Key Store and API Key Management.
+- Review repository guidance from AGENTS.md, .github/workflows/ci.yml, .github/workflows/release-host-bundle.yml
+- Generate DASHBOARD.md and PLAN.md from the active prompt before implementation continues.
 
 ## Progress Notes
 
+- This file should show the actual progress of the active scope.
+- workflow_state.json remains machine truth.
+- PLAN.md should list prompt-derived development items in phase order.
 - Repository rules to follow: AGENTS.md
-- Build path classification: host-default cycle using `./deploy_host.sh`
-- Existing channel API diverges from the prompt:
-  `Channel` uses `start/stop/is_running/send_message`, registry is
-  lifecycle-oriented, and Telegram is already a large bidirectional
-  client. Changes must fit that architecture.
-- Runtime surface to change:
-  `channel/mod.rs`, `channel/channel_factory.rs`,
-  `channel/telegram_client.rs`, `channel/discord_channel.rs`,
-  `channel/slack_channel.rs`, `channel/webhook_channel.rs`,
-  `channel/mcp_client.rs`, and supporting tests.
-- Planned IPC-observable system scenario:
-  `tests/system/channel_registry_runtime_contract.json`
-  covering registry-managed channel lifecycle through existing IPC.
-- External network integrations with real credentials will be validated
-  through deterministic unit tests and script-driven host regression,
-  not live third-party endpoints.
+- Relevant repository workflows: .github/workflows/ci.yml, .github/workflows/release-host-bundle.yml
 
 ## Risks And Watchpoints
 
-- Do not log channel secrets such as bot tokens or webhook URLs.
-- Outbound sends must stay non-fatal even when HTTP calls fail.
-- Keep message splitting on safe boundaries instead of truncating
-  mid-word.
-- MCP changes must preserve current stdio client-manager behavior while
-  adding prompt-required connection and tool-call coverage.
+- Do not overwrite existing operator-authored Markdown.
+- Keep JSON merges additive so interrupted runs stay resumable.
+- Keep session-scoped state isolated when multiple workflows run in parallel.
 
-## Stage Records
+## 2026-04-12 Prompt 13 Cycle
 
 ### Stage 1: Planning
 
-- Status: PASS
+Planning Progress:
+- [x] Step 1: Classify the cycle (host-default vs explicit Tizen)
+- [x] Step 2: Define the affected runtime surface
+- [x] Step 3: Decide which tizenclaw-tests scenario will verify the change
+- [x] Step 4: Record the plan in .dev/DASHBOARD.md
+
+Summary:
 - Cycle classification: host-default
-- Affected runtime surface:
-  registry-managed outbound channels plus MCP stdio tool discovery/call
-- Required test contract:
-  add `tests/system/channel_registry_runtime_contract.json` for
-  registry-visible behavior and add unit coverage for outbound channel
-  splitting, webhook method/headers, config loading, and MCP stdio
-  discovery.
+- Build/test path: `./deploy_host.sh` and `./deploy_host.sh --test`
+- Runtime surface:
+  - `src/tizenclaw/src/generic/infra/key_store.rs`
+  - `src/tizenclaw/src/core/agent_core.rs`
+  - `src/tizenclaw/src/core/ipc_server.rs`
+  - `src/tizenclaw/src/core/llm_config_store.rs`
+- Planned system-test contract:
+  - add `tests/system/key_management_runtime_contract.json`
+  - verify `key.list`, `key.set`, `key.delete`, and redacted
+    `backend.config.get`
 
 ### Supervisor Gate: Stage 1 Planning
-
 - Verdict: PASS
-- Evidence:
-  host-default cycle selected, runtime surface identified, dashboard
-  updated, and system-test contract selected for daemon-visible changes.
+- Evidence: host-default cycle classified, runtime surface listed, and
+  system-test scenario identified in this dashboard entry.
 
 ### Stage 2: Design
 
-- Status: PASS
-- Subsystem boundaries and ownership:
-  keep `ChannelRegistry` as the daemon-owned lifecycle container; extend
-  it with status aggregation and config-oriented construction helpers
-  instead of replacing it with a new shared-map API.
-- Channel runtime boundaries:
-  Telegram, Discord, Slack, and generic webhook remain outbound channel
-  implementations behind `Channel::send_message`; `start()` for
-  outbound-only channels becomes lightweight activation rather than
-  background polling.
-- Persistence and config boundaries:
-  config parsing stays in `channel_factory` and `ChannelRegistry`; each
-  channel gets a `from_value` or equivalent parsing path that validates
-  required fields, applies safe defaults, and never logs secrets.
-- HTTP boundary:
-  outbound HTTP calls use `ureq` with a 10-second timeout and explicit
-  headers; message splitting is shared by helper logic so Telegram uses
-  4000 chars and Discord uses 2000 chars.
-- MCP boundary:
-  preserve existing `McpClientManager`, but extend `McpClient` with a
-  config-driven connect path and a tool declaration type alias compatible
-  with current LLM tool wiring. Stdio remains the primary implemented
-  transport, with HTTP config parsing modeled without breaking current
-  callers.
-- IPC-observable verification:
-  the new system scenario will validate registry-managed channel status
-  through existing JSON-RPC `channel_status` / `start_channel` /
-  `stop_channel`; outbound channel HTTP specifics and MCP stdio exchange
-  will be covered by unit tests.
+Design Progress:
+- [x] Step 1: Define subsystem boundaries and ownership
+- [x] Step 2: Define persistence and runtime path impact
+- [x] Step 3: Define IPC-observable assertions for the new behavior
+- [x] Step 4: Record the design summary in .dev/DASHBOARD.md
+
+Design Summary:
+- Ownership boundaries:
+  - `KeyStore` owns key-file discovery, env override mapping, disk write,
+    delete, and stored-key enumeration for `{config_dir}/keys`.
+  - `AgentCore` owns backend key resolution and backend ping testing via
+    short-lived merged config values.
+  - `IpcServer` owns JSON-RPC method routing and parameter validation for
+    `key.list`, `key.set`, `key.delete`, and `key.test`.
+- Persistence boundaries:
+  - keys move from legacy encrypted `keys.json` handling to plain
+    `{config_dir}/keys/<name>.key` files with `700` dir and `600` file
+    permissions.
+  - `llm_config.json` remains the config source of record, but IPC reads
+    must redact `api_key` recursively before values leave the daemon.
+- IPC-observable assertions:
+  - `key.list` reports `stored` and `from_env` separately.
+  - `key.set` rejects empty values and persists only the named key file.
+  - `key.delete` removes the stored file.
+  - `backend.config.get` returns redacted `api_key` fields.
+  - `key.test` performs a backend ping request without logging secret
+    material.
+- Runtime verification path:
+  - `tests/system/key_management_runtime_contract.json`
+  - direct `tizenclaw-tests call` checks for env listing and file removal
 
 ### Supervisor Gate: Stage 2 Design
-
 - Verdict: PASS
-- Evidence:
-  ownership boundaries, runtime/config boundaries, dynamic stdio MCP
-  loading strategy, and verification path were defined and recorded.
+- Evidence: subsystem, persistence, IPC contract, and system-test path
+  were defined before implementation.
 
 ### Stage 3: Development
 
-- Status: PASS
-- System-test scenario added:
-  `tests/system/channel_registry_runtime_contract.json`
-- Unit coverage added for:
-  channel config parsing, Discord splitting/webhook payloads,
-  Slack webhook payloads, generic webhook method/headers,
-  Telegram single-chat config parsing, and MCP stdio discovery/call.
-- Implementation summary:
-  normalized flat-vs-nested channel config parsing, added registry
-  `status_all()`, hardened broadcast error handling, refit outbound
-  Discord/Slack/Webhook semantics to the existing `Channel` lifecycle,
-  added Telegram config parsing plus safe chunked sends, and refactored
-  MCP client setup around config-driven stdio/http transport parsing.
-- Script-driven validation used:
-  `./deploy_host.sh -b`
-- Development note:
-  the prompt asked for `ureq`, but the workspace builds in offline
-  vendored mode and does not vendor `ureq`. The implementation was
-  adapted to use the repo's existing vendored HTTP stack so the required
-  host build path remains green.
+Development Progress (TDD Cycle):
+- [x] Step 1: Review System Design Async Traits and Fearless Concurrency specs
+- [x] Step 2: Add or update the relevant tizenclaw-tests system scenario
+- [x] Step 3: Write failing tests for the active script-driven
+  verification path (Red)
+- [x] Step 4: Implement actual TizenClaw agent state machines and memory-safe
+  FFI boundaries (Green)
+- [x] Step 5: Validate daemon-visible behavior with tizenclaw-tests and the
+  selected script path (Refactor)
+
+Implementation Summary:
+- Replaced the legacy encrypted `keys.json` flow with a file-based
+  `KeyStore` under `{config_dir}/keys`.
+- Added env-first lookup for `anthropic`, `openai`, `gemini`, and `groq`.
+- Added IPC handlers for `key.list`, `key.set`, `key.delete`, and
+  `key.test`.
+- Added recursive API-key redaction for IPC config responses.
+- Added `tests/system/key_management_runtime_contract.json`.
+- Added unit coverage for key precedence, permissions, deletion, env
+  reporting, and recursive redaction.
+- Direct local `cargo` and `cmake` commands were not used.
 
 ### Supervisor Gate: Stage 3 Development
-
 - Verdict: PASS
-- Evidence:
-  no direct cargo commands were used outside the repository script,
-  development artifacts and tests were added, and `./deploy_host.sh -b`
-  completed successfully.
+- Evidence: system-test contract, runtime implementation, and unit-level
+  regression coverage were added without bypassing the script-first rule.
 
 ### Stage 4: Build & Deploy
 
-- Status: PASS
-- Script used:
-  `./deploy_host.sh`
-- Deployment evidence:
-  host install completed, `tizenclaw-tool-executor` started, `tizenclaw`
-  started, and IPC readiness passed on the host abstract socket.
+Autonomous Daemon Build Progress:
+- [x] Step 1: Confirm whether this cycle is host-default or explicit Tizen
+- [x] Step 2: Execute `./deploy_host.sh` for the default host path
+- [x] Step 3: Execute `./deploy.sh` only if the user explicitly requests Tizen
+- [x] Step 4: Verify the host daemon or target service actually restarted
+- [x] Step 5: Capture a preliminary survival/status check
+
+Build & Deploy Evidence:
+- Command: `./deploy_host.sh`
+- Result: host build succeeded and binaries installed under
+  `/home/hjhun/.tizenclaw`
+- Runtime: `tizenclaw-tool-executor` and `tizenclaw` restarted
+- IPC readiness: daemon reported ready via abstract socket
+- Dashboard port check: `9091` available before startup
 
 ### Supervisor Gate: Stage 4 Build & Deploy
-
 - Verdict: PASS
-- Evidence:
-  default host script path was used, install completed, daemon restart
-  succeeded, and IPC readiness was confirmed.
+- Evidence: host-default script path completed successfully and the daemon
+  survived startup with IPC readiness confirmed.
 
 ### Stage 5: Test & Review
 
-- Status: PASS
-- Runtime proof:
-  `./deploy_host.sh --status` reported `tizenclaw` running with pid
-  `3008841` and `tizenclaw-tool-executor` running with pid `3008839`.
+Autonomous QA Progress:
+- [x] Step 1: Static Code Review tracing Rust abstractions, `Mutex` locks,
+  and IPC/FFI boundaries
+- [x] Step 2: Ensure the selected script generated NO warnings alongside
+  binary output
+- [x] Step 3: Run host or device integration smoke tests and observe logs
+- [x] Step 4: Comprehensive QA Verdict (Turnover to Commit/Push on Pass,
+  Regress on Fail)
+
+Review Evidence:
 - Runtime log proof:
-  host log excerpts include `[5/7] Started IPC server` and
-  `[7/7] Daemon ready`.
-- System scenario command:
-  `~/.tizenclaw/bin/tizenclaw-tests scenario --file tests/system/channel_registry_runtime_contract.json`
-- System scenario result:
-  4/4 steps passed for registry-managed channel lifecycle.
-- Regression command:
-  `./deploy_host.sh --test`
-- Regression result:
-  repository-wide host test cycle passed, including the new channel and
-  MCP tests.
-- QA verdict:
-  PASS. No blocking defects remain in the modified channel paths.
+  - `tail -n 40 /home/hjhun/.tizenclaw/logs/tizenclaw.log`
+  - latest startup reached `[7/7] Daemon ready`
+- Host status proof:
+  - `./deploy_host.sh --status`
+  - daemon and tool executor reported running during live IPC checks
+- System-test contract:
+  - `tizenclaw-tests scenario --file tests/system/key_management_runtime_contract.json`
+  - Result: 5/5 steps passed
+- Acceptance-oriented IPC checks:
+  - `ANTHROPIC_API_KEY=sk-test ./deploy_host.sh`
+  - `tizenclaw-tests call --method key.list`
+    => `{"from_env":["anthropic"],"status":"ok","stored":[]}`
+  - `tizenclaw-tests call --method key.set --params '{"key":"gemini","value":"AIza-runtime-check"}'`
+    => `{"key":"gemini","status":"ok","stored":true}`
+  - `stat -c '%a %n' /home/hjhun/.tizenclaw/config/keys/gemini.key`
+    => `600 /home/hjhun/.tizenclaw/config/keys/gemini.key`
+  - `tizenclaw-tests call --method backend.config.get`
+    => API keys and OAuth tokens are redacted in IPC output
+  - `tizenclaw-tests call --method key.delete --params '{"key":"gemini"}'`
+    => `{"deleted":true,"key":"gemini","status":"ok"}`
+  - `tizenclaw-tests call --method key.list`
+    => stored key list no longer includes `gemini`
+- Repository-wide regression:
+  - `./deploy_host.sh --test`
+  - Result: all workspace tests passed
+
+QA Verdict:
+- PASS
+- No build warnings observed in the selected host script path.
+- No API key material appeared in reviewed daemon log excerpts.
 
 ### Supervisor Gate: Stage 5 Test & Review
-
 - Verdict: PASS
-- Evidence:
-  runtime status and log proof were captured, the planned system
-  scenario passed against the live daemon, and the script-driven host
-  regression cycle passed cleanly.
-
-### Stage 6: Commit & Push
-
-- Status: PASS
-- Cleanup command:
-  `timeout 60s bash .agent/scripts/cleanup_workspace.sh`
-- Commit command:
-  `git commit -F .tmp/commit_msg.txt`
-- Commit created:
-  `42f3265b` `Extend outbound channel integrations`
-- Scope control:
-  only the channel-integration files for this prompt were staged and
-  committed; unrelated worktree changes were left untouched.
-- Push status:
-  not executed in this cycle.
-
-### Supervisor Gate: Stage 6 Commit & Push
-
-- Verdict: PASS
-- Evidence:
-  cleanup script was executed, the commit message used
-  `.tmp/commit_msg.txt`, the commit completed without `-m`, and
-  unrelated changes were excluded from the staged scope.
+- Evidence: live IPC contract passed, acceptance checks passed, host logs
+  showed clean startup, and `./deploy_host.sh --test` passed.

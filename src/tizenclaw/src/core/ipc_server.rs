@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::channel::ChannelRegistry;
 use crate::core::agent_core::AgentCore;
+use crate::core::llm_config_store;
 use crate::core::registration_store::RegistrationKind;
 
 const MAX_CONCURRENT_CLIENTS: usize = 8;
@@ -157,18 +158,14 @@ impl IpcServer {
                     let bytes = path.as_os_str().as_bytes();
                     if bytes.len() >= addr.sun_path.len() {
                         libc::close(fd);
-                        return Err(format!(
-                            "IPC socket path too long: {}",
-                            path.display()
-                        ));
+                        return Err(format!("IPC socket path too long: {}", path.display()));
                     }
 
                     for (index, byte) in bytes.iter().enumerate() {
                         addr.sun_path[index] = *byte as libc::c_char;
                     }
 
-                    (std::mem::size_of::<libc::sa_family_t>() + bytes.len() + 1)
-                        as libc::socklen_t
+                    (std::mem::size_of::<libc::sa_family_t>() + bytes.len() + 1) as libc::socklen_t
                 }
                 SocketEndpoint::Abstract(name) => {
                     let bytes = name.as_bytes();
@@ -181,8 +178,7 @@ impl IpcServer {
                         addr.sun_path[index + 1] = *byte as libc::c_char;
                     }
 
-                    (std::mem::size_of::<libc::sa_family_t>() + bytes.len() + 1)
-                        as libc::socklen_t
+                    (std::mem::size_of::<libc::sa_family_t>() + bytes.len() + 1) as libc::socklen_t
                 }
             };
 
@@ -254,10 +250,7 @@ impl IpcServer {
                 let errno = std::io::Error::last_os_error()
                     .raw_os_error()
                     .unwrap_or_default();
-                if errno != libc::EAGAIN
-                    && errno != libc::EWOULDBLOCK
-                    && errno != libc::EINTR
-                {
+                if errno != libc::EAGAIN && errno != libc::EWOULDBLOCK && errno != libc::EINTR {
                     log::error!("IPC accept failed: errno={}", errno);
                 }
                 continue;
@@ -272,11 +265,7 @@ impl IpcServer {
                 .is_err()
             {
                 let mut busy_stream = unsafe { UnixStream::from_raw_fd(client_fd) };
-                let busy = Self::jsonrpc_error(
-                    Value::Null,
-                    -32000,
-                    "Server busy".to_string(),
-                );
+                let busy = Self::jsonrpc_error(Value::Null, -32000, "Server busy".to_string());
                 let _ = Self::write_payload(&mut busy_stream, busy.as_bytes());
                 continue;
             }
@@ -333,13 +322,8 @@ impl IpcServer {
                 }
             };
 
-            let response = Self::dispatch_request(
-                &rt_handle,
-                &payload,
-                &writer,
-                &agent,
-                &channel_registry,
-            );
+            let response =
+                Self::dispatch_request(&rt_handle, &payload, &writer, &agent, &channel_registry);
 
             let write_result = writer
                 .lock()
@@ -402,11 +386,7 @@ impl IpcServer {
         let request: Value = match serde_json::from_slice(raw_payload) {
             Ok(value) => value,
             Err(err) => {
-                return Self::jsonrpc_error(
-                    Value::Null,
-                    -32700,
-                    format!("Parse error: {}", err),
-                );
+                return Self::jsonrpc_error(Value::Null, -32700, format!("Parse error: {}", err));
             }
         };
 
@@ -428,12 +408,7 @@ impl IpcServer {
         let result = match method {
             "process_prompt" | "process_prompt_stream" | "prompt" => {
                 match Self::handle_process_prompt(
-                    rt_handle,
-                    method,
-                    &params,
-                    &req_id,
-                    writer,
-                    agent,
+                    rt_handle, method, &params, &req_id, writer, agent,
                 ) {
                     Ok(result) => result,
                     Err(response) => return response,
@@ -448,9 +423,7 @@ impl IpcServer {
                 Ok(session_id) => agent.session_runtime_status(session_id),
                 Err(response) => return response,
             },
-            "tool.list" | "bridge_list_tools" => {
-                Self::handle_tool_list(rt_handle, agent)
-            }
+            "tool.list" | "bridge_list_tools" => Self::handle_tool_list(rt_handle, agent),
             "tool.reload" => match Self::handle_tool_reload(rt_handle, agent) {
                 Ok(result) => result,
                 Err(response) => return response,
@@ -465,6 +438,22 @@ impl IpcServer {
                     Err(response) => return response,
                 }
             }
+            "key.list" => match Self::handle_key_list(agent, &req_id) {
+                Ok(result) => result,
+                Err(response) => return response,
+            },
+            "key.set" => match Self::handle_key_set(rt_handle, agent, &params, &req_id) {
+                Ok(result) => result,
+                Err(response) => return response,
+            },
+            "key.delete" => match Self::handle_key_delete(rt_handle, agent, &params, &req_id) {
+                Ok(result) => result,
+                Err(response) => return response,
+            },
+            "key.test" => match Self::handle_key_test(rt_handle, agent, &params, &req_id) {
+                Ok(result) => result,
+                Err(response) => return response,
+            },
             "backend.config.get" | "get_llm_config" => {
                 match Self::handle_backend_config_get(agent, &params, &req_id) {
                     Ok(result) => result,
@@ -477,51 +466,37 @@ impl IpcServer {
                     Err(response) => return response,
                 }
             }
-            "unset_llm_config" => match Self::handle_backend_config_unset(
-                rt_handle,
-                agent,
-                &params,
-                &req_id,
-            ) {
-                Ok(result) => result,
-                Err(response) => return response,
-            },
-            "dashboard.start" => match Self::handle_dashboard_start(
-                channel_registry,
-                &params,
-                &req_id,
-            ) {
-                Ok(result) => result,
-                Err(response) => return response,
-            },
-            "dashboard.stop" => match Self::handle_dashboard_stop(channel_registry, &req_id) {
-                Ok(result) => result,
-                Err(response) => return response,
-            },
-            "dashboard.status" => {
-                match Self::handle_dashboard_status(channel_registry, &req_id) {
+            "unset_llm_config" => {
+                match Self::handle_backend_config_unset(rt_handle, agent, &params, &req_id) {
                     Ok(result) => result,
                     Err(response) => return response,
                 }
             }
-            "register_path" => match Self::handle_register_path(
-                rt_handle,
-                agent,
-                &params,
-                &req_id,
-            ) {
+            "dashboard.start" => {
+                match Self::handle_dashboard_start(channel_registry, &params, &req_id) {
+                    Ok(result) => result,
+                    Err(response) => return response,
+                }
+            }
+            "dashboard.stop" => match Self::handle_dashboard_stop(channel_registry, &req_id) {
                 Ok(result) => result,
                 Err(response) => return response,
             },
-            "unregister_path" => match Self::handle_unregister_path(
-                rt_handle,
-                agent,
-                &params,
-                &req_id,
-            ) {
+            "dashboard.status" => match Self::handle_dashboard_status(channel_registry, &req_id) {
                 Ok(result) => result,
                 Err(response) => return response,
             },
+            "register_path" => match Self::handle_register_path(rt_handle, agent, &params, &req_id)
+            {
+                Ok(result) => result,
+                Err(response) => return response,
+            },
+            "unregister_path" => {
+                match Self::handle_unregister_path(rt_handle, agent, &params, &req_id) {
+                    Ok(result) => result,
+                    Err(response) => return response,
+                }
+            }
             "runtime_status" => Self::handle_runtime_status(agent, channel_registry),
             "ping" => json!({"pong": true}),
             "get_usage" => match Self::handle_get_usage(agent, &params, &req_id) {
@@ -538,12 +513,7 @@ impl IpcServer {
                 Ok(result) => result,
                 Err(response) => return response,
             },
-            "bridge_tool" => match Self::handle_bridge_tool(
-                rt_handle,
-                agent,
-                &params,
-                &req_id,
-            ) {
+            "bridge_tool" => match Self::handle_bridge_tool(rt_handle, agent, &params, &req_id) {
                 Ok(result) => result,
                 Err(response) => return response,
             },
@@ -620,11 +590,12 @@ impl IpcServer {
             ));
         }
 
-        let session_id = Self::resolve_session_id(
-            params.get("session_id").and_then(Value::as_str),
-            "ipc",
-        );
-        let stream = params.get("stream").and_then(Value::as_bool).unwrap_or(false)
+        let session_id =
+            Self::resolve_session_id(params.get("session_id").and_then(Value::as_str), "ipc");
+        let stream = params
+            .get("stream")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
             || method == "process_prompt_stream";
 
         let response = if stream {
@@ -711,10 +682,7 @@ impl IpcServer {
         })
     }
 
-    fn handle_tool_list(
-        rt_handle: &tokio::runtime::Handle,
-        agent: &Arc<AgentCore>,
-    ) -> Value {
+    fn handle_tool_list(rt_handle: &tokio::runtime::Handle, agent: &Arc<AgentCore>) -> Value {
         let tools = tokio::task::block_in_place(|| {
             rt_handle.block_on(agent.get_bridge_tool_declarations(&[]))
         });
@@ -782,12 +750,84 @@ impl IpcServer {
         agent: &Arc<AgentCore>,
         req_id: &Value,
     ) -> Result<Value, String> {
-        let config = tokio::task::block_in_place(|| rt_handle.block_on(agent.reload_llm_backends()))
+        let config =
+            tokio::task::block_in_place(|| rt_handle.block_on(agent.reload_llm_backends()))
+                .map_err(|err| Self::jsonrpc_error(req_id.clone(), -32000, err))?;
+        Ok(json!({
+            "status": "ok",
+            "config": llm_config_store::redact_secrets(&config),
+            "runtime": agent.get_llm_runtime(),
+        }))
+    }
+
+    fn handle_key_list(agent: &Arc<AgentCore>, req_id: &Value) -> Result<Value, String> {
+        agent
+            .list_keys()
+            .map(|result| {
+                json!({
+                    "status": "ok",
+                    "stored": result["stored"].clone(),
+                    "from_env": result["from_env"].clone(),
+                })
+            })
+            .map_err(|err| Self::jsonrpc_error(req_id.clone(), -32000, err))
+    }
+
+    fn handle_key_set(
+        rt_handle: &tokio::runtime::Handle,
+        agent: &Arc<AgentCore>,
+        params: &Value,
+        req_id: &Value,
+    ) -> Result<Value, String> {
+        let key = Self::required_str(params, "key", req_id)?;
+        let value = Self::required_str(params, "value", req_id)?;
+        if value.trim().is_empty() {
+            return Err(Self::jsonrpc_error(
+                req_id.clone(),
+                -32602,
+                "Key value must not be empty".to_string(),
+            ));
+        }
+
+        let result = tokio::task::block_in_place(|| rt_handle.block_on(agent.set_key(key, value)))
             .map_err(|err| Self::jsonrpc_error(req_id.clone(), -32000, err))?;
         Ok(json!({
             "status": "ok",
-            "config": config,
-            "runtime": agent.get_llm_runtime(),
+            "key": key,
+            "stored": result["stored"].clone(),
+        }))
+    }
+
+    fn handle_key_delete(
+        rt_handle: &tokio::runtime::Handle,
+        agent: &Arc<AgentCore>,
+        params: &Value,
+        req_id: &Value,
+    ) -> Result<Value, String> {
+        let key = Self::required_str(params, "key", req_id)?;
+        let result = tokio::task::block_in_place(|| rt_handle.block_on(agent.delete_key(key)))
+            .map_err(|err| Self::jsonrpc_error(req_id.clone(), -32000, err))?;
+        Ok(json!({
+            "status": "ok",
+            "key": key,
+            "deleted": result["deleted"].clone(),
+        }))
+    }
+
+    fn handle_key_test(
+        rt_handle: &tokio::runtime::Handle,
+        agent: &Arc<AgentCore>,
+        params: &Value,
+        req_id: &Value,
+    ) -> Result<Value, String> {
+        let key = Self::required_str(params, "key", req_id)?;
+        let result = tokio::task::block_in_place(|| rt_handle.block_on(agent.test_key(key)))
+            .map_err(|err| Self::jsonrpc_error(req_id.clone(), -32000, err))?;
+        Ok(json!({
+            "status": "ok",
+            "key": key,
+            "reachable": result["reachable"].clone(),
+            "status_code": result["status_code"].clone(),
         }))
     }
 
@@ -797,12 +837,13 @@ impl IpcServer {
         req_id: &Value,
     ) -> Result<Value, String> {
         let path = params.get("path").and_then(Value::as_str);
-        agent.get_llm_config(path)
+        agent
+            .get_llm_config(path)
             .map(|value| {
                 json!({
                     "status": "ok",
                     "path": path,
-                    "value": value,
+                    "value": llm_config_store::redact_secrets(&value),
                 })
             })
             .map_err(|err| Self::jsonrpc_error(req_id.clone(), -32000, err))
@@ -823,12 +864,13 @@ impl IpcServer {
             ));
         };
 
-        let saved = tokio::task::block_in_place(|| rt_handle.block_on(agent.set_llm_config(path, value)))
-            .map_err(|err| Self::jsonrpc_error(req_id.clone(), -32000, err))?;
+        let saved =
+            tokio::task::block_in_place(|| rt_handle.block_on(agent.set_llm_config(path, value)))
+                .map_err(|err| Self::jsonrpc_error(req_id.clone(), -32000, err))?;
         Ok(json!({
             "status": "ok",
             "path": path,
-            "value": saved,
+            "value": llm_config_store::redact_secrets(&saved),
         }))
     }
 
@@ -839,12 +881,13 @@ impl IpcServer {
         req_id: &Value,
     ) -> Result<Value, String> {
         let path = Self::required_str(params, "path", req_id)?;
-        let removed = tokio::task::block_in_place(|| rt_handle.block_on(agent.unset_llm_config(path)))
-            .map_err(|err| Self::jsonrpc_error(req_id.clone(), -32000, err))?;
+        let removed =
+            tokio::task::block_in_place(|| rt_handle.block_on(agent.unset_llm_config(path)))
+                .map_err(|err| Self::jsonrpc_error(req_id.clone(), -32000, err))?;
         Ok(json!({
             "status": "ok",
             "path": path,
-            "removed": removed,
+            "removed": llm_config_store::redact_secrets(&removed),
         }))
     }
 
@@ -975,9 +1018,7 @@ impl IpcServer {
         } else {
             session_store.store().load_token_usage(session_id)
         };
-        let baseline = crate::storage::session_store::TokenUsage::from_json(
-            params.get("baseline"),
-        );
+        let baseline = crate::storage::session_store::TokenUsage::from_json(params.get("baseline"));
         let delta = usage.diff_from(&baseline);
         Ok(json!({
             "scope": if session_id.is_empty() { "daily" } else { "session" },
@@ -1055,7 +1096,8 @@ impl IpcServer {
             .get("include_sessions")
             .and_then(Value::as_bool)
             .unwrap_or(true);
-        agent.clear_agent_data(include_memory, include_sessions)
+        agent
+            .clear_agent_data(include_memory, include_sessions)
             .map_err(|err| Self::jsonrpc_error(req_id.clone(), -32000, err))
     }
 

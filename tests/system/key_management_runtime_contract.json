@@ -1,0 +1,95 @@
+{
+  "name": "key-management-runtime-contract",
+  "steps": [
+    {
+      "name": "list-keys-shape",
+      "method": "key.list",
+      "params": {},
+      "assertions": [
+        {
+          "path": "status",
+          "equals": "ok"
+        },
+        {
+          "path": "stored",
+          "exists": true
+        },
+        {
+          "path": "from_env",
+          "exists": true
+        }
+      ]
+    },
+    {
+      "name": "set-runtime-contract-key",
+      "method": "key.set",
+      "params": {
+        "key": "runtime-contract",
+        "value": "test-secret-value"
+      },
+      "assertions": [
+        {
+          "path": "status",
+          "equals": "ok"
+        },
+        {
+          "path": "key",
+          "equals": "runtime-contract"
+        },
+        {
+          "path": "stored",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "name": "list-keys-includes-runtime-contract",
+      "method": "key.list",
+      "params": {},
+      "assertions": [
+        {
+          "path": "status",
+          "equals": "ok"
+        },
+        {
+          "path": "stored",
+          "contains": "runtime-contract"
+        }
+      ]
+    },
+    {
+      "name": "backend-config-redacts-api-key",
+      "method": "backend.config.get",
+      "params": {
+        "path": "backends.gemini"
+      },
+      "assertions": [
+        {
+          "path": "status",
+          "equals": "ok"
+        },
+        {
+          "path": "value.api_key",
+          "equals": "***REDACTED***"
+        }
+      ]
+    },
+    {
+      "name": "delete-runtime-contract-key",
+      "method": "key.delete",
+      "params": {
+        "key": "runtime-contract"
+      },
+      "assertions": [
+        {
+          "path": "status",
+          "equals": "ok"
+        },
+        {
+          "path": "deleted",
+          "equals": true
+        }
+      ]
+    }
+  ]
+}

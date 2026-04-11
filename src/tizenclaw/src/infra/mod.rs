@@ -10,10 +10,11 @@ pub use crate::generic::infra::dbus_probe;
 pub use crate::generic::infra::fleet_agent;
 pub use crate::generic::infra::health_monitor;
 pub use crate::generic::infra::http_client;
-pub use crate::generic::infra::key_store;
 pub use crate::generic::infra::onnx_runtime;
 pub use crate::generic::infra::ota_updater;
 pub use crate::generic::infra::tunnel_manager;
+
+pub mod key_store;
 
 pub use crate::tizen::infra::app_lifecycle_adapter;
 pub use crate::tizen::infra::package_event_adapter;

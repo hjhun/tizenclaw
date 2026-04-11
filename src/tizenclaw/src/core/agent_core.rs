@@ -902,9 +902,11 @@ fn extract_relative_file_paths(text: &str) -> Vec<String> {
     let mut paths = Vec::new();
 
     for captures in RELATIVE_FILE_RE.captures_iter(text) {
-        let Some(matched) = captures.get(1).map(|value| value.as_str().trim_matches(|ch| {
-            matches!(ch, '`' | '"' | '\'' | ',' | '.' | ':' | ';' | ')' | '(')
-        })) else {
+        let Some(matched) = captures.get(1).map(|value| {
+            value.as_str().trim_matches(|ch| {
+                matches!(ch, '`' | '"' | '\'' | ',' | '.' | ':' | ';' | ')' | '(')
+            })
+        }) else {
             continue;
         };
         if matched.is_empty()
@@ -960,14 +962,7 @@ fn expected_file_management_targets(prompt: &str) -> Vec<Vec<String>> {
 fn prompt_mentions_history_or_memory(prompt: &str) -> bool {
     let prompt_lower = normalize_prompt_intent_text(prompt).to_ascii_lowercase();
     [
-        "history",
-        "memory",
-        "remember",
-        "previous",
-        "earlier",
-        "context",
-        "continue",
-        "again",
+        "history", "memory", "remember", "previous", "earlier", "context", "continue", "again",
     ]
     .iter()
     .any(|keyword| prompt_lower.contains(keyword))
@@ -997,32 +992,9 @@ fn prompt_requests_executable_script(prompt: &str) -> bool {
 fn is_simple_file_management_request(prompt: &str) -> bool {
     let prompt_lower = normalize_prompt_intent_text(prompt).to_ascii_lowercase();
     let has_file_action = [
-        "create",
-        "write",
-        "save",
-        "edit",
-        "update",
-        "append",
-        "read",
-        "list",
-        "show",
-        "remove",
-        "delete",
-        "copy",
-        "move",
-        "rename",
-        "mkdir",
-        "open",
-        "display",
-        "print",
-        "view",
-        "읽",
-        "열",
-        "보여",
-        "출력",
-        "확인",
-        "조회",
-        "내용",
+        "create", "write", "save", "edit", "update", "append", "read", "list", "show", "remove",
+        "delete", "copy", "move", "rename", "mkdir", "open", "display", "print", "view", "읽",
+        "열", "보여", "출력", "확인", "조회", "내용",
     ]
     .iter()
     .any(|keyword| prompt_lower.contains(keyword));
@@ -1907,7 +1879,10 @@ async fn file_manager_tool(tc_args: &Value, session_workdir: &Path) -> Value {
 
     match operation.as_str() {
         "read" => {
-            let path_str = tc_args.get("path").and_then(|value| value.as_str()).unwrap_or("");
+            let path_str = tc_args
+                .get("path")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
             let path = match resolve_workspace_path(session_workdir, path_str) {
                 Ok(path) => path,
                 Err(error) => return json!({"error": error}),
@@ -1940,11 +1915,16 @@ async fn file_manager_tool(tc_args: &Value, session_workdir: &Path) -> Value {
                     "content": content,
                     "backend": "rust_fallback",
                 }),
-                Err(error) => json!({"error": format!("Failed to read file '{}': {}", path.display(), error)}),
+                Err(error) => {
+                    json!({"error": format!("Failed to read file '{}': {}", path.display(), error)})
+                }
             }
         }
         "write" | "append" => {
-            let path_str = tc_args.get("path").and_then(|value| value.as_str()).unwrap_or("");
+            let path_str = tc_args
+                .get("path")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
             let content = tc_args
                 .get("content")
                 .and_then(|value| value.as_str())
@@ -1974,11 +1954,16 @@ async fn file_manager_tool(tc_args: &Value, session_workdir: &Path) -> Value {
                     "path": path.to_string_lossy(),
                     "bytes_written": content.len()
                 }),
-                Err(error) => json!({"error": format!("Failed to {} file '{}': {}", operation, path.display(), error)}),
+                Err(error) => {
+                    json!({"error": format!("Failed to {} file '{}': {}", operation, path.display(), error)})
+                }
             }
         }
         "remove" => {
-            let path_str = tc_args.get("path").and_then(|value| value.as_str()).unwrap_or("");
+            let path_str = tc_args
+                .get("path")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
             let path = match resolve_workspace_path(session_workdir, path_str) {
                 Ok(path) => path,
                 Err(error) => return json!({"error": error}),
@@ -2018,11 +2003,16 @@ async fn file_manager_tool(tc_args: &Value, session_workdir: &Path) -> Value {
                     "path": path.to_string_lossy(),
                     "backend": "rust_fallback",
                 }),
-                Err(error) => json!({"error": format!("Failed to remove '{}': {}", path.display(), error)}),
+                Err(error) => {
+                    json!({"error": format!("Failed to remove '{}': {}", path.display(), error)})
+                }
             }
         }
         "mkdir" => {
-            let path_str = tc_args.get("path").and_then(|value| value.as_str()).unwrap_or("");
+            let path_str = tc_args
+                .get("path")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
             let path = match resolve_workspace_path(session_workdir, path_str) {
                 Ok(path) => path,
                 Err(error) => return json!({"error": error}),
@@ -2053,11 +2043,16 @@ async fn file_manager_tool(tc_args: &Value, session_workdir: &Path) -> Value {
                     "path": path.to_string_lossy(),
                     "backend": "rust_fallback",
                 }),
-                Err(error) => json!({"error": format!("Failed to create directory '{}': {}", path.display(), error)}),
+                Err(error) => {
+                    json!({"error": format!("Failed to create directory '{}': {}", path.display(), error)})
+                }
             }
         }
         "list" => {
-            let path_str = tc_args.get("path").and_then(|value| value.as_str()).unwrap_or(".");
+            let path_str = tc_args
+                .get("path")
+                .and_then(|value| value.as_str())
+                .unwrap_or(".");
             let path = match resolve_workspace_path(session_workdir, path_str) {
                 Ok(path) => path,
                 Err(error) => return json!({"error": error}),
@@ -2110,11 +2105,16 @@ async fn file_manager_tool(tc_args: &Value, session_workdir: &Path) -> Value {
                         "backend": "rust_fallback",
                     })
                 }
-                Err(error) => json!({"error": format!("Failed to list directory '{}': {}", path.display(), error)}),
+                Err(error) => {
+                    json!({"error": format!("Failed to list directory '{}': {}", path.display(), error)})
+                }
             }
         }
         "stat" => {
-            let path_str = tc_args.get("path").and_then(|value| value.as_str()).unwrap_or("");
+            let path_str = tc_args
+                .get("path")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
             let path = match resolve_workspace_path(session_workdir, path_str) {
                 Ok(path) => path,
                 Err(error) => return json!({"error": error}),
@@ -2153,12 +2153,20 @@ async fn file_manager_tool(tc_args: &Value, session_workdir: &Path) -> Value {
                     "readonly": metadata.permissions().readonly(),
                     "backend": "rust_fallback",
                 }),
-                Err(error) => json!({"error": format!("Failed to stat '{}': {}", path.display(), error)}),
+                Err(error) => {
+                    json!({"error": format!("Failed to stat '{}': {}", path.display(), error)})
+                }
             }
         }
         "copy" | "move" => {
-            let src_str = tc_args.get("src").and_then(|value| value.as_str()).unwrap_or("");
-            let dst_str = tc_args.get("dst").and_then(|value| value.as_str()).unwrap_or("");
+            let src_str = tc_args
+                .get("src")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            let dst_str = tc_args
+                .get("dst")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
             let src = match resolve_workspace_path(session_workdir, src_str) {
                 Ok(path) => path,
                 Err(error) => return json!({"error": format!("src: {}", error)}),
@@ -2217,12 +2225,21 @@ async fn file_manager_tool(tc_args: &Value, session_workdir: &Path) -> Value {
                     "bytes_copied": bytes,
                     "backend": "rust_fallback",
                 }),
-                Err(error) => json!({"error": format!("Failed to {} '{}' -> '{}': {}", operation, src.display(), dst.display(), error)}),
+                Err(error) => {
+                    json!({"error": format!("Failed to {} '{}' -> '{}': {}", operation, src.display(), dst.display(), error)})
+                }
             }
         }
         "download" => {
-            let url = tc_args.get("url").and_then(|value| value.as_str()).unwrap_or("").trim();
-            let dest_str = tc_args.get("dest").and_then(|value| value.as_str()).unwrap_or("");
+            let url = tc_args
+                .get("url")
+                .and_then(|value| value.as_str())
+                .unwrap_or("")
+                .trim();
+            let dest_str = tc_args
+                .get("dest")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
             if url.is_empty() {
                 return json!({"error": "Missing required url"});
             }
@@ -2247,7 +2264,9 @@ async fn file_manager_tool(tc_args: &Value, session_workdir: &Path) -> Value {
                     "dest": dest.to_string_lossy(),
                     "bytes_written": response.body.len()
                 }),
-                Err(error) => json!({"error": format!("Failed to save download to '{}': {}", dest.display(), error)}),
+                Err(error) => {
+                    json!({"error": format!("Failed to save download to '{}': {}", dest.display(), error)})
+                }
             }
         }
         _ => json!({"error": format!("Unsupported file_manager operation '{}'", operation)}),
@@ -2281,7 +2300,11 @@ fn canonical_tool_trace(tc: &backend::LlmToolCall) -> Value {
 
         return match operation.as_str() {
             "read" => {
-                let path = tc.args.get("path").and_then(|value| value.as_str()).unwrap_or("");
+                let path = tc
+                    .args
+                    .get("path")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("");
                 json!({
                     "type": "toolCall",
                     "tool_call_id": tc.id,
@@ -2302,7 +2325,11 @@ fn canonical_tool_trace(tc: &backend::LlmToolCall) -> Value {
                 })
             }
             "write" | "append" => {
-                let path = tc.args.get("path").and_then(|value| value.as_str()).unwrap_or("");
+                let path = tc
+                    .args
+                    .get("path")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("");
                 let content = tc
                     .args
                     .get("content")
@@ -2328,7 +2355,11 @@ fn canonical_tool_trace(tc: &backend::LlmToolCall) -> Value {
                 })
             }
             "list" => {
-                let path = tc.args.get("path").and_then(|value| value.as_str()).unwrap_or(".");
+                let path = tc
+                    .args
+                    .get("path")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or(".");
                 json!({
                     "type": "toolCall",
                     "tool_call_id": tc.id,
@@ -3017,9 +3048,9 @@ impl LlmConfig {
 /// Priority:
 ///  1. Explicit `api_key` in the JSON config block (non-empty)
 ///  2. Explicit `oauth.access_token` in the JSON config block (non-empty)
-///  3. `keys.json` entry keyed by backend name
-///  4. `keys.json` entry keyed by `<backend>.access_token`
-///  5. `keys.json` entry keyed by `<backend>.refresh_token`
+///  3. `{config_dir}/keys/<backend>.key`
+///  4. `{config_dir}/keys/<backend>.access_token.key`
+///  5. `{config_dir}/keys/<backend>.refresh_token.key`
 fn merge_backend_auth(mut cfg: Value, name: &str, ks: &crate::infra::key_store::KeyStore) -> Value {
     let has_api_key = cfg
         .get("api_key")
@@ -3286,6 +3317,7 @@ pub struct AgentCore {
 
 impl AgentCore {
     pub fn new(platform: Arc<libtizenclaw_core::framework::PlatformContext>) -> Self {
+        let keys_dir = platform.paths.config_dir.join("keys");
         AgentCore {
             platform,
             backend: tokio::sync::RwLock::new(None),
@@ -3295,7 +3327,7 @@ impl AgentCore {
             safety_guard: Mutex::new(SafetyGuard::new()),
             context_engine: Arc::new(SizedContextEngine::new()),
             event_bus: Arc::new(EventBus::new()),
-            key_store: Mutex::new(KeyStore::new()),
+            key_store: Mutex::new(KeyStore::new(&keys_dir)),
             system_prompt: RwLock::new(String::new()),
             soul_content: RwLock::new(None),
             backend_name: RwLock::new(String::new()),
@@ -3388,7 +3420,11 @@ impl AgentCore {
         loop_state.last_error = Some(error.clone());
         loop_state.mark_terminal(
             LoopTransitionReason::RoundLimitReached,
-            format!("message count {} exceeded {}", messages.len(), MAX_CONTEXT_MESSAGES),
+            format!(
+                "message count {} exceeded {}",
+                messages.len(),
+                MAX_CONTEXT_MESSAGES
+            ),
         );
         self.persist_loop_snapshot(loop_state);
         Err(error)
@@ -4283,12 +4319,6 @@ impl AgentCore {
         log::debug!("AgentCore initializing...");
         let paths = &self.platform.paths;
         let _ = self.event_bus.start();
-
-        // Load API keys
-        let key_path = paths.config_dir.join("keys.json");
-        if let Ok(mut ks) = self.key_store.lock() {
-            ks.load(&key_path.to_string_lossy());
-        }
 
         let policy_path = paths.config_dir.join("tool_policy.json");
         if let Ok(mut tp) = self.tool_policy.lock() {
@@ -5298,8 +5328,7 @@ impl AgentCore {
 
         // ── Phase 3: Planning (Cognitive Plan-and-Solve & compaction) ────
         loop_state.transition(AgentPhase::Planning);
-        let context_engine =
-            SizedContextEngine::new().with_threshold(loop_state.compact_threshold);
+        let context_engine = SizedContextEngine::new().with_threshold(loop_state.compact_threshold);
 
         log_payload_breakdown(
             session_id,
@@ -6522,8 +6551,7 @@ impl AgentCore {
                                 );
                             }
                         }
-                        loop_state.last_error =
-                            Some("Agent is stuck in an execution loop.".into());
+                        loop_state.last_error = Some("Agent is stuck in an execution loop.".into());
                         loop_state.mark_terminal(
                             LoopTransitionReason::StuckLoopAbort,
                             format!(
@@ -6576,8 +6604,7 @@ impl AgentCore {
                                 LoopTransitionReason::WorkflowStepAdvance,
                                 format!(
                                     "workflow '{}' advanced to step {}",
-                                    wf_id,
-                                    loop_state.current_workflow_step
+                                    wf_id, loop_state.current_workflow_step
                                 ),
                             );
                         }
@@ -6778,10 +6805,7 @@ impl AgentCore {
                 );
                 loop_state.mark_terminal(
                     LoopTransitionReason::RoundLimitReached,
-                    format!(
-                        "max tool rounds {} reached",
-                        loop_state.max_tool_rounds
-                    ),
+                    format!("max tool rounds {} reached", loop_state.max_tool_rounds),
                 );
                 break;
             }
@@ -6827,6 +6851,58 @@ impl AgentCore {
         llm_config_store::get_value(&doc, path)
     }
 
+    pub fn resolve_backend_api_key(&self, backend_name: &str) -> Option<String> {
+        let guard = self.key_store.lock().unwrap_or_else(|err| err.into_inner());
+        guard.get(backend_name)
+    }
+
+    pub fn list_keys(&self) -> Result<Value, String> {
+        let guard = self.key_store.lock().unwrap_or_else(|err| err.into_inner());
+        Ok(json!({
+            "stored": guard.list_stored(),
+            "from_env": guard.list_from_env(),
+        }))
+    }
+
+    pub async fn set_key(&self, key: &str, value: &str) -> Result<Value, String> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Err("Key value must not be empty".into());
+        }
+
+        {
+            let guard = self.key_store.lock().unwrap_or_else(|err| err.into_inner());
+            guard.set(key, trimmed)?;
+        }
+
+        self.reload_backends().await;
+        Ok(json!({
+            "key": key,
+            "stored": true,
+        }))
+    }
+
+    pub async fn delete_key(&self, key: &str) -> Result<Value, String> {
+        {
+            let guard = self.key_store.lock().unwrap_or_else(|err| err.into_inner());
+            guard.delete(key)?;
+        }
+
+        self.reload_backends().await;
+        Ok(json!({
+            "key": key,
+            "deleted": true,
+        }))
+    }
+
+    pub async fn test_key(&self, key: &str) -> Result<Value, String> {
+        let api_key = self
+            .resolve_backend_api_key(key)
+            .ok_or_else(|| format!("No API key configured for '{}'", key))?;
+
+        self.ping_backend_key(key, &api_key).await
+    }
+
     pub async fn set_llm_config(&self, path: &str, value: Value) -> Result<Value, String> {
         let mut doc = llm_config_store::load(&self.platform.paths.config_dir)?;
         llm_config_store::set_value(&mut doc, path, value)?;
@@ -6856,21 +6932,125 @@ impl AgentCore {
         self.get_llm_config(None)
     }
 
+    async fn ping_backend_key(&self, backend_name: &str, api_key: &str) -> Result<Value, String> {
+        let doc = llm_config_store::load(&self.platform.paths.config_dir)
+            .unwrap_or_else(|_| llm_config_store::default_document());
+        let null_value = Value::Null;
+        let backend_cfg = doc
+            .get("backends")
+            .and_then(|value| value.get(backend_name))
+            .unwrap_or(&null_value);
+
+        let (url, headers) = match backend_name {
+            "anthropic" => {
+                let endpoint = config_string(backend_cfg, &["endpoint"])
+                    .unwrap_or("https://api.anthropic.com/v1")
+                    .trim_end_matches('/')
+                    .to_string();
+                (
+                    format!("{}/models", endpoint),
+                    vec![
+                        ("x-api-key".to_string(), api_key.to_string()),
+                        (
+                            "anthropic-version".to_string(),
+                            "2023-06-01".to_string(),
+                        ),
+                    ],
+                )
+            }
+            "openai" => {
+                let endpoint = config_string(backend_cfg, &["endpoint"])
+                    .unwrap_or("https://api.openai.com/v1")
+                    .trim_end_matches('/')
+                    .to_string();
+                (
+                    format!("{}/models", endpoint),
+                    vec![(
+                        "Authorization".to_string(),
+                        format!("Bearer {}", api_key),
+                    )],
+                )
+            }
+            "gemini" => {
+                let endpoint = config_string(backend_cfg, &["endpoint"])
+                    .unwrap_or("https://generativelanguage.googleapis.com/v1beta")
+                    .trim_end_matches('/')
+                    .to_string();
+                (format!("{}/models?key={}", endpoint, api_key), Vec::new())
+            }
+            "groq" => (
+                "https://api.groq.com/openai/v1/models".to_string(),
+                vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", api_key),
+                )],
+            ),
+            _ => return Err(format!("Backend '{}' does not support key.test", backend_name)),
+        };
+
+        let owned_headers = headers;
+        let borrowed_headers = owned_headers
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str()))
+            .collect::<Vec<_>>();
+        let response = crate::infra::http_client::http_get(&url, &borrowed_headers, 0, 20).await;
+        if response.success && (200..300).contains(&response.status_code) {
+            return Ok(json!({
+                "key": backend_name,
+                "reachable": true,
+                "status_code": response.status_code,
+            }));
+        }
+
+        let summary = Self::summarize_backend_test_error(&response);
+        Err(format!(
+            "Backend '{}' test failed with status {}: {}",
+            backend_name, response.status_code, summary
+        ))
+    }
+
+    fn summarize_backend_test_error(response: &crate::infra::http_client::HttpResponse) -> String {
+        if !response.error.trim().is_empty() {
+            return response.error.trim().to_string();
+        }
+
+        if let Ok(value) = serde_json::from_str::<Value>(&response.body) {
+            if let Some(message) = value
+                .get("error")
+                .and_then(|error| error.get("message"))
+                .and_then(Value::as_str)
+                .or_else(|| value.get("message").and_then(Value::as_str))
+            {
+                let trimmed = message.trim();
+                if !trimmed.is_empty() {
+                    return trimmed.to_string();
+                }
+            }
+        }
+
+        let trimmed = response.body.trim();
+        if trimmed.is_empty() {
+            "request failed".to_string()
+        } else {
+            utf8_safe_preview(trimmed, 160).to_string()
+        }
+    }
+
     pub fn get_llm_runtime(&self) -> Value {
-        let (configured_active_backend, configured_fallback_backends) =
-            match self.llm_config.lock() {
-                Ok(config) => (
+        let (configured_active_backend, configured_fallback_backends) = match self.llm_config.lock()
+        {
+            Ok(config) => (
+                config.active_backend.clone(),
+                config.fallback_backends.clone(),
+            ),
+            Err(err) => {
+                let config = err.into_inner();
+                (
                     config.active_backend.clone(),
                     config.fallback_backends.clone(),
-                ),
-                Err(err) => {
-                    let config = err.into_inner();
-                    (
-                        config.active_backend.clone(),
-                        config.fallback_backends.clone(),
-                    )
-                }
-            };
+                )
+            }
+        };
         let runtime_primary_backend = match self.backend_name.read() {
             Ok(name) => name.clone(),
             Err(err) => err.into_inner().clone(),
@@ -7001,8 +7181,8 @@ impl AgentCore {
             }
         };
 
-        if let Err(err) = std::fs::write(&tmp_path, serialized)
-            .and_then(|_| std::fs::rename(&tmp_path, &path))
+        if let Err(err) =
+            std::fs::write(&tmp_path, serialized).and_then(|_| std::fs::rename(&tmp_path, &path))
         {
             log::warn!(
                 "[AgentLoop] Failed to persist loop snapshot '{}': {}",
@@ -7061,15 +7241,21 @@ impl AgentCore {
             .tool_dispatcher
             .try_read()
             .map(|dispatcher| dispatcher.audit_summary())
-            .unwrap_or_else(|_| json!({
-                "status": "busy",
-                "reason": "tool dispatcher is currently being updated",
-            }));
+            .unwrap_or_else(|_| {
+                json!({
+                    "status": "busy",
+                    "reason": "tool dispatcher is currently being updated",
+                })
+            });
         let session = self
             .session_store
             .lock()
             .ok()
-            .and_then(|guard| guard.as_ref().map(|store| store.session_runtime_summary(session_id)))
+            .and_then(|guard| {
+                guard
+                    .as_ref()
+                    .map(|store| store.session_runtime_summary(session_id))
+            })
             .unwrap_or_else(|| {
                 let topology = self.runtime_topology();
                 let session_dir = topology.sessions_dir.join(session_id);
@@ -7161,10 +7347,12 @@ impl AgentCore {
             .tool_dispatcher
             .try_read()
             .map(|dispatcher| dispatcher.audit_summary())
-            .unwrap_or_else(|_| json!({
-                "status": "busy",
-                "reason": "tool dispatcher is currently being updated",
-            }));
+            .unwrap_or_else(|_| {
+                json!({
+                    "status": "busy",
+                    "reason": "tool dispatcher is currently being updated",
+                })
+            });
         json!({
             "status": "ok",
             "tools": tool_audit,
@@ -7173,7 +7361,8 @@ impl AgentCore {
 
     pub fn skill_capability_status(&self) -> Value {
         let registrations = self.list_registered_paths();
-        let snapshot = skill_capability_manager::load_snapshot(&self.platform.paths, &registrations);
+        let snapshot =
+            skill_capability_manager::load_snapshot(&self.platform.paths, &registrations);
         json!({
             "status": "ok",
             "skills": snapshot.summary_json(),
@@ -7443,23 +7632,22 @@ impl<'a> SessionStoreRef<'a> {
 #[cfg(test)]
 mod tests {
     use super::{
-        append_dashboard_outbound_message, build_authoritative_problem_requirements_context,
-        backend_has_preferred_auth, build_backend_candidates,
+        append_dashboard_outbound_message, backend_has_preferred_auth,
+        build_authoritative_problem_requirements_context, build_backend_candidates,
         build_prefetched_prompt_file_context, build_prefetched_prompt_file_messages,
         build_progress_marker, build_role_supervisor_hint, build_skill_prefetch_message,
-        collect_grounded_csv_headers, collect_grounded_paths, dashboard_outbound_queue_path,
+        canonical_tool_trace, collect_grounded_csv_headers, collect_grounded_paths,
+        dashboard_outbound_queue_path, expected_file_management_targets,
         expected_persisted_level_script_paths, extract_explicit_directory_paths,
         extract_explicit_file_paths, extract_explicit_paths, extract_final_text,
-        extract_level_number_from_output_path, generated_code_runtime_spec,
-        generated_code_script_path, is_simple_file_management_request, canonical_tool_trace,
-        file_manager_tool, manage_generated_code_tool, missing_file_management_targets,
-        normalize_conversation_log_text, parse_shell_like_args, persist_generated_code_copy,
-        prompt_mode_from_doc,
-        reasoning_policy_from_doc, role_relevance_score, sanitize_generated_code_name,
-        select_delegate_roles, select_relevant_skills, should_skip_memory_for_prompt,
-        utf8_safe_preview, expected_file_management_targets, LlmConfig,
+        extract_level_number_from_output_path, file_manager_tool, generated_code_runtime_spec,
+        generated_code_script_path, is_simple_file_management_request, manage_generated_code_tool,
+        missing_file_management_targets, normalize_conversation_log_text, parse_shell_like_args,
+        persist_generated_code_copy, prompt_mode_from_doc, reasoning_policy_from_doc,
+        role_relevance_score, sanitize_generated_code_name, select_delegate_roles,
+        select_relevant_skills, should_skip_memory_for_prompt, utf8_safe_preview,
         validate_generated_code_execution_output, validate_generated_code_grounding, AgentRole,
-        AUTHENTICATED_BACKEND_PRIORITY_BOOST, MAX_OUTBOUND_DASHBOARD_MESSAGES,
+        LlmConfig, AUTHENTICATED_BACKEND_PRIORITY_BOOST, MAX_OUTBOUND_DASHBOARD_MESSAGES,
     };
     use crate::core::prompt_builder::{PromptMode, ReasoningPolicy};
     use crate::core::textual_skill_scanner::TextualSkill;
@@ -7570,7 +7758,11 @@ mod tests {
     fn backend_has_preferred_auth_rejects_empty_codex_auth_file() {
         let dir = tempdir().unwrap();
         let auth_path = dir.path().join("auth.json");
-        std::fs::write(&auth_path, r#"{"tokens":{"access_token":"","refresh_token":""}}"#).unwrap();
+        std::fs::write(
+            &auth_path,
+            r#"{"tokens":{"access_token":"","refresh_token":""}}"#,
+        )
+        .unwrap();
 
         let cfg = json!({
             "oauth": {
@@ -7608,10 +7800,14 @@ mod tests {
                 }
             }),
         };
-        let candidates =
-            build_backend_candidates(&config, &PluginManager::new(), &KeyStore::new());
+        let dir = tempdir().unwrap();
+        let key_store = KeyStore::new(dir.path());
+        let candidates = build_backend_candidates(&config, &PluginManager::new(), &key_store);
 
-        assert_eq!(candidates.first().map(|candidate| candidate.name.as_str()), Some("openai-codex"));
+        assert_eq!(
+            candidates.first().map(|candidate| candidate.name.as_str()),
+            Some("openai-codex")
+        );
         assert!(candidates
             .iter()
             .find(|candidate| candidate.name == "openai-codex")
@@ -8416,8 +8612,12 @@ mod tests {
             "Create a project structure with README and src/app.py in the current working directory.",
         );
 
-        assert!(targets.iter().any(|group| group.iter().any(|path| path == "src/app.py")));
-        assert!(targets.iter().any(|group| group.iter().any(|path| path == "README.md")));
+        assert!(targets
+            .iter()
+            .any(|group| group.iter().any(|path| path == "src/app.py")));
+        assert!(targets
+            .iter()
+            .any(|group| group.iter().any(|path| path == "README.md")));
     }
 
     #[test]
@@ -8447,9 +8647,9 @@ mod tests {
 
         let targets = expected_file_management_targets(wrapped);
 
-        assert!(targets
+        assert!(targets.iter().any(|group| group
             .iter()
-            .any(|group| group.iter().any(|path| path == "data/sample/llm_config.json.sample")));
+            .any(|path| path == "data/sample/llm_config.json.sample")));
         assert!(!targets
             .iter()
             .any(|group| group.iter().any(|path| path == "gpt-5.4")));

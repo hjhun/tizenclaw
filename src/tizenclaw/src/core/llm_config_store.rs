@@ -1,4 +1,4 @@
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 
 fn ensure_object(value: &mut Value) -> &mut Map<String, Value> {
@@ -195,6 +195,27 @@ pub fn unset_value(doc: &mut Value, path: &str) -> Result<Value, String> {
         .ok_or_else(|| format!("Config path '{}' was not found", path))
 }
 
+pub fn redact_secrets(config: &Value) -> Value {
+    match config {
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(key, value)| {
+                    if matches!(
+                        key.as_str(),
+                        "api_key" | "access_token" | "refresh_token" | "id_token"
+                    ) {
+                        (key.clone(), Value::String("***REDACTED***".to_string()))
+                    } else {
+                        (key.clone(), redact_secrets(value))
+                    }
+                })
+                .collect(),
+        ),
+        Value::Array(items) => Value::Array(items.iter().map(redact_secrets).collect()),
+        _ => config.clone(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -223,5 +244,47 @@ mod tests {
         let removed = unset_value(&mut doc, "benchmark.pinchbench.target.summary").unwrap();
         assert_eq!(removed, json!(""));
         assert!(get_value(&doc, Some("benchmark.pinchbench.target.summary")).is_err());
+    }
+
+    #[test]
+    fn redact_secrets_replaces_nested_api_keys() {
+        let value = json!({
+            "backends": {
+                "gemini": {
+                    "api_key": "AIza-secret"
+                }
+            },
+            "features": [
+                {
+                    "api_key": "sk-image"
+                }
+            ],
+            "oauth": {
+                "access_token": "leave-me",
+                "refresh_token": "keep-out",
+                "id_token": "too"
+            }
+        });
+
+        assert_eq!(
+            redact_secrets(&value),
+            json!({
+                "backends": {
+                    "gemini": {
+                        "api_key": "***REDACTED***"
+                    }
+                },
+                "features": [
+                    {
+                        "api_key": "***REDACTED***"
+                    }
+                ],
+                "oauth": {
+                    "access_token": "***REDACTED***",
+                    "refresh_token": "***REDACTED***",
+                    "id_token": "***REDACTED***"
+                }
+            })
+        );
     }
 }
