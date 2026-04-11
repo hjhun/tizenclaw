@@ -1,6 +1,6 @@
 //! Tool policy — controls tool execution limits, loop detection, risk levels.
 
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
@@ -20,6 +20,7 @@ impl RiskLevel {
             _ => RiskLevel::Normal,
         }
     }
+
     pub fn as_str(&self) -> &str {
         match self {
             RiskLevel::Low => "low",
@@ -29,33 +30,17 @@ impl RiskLevel {
     }
 }
 
-struct PolicyConfig {
+const IDLE_WINDOW_SIZE: usize = 3;
+
+pub struct ToolPolicy {
     max_repeat_count: usize,
     max_iterations: usize,
     blocked_skills: HashSet<String>,
     risk_levels: HashMap<String, RiskLevel>,
     aliases: HashMap<String, String>,
-}
-
-impl Default for PolicyConfig {
-    fn default() -> Self {
-        PolicyConfig {
-            max_repeat_count: 0,
-            max_iterations: 0,
-            blocked_skills: HashSet::new(),
-            risk_levels: HashMap::new(),
-            aliases: HashMap::new(),
-        }
-    }
-}
-
-pub struct ToolPolicy {
-    config: PolicyConfig,
-    call_history: Mutex<HashMap<String, HashMap<String, usize>>>,
+    call_counts: Mutex<HashMap<String, usize>>,
     idle_history: Mutex<HashMap<String, Vec<String>>>,
 }
-
-const IDLE_WINDOW_SIZE: usize = 3;
 
 impl Default for ToolPolicy {
     fn default() -> Self {
@@ -65,11 +50,59 @@ impl Default for ToolPolicy {
 
 impl ToolPolicy {
     pub fn new() -> Self {
-        ToolPolicy {
-            config: PolicyConfig::default(),
-            call_history: Mutex::new(HashMap::new()),
+        Self {
+            max_repeat_count: 0,
+            max_iterations: 0,
+            blocked_skills: HashSet::new(),
+            risk_levels: HashMap::new(),
+            aliases: HashMap::new(),
+            call_counts: Mutex::new(HashMap::new()),
             idle_history: Mutex::new(HashMap::new()),
         }
+    }
+
+    pub fn from_config(config: &Value) -> Self {
+        let mut policy = Self::new();
+
+        if let Some(v) = config.get("max_repeat_count").and_then(Value::as_u64) {
+            policy.max_repeat_count = v as usize;
+        }
+        if let Some(v) = config.get("max_iterations").and_then(Value::as_u64) {
+            policy.max_iterations = v as usize;
+        }
+        if let Some(items) = config.get("blocked_skills").and_then(Value::as_array) {
+            policy.blocked_skills = items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(ToOwned::to_owned)
+                .collect();
+        }
+
+        let risk_object = config
+            .get("risk_levels")
+            .and_then(Value::as_object)
+            .or_else(|| config.get("risk_overrides").and_then(Value::as_object));
+        if let Some(items) = risk_object {
+            policy.risk_levels = items
+                .iter()
+                .filter_map(|(name, value)| {
+                    value
+                        .as_str()
+                        .map(|level| (name.clone(), RiskLevel::from_str(level)))
+                })
+                .collect();
+        }
+
+        if let Some(items) = config.get("aliases").and_then(Value::as_object) {
+            policy.aliases = items
+                .iter()
+                .filter_map(|(alias, value)| {
+                    value.as_str().map(|canonical| (alias.clone(), canonical.to_string()))
+                })
+                .collect();
+        }
+
+        policy
     }
 
     pub fn load_config(&mut self, path: &str) -> bool {
@@ -80,78 +113,87 @@ impl ToolPolicy {
                 return true;
             }
         };
-        let j: Value = match serde_json::from_str(&content) {
+        let parsed: Value = match serde_json::from_str(&content) {
             Ok(v) => v,
-            Err(e) => {
-                log::error!("Failed to parse tool policy: {}", e);
+            Err(err) => {
+                log::error!("Failed to parse tool policy: {}", err);
                 return false;
             }
         };
 
-        if let Some(v) = j.get("max_repeat_count").and_then(|v| v.as_u64()) {
-            self.config.max_repeat_count = v as usize;
-        }
-        if let Some(v) = j.get("max_iterations").and_then(|v| v.as_u64()) {
-            self.config.max_iterations = v as usize;
-        }
-        if let Some(arr) = j.get("blocked_skills").and_then(|v| v.as_array()) {
-            for s in arr {
-                if let Some(name) = s.as_str() {
-                    self.config.blocked_skills.insert(name.to_string());
-                }
-            }
-        }
-        if let Some(obj) = j.get("risk_overrides").and_then(|v| v.as_object()) {
-            for (k, v) in obj {
-                if let Some(s) = v.as_str() {
-                    self.config
-                        .risk_levels
-                        .insert(k.clone(), RiskLevel::from_str(s));
-                }
-            }
-        }
-        if let Some(obj) = j.get("aliases").and_then(|v| v.as_object()) {
-            for (k, v) in obj {
-                if let Some(s) = v.as_str() {
-                    self.config.aliases.insert(k.clone(), s.to_string());
-                }
-            }
-        }
+        let loaded = Self::from_config(&parsed);
+        self.max_repeat_count = loaded.max_repeat_count;
+        self.max_iterations = loaded.max_iterations;
+        self.blocked_skills = loaded.blocked_skills;
+        self.risk_levels = loaded.risk_levels;
+        self.aliases = loaded.aliases;
+        self.reset();
+
         log::info!(
-            "Tool policy loaded: max_repeat={}, blocked={}, aliases={}",
-            self.config.max_repeat_count,
-            self.config.blocked_skills.len(),
-            self.config.aliases.len()
+            "Tool policy loaded: max_repeat={}, max_iterations={}, blocked={}, aliases={}",
+            self.max_repeat_count,
+            self.max_iterations,
+            self.blocked_skills.len(),
+            self.aliases.len()
         );
         true
     }
 
     pub fn check_policy(
         &self,
-        session_id: &str,
+        _session_id: &str,
         skill_name: &str,
-        args: &Value,
+        _args: &Value,
     ) -> Result<(), String> {
-        if self.config.blocked_skills.contains(skill_name) {
+        if self.blocked_skills.contains(skill_name) {
             return Err(format!(
                 "Tool '{}' is blocked by security policy.",
                 skill_name
             ));
         }
 
-        let hash = Self::hash_call(skill_name, args);
-        if let Ok(mut history) = self.call_history.lock() {
-            let session = history.entry(session_id.to_string()).or_default();
-            let count = session.entry(hash).or_insert(0);
-            *count += 1;
-            if self.config.max_repeat_count > 0 && *count > self.config.max_repeat_count {
-                return Err(format!(
-                    "Tool '{}' with identical arguments called {} times (limit: {}). Blocked to prevent infinite loop.",
-                    skill_name, count, self.config.max_repeat_count
-                ));
-            }
-        }
         Ok(())
+    }
+
+    pub fn record_call(&self, tool_name: &str) {
+        if let Ok(mut counts) = self.call_counts.lock() {
+            *counts.entry(tool_name.to_string()).or_insert(0) += 1;
+        }
+    }
+
+    pub fn is_loop_detected(&self, tool_name: &str) -> bool {
+        if self.max_repeat_count == 0 {
+            return false;
+        }
+
+        self.call_counts
+            .lock()
+            .ok()
+            .and_then(|counts| counts.get(tool_name).copied())
+            .map(|count| count >= self.max_repeat_count)
+            .unwrap_or(false)
+    }
+
+    pub fn total_calls(&self) -> usize {
+        self.call_counts
+            .lock()
+            .map(|counts| counts.values().sum())
+            .unwrap_or(0)
+    }
+
+    pub fn is_iteration_limit_reached(&self) -> bool {
+        self.max_iterations > 0 && self.total_calls() >= self.max_iterations
+    }
+
+    pub fn reset(&self) {
+        if let Ok(mut counts) = self.call_counts.lock() {
+            counts.clear();
+        }
+    }
+
+    pub fn reset_session(&self, session_id: &str) {
+        self.reset();
+        self.reset_idle_tracking(session_id);
     }
 
     pub fn check_idle_progress(&self, session_id: &str, output: &str) -> bool {
@@ -165,48 +207,39 @@ impl ToolPolicy {
                 return false;
             }
             let first = &entries[0];
-            entries.iter().all(|e| e == first)
+            entries.iter().all(|entry| entry == first)
         } else {
             false
         }
     }
 
-    pub fn reset_session(&self, session_id: &str) {
-        if let Ok(mut h) = self.call_history.lock() {
-            h.remove(session_id);
-        }
-        if let Ok(mut h) = self.idle_history.lock() {
-            h.remove(session_id);
-        }
-    }
-
     pub fn reset_idle_tracking(&self, session_id: &str) {
-        if let Ok(mut h) = self.idle_history.lock() {
-            h.remove(session_id);
+        if let Ok(mut history) = self.idle_history.lock() {
+            history.remove(session_id);
         }
     }
 
     pub fn get_max_iterations(&self) -> usize {
-        self.config.max_iterations
+        self.max_iterations
     }
+
     pub fn get_aliases(&self) -> &HashMap<String, String> {
-        &self.config.aliases
+        &self.aliases
     }
+
     pub fn get_risk_level(&self, name: &str) -> RiskLevel {
-        self.config
-            .risk_levels
+        self.risk_levels
             .get(name)
             .cloned()
             .unwrap_or(RiskLevel::Normal)
     }
 
-    fn hash_call(name: &str, args: &Value) -> String {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        let input = format!("{}:{}", name, args);
-        let mut hasher = DefaultHasher::new();
-        input.hash(&mut hasher);
-        format!("{:x}", hasher.finish())
+    pub fn status_json(&self) -> Value {
+        json!({
+            "max_repeat_count": self.max_repeat_count,
+            "max_iterations": self.max_iterations,
+            "current_iteration_count": self.total_calls(),
+        })
     }
 }
 
@@ -219,6 +252,12 @@ mod tests {
     fn test_default_max_iterations() {
         let policy = ToolPolicy::new();
         assert_eq!(policy.get_max_iterations(), 0);
+    }
+
+    #[test]
+    fn test_default_aliases_empty() {
+        let policy = ToolPolicy::new();
+        assert!(policy.get_aliases().is_empty());
     }
 
     #[test]
@@ -245,37 +284,42 @@ mod tests {
     }
 
     #[test]
-    fn test_check_policy_blocks_repeated() {
+    fn test_loop_detected_after_repeat_limit() {
         let mut policy = ToolPolicy::new();
-        policy.config.max_repeat_count = 3;
-        let args = json!({"key": "same"});
-        assert!(policy.check_policy("s1", "t", &args).is_ok());
-        assert!(policy.check_policy("s1", "t", &args).is_ok());
-        assert!(policy.check_policy("s1", "t", &args).is_ok());
-        assert!(policy.check_policy("s1", "t", &args).is_err());
+        policy.max_repeat_count = 5;
+
+        for _ in 0..5 {
+            policy.record_call("get_battery");
+        }
+
+        assert!(policy.is_loop_detected("get_battery"));
     }
 
     #[test]
     fn test_zero_repeat_limit_means_unlimited() {
         let policy = ToolPolicy::new();
-        let args = json!({"key": "same"});
         for _ in 0..32 {
-            assert!(policy.check_policy("s1", "t", &args).is_ok());
+            policy.record_call("t");
         }
+        assert!(!policy.is_loop_detected("t"));
     }
 
     #[test]
-    fn test_different_args_not_blocked() {
+    fn test_total_calls_sum_all_recorded_calls() {
         let policy = ToolPolicy::new();
-        for i in 0..10 {
-            assert!(policy.check_policy("s1", "t", &json!({"i": i})).is_ok());
+        for _ in 0..3 {
+            policy.record_call("a");
         }
+        for _ in 0..2 {
+            policy.record_call("b");
+        }
+        assert_eq!(policy.total_calls(), 5);
     }
 
     #[test]
     fn test_blocked_skill() {
         let mut policy = ToolPolicy::new();
-        policy.config.blocked_skills.insert("danger".to_string());
+        policy.blocked_skills.insert("danger".to_string());
         assert!(policy.check_policy("s1", "danger", &json!({})).is_err());
     }
 
@@ -296,24 +340,50 @@ mod tests {
     }
 
     #[test]
-    fn test_reset_session() {
-        let policy = ToolPolicy::new();
-        let args = json!({"k": "v"});
-        for _ in 0..3 {
-            policy.check_policy("s1", "t", &args).unwrap();
+    fn test_iteration_limit_reached() {
+        let mut policy = ToolPolicy::new();
+        policy.max_iterations = 4;
+        for _ in 0..4 {
+            policy.record_call("tick");
         }
-        policy.reset_session("s1");
-        assert!(policy.check_policy("s1", "t", &args).is_ok());
+        assert!(policy.is_iteration_limit_reached());
     }
 
     #[test]
-    fn test_separate_sessions() {
+    fn test_reset_clears_counts() {
         let policy = ToolPolicy::new();
-        let args = json!({"k": "v"});
         for _ in 0..3 {
-            policy.check_policy("s1", "t", &args).unwrap();
+            policy.record_call("t");
         }
-        assert!(policy.check_policy("s2", "t", &args).is_ok());
+        policy.reset();
+        assert_eq!(policy.total_calls(), 0);
+        assert!(!policy.is_loop_detected("t"));
+    }
+
+    #[test]
+    fn test_from_config_parses_supported_fields() {
+        let policy = ToolPolicy::from_config(&json!({
+            "max_repeat_count": 5,
+            "max_iterations": 50,
+            "blocked_skills": ["danger"],
+            "risk_levels": {
+                "format_disk": "high",
+                "get_battery": "low"
+            },
+            "aliases": {
+                "battery": "get_battery"
+            }
+        }));
+
+        assert_eq!(policy.max_repeat_count, 5);
+        assert_eq!(policy.max_iterations, 50);
+        assert!(policy.blocked_skills.contains("danger"));
+        assert_eq!(policy.get_risk_level("format_disk"), RiskLevel::High);
+        assert_eq!(policy.get_risk_level("get_battery"), RiskLevel::Low);
+        assert_eq!(
+            policy.get_aliases().get("battery").map(String::as_str),
+            Some("get_battery")
+        );
     }
 
     #[test]

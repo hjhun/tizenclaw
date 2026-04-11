@@ -70,6 +70,30 @@
         {
           "path": "dashboard.name",
           "equals": "web_dashboard"
+        },
+        {
+          "path": "safety.blocked_tools",
+          "exists": true
+        },
+        {
+          "path": "safety.allow_irreversible",
+          "exists": true
+        },
+        {
+          "path": "safety.max_tool_calls_per_session",
+          "exists": true
+        },
+        {
+          "path": "tool_policy.max_repeat_count",
+          "exists": true
+        },
+        {
+          "path": "tool_policy.max_iterations",
+          "exists": true
+        },
+        {
+          "path": "tool_policy.current_iteration_count",
+          "exists": true
         }
       ]
     },

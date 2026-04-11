@@ -987,6 +987,8 @@ impl IpcServer {
             "runtime_topology": agent.runtime_topology_summary(),
             "registrations": registrations,
             "llm_runtime": agent.get_llm_runtime(),
+            "safety": agent.safety_guard_status(),
+            "tool_policy": agent.tool_policy_status(),
             "tool_audit": agent.tool_audit_status(),
             "skills": agent.skill_capability_status(),
             "dashboard": dashboard,

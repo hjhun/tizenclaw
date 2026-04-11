@@ -3302,7 +3302,7 @@ pub struct AgentCore {
     fallback_backends: tokio::sync::RwLock<Vec<Box<dyn LlmBackend>>>,
     session_store: Mutex<Option<SessionStore>>,
     tool_dispatcher: tokio::sync::RwLock<ToolDispatcher>,
-    safety_guard: Mutex<SafetyGuard>,
+    safety_guard: Arc<Mutex<SafetyGuard>>,
     context_engine: Arc<SizedContextEngine>,
     event_bus: Arc<EventBus>,
     key_store: Mutex<KeyStore>,
@@ -3332,7 +3332,7 @@ impl AgentCore {
             fallback_backends: tokio::sync::RwLock::new(Vec::new()),
             session_store: Mutex::new(None),
             tool_dispatcher: tokio::sync::RwLock::new(ToolDispatcher::new()),
-            safety_guard: Mutex::new(SafetyGuard::new()),
+            safety_guard: Arc::new(Mutex::new(SafetyGuard::new())),
             context_engine: Arc::new(SizedContextEngine::new()),
             event_bus: Arc::new(EventBus::new()),
             key_store: Mutex::new(KeyStore::new(&keys_dir)),
@@ -4857,6 +4857,10 @@ impl AgentCore {
         // Reset circuit breakers at the start of each session so failures
         // from a prior session do not cascade into new requests.
         self.reset_circuit_breakers();
+        if let Ok(policy) = self.tool_policy.lock() {
+            policy.reset();
+            policy.reset_idle_tracking(session_id);
+        }
         let mut loop_state = AgentLoopState::new(session_id, prompt);
         let mut skip_memory_extraction = false;
 
@@ -5742,8 +5746,28 @@ impl AgentCore {
                     let grounded_csv_headers_snapshot = grounded_csv_headers_snapshot.clone();
 
                     // ── Phase 11: SafetyCheck per tool ───────────────────
+                    let canonical_name = if let Ok(tp) = self.tool_policy.lock() {
+                        tp.get_aliases()
+                            .get(&tc_name)
+                            .cloned()
+                            .unwrap_or_else(|| tc_name.clone())
+                    } else {
+                        tc_name.clone()
+                    };
                     let policy_block_reason = if let Ok(tp) = self.tool_policy.lock() {
-                        tp.check_policy(session_id, &tc_name, &tc_args).err()
+                        if tp.is_loop_detected(&canonical_name) {
+                            Some(format!(
+                                "Loop detected: tool '{}' called too many times",
+                                canonical_name
+                            ))
+                        } else if tp.is_iteration_limit_reached() {
+                            Some(format!(
+                                "Iteration limit reached: {} total tool calls",
+                                tp.total_calls()
+                            ))
+                        } else {
+                            tp.check_policy(session_id, &canonical_name, &tc_args).err()
+                        }
                     } else {
                         None
                     };
@@ -5752,22 +5776,36 @@ impl AgentCore {
                             .side_effect_for_tool(&tc_name)
                             .map(SideEffect::from_str)
                             .unwrap_or(SideEffect::Reversible);
+                        let session_call_count = self
+                            .tool_policy
+                            .lock()
+                            .map(|tp| tp.total_calls())
+                            .unwrap_or(0);
                         safety_guard
                             .check_tool_call(
-                                &tc_name,
+                                &canonical_name,
                                 &tc_args,
-                                &side_effect,
-                                loop_state.total_tool_calls,
+                                side_effect,
+                                session_call_count,
                             )
                             .err()
                     } else {
                         None
                     };
+                    if policy_block_reason.is_none() && safety_block_reason.is_none() {
+                        if let Ok(tp) = self.tool_policy.lock() {
+                            tp.record_call(&canonical_name);
+                        }
+                    }
                     let block_reason = policy_block_reason.or(safety_block_reason);
 
                     futures_list.push(async move {
                         if let Some(reason) = block_reason {
-                            log::warn!("[SafetyCheck] Tool '{}' blocked: {}", tc_name, reason);
+                            log::warn!(
+                                "[SafetyCheck] Tool '{}' blocked: {}",
+                                canonical_name,
+                                reason
+                            );
                             return LlmMessage::tool_result(&tc_id, &tc_name, serde_json::json!({"error": reason}));
                         }
 
@@ -7071,6 +7109,34 @@ impl AgentCore {
             "runtime_primary_backend": runtime_primary_backend,
             "runtime_has_primary_backend": !runtime_primary_backend.is_empty()
         })
+    }
+
+    pub fn safety_guard_status(&self) -> Value {
+        self.safety_guard
+            .lock()
+            .map(|guard| guard.status_json())
+            .unwrap_or_else(|_| {
+                json!({
+                    "blocked_tools": [],
+                    "allow_irreversible": false,
+                    "max_tool_calls_per_session": 0,
+                    "status": "unavailable",
+                })
+            })
+    }
+
+    pub fn tool_policy_status(&self) -> Value {
+        self.tool_policy
+            .lock()
+            .map(|policy| policy.status_json())
+            .unwrap_or_else(|_| {
+                json!({
+                    "max_repeat_count": 0,
+                    "max_iterations": 0,
+                    "current_iteration_count": 0,
+                    "status": "unavailable",
+                })
+            })
     }
 
     pub fn clear_agent_data(
