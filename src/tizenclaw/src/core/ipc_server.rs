@@ -374,6 +374,17 @@ impl IpcServer {
                 crate::core::devel_mode::devel_status_json(&task_dir, &repo_root)
             }
 
+            "get_devel_result" => {
+                let task_dir = crate::core::runtime_paths::default_data_dir().join("tasks");
+                let repo_root = std::env::current_dir()
+                    .ok()
+                    .and_then(|cwd| crate::core::devel_mode::detect_repo_root(&cwd))
+                    .unwrap_or_else(|| {
+                        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+                    });
+                crate::core::devel_mode::devel_result_json(&task_dir, &repo_root)
+            }
+
             "clear_agent_data" => {
                 let include_memory = params
                     .get("include_memory")

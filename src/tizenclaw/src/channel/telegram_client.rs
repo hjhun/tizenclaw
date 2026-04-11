@@ -1560,6 +1560,7 @@ impl TelegramClient {
             ("select", "Switch mode"),
             ("coding_agent", "Choose backend"),
             ("devel", "Queue devel prompt"),
+            ("devel_result", "Read latest devel result"),
             ("model", "Choose model"),
             ("project", "Set project path"),
             ("new_session", "Start new session"),
@@ -1911,6 +1912,7 @@ impl TelegramClient {
             "/select [chat|coding]",
             &format!("/coding_agent [{}]", backend_choices),
             "/devel [prompt]",
+            "/devel_result",
             "/model [name|list|reset]",
             "/project [path]",
             "/project reset",
@@ -2739,6 +2741,35 @@ Runs: {}",
                         .to_string(),
                 ),
             },
+            "devel_result" => {
+                let repo_root = std::env::current_dir()
+                    .ok()
+                    .and_then(|cwd| crate::core::devel_mode::detect_repo_root(&cwd))
+                    .unwrap_or_else(|| {
+                        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+                    });
+                let result = crate::core::devel_mode::latest_devel_result(&repo_root);
+
+                if result.available {
+                    let latest_path = result
+                        .latest_result_path
+                        .as_ref()
+                        .map(|path| path.display().to_string())
+                        .unwrap_or_else(|| result.result_dir.display().to_string());
+                    TelegramOutgoingMessage::plain(format!(
+                        "DevelResult: {}\nFile: {}\n\n{}",
+                        Self::value_label("loaded"),
+                        Self::value_label(latest_path),
+                        result.content.trim()
+                    ))
+                } else {
+                    TelegramOutgoingMessage::plain(format!(
+                        "DevelResult: {}\nDir: {}",
+                        Self::value_label("empty"),
+                        Self::value_label(result.result_dir.display().to_string())
+                    ))
+                }
+            }
             "model" => Self::set_model(chat_states, state_path, chat_id, &args, cli_backends),
             "project" => {
                 Self::set_project_directory(chat_states, state_path, chat_id, &args, cli_workdir)
@@ -4541,6 +4572,7 @@ mod tests {
         let help = TelegramClient::supported_commands_text(&default_registry());
         assert!(help.contains("/coding_agent [codex|gemini|claude]"));
         assert!(help.contains("/devel [prompt]"));
+        assert!(help.contains("/devel_result"));
         assert!(help.contains("/model [name|list|reset]"));
         assert!(help.contains("/usage"));
         assert!(help.contains("/auto_approve [on|off]"));
@@ -4568,6 +4600,7 @@ mod tests {
                 "select",
                 "coding_agent",
                 "devel",
+                "devel_result",
                 "model",
                 "project",
                 "new_session",
@@ -4906,6 +4939,55 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert!(reply.text.contains("DevelPrompt: [queued]"));
         assert!(reply.text.contains("Watcher: [inactive]"));
+
+        std::env::set_current_dir(previous_dir).unwrap();
+        if let Some(previous_data_dir) = previous_data_dir {
+            std::env::set_var("TIZENCLAW_DATA_DIR", previous_data_dir);
+        } else {
+            std::env::remove_var("TIZENCLAW_DATA_DIR");
+        }
+    }
+
+    #[test]
+    fn devel_result_command_reads_latest_result_file() {
+        let temp = tempdir().unwrap();
+        let repo_root = temp.path().join("repo");
+        let data_root = temp.path().join("runtime");
+        fs::create_dir_all(repo_root.join(".dev_note")).unwrap();
+        fs::write(repo_root.join(".dev_note/ROADMAP.md"), "- [ ] next\n").unwrap();
+        fs::create_dir_all(data_root.join("devel/result")).unwrap();
+        fs::write(
+            data_root.join("devel/result/01_prompt_RESULT.md"),
+            "older result\n",
+        )
+        .unwrap();
+        std::thread::sleep(Duration::from_millis(5));
+        let latest_path = data_root.join("devel/result/02_prompt_RESULT.md");
+        fs::write(&latest_path, "latest result\n").unwrap();
+
+        let previous_data_dir = std::env::var("TIZENCLAW_DATA_DIR").ok();
+        let previous_dir = std::env::current_dir().unwrap();
+        std::env::set_var("TIZENCLAW_DATA_DIR", &data_root);
+        std::env::set_current_dir(&repo_root).unwrap();
+
+        let reply = TelegramClient::handle_command(
+            77,
+            "/devel_result",
+            None,
+            &Arc::new(Mutex::new(HashMap::new())),
+            &temp.path().join("telegram_devel_result_state.json"),
+            &default_registry(),
+            &HashMap::new(),
+            std::path::Path::new("/tmp"),
+            0,
+        )
+        .unwrap();
+
+        assert!(reply.text.contains("DevelResult: [loaded]"));
+        assert!(reply.text.contains("latest result"));
+        assert!(reply
+            .text
+            .contains(&latest_path.display().to_string()));
 
         std::env::set_current_dir(previous_dir).unwrap();
         if let Some(previous_data_dir) = previous_data_dir {

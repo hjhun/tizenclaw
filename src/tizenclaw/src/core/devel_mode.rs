@@ -51,6 +51,14 @@ pub struct DevelStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LatestDevelResult {
+    pub result_dir: PathBuf,
+    pub available: bool,
+    pub latest_result_path: Option<PathBuf>,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct RoadmapProgress {
     total_phases: usize,
     pending_phases: usize,
@@ -241,6 +249,38 @@ pub fn devel_status_json(task_dir: &Path, repo_root: &Path) -> Value {
             .as_ref()
             .map(|path| path.display().to_string()),
         "result_watcher_active": status.result_watcher_active,
+    })
+}
+
+pub fn latest_devel_result(repo_root: &Path) -> LatestDevelResult {
+    let paths = DevelPaths::new(repo_root);
+    let _ = ensure_devel_runtime_dirs(&paths);
+    let latest_result_path = latest_result_file(&paths.result_dir);
+    let content = latest_result_path
+        .as_ref()
+        .and_then(|path| fs::read_to_string(path).ok())
+        .unwrap_or_default();
+
+    LatestDevelResult {
+        result_dir: paths.result_dir,
+        available: latest_result_path.is_some(),
+        latest_result_path,
+        content,
+    }
+}
+
+pub fn devel_result_json(_task_dir: &Path, repo_root: &Path) -> Value {
+    let result = latest_devel_result(repo_root);
+    json!({
+        "status": "success",
+        "result_dir": result.result_dir.display().to_string(),
+        "available": result.available,
+        "latest_result_path": result
+            .latest_result_path
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_default(),
+        "content": result.content,
     })
 }
 
@@ -475,7 +515,18 @@ fn parse_inotify_events(buffer: &[u8]) -> Vec<ParsedInotifyEvent> {
 }
 
 fn latest_prompt_file(prompt_dir: &Path) -> Option<PathBuf> {
-    let mut files = fs::read_dir(prompt_dir)
+    latest_matching_file(prompt_dir, |name| name.ends_with("_prompt.md"))
+}
+
+fn latest_result_file(result_dir: &Path) -> Option<PathBuf> {
+    latest_matching_file(result_dir, |_| true)
+}
+
+fn latest_matching_file(
+    dir: &Path,
+    matcher: impl Fn(&str) -> bool,
+) -> Option<PathBuf> {
+    let mut files = fs::read_dir(dir)
         .ok()?
         .flatten()
         .map(|entry| entry.path())
@@ -483,7 +534,7 @@ fn latest_prompt_file(prompt_dir: &Path) -> Option<PathBuf> {
         .filter(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
-                .map(|name| name.ends_with("_prompt.md"))
+                .map(&matcher)
                 .unwrap_or(false)
         })
         .collect::<Vec<_>>();
@@ -636,8 +687,8 @@ fn current_local_timestamp_compact() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        create_prompt_file, detect_repo_root, devel_status, parse_inotify_events, sync_devel_tasks,
-        DevelPaths,
+        create_prompt_file, devel_status, detect_repo_root, latest_devel_result,
+        parse_inotify_events, sync_devel_tasks, DevelPaths,
     };
     use std::fs;
     use std::path::Path;
@@ -755,6 +806,25 @@ mod tests {
         assert!(status.prompt_dir.ends_with("devel/prompt"));
         assert!(status.result_dir.ends_with("devel/result"));
         assert!(!status.result_watcher_active);
+    }
+
+    #[test]
+    fn latest_devel_result_returns_newest_file_content() {
+        let (_env_lock, repo, _data_guard, _cwd_guard) = setup_repo();
+        let result_dir = repo.path().join("runtime/devel/result");
+        fs::create_dir_all(&result_dir).unwrap();
+        let older = result_dir.join("01_prompt_RESULT.md");
+        let newer = result_dir.join("02_prompt_RESULT.md");
+        fs::write(&older, "older\n").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        fs::write(&newer, "latest\n").unwrap();
+
+        let result = latest_devel_result(repo.path());
+
+        assert!(result.available);
+        assert_eq!(result.latest_result_path, Some(newer));
+        assert_eq!(result.content, "latest\n");
+        assert!(result.result_dir.ends_with("devel/result"));
     }
 
     #[test]

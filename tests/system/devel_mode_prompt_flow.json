@@ -20,7 +20,34 @@
         },
         {
           "path": "result_watcher_active",
-          "equals": true
+          "exists": true
+        }
+      ]
+    },
+    {
+      "name": "inspect-latest-devel-result",
+      "method": "get_devel_result",
+      "params": {},
+      "assertions": [
+        {
+          "path": "status",
+          "equals": "success"
+        },
+        {
+          "path": "result_dir",
+          "contains": "/devel/result"
+        },
+        {
+          "path": "available",
+          "exists": true
+        },
+        {
+          "path": "latest_result_path",
+          "exists": true
+        },
+        {
+          "path": "content",
+          "exists": true
         }
       ]
     }

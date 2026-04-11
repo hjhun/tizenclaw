@@ -629,3 +629,187 @@
 - [x] Supervisor Gate after Commit
   - PASS: cleanup completed, ignored and generated session state stayed
     unstaged, and the runtime tooling capability cycle is committed
+
+## Supervisor Rework Verification Cycle
+
+- [x] Stage 1: Planning
+  - Cycle classification:
+    host-default (`./deploy_host.sh`)
+  - Rework scope:
+    investigate the `rework_required` supervisor verdict, confirm
+    whether the failure came from a product regression or from prompt
+    outcome misalignment, and restore saved-state evidence
+  - Verification target:
+    rerun host status, host regression, host deploy, and
+    `tests/system/basic_ipc_smoke.json`
+- [x] Supervisor Gate after Planning
+  - PASS: the rework scope, host-default routing, and validation target
+    are recorded
+
+- [x] Stage 2: Design
+  - Decision:
+    no new architecture change is required for this remediation because
+    the committed phase-6 runtime/tooling slice already matches the
+    selected clean-architecture boundaries
+  - Evidence model:
+    repair the operator-facing `.dev` state and dashboard records so the
+    saved session points at the committed implementation and fresh host
+    verification results
+- [x] Supervisor Gate after Design
+  - PASS: the remediation remains evidence-focused and does not alter
+    the previously approved runtime design
+
+- [x] Stage 3: Development
+  - Root-cause result:
+    the failing verification was caused by prompt-outcome misalignment;
+    the last continuation ended with clarification questions instead of
+    recording repository progress, even though commits
+    `54b2e552` and `c72ad8e0` already implement the requested
+    tooling-capability slice
+  - Code-change result:
+    no product-code repair was necessary; this rework updates the
+    saved-session plan/dashboard and machine-state files so final
+    verification sees concrete completion evidence
+  - TDD impact:
+    no daemon-visible contract changed during this remediation, so the
+    existing `tests/system/basic_ipc_smoke.json` scenario remained the
+    active system-test contract
+- [x] Supervisor Gate after Development
+  - PASS: the defect source was identified before edits, no direct
+    ad-hoc cargo or cmake workflow was introduced, and the saved-state
+    repair is recorded
+
+- [x] Stage 4: Build & Deploy
+  - Command:
+    `./deploy_host.sh`
+  - Result:
+    host binaries were reinstalled under `/home/hjhun/.tizenclaw`, the
+    daemon restarted, and the dashboard port remained reachable on
+    `9091`
+  - Survival check:
+    `./deploy_host.sh --status` reported running daemon, tool executor,
+    and dashboard processes after the redeploy
+- [x] Supervisor Gate after Build & Deploy
+  - PASS: the host-default deployment path was re-executed and the
+    runtime returned healthy
+
+- [x] Stage 5: Test & Review
+  - Root-cause verification:
+    `./deploy_host.sh --test` passed, which confirmed there is no new
+    regression behind the supervisor failure
+  - Log evidence:
+    `./deploy_host.sh --status` reported
+    `Daemon ready (1332ms) startup sequence completed`
+  - System test:
+    `~/.tizenclaw/bin/tizenclaw-tests scenario --file tests/system/basic_ipc_smoke.json`
+    passed and confirmed `execution.runtimes`, `execution.utilities`,
+    `execution.direct_execution`, and `execution.embedded`
+  - QA verdict:
+    PASS
+- [x] Supervisor Gate after Test & Review
+  - PASS: host regression proof, runtime log evidence, and IPC scenario
+    evidence are captured for the supervisor rework
+
+## Rework Status
+
+- Current status:
+  supervisor-facing evidence repaired and revalidated
+- Resume point:
+  no unchecked prompt-derived items remain in the active saved session;
+  continue only if a new supervisor report introduces another defect
+
+## Telegram Devel Result Command Cycle
+
+- [x] Stage 1: Planning
+  - Cycle classification:
+    host-default (`./deploy_host.sh`)
+  - Runtime surface:
+    telegram command routing and devel-result runtime file lookup
+  - System-test requirement:
+    add a `tizenclaw-tests` scenario that verifies the latest devel
+    result lookup through IPC before wiring the telegram command
+- [x] Supervisor Gate after Planning
+  - PASS: host-default routing, affected runtime surface, and the
+    system-test contract plan are recorded
+
+- [x] Stage 2: Design
+  - Selected boundary:
+    add a shared devel-mode helper that resolves the newest file under
+    `~/.tizenclaw/devel/result`, expose it through a small IPC method,
+    and reuse the same helper from the telegram command handler
+  - Persistence impact:
+    read-only access to the existing devel result directory with no new
+    state files or config format changes
+  - IPC-observable assertions:
+    `get_devel_result` must return the result directory, whether a file
+    is available, the latest file path, and the latest file content
+  - Design artifact:
+    `.dev_note/docs/telegram_devel_result_command_design_20260411.md`
+- [x] Supervisor Gate after Design
+  - PASS: the ownership boundary, persistence scope, and observable IPC
+    assertions are documented
+
+- [x] Stage 3: Development
+  - TDD contract:
+    updated `tests/system/devel_mode_prompt_flow.json` before product
+    code changes to assert `get_devel_result`
+  - Product-code result:
+    added a shared latest-result resolver in `devel_mode`, exposed
+    `get_devel_result` through IPC, and added telegram `/devel_result`
+    command/help/menu wiring
+  - Unit coverage:
+    added latest-result selection coverage in `devel_mode` and telegram
+    command routing coverage in `telegram_client`
+  - Development verification:
+    `./deploy_host.sh -b` passed
+- [x] Supervisor Gate after Development
+  - PASS: the system scenario changed first, the daemon-visible contract
+    is implemented, and script-driven build verification passed without
+    ad-hoc cargo or cmake usage
+
+- [x] Stage 4: Build & Deploy
+  - Command:
+    `./deploy_host.sh`
+  - Result:
+    host binaries were installed under `/home/hjhun/.tizenclaw`, the
+    daemon restarted, and the updated telegram command path was deployed
+  - Survival check:
+    `./deploy_host.sh --status` reported running daemon, tool executor,
+    dashboard, and a live listener on port `9091`
+- [x] Supervisor Gate after Build & Deploy
+  - PASS: the host-default deployment path completed and the refreshed
+    runtime returned healthy
+
+- [x] Stage 5: Test & Review
+  - Static review focus:
+    latest-result lookup stays in pure Rust file I/O, the telegram
+    command reuses shared devel-mode logic, and no FFI boundary changed
+  - Runtime evidence:
+    `./deploy_host.sh --status` showed healthy daemon, tool executor,
+    dashboard, and port `9091` listener
+  - Log evidence:
+    `./deploy_host.sh --status` reported
+    `Daemon ready (1314ms) startup sequence completed`
+  - System test:
+    `~/.tizenclaw/bin/tizenclaw-tests scenario --file tests/system/devel_mode_prompt_flow.json`
+    passed and returned `result_dir`, `available=true`,
+    `latest_result_path`, and latest result `content`
+  - Repository regression:
+    `./deploy_host.sh --test` passed with all tests green, including the
+    new `devel_mode` and `telegram_client` coverage
+  - QA verdict:
+    PASS
+- [x] Supervisor Gate after Test & Review
+  - PASS: runtime logs, IPC scenario proof, and repository regression
+    evidence are captured for the new telegram command
+
+- [x] Stage 6: Commit
+  - Workspace cleanup:
+    `bash .agent/scripts/cleanup_workspace.sh` completed before staging
+  - Staged scope:
+    telegram command wiring, shared devel-result lookup, IPC contract,
+    system scenario update, and `.dev_note` cycle artifacts only
+  - Commit message path:
+    `.tmp/commit_msg.txt`
+  - Commit title:
+    `Add telegram devel result command`
