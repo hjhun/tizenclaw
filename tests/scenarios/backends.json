@@ -1,0 +1,16 @@
+{
+  "name": "backend_status",
+  "steps": [
+    {
+      "name": "list_backends",
+      "method": "backend.list",
+      "params": {},
+      "assertions": [
+        {
+          "path": "backends",
+          "exists": true
+        }
+      ]
+    }
+  ]
+}

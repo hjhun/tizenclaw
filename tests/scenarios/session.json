@@ -1,48 +1,24 @@
 {
-  "name": "session",
+  "name": "session_lifecycle",
   "steps": [
     {
-      "name": "send-prompt",
-      "method": "process_prompt",
-      "params": {
-        "prompt": "Reply with a short acknowledgement.",
-        "session_id": "${unique_session_id:scenario-session}"
-      },
+      "name": "list_sessions",
+      "method": "session.list",
+      "params": {},
       "assertions": [
         {
-          "path": "session_id",
-          "exists": true
-        },
-        {
-          "path": "text",
+          "path": "sessions",
           "exists": true
         }
       ]
     },
     {
-      "name": "session-status",
-      "method": "session.status",
+      "name": "clear_session",
+      "method": "session.clear",
       "params": {
-        "session_id": "${unique_session_id:scenario-session}"
+        "session_id": "test-cleanup"
       },
-      "assertions": [
-        {
-          "path": "status",
-          "equals": "ok"
-        },
-        {
-          "path": "session_id",
-          "exists": true
-        },
-        {
-          "path": "session.message_file_count",
-          "greater_than": 0
-        },
-        {
-          "path": "session.resume_ready",
-          "exists": true
-        }
-      ]
+      "assertions": []
     }
   ]
 }

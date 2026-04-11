@@ -1690,6 +1690,18 @@ mod tests {
     }
 
     #[test]
+    fn session_message_serialization_roundtrip() {
+        let msg = SessionMessage {
+            role: "user".into(),
+            text: "hello".into(),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let restored: SessionMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg.text, restored.text);
+    }
+
+    #[test]
     fn test_token_usage_diff_subtracts_baseline() {
         let current = TokenUsage {
             total_prompt_tokens: 120,

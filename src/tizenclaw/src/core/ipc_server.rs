@@ -8,7 +8,8 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
+use std::time::Instant;
 
 use crate::channel::ChannelRegistry;
 use crate::core::agent_core::AgentCore;
@@ -20,6 +21,7 @@ const MAX_PAYLOAD_SIZE: usize = 10 * 1024 * 1024; // 10 MB
 const DEFAULT_ABSTRACT_SOCKET_NAME: &str = "tizenclaw.sock";
 
 static SESSION_COUNTER: AtomicUsize = AtomicUsize::new(1);
+static DAEMON_STARTED_AT: LazyLock<Instant> = LazyLock::new(Instant::now);
 
 #[derive(Clone, Debug)]
 enum SocketEndpoint {
@@ -981,6 +983,7 @@ impl IpcServer {
 
         json!({
             "status": "ok",
+            "uptime_secs": DAEMON_STARTED_AT.elapsed().as_secs(),
             "runtime_topology": agent.runtime_topology_summary(),
             "registrations": registrations,
             "llm_runtime": agent.get_llm_runtime(),

@@ -156,10 +156,7 @@ pub fn run_scenario(
         for assertion in &step.assertions {
             if let Err(err) = assert_result(&response.result, assertion) {
                 println!("FAIL {} - {}", step.name, err);
-                return Err(format!(
-                    "Scenario '{}', step '{}': {}",
-                    scenario.name, step.name, err
-                ));
+                return Err(format!("Step '{}': {}", step.name, err));
             }
         }
 
@@ -205,36 +202,28 @@ fn materialize_value(value: &Value, placeholders: &mut HashMap<String, String>) 
 }
 
 fn assert_result(result: &Value, assertion: &ScenarioAssertion) -> Result<(), String> {
-    let value = resolve_path(result, &assertion.path);
+    let value = navigate_path(result, &assertion.path);
 
     if assertion.exists {
-        match value {
-            Some(Value::Null) => {
-                return Err(format!(
-                    "Assertion failed for '{}': expected a non-null value",
-                    assertion.path
-                ));
-            }
-            None => {
-                return Err(format!(
-                    "Assertion failed for '{}': expected the path to exist",
-                    assertion.path
-                ));
-            }
-            Some(_) => {}
+        if matches!(value, None | Some(Value::Null)) {
+            return Err(format!(
+                "assertion failed: path '{}': expected exists=true, got {}",
+                assertion.path,
+                describe_actual(value)
+            ));
         }
     }
 
     if let Some(expected) = &assertion.equals {
         let actual = value.ok_or_else(|| {
             format!(
-                "Assertion failed for '{}': path was not found for equals check",
-                assertion.path
+                "assertion failed: path '{}': expected equals={}, got null",
+                assertion.path, expected
             )
         })?;
         if actual != expected {
             return Err(format!(
-                "Assertion failed for '{}': expected {}, got {}",
+                "assertion failed: path '{}': expected equals={}, got {}",
                 assertion.path, expected, actual
             ));
         }
@@ -243,8 +232,8 @@ fn assert_result(result: &Value, assertion: &ScenarioAssertion) -> Result<(), St
     if let Some(expected_substring) = &assertion.contains {
         let actual = value.ok_or_else(|| {
             format!(
-                "Assertion failed for '{}': path was not found for contains check",
-                assertion.path
+                "assertion failed: path '{}': expected contains='{}', got null",
+                assertion.path, expected_substring
             )
         })?;
         let actual_string = actual
@@ -253,8 +242,10 @@ fn assert_result(result: &Value, assertion: &ScenarioAssertion) -> Result<(), St
             .unwrap_or_else(|| actual.to_string());
         if !actual_string.contains(expected_substring) {
             return Err(format!(
-                "Assertion failed for '{}': '{}' did not contain '{}'",
-                assertion.path, actual_string, expected_substring
+                "assertion failed: path '{}': expected contains='{}', got {}",
+                assertion.path,
+                expected_substring,
+                actual
             ));
         }
     }
@@ -262,25 +253,25 @@ fn assert_result(result: &Value, assertion: &ScenarioAssertion) -> Result<(), St
     if let Some(expected_min) = &assertion.greater_than {
         let actual = value.ok_or_else(|| {
             format!(
-                "Assertion failed for '{}': path was not found for greater_than check",
-                assertion.path
+                "assertion failed: path '{}': expected greater_than={}, got null",
+                assertion.path, expected_min
             )
         })?;
         let actual_num = actual.as_f64().ok_or_else(|| {
             format!(
-                "Assertion failed for '{}': actual value is not numeric",
-                assertion.path
+                "assertion failed: path '{}': expected greater_than={}, got {}",
+                assertion.path, expected_min, actual
             )
         })?;
         let expected_num = expected_min.as_f64().ok_or_else(|| {
             format!(
-                "Assertion failed for '{}': greater_than value is not numeric",
-                assertion.path
+                "assertion failed: path '{}': invalid greater_than value {}",
+                assertion.path, expected_min
             )
         })?;
         if actual_num <= expected_num {
             return Err(format!(
-                "Assertion failed for '{}': expected > {}, got {}",
+                "assertion failed: path '{}': expected greater_than={}, got {}",
                 assertion.path, expected_min, actual
             ));
         }
@@ -289,7 +280,13 @@ fn assert_result(result: &Value, assertion: &ScenarioAssertion) -> Result<(), St
     Ok(())
 }
 
-pub fn resolve_path<'a>(root: &'a Value, path: &str) -> Option<&'a Value> {
+fn describe_actual(value: Option<&Value>) -> String {
+    value
+        .map(Value::to_string)
+        .unwrap_or_else(|| "null".to_string())
+}
+
+pub fn navigate_path<'a>(root: &'a Value, path: &str) -> Option<&'a Value> {
     if path.trim().is_empty() {
         return Some(root);
     }
@@ -308,7 +305,6 @@ pub fn resolve_path<'a>(root: &'a Value, path: &str) -> Option<&'a Value> {
 
     Some(cursor)
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -377,9 +373,9 @@ mod tests {
     }
 
     #[test]
-    fn resolve_path_supports_nested_objects_and_arrays() {
+    fn navigate_path_supports_nested_objects_and_arrays() {
         let doc = json!({"a": {"b": [{"c": 7}] }});
-        assert_eq!(resolve_path(&doc, "a.b.0.c"), Some(&json!(7)));
+        assert_eq!(navigate_path(&doc, "a.b.0.c"), Some(&json!(7)));
     }
 
     #[test]
@@ -453,6 +449,26 @@ mod tests {
         };
 
         assert!(assert_result(&result, &assertion).is_ok());
+    }
+
+    #[test]
+    fn assert_result_reports_actual_value_for_missing_path() {
+        let result = json!({
+            "status": "ok"
+        });
+        let assertion = ScenarioAssertion {
+            path: "tools".into(),
+            exists: true,
+            equals: None,
+            contains: None,
+            greater_than: None,
+        };
+
+        let err = assert_result(&result, &assertion).unwrap_err();
+        assert_eq!(
+            err,
+            "assertion failed: path 'tools': expected exists=true, got null"
+        );
     }
 
     #[test]

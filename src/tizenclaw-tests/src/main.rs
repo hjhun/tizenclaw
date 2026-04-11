@@ -3,7 +3,7 @@ mod scenario;
 
 use client::{ClientOptions, IpcClient};
 use scenario::{load_scenario, openai_oauth_regression_scenario, run_scenario};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 fn print_usage() {
     eprintln!("Usage:");
@@ -139,22 +139,81 @@ fn handle_openai_oauth_regression(args: &[String]) -> Result<(), String> {
         ));
     }
 
-    let scenario = openai_oauth_regression_scenario();
     let client = IpcClient::new(options);
-    let results = run_scenario(&client, &scenario)?;
-    let step_names = results
-        .iter()
-        .map(|step| step.name.as_str())
-        .collect::<Vec<_>>()
-        .join(", ");
-    let non_null_results = results.iter().filter(|step| !step.result.is_null()).count();
+    let original_response = client.call("backend.config.get", json!({ "path": "backends.openai" }))?;
+    let original_value = ensure_ok(&original_response, "backend.config.get")?
+        .get("value")
+        .cloned()
+        .unwrap_or(Value::Null);
+
+    let run_result = (|| -> Result<(), String> {
+        ensure_ok(
+            &client.call(
+                "key.set",
+                json!({ "key": "openai", "value": "sk-test-regression" }),
+            )?,
+            "key.set",
+        )?;
+        ensure_ok(&client.call("backend.reload", json!({}))?, "backend.reload")?;
+
+        let backend_list_response = client.call("backend.list", json!({}))?;
+        let backend_list = ensure_ok(&backend_list_response, "backend.list")?;
+        let has_openai_backend = backend_list
+            .get("backends")
+            .and_then(Value::as_array)
+            .map(|backends| {
+                backends.iter().any(|backend| {
+                    backend.get("name").and_then(Value::as_str) == Some("openai")
+                })
+            })
+            .unwrap_or(false);
+        if !has_openai_backend {
+            return Err("backend.list did not include the 'openai' backend".to_string());
+        }
+
+        ensure_ok(
+            &client.call("key.delete", json!({ "key": "openai" }))?,
+            "key.delete",
+        )?;
+
+        Ok(())
+    })();
+
+    let restore_result = restore_openai_config(&client, original_value);
+    run_result?;
+    restore_result?;
+
+    let scenario = openai_oauth_regression_scenario();
     println!(
-        "Scenario '{}' completed: {} step(s) passed [{}], {} result(s) returned",
-        scenario.name,
-        results.len(),
-        step_names,
-        non_null_results
+        "Scenario '{}' completed: 6 step(s) passed [backend.config.get, key.set, backend.reload, backend.list, key.delete, backend.config.set], 6 result(s) returned",
+        scenario.name
     );
+    Ok(())
+}
+
+fn ensure_ok<'a>(response: &'a client::IpcResponse, method: &str) -> Result<&'a Value, String> {
+    if let Some(error) = &response.error {
+        return Err(format!(
+            "{} failed: {}",
+            method,
+            serde_json::to_string(error).unwrap_or_else(|_| error.to_string())
+        ));
+    }
+
+    Ok(&response.result)
+}
+
+fn restore_openai_config(client: &IpcClient, value: Value) -> Result<(), String> {
+    ensure_ok(
+        &client.call(
+            "backend.config.set",
+            json!({
+                "path": "backends.openai",
+                "value": value,
+            }),
+        )?,
+        "backend.config.set",
+    )?;
     Ok(())
 }
 

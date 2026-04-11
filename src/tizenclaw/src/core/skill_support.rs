@@ -262,6 +262,11 @@ mod tests {
     }
 
     #[test]
+    fn normalize_skill_name_converts_spaces() {
+        assert_eq!(normalize_skill_name("Get Battery Level"), "get_battery_level");
+    }
+
+    #[test]
     fn prepare_skill_document_rejects_reserved_words() {
         let err = prepare_skill_document(
             "claude-helper",

@@ -1,5 +1,5 @@
 {
-  "name": "basic",
+  "name": "basic_health_check",
   "steps": [
     {
       "name": "ping",
@@ -9,6 +9,17 @@
         {
           "path": "pong",
           "equals": true
+        }
+      ]
+    },
+    {
+      "name": "runtime_status",
+      "method": "runtime_status",
+      "params": {},
+      "assertions": [
+        {
+          "path": "uptime_secs",
+          "exists": true
         }
       ]
     }

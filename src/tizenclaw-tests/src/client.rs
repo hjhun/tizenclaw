@@ -66,7 +66,7 @@ impl IpcClient {
             .filter(|value| !value.trim().is_empty())
         {
             let stream = UnixStream::connect(Path::new(path))
-                .map_err(|err| format!("Cannot connect to socket: {}: {}", path, err))?;
+                .map_err(|err| Self::format_connect_error(&format!("socket '{}'", path), &err))?;
             Self::configure_stream(&stream)?;
             return Ok(stream);
         }
@@ -80,18 +80,18 @@ impl IpcClient {
             .unwrap_or_else(|| DEFAULT_SOCKET_NAME.to_string());
 
         if socket_name.starts_with('/') {
-            let stream = UnixStream::connect(Path::new(&socket_name))
-                .map_err(|err| format!("Cannot connect to socket: {}: {}", socket_name, err))?;
+            let stream = UnixStream::connect(Path::new(&socket_name)).map_err(|err| {
+                Self::format_connect_error(&format!("socket '{}'", socket_name), &err)
+            })?;
             Self::configure_stream(&stream)?;
             return Ok(stream);
         }
 
         let fd = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_STREAM, 0) };
         if fd < 0 {
-            return Err(format!(
-                "Cannot connect to socket: @{}: {}",
-                socket_name,
-                std::io::Error::last_os_error()
+            return Err(Self::format_connect_error(
+                &format!("socket '@{}'", socket_name),
+                &std::io::Error::last_os_error(),
             ));
         }
 
@@ -111,7 +111,10 @@ impl IpcClient {
             unsafe {
                 libc::close(fd);
             }
-            return Err(format!("Cannot connect to socket: @{}: {}", socket_name, error));
+            return Err(Self::format_connect_error(
+                &format!("socket '@{}'", socket_name),
+                &error,
+            ));
         }
 
         let stream = unsafe { UnixStream::from_raw_fd(fd) };
@@ -126,6 +129,17 @@ impl IpcClient {
         stream
             .set_write_timeout(Some(DEFAULT_TIMEOUT))
             .map_err(|err| format!("Failed to set write timeout: {}", err))
+    }
+
+    fn format_connect_error(target: &str, err: &std::io::Error) -> String {
+        let guidance = match err.kind() {
+            ErrorKind::NotFound | ErrorKind::ConnectionRefused | ErrorKind::TimedOut => {
+                " Is the TizenClaw daemon running? Start it with ./deploy_host.sh and retry."
+            }
+            _ => ""
+        };
+
+        format!("Cannot connect to {}: {}.{}", target, err, guidance)
     }
 
     fn write_frame(stream: &mut UnixStream, payload: &str) -> Result<(), String> {

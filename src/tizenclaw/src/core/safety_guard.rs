@@ -53,6 +53,14 @@ impl SafetyGuard {
         }
     }
 
+    pub fn block_tool(&mut self, tool_name: &str) {
+        self.blocked_tools.insert(tool_name.to_string());
+    }
+
+    pub fn is_blocked(&self, tool_name: &str) -> bool {
+        self.blocked_tools.contains(tool_name)
+    }
+
     /// Load safety policy from a JSON config file.
     pub fn load_config(&mut self, path: &str) {
         let content = match std::fs::read_to_string(path) {
@@ -237,10 +245,22 @@ mod tests {
         let mut guard = SafetyGuard::new();
         guard.blocked_tools.insert("danger_tool".to_string());
 
-        let result =
-            guard.check_tool_call("danger_tool", &serde_json::json!({"path": "/tmp"}), &SideEffect::None, 0);
+        let result = guard.check_tool_call(
+            "danger_tool",
+            &serde_json::json!({"path": "/tmp"}),
+            &SideEffect::None,
+            0,
+        );
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn safety_guard_blocks_denied_tool() {
+        let mut guard = SafetyGuard::new();
+        guard.block_tool("dangerous_tool");
+        assert!(guard.is_blocked("dangerous_tool"));
+        assert!(!guard.is_blocked("safe_tool"));
     }
 
     #[test]

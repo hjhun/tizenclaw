@@ -310,6 +310,33 @@ mod tests {
     }
 
     #[test]
+    fn platform_paths_resolve_host() {
+        let _guard = env_lock().lock().unwrap();
+        let original_home = std::env::var_os("HOME");
+        let original_data_dir = std::env::var_os("TIZENCLAW_DATA_DIR");
+        let home = std::env::temp_dir().join(format!(
+            "tizenclaw-host-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+
+        unsafe {
+            std::env::remove_var("TIZENCLAW_DATA_DIR");
+            std::env::set_var("HOME", &home);
+        }
+
+        let paths = PlatformPaths::resolve();
+        assert!(!paths.is_tizen() || paths.data_dir.to_string_lossy().contains("tizenclaw"));
+
+        unsafe {
+            restore_env_var("HOME", original_home);
+            restore_env_var("TIZENCLAW_DATA_DIR", original_data_dir);
+        }
+    }
+
+    #[test]
     fn discover_skill_hub_roots_lists_child_directories() {
         let unique = format!(
             "tizenclaw-skill-hubs-{}",

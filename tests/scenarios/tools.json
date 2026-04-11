@@ -1,0 +1,27 @@
+{
+  "name": "tool_list_and_dispatch",
+  "steps": [
+    {
+      "name": "list_tools",
+      "method": "tool.list",
+      "params": {},
+      "assertions": [
+        {
+          "path": "tools",
+          "exists": true
+        }
+      ]
+    },
+    {
+      "name": "reload_tools",
+      "method": "tool.reload",
+      "params": {},
+      "assertions": [
+        {
+          "path": "count",
+          "greater_than": 0
+        }
+      ]
+    }
+  ]
+}

@@ -2,192 +2,186 @@
 
 ## Actual Progress
 
-- Goal: Prompt 15: Skill System — TextualSkillScanner, SkillCapabilityManager
-- Prompt-driven scope:
-  resumed Prompt 15 rework to clear the supervisor's prompt-derived PLAN
-  completion failure and revalidate the textual skill slice
-- Active roadmap focus:
-- Prompt 15 textual skill resume and final verification
+- Goal: Prompt 16: Test Suite — Integration Tests and Scenario Files
+- Prompt-driven scope: Integration scenarios, assertion engine hardening,
+  OpenAI OAuth regression flow, and crate-local unit coverage.
+- Active roadmap focus: Prompt 16 host-default verification flow
 - Current workflow phase: commit
-- Last completed workflow phase: test_review
-- Supervisor verdict: `rework_required` resolved locally; ready for final
-  revalidation
-- Escalation status: `rework_closed`
-- Resume point:
-  Prompt 15 repository state is synchronized again; resume from the next
-  user task after final verification
+- Last completed workflow phase: test-review
+- Supervisor verdict: `PASS` through Stage 5 Test & Review
+- Escalation status: none
+- Resume point: Continue at Stage 2 Design, then Stage 3 Development
 
 ## In Progress
 
-- Finalizing Prompt 15 rework artifacts and isolated commit after host
-  validation passed.
+- Design the scenario runner changes against the current IPC contract.
+- Preserve existing scenario files already used by the repository while
+  adding the prompt-required coverage.
+- Keep all build and runtime verification on the host-default
+  `./deploy_host.sh` path.
 
 ## Progress Notes
 
-- This file should show the actual progress of the active scope.
-- workflow_state.json remains machine truth.
-- PLAN.md should list prompt-derived development items in phase order.
-- Repository rules to follow: AGENTS.md
-- Relevant repository workflows: .github/workflows/ci.yml, .github/workflows/release-host-bundle.yml
-- Root cause of the supervisor failure:
-  the prior run committed code and a completion record, but `.dev/PLAN.md`
-  still left all prompt-derived items unchecked and the dashboard header
-  still pointed at the planning phase.
+- Read `AGENTS.md`, `.agent/rules/shell-detection.md`, and the stage skills
+  before making changes.
+- Read `src/tizenclaw-tests/src/` and `tests/` before implementation as
+  required by the prompt.
+- Existing runtime coverage already uses both `tests/scenarios/` and
+  `tests/system/`; this task extends `tests/scenarios/` and keeps the live
+  daemon contract compatible with current JSON-RPC methods.
 
-## Prompt 15 PLAN Completion
+## Stage Records
 
-- Phase 1 complete:
-  reread `AGENTS.md`, `shell-detection.md`, and the stage skill files
-  before changing the repository for this resume cycle
-- Phase 2 complete:
-  continued under the same required instructions with the host-default
-  script path and no direct ad-hoc cargo commands outside
-  `./deploy_host.sh`
-- Phase 3 complete:
-  preserved the existing skill-system implementation and extended
-  `TextualSkillScanner` to parse top-level `requires:` and `install:`
-  metadata in addition to `metadata.openclaw.*`
-- Phase 4 complete:
-  aligned skill root handling so `skill_hubs_dir` is scanned directly in
-  both capability snapshots and `AgentCore` skill resolution while
-  keeping discovered hub subroots intact
-- Phase 5 complete:
-  reran `./deploy_host.sh`, `./deploy_host.sh --test`, and
-  `./deploy_host.sh --status`; host build, unit/doc tests, IPC startup,
-  and daemon status all passed for the textual skill slice
+### Stage 1 Planning
+
+- Cycle classification: `host-default`
+- Build and test path: `./deploy_host.sh`
+- Affected runtime surface:
+  `src/tizenclaw-tests/src/{main.rs,scenario.rs,client.rs}` and
+  `tests/scenarios/*.json`
+- Scenario contract to add or update:
+  `tests/scenarios/basic.json`
+  `tests/scenarios/tools.json`
+  `tests/scenarios/session.json`
+  `tests/scenarios/backends.json`
+- Unit coverage to add:
+  `src/libtizenclaw-core/src/framework/paths.rs`
+  `src/tizenclaw/src/storage/session_store.rs`
+  `src/tizenclaw/src/core/{skill_support.rs,safety_guard.rs}`
+- Planning checklist:
+  - [x] Step 1: Classify the cycle
+  - [x] Step 2: Define the affected runtime surface
+  - [x] Step 3: Decide which tizenclaw-tests scenario will verify the change
+  - [x] Step 4: Record the plan in .dev/DASHBOARD.md
+
+### Supervisor Gate: Stage 1 Planning
+
+- Verdict: `PASS`
+- Evidence: host-default flow identified, scenario files selected, and
+  planning artifact recorded in `.dev/DASHBOARD.md`.
+
+### Stage 2 Design
+
+- Ownership boundaries:
+  `scenario.rs` owns scenario parsing, placeholder expansion, path
+  navigation, and assertion evaluation.
+  `client.rs` owns IPC connectivity and must report missing daemon
+  failures clearly.
+  `main.rs` owns CLI orchestration and the fixed OpenAI OAuth regression
+  sequence.
+- Persistence and runtime path impact:
+  scenario files live under `tests/scenarios/`; no persistent daemon data
+  model changes are required.
+- IPC-observable assertions:
+  dot-path navigation must support nested objects and arrays;
+  assertion errors must include the step name, path, expected condition,
+  and actual value; scenario execution must fail early with a clear daemon
+  connection error.
+- FFI / async / loading boundaries:
+  no new FFI edges; existing Rust-only test harness changes remain in
+  `tizenclaw-tests` and crate-local unit tests. `SessionStore` continues
+  to rely on `Arc<RwLock<()>>` for `Send + Sync` behavior. No new
+  `libloading` strategy is needed for this host-default test work.
+- Design checklist:
+  - [x] Step 1: Define subsystem boundaries and ownership
+  - [x] Step 2: Define persistence and runtime path impact
+  - [x] Step 3: Define IPC-observable assertions for the new behavior
+  - [x] Step 4: Record the design summary in .dev/DASHBOARD.md
+
+### Supervisor Gate: Stage 2 Design
+
+- Verdict: `PASS`
+- Evidence: ownership, runtime impact, IPC observability, `Send + Sync`
+  note, and no-new-`libloading` boundary recorded.
+
+### Stage 3 Development
+
+- Implemented `tests/scenarios/{basic,tools,session,backends}.json`
+  coverage for the prompt-required IPC flows.
+- Hardened `src/tizenclaw-tests/src/scenario.rs` with dot-path
+  navigation via `navigate_path`, actual-value failure messages, and
+  step-scoped assertion errors.
+- Hardened `src/tizenclaw-tests/src/client.rs` to report missing-daemon
+  connection failures with `./deploy_host.sh` guidance.
+- Reworked `openai-oauth-regression` in
+  `src/tizenclaw-tests/src/main.rs` to execute the fixed
+  backend.config.get → key.set → backend.reload → backend.list →
+  key.delete → backend.config.set sequence.
+- Added crate-local unit coverage for:
+  `PlatformPaths::resolve()`, `SessionMessage` serde roundtrip,
+  `normalize_skill_name`, and `SafetyGuard` block helpers.
+- Added `uptime_secs` to `runtime_status` so the basic scenario matches
+  the requested contract.
+- Development checklist:
+  - [x] Step 1: Review System Design Async Traits and Fearless Concurrency specs
+  - [x] Step 2: Add or update the relevant tizenclaw-tests system scenario
+  - [x] Step 3: Write failing tests for the active script-driven verification path (Red)
+  - [x] Step 4: Implement actual TizenClaw agent state machines and memory-safe FFI boundaries (Green)
+  - [x] Step 5: Validate daemon-visible behavior with tizenclaw-tests and the selected script path (Refactor)
+
+### Supervisor Gate: Stage 3 Development
+
+- Verdict: `PASS`
+- Evidence: no direct manual `cargo` command was used; development was
+  validated through `./deploy_host.sh` and the new live scenarios.
+
+### Stage 4 Build & Deploy
+
+- Executed `./deploy_host.sh` after the test harness changes.
+- Fixed one Rust borrow-checker failure in `openai-oauth-regression`.
+- Removed one unused helper warning and reran `./deploy_host.sh` cleanly.
+- Confirmed daemon restart and IPC readiness on the host-default path.
+- Build checklist:
+  - [x] Step 1: Confirm whether this cycle is host-default or explicit Tizen
+  - [x] Step 2: Execute `./deploy_host.sh` for the default host path
+  - [x] Step 3: Execute `./deploy.sh` only if the user explicitly requests Tizen
+  - [x] Step 4: Verify the host daemon or target service actually restarted
+  - [x] Step 5: Capture a preliminary survival/status check
+
+### Supervisor Gate: Stage 4 Build & Deploy
+
+- Verdict: `PASS`
+- Evidence: host-default script used; daemon restarted successfully;
+  IPC readiness reported via abstract socket.
+
+### Stage 5 Test & Review
+
+- Runtime smoke/status evidence from `./deploy_host.sh --status`:
+  `tizenclaw` running, `tizenclaw-tool-executor` running, recent log
+  phases include `Started IPC server` and `Daemon ready`.
+- Live daemon scenario results:
+  - `tizenclaw-tests scenario --file tests/scenarios/basic.json` PASS
+  - `tizenclaw-tests scenario --file tests/scenarios/tools.json` PASS
+  - `tizenclaw-tests scenario --file tests/scenarios/session.json` PASS
+  - `tizenclaw-tests scenario --file tests/scenarios/backends.json` PASS
+  - `tizenclaw-tests openai-oauth-regression` PASS
+- Repository regression path:
+  `./deploy_host.sh --test` PASS
+  Included passing coverage for:
+  `core::safety_guard::tests::safety_guard_blocks_denied_tool`
+  `storage::session_store::tests::session_message_serialization_roundtrip`
+  `framework::paths::tests::platform_paths_resolve_host`
+  `core::skill_support::tests::normalize_skill_name_converts_spaces`
+- Post-test host runtime restored with `./deploy_host.sh --restart-only`
+  and verified again with `./deploy_host.sh --status`.
+- QA verdict: `PASS`
+- QA checklist:
+  - [x] Step 1: Static Code Review tracing Rust abstractions, `Mutex` locks, and IPC/FFI boundaries
+  - [x] Step 2: Ensure the selected script generated NO warnings alongside binary output
+  - [x] Step 3: Run host or device integration smoke tests and observe logs
+  - [x] Step 4: Comprehensive QA Verdict (Turnover to Commit/Push on Pass, Regress on Fail)
+
+### Supervisor Gate: Stage 5 Test & Review
+
+- Verdict: `PASS`
+- Evidence: log-backed daemon status captured, scenario files passed, and
+  `./deploy_host.sh --test` passed cleanly.
 
 ## Risks And Watchpoints
 
-- Do not overwrite existing operator-authored Markdown.
-- Keep JSON merges additive so interrupted runs stay resumable.
-- Keep session-scoped state isolated when multiple workflows run in parallel.
-
-## Stage Log
-
-### Stage 1: Planning
-
-- Status: PASS
-- Cycle classification: host-default (`./deploy_host.sh`)
-- Affected runtime surface:
-  `src/tizenclaw/src/core/textual_skill_scanner.rs`,
-  `src/tizenclaw/src/core/skill_capability_manager.rs`,
-  `src/tizenclaw/src/core/skill_support.rs`
-- Runtime behavior scope:
-  internal textual-skill discovery, dependency readiness, and prompt
-  prefetch ranking for `AgentCore`
-- `tizenclaw-tests` scenario decision:
-  no new scenario planned because the requested change is internal skill
-  indexing/ranking logic rather than a new daemon IPC contract
-- Supervisor Gate: PASS
-  Planning artifacts and host-default routing were identified and recorded.
-
-### Stage 2: Design
-
-- Status: PASS
-- Subsystem boundaries:
-  scanner owns `SKILL.md` parsing and root deduplication; capability
-  manager owns root collection, disabled-state evaluation, and dependency
-  readiness; skill support owns stable skill-name normalization
-- Persistence/runtime impact:
-  reads `skill_capabilities.json` and registered roots from config, with no
-  schema expansion required for this prompt
-- IPC-observable path:
-  `AgentCore` consumes capability snapshots for skill reads and prompt
-  context selection, so deterministic ranking and dependency gating must be
-  preserved
-- Verification design:
-  extend unit coverage for scanning, root priority, dependency checks,
-  ranking, and normalization; validate with `./deploy_host.sh`
-- Supervisor Gate: PASS
-  Design boundaries, runtime impact, and verification path were recorded.
-
-### Stage 3: Development
-
-- Status: PASS
-- Implementation summary:
-  enhanced `SKILL.md` scanning with safe reads, inline/list metadata
-  parsing, multi-root deduplication, deterministic searchable text,
-  underscore-based name normalization, dispatcher-backed dependency
-  readiness, and prompt ranking helpers
-- Rework update:
-  added support for top-level `requires:` / `install:` metadata and kept
-  compatibility with nested `metadata.openclaw.*` parsing
-- Compatibility notes:
-  kept `load_snapshot()` as a wrapper around `build_skill_snapshot()` and
-  preserved hyphenated on-disk skill lookup in `AgentCore`; also aligned
-  direct `skill_hubs_dir` scanning between snapshot building and skill
-  file lookup
-- Test-first note:
-  added and updated unit coverage for missing directories, inline
-  metadata, top-level requires/install parsing, direct hub-root skills,
-  dependency registration, prompt ranking, and normalization behavior
-- `tizenclaw-tests` scenario decision:
-  unchanged; no daemon IPC contract changed in this prompt
-- Supervisor Gate: PASS
-  Development artifacts were implemented without direct `cargo` usage.
-
-### Stage 4: Build & Deploy
-
-- Status: PASS
-- Command:
-  `./deploy_host.sh`
-- Evidence:
-  host build succeeded, binaries installed under `/home/hjhun/.tizenclaw`,
-  daemon restarted, and IPC readiness passed via abstract socket
-- Supervisor Gate: PASS
-  Host-default deploy path succeeded and the daemon was restored.
-
-### Stage 5: Test & Review
-
-- Status: PASS
-- First attempt:
-  `./deploy_host.sh --test` failed due to one unit-test call site still
-  using the old `scan_textual_skills_from_roots` signature
-- Corrective action:
-  updated the scanner unit test to borrow the root slice, then reran the
-  build and test stages
-- Final commands:
-  `./deploy_host.sh --test`, `./deploy_host.sh`, `./deploy_host.sh --status`
-- Evidence:
-  repository tests passed including the new skill scanner/capability
-  manager coverage; host status reports `tizenclaw` and
-  `tizenclaw-tool-executor` running; host log excerpts include
-  `Detected platform and initialized paths`, `Initialized AgentCore`,
-  and `Started IPC server`
-- Rework validation:
-  `./deploy_host.sh --test` passed with all workspace tests green after
-  the prompt-15 scanner/root updates, and the restored host daemon passed
-  IPC readiness plus `./deploy_host.sh --status`
-- Review verdict:
-  PASS
-- Supervisor Gate: PASS
-  Retry completed within limit and the host/runtime evidence is recorded.
-
-### Stage 6: Commit
-
-- Status: PASS
-- Cleanup command:
-  `bash .agent/scripts/cleanup_workspace.sh`
-- Commit command:
-  `git commit -F .tmp/commit_msg.txt`
-- Latest completed commits:
-  `93c81bdf` `Implement textual skill capability scanning`
-  `48dab285` `Record Prompt 15 workflow completion`
-- Rework commit scope:
-  `.dev/DASHBOARD.md`,
-  `src/tizenclaw/src/core/textual_skill_scanner.rs`,
-  `src/tizenclaw/src/core/skill_capability_manager.rs`,
-  `src/tizenclaw/src/core/agent_core.rs`
-- Commit scope:
-  `.dev/DASHBOARD.md`,
-  `src/tizenclaw/src/core/textual_skill_scanner.rs`,
-  `src/tizenclaw/src/core/skill_capability_manager.rs`,
-  `src/tizenclaw/src/core/skill_support.rs`,
-  `src/tizenclaw/src/core/agent_core.rs`
-- Worktree note:
-  unrelated pre-existing modifications were intentionally left unstaged;
-  the Prompt 15 rework commit isolates only the stale prompt-plan fix
-  and the skill compatibility updates
-- Supervisor Gate: PASS
-  Cleanup, file-backed commit message usage, and isolated staging were
-  completed for the Prompt 15 rework without using `git commit -m`.
+- The worktree is already dirty; do not revert unrelated user changes.
+- Prompt examples do not fully match the current codebase. Tests must be
+  adapted to the real crate layout and existing IPC method names where
+  necessary.
+- Scenario names in the prompt overlap existing files; changes must stay
+  additive and preserve current repository expectations.
