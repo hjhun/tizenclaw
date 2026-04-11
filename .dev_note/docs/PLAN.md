@@ -10,8 +10,8 @@ registration metadata, and IPC visibility
 resume state, and broader observability seams
 [O] Phase 5. Refactor memory and session persistence to align with the
 runtime topology contract
-[ ] Phase 6. Rebuild tool and skill loading around richer capability
-activation and registry metadata
+[O] Phase 6. Rebuild tool and skill loading around richer capability
+activation, linux-utility file operations, and environment checks
 [O] Phase 7. Complete host-first build, deploy, review, and commit
 preparation for this implementation slice
 
@@ -27,3 +27,9 @@ preparation for this implementation slice
   IPC-backed loop snapshots
 - [O] Expose memory persistence and session context-flow metadata
   through `get_session_runtime`
+- [O] Expose runtime capability checks for `bash`, `python3`, `node`,
+  executables, and linux file utilities through IPC
+- [O] Prefer linux utilities for workspace file inspection and mutation
+  flows while keeping safe Rust fallbacks
+- [O] Assess embedded descriptor inventory and expose migration signals
+  toward textual skills or built-in runtime capabilities

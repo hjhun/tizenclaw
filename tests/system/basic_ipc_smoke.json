@@ -73,6 +73,38 @@
           "exists": true
         },
         {
+          "path": "execution.runtimes.bash.available",
+          "equals": true
+        },
+        {
+          "path": "execution.runtimes.python3.available",
+          "equals": true
+        },
+        {
+          "path": "execution.runtimes.node.available",
+          "equals": true
+        },
+        {
+          "path": "execution.utilities.cat.available",
+          "equals": true
+        },
+        {
+          "path": "execution.utilities.find.available",
+          "equals": true
+        },
+        {
+          "path": "execution.direct_execution.available",
+          "equals": true
+        },
+        {
+          "path": "execution.embedded.status",
+          "equals": "documentation_only"
+        },
+        {
+          "path": "execution.embedded.recommendation",
+          "contains": "textual skills"
+        },
+        {
           "path": "session.resume_ready",
           "exists": true
         },

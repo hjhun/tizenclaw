@@ -57,6 +57,7 @@ use crate::core::feature_tools;
 use crate::core::llm_config_store;
 use crate::core::prompt_builder::{PromptMode, ReasoningPolicy};
 use crate::core::registration_store::{self, RegisteredPaths, RegistrationKind};
+use crate::core::runtime_capabilities;
 use crate::core::textual_skill_scanner::TextualSkill;
 use crate::core::tool_dispatcher::ToolDispatcher;
 use crate::infra::key_store::KeyStore;
@@ -1900,14 +1901,31 @@ async fn file_manager_tool(tc_args: &Value, session_workdir: &Path) -> Value {
                 Ok(path) => path,
                 Err(error) => return json!({"error": error}),
             };
-            match std::fs::read_to_string(&path) {
+            match runtime_capabilities::read_file_via_system(&path).await {
                 Ok(content) => json!({
                     "success": true,
                     "operation": operation,
                     "path": path.to_string_lossy(),
                     "content": content,
+                    "backend": "linux_utility",
                 }),
-                Err(error) => json!({"error": format!("Failed to read file '{}': {}", path.display(), error)}),
+                Err(system_error) => {
+                    log::debug!(
+                        "[file_manager] read fallback for '{}': {}",
+                        path.display(),
+                        system_error
+                    );
+                    match std::fs::read_to_string(&path) {
+                        Ok(content) => json!({
+                            "success": true,
+                            "operation": operation,
+                            "path": path.to_string_lossy(),
+                            "content": content,
+                            "backend": "rust_fallback",
+                        }),
+                        Err(error) => json!({"error": format!("Failed to read file '{}': {}", path.display(), error)}),
+                    }
+                }
             }
         }
         "write" | "append" => {
@@ -1950,18 +1968,38 @@ async fn file_manager_tool(tc_args: &Value, session_workdir: &Path) -> Value {
                 Ok(path) => path,
                 Err(error) => return json!({"error": error}),
             };
-            let result = if path.is_dir() {
-                std::fs::remove_dir_all(&path)
-            } else {
-                std::fs::remove_file(&path)
-            };
-            match result {
+            if !path.exists() {
+                return json!({"error": format!("Failed to remove '{}': path does not exist", path.display())});
+            }
+            let is_dir = path.is_dir();
+            match runtime_capabilities::remove_via_system(&path, is_dir).await {
                 Ok(()) => json!({
                     "success": true,
                     "operation": operation,
-                    "path": path.to_string_lossy()
+                    "path": path.to_string_lossy(),
+                    "backend": "linux_utility",
                 }),
-                Err(error) => json!({"error": format!("Failed to remove '{}': {}", path.display(), error)}),
+                Err(system_error) => {
+                    log::debug!(
+                        "[file_manager] remove fallback for '{}': {}",
+                        path.display(),
+                        system_error
+                    );
+                    let result = if is_dir {
+                        std::fs::remove_dir_all(&path)
+                    } else {
+                        std::fs::remove_file(&path)
+                    };
+                    match result {
+                        Ok(()) => json!({
+                            "success": true,
+                            "operation": operation,
+                            "path": path.to_string_lossy(),
+                            "backend": "rust_fallback",
+                        }),
+                        Err(error) => json!({"error": format!("Failed to remove '{}': {}", path.display(), error)}),
+                    }
+                }
             }
         }
         "mkdir" => {
@@ -1970,13 +2008,29 @@ async fn file_manager_tool(tc_args: &Value, session_workdir: &Path) -> Value {
                 Ok(path) => path,
                 Err(error) => return json!({"error": error}),
             };
-            match std::fs::create_dir_all(&path) {
+            match runtime_capabilities::mkdir_via_system(&path).await {
                 Ok(()) => json!({
                     "success": true,
                     "operation": operation,
-                    "path": path.to_string_lossy()
+                    "path": path.to_string_lossy(),
+                    "backend": "linux_utility",
                 }),
-                Err(error) => json!({"error": format!("Failed to create directory '{}': {}", path.display(), error)}),
+                Err(system_error) => {
+                    log::debug!(
+                        "[file_manager] mkdir fallback for '{}': {}",
+                        path.display(),
+                        system_error
+                    );
+                    match std::fs::create_dir_all(&path) {
+                        Ok(()) => json!({
+                            "success": true,
+                            "operation": operation,
+                            "path": path.to_string_lossy(),
+                            "backend": "rust_fallback",
+                        }),
+                        Err(error) => json!({"error": format!("Failed to create directory '{}': {}", path.display(), error)}),
+                    }
+                }
             }
         }
         "list" => {
@@ -1985,29 +2039,51 @@ async fn file_manager_tool(tc_args: &Value, session_workdir: &Path) -> Value {
                 Ok(path) => path,
                 Err(error) => return json!({"error": error}),
             };
-            match std::fs::read_dir(&path) {
-                Ok(entries) => {
-                    let entries = entries
-                        .filter_map(|entry| entry.ok())
-                        .map(|entry| {
-                            let entry_path = entry.path();
-                            let metadata = entry.metadata().ok();
+            match runtime_capabilities::list_dir_via_system(&path).await {
+                Ok(entries) => json!({
+                    "success": true,
+                    "operation": operation,
+                    "path": path.to_string_lossy(),
+                    "entries": entries.into_iter().map(|entry| json!({
+                        "name": entry.name,
+                        "path": entry.path,
+                        "is_dir": entry.is_dir,
+                        "size": entry.size,
+                    })).collect::<Vec<_>>(),
+                    "backend": "linux_utility",
+                }),
+                Err(system_error) => {
+                    log::debug!(
+                        "[file_manager] list fallback for '{}': {}",
+                        path.display(),
+                        system_error
+                    );
+                    match std::fs::read_dir(&path) {
+                        Ok(entries) => {
+                            let entries = entries
+                                .filter_map(|entry| entry.ok())
+                                .map(|entry| {
+                                    let entry_path = entry.path();
+                                    let metadata = entry.metadata().ok();
+                                    json!({
+                                        "name": entry.file_name().to_string_lossy(),
+                                        "path": entry_path.to_string_lossy(),
+                                        "is_dir": metadata.as_ref().map(|value| value.is_dir()).unwrap_or(false),
+                                        "size": metadata.as_ref().map(|value| value.len()).unwrap_or(0)
+                                    })
+                                })
+                                .collect::<Vec<_>>();
                             json!({
-                                "name": entry.file_name().to_string_lossy(),
-                                "path": entry_path.to_string_lossy(),
-                                "is_dir": metadata.as_ref().map(|value| value.is_dir()).unwrap_or(false),
-                                "size": metadata.as_ref().map(|value| value.len()).unwrap_or(0)
+                                "success": true,
+                                "operation": operation,
+                                "path": path.to_string_lossy(),
+                                "entries": entries,
+                                "backend": "rust_fallback",
                             })
-                        })
-                        .collect::<Vec<_>>();
-                    json!({
-                        "success": true,
-                        "operation": operation,
-                        "path": path.to_string_lossy(),
-                        "entries": entries
-                    })
+                        }
+                        Err(error) => json!({"error": format!("Failed to list directory '{}': {}", path.display(), error)}),
+                    }
                 }
-                Err(error) => json!({"error": format!("Failed to list directory '{}': {}", path.display(), error)}),
             }
         }
         "stat" => {
@@ -2016,17 +2092,37 @@ async fn file_manager_tool(tc_args: &Value, session_workdir: &Path) -> Value {
                 Ok(path) => path,
                 Err(error) => return json!({"error": error}),
             };
-            match std::fs::metadata(&path) {
+            match runtime_capabilities::stat_path_via_system(&path).await {
                 Ok(metadata) => json!({
                     "success": true,
                     "operation": operation,
                     "path": path.to_string_lossy(),
-                    "is_dir": metadata.is_dir(),
-                    "is_file": metadata.is_file(),
-                    "size": metadata.len(),
-                    "readonly": metadata.permissions().readonly()
+                    "is_dir": metadata.is_dir,
+                    "is_file": metadata.is_file,
+                    "size": metadata.size,
+                    "readonly": metadata.readonly,
+                    "backend": "linux_utility",
                 }),
-                Err(error) => json!({"error": format!("Failed to stat '{}': {}", path.display(), error)}),
+                Err(system_error) => {
+                    log::debug!(
+                        "[file_manager] stat fallback for '{}': {}",
+                        path.display(),
+                        system_error
+                    );
+                    match std::fs::metadata(&path) {
+                        Ok(metadata) => json!({
+                            "success": true,
+                            "operation": operation,
+                            "path": path.to_string_lossy(),
+                            "is_dir": metadata.is_dir(),
+                            "is_file": metadata.is_file(),
+                            "size": metadata.len(),
+                            "readonly": metadata.permissions().readonly(),
+                            "backend": "rust_fallback",
+                        }),
+                        Err(error) => json!({"error": format!("Failed to stat '{}': {}", path.display(), error)}),
+                    }
+                }
             }
         }
         "copy" | "move" => {
@@ -2045,20 +2141,48 @@ async fn file_manager_tool(tc_args: &Value, session_workdir: &Path) -> Value {
                     return json!({"error": format!("Failed to create destination directory '{}': {}", parent.display(), error)});
                 }
             }
-            let result = if operation == "move" {
-                std::fs::rename(&src, &dst).map(|_| 0u64)
+            let recursive = src.is_dir();
+            let system_result = if operation == "move" {
+                runtime_capabilities::move_via_system(&src, &dst)
+                    .await
+                    .map(|_| 0u64)
             } else {
-                std::fs::copy(&src, &dst)
+                runtime_capabilities::copy_via_system(&src, &dst, recursive).await
             };
-            match result {
+            match system_result {
                 Ok(bytes) => json!({
                     "success": true,
                     "operation": operation,
                     "src": src.to_string_lossy(),
                     "dst": dst.to_string_lossy(),
-                    "bytes_copied": bytes
+                    "bytes_copied": bytes,
+                    "backend": "linux_utility",
                 }),
-                Err(error) => json!({"error": format!("Failed to {} '{}' -> '{}': {}", operation, src.display(), dst.display(), error)}),
+                Err(system_error) => {
+                    log::debug!(
+                        "[file_manager] {} fallback '{}' -> '{}': {}",
+                        operation,
+                        src.display(),
+                        dst.display(),
+                        system_error
+                    );
+                    let result = if operation == "move" {
+                        std::fs::rename(&src, &dst).map(|_| 0u64)
+                    } else {
+                        std::fs::copy(&src, &dst)
+                    };
+                    match result {
+                        Ok(bytes) => json!({
+                            "success": true,
+                            "operation": operation,
+                            "src": src.to_string_lossy(),
+                            "dst": dst.to_string_lossy(),
+                            "bytes_copied": bytes,
+                            "backend": "rust_fallback",
+                        }),
+                        Err(error) => json!({"error": format!("Failed to {} '{}' -> '{}': {}", operation, src.display(), dst.display(), error)}),
+                    }
+                }
             }
         }
         "download" => {
@@ -6497,6 +6621,7 @@ impl AgentCore {
     }
 
     pub fn session_runtime_status(&self, session_id: &str) -> Value {
+        let registrations = self.list_registered_paths();
         let session = self
             .session_store
             .lock()
@@ -6573,6 +6698,7 @@ impl AgentCore {
                 "default_compact_threshold": AgentLoopState::DEFAULT_COMPACT_THRESHOLD,
             },
             "runtime_topology": self.runtime_topology_summary(),
+            "execution": runtime_capabilities::summarize(&self.platform.paths, &registrations),
             "session": session,
             "memory": memory,
             "context_flow": {

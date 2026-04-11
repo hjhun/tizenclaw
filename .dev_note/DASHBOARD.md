@@ -490,3 +490,123 @@
 - [x] Supervisor Gate after Test & Review
   - PASS: runtime logs, IPC scenario proof, and repository-wide
     regression evidence are captured
+
+## Phase 6 Tooling Capability Cycle
+
+- [x] Stage 1: Planning
+  - Cycle classification:
+    host-default (`./deploy_host.sh`)
+  - Runtime surface:
+    tool and skill capability activation, linux-utility-backed file
+    operations, environment runtime checks, and embedded capability
+    assessment
+  - Reference repositories:
+    `/home/hjhun/samba/github/openclaw`,
+    `/home/hjhun/samba/github/nanoclaw`,
+    `/home/hjhun/samba/github/openclaude`,
+    `/home/hjhun/samba/github/hermes-agent`
+  - Comparative planning focus:
+    `openclaw` shell and skill safety boundaries, `openclaude`
+    skill-prefetch and tool pool separation, `nanoclaw` runtime
+    executable detection, and `hermes-agent` skill/config capability
+    reporting
+  - System-test requirement:
+    update `tests/system/basic_ipc_smoke.json` before implementation to
+    assert runtime capability and embedded assessment fields through
+    `get_session_runtime`
+- [x] Supervisor Gate after Planning
+  - PASS: host-default routing, runtime surface, reference scope, and
+    system-test planning were recorded
+
+- [x] Stage 2: Design
+  - Selected architecture:
+    add `core/runtime_capabilities.rs` as the owner for runtime command
+    detection, embedded capability assessment, and linux-utility-backed
+    file helpers
+  - File-operation design:
+    prefer `cat`, `find`, `stat`, `mkdir`, `rm`, `cp`, and `mv` through
+    the executor path, then fall back to Rust stdlib with debug logs
+  - IPC contract:
+    expand `get_session_runtime` with `execution.runtimes`,
+    `execution.utilities`, `execution.tool_roots`, and
+    `execution.embedded`
+  - Embedded assessment:
+    embedded markdown descriptors are treated as documentation-only
+    metadata for built-in capabilities and surfaced with migration
+    guidance toward textual skills or built-in runtime features
+  - Design artifact:
+    `.dev_note/docs/tool_skill_capability_alignment_design_20260411.md`
+- [x] Supervisor Gate after Design
+  - PASS: ownership boundaries, observability contract, and
+    linux-utility execution strategy are documented
+
+- [x] Stage 3: Development
+  - TDD contract:
+    updated `tests/system/basic_ipc_smoke.json` before product-code
+    changes to assert the new `execution` IPC summary
+  - Red result:
+    `~/.tizenclaw/bin/tizenclaw-tests scenario --file tests/system/basic_ipc_smoke.json`
+    failed against the pre-deploy daemon because
+    `execution.runtimes.bash.available` was not present
+  - Product-code result:
+    added `core/runtime_capabilities.rs`, expanded
+    `get_session_runtime`, and routed `file_manager` read/list/stat,
+    mkdir/remove/copy/move through linux utilities with Rust fallbacks
+  - Logging additions:
+    file-manager fallback paths now emit debug logs showing which
+    operation dropped from linux utilities to Rust stdlib
+  - Embedded evaluation:
+    embedded descriptors are now exposed as documentation-only metadata
+    with migration guidance toward textual skills or built-in runtime
+    features
+  - Development verification:
+    `./deploy_host.sh -b` passed
+- [x] Supervisor Gate after Development
+  - PASS: the system scenario was updated first, Red/Green evidence was
+    captured through the host daemon and build path, and script-driven
+    verification passed without direct ad-hoc cargo commands
+
+- [x] Stage 4: Build & Deploy
+  - Command:
+    `./deploy_host.sh`
+  - Result:
+    host binaries were installed under `/home/hjhun/.tizenclaw`, the
+    daemon restarted, and the dashboard stayed reachable on `9091`
+  - Survival check:
+    `./deploy_host.sh --status` reported healthy daemon, tool executor,
+    dashboard, and active listeners on port `9091`
+- [x] Supervisor Gate after Build & Deploy
+  - PASS: the host deployment path completed and the updated runtime
+    came back online cleanly
+
+- [x] Stage 5: Test & Review
+  - Static review focus:
+    runtime capability probing is isolated in `runtime_capabilities`,
+    `AgentCore` remains the IPC composition root, and file operations
+    keep safe Rust fallbacks behind linux utility paths
+  - Runtime evidence:
+    `./deploy_host.sh --status` showed healthy daemon, executor, and
+    dashboard processes after the final restart
+  - Log evidence:
+    `~/.tizenclaw/logs/tizenclaw.log` contained
+    `Daemon ready (1346ms) startup sequence completed`
+  - System test:
+    `~/.tizenclaw/bin/tizenclaw-tests scenario --file tests/system/basic_ipc_smoke.json`
+    passed and returned `execution.runtimes`, `execution.utilities`,
+    `execution.direct_execution`, and `execution.embedded`
+  - Repository regression:
+    `./deploy_host.sh --test` passed with all tests green, including the
+    new `runtime_capabilities` coverage
+  - Comparative artifact:
+    `.dev_note/docs/tooling_capability_comparison_20260411.md`
+  - Follow-up prompt artifact:
+    `20260411_103853_PROMPT.md`
+  - Delayed copy script:
+    `/home/hjhun/samba/test/delay_copy_prompt.sh` was created or updated
+    and launched with `setsid`, targeting
+    `/home/hjhun/.tizenclaw/devel/prompt`
+  - QA verdict:
+    PASS
+- [x] Supervisor Gate after Test & Review
+  - PASS: runtime logs, IPC scenario proof, regression coverage, and
+    follow-up comparison artifacts are captured

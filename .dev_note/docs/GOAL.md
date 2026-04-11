@@ -15,6 +15,10 @@ skills while remaining compatible with the existing deployment model.
   debugging
 - daemon IPC exposes enough loop-state and session-resume detail for
   host-first debugging
+- daemon IPC exposes runtime capability checks for shell, interpreters,
+  executables, file utilities, and embedded capability posture
+- normal file inspection and mutation flows prefer linux utilities so
+  host behavior matches the operator shell path more closely
 - logging and tests make registration and topology regressions easy to
   diagnose
 - host-first build, deploy, and review steps pass through repository

@@ -3,6 +3,7 @@
 pub mod agent_core;
 pub mod prompt_builder;
 pub mod registration_store;
+pub mod runtime_capabilities;
 pub mod runtime_paths;
 pub mod skill_support;
 pub mod textual_skill_scanner;
