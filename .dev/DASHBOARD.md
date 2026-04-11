@@ -14,8 +14,7 @@
 
 ## In Progress
 
-- Stage 6 Commit: clean the workspace, stage only Prompt 15 files, and
-  commit with a file-backed message.
+- Workflow complete for Prompt 15. Awaiting next prompt or follow-up.
 
 ## Progress Notes
 
@@ -121,3 +120,24 @@
   PASS
 - Supervisor Gate: PASS
   Retry completed within limit and the host/runtime evidence is recorded.
+
+### Stage 6: Commit
+
+- Status: PASS
+- Cleanup command:
+  `bash .agent/scripts/cleanup_workspace.sh`
+- Commit command:
+  `git commit -F .tmp/commit_msg.txt`
+- Commit created:
+  `93c81bdf` `Implement textual skill capability scanning`
+- Commit scope:
+  `.dev/DASHBOARD.md`,
+  `src/tizenclaw/src/core/textual_skill_scanner.rs`,
+  `src/tizenclaw/src/core/skill_capability_manager.rs`,
+  `src/tizenclaw/src/core/skill_support.rs`,
+  `src/tizenclaw/src/core/agent_core.rs`
+- Worktree note:
+  unrelated pre-existing modifications were intentionally left unstaged
+- Supervisor Gate: PASS
+  Cleanup, file-backed commit message usage, and isolated staging were
+  completed without using `git commit -m`.
