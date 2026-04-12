@@ -2,10 +2,16 @@ cmake_minimum_required(VERSION 3.10)
 
 project(tizenclaw NONE)
 
+if(POLICY CMP0177)
+  cmake_policy(SET CMP0177 NEW)
+endif()
+
 include(GNUInstallDirs)
 
-if(DEFINED ENV{CROSS_COMPILE})
-  set(CARGO_TARGET "armv7-unknown-linux-gnueabihf")
+if(DEFINED CARGO_TARGET_TRIPLE)
+  set(CARGO_TARGET "${CARGO_TARGET_TRIPLE}")
+elseif(DEFINED ENV{CROSS_COMPILE})
+  set(CARGO_TARGET "arm-unknown-linux-gnueabi")
 else()
   set(CARGO_TARGET "x86_64-unknown-linux-gnu")
 endif()

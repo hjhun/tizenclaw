@@ -495,13 +495,29 @@ do_deploy() {
   # 3-4. Push and Install RPMs
   for rpm in "${RPM_FILES[@]}"; do
     local rpm_basename=$(basename "${rpm}")
+    local install_output=""
+    local install_status=0
     log "Pushing ${rpm_basename} to device:/tmp/"
     run sdb_cmd push "${rpm}" /tmp/
     ok "RPM transferred: ${rpm_basename}"
 
     log "Installing ${rpm_basename}..."
-    run sdb_shell pkgcmd -i -q -t rpm -p "/tmp/${rpm_basename}"
-    ok "RPM installed: ${rpm_basename}"
+    if [ "${DRY_RUN}" = true ]; then
+      echo -e "  ${YELLOW}[DRY-RUN]${NC} sdb shell pkgcmd -i -q -t rpm -p /tmp/${rpm_basename}"
+      ok "RPM installed: ${rpm_basename}"
+    else
+      install_output="$(sdb_shell pkgcmd -i -q -t rpm -p "/tmp/${rpm_basename}" 2>&1)" || install_status=$?
+      printf '%s\n' "${install_output}"
+
+      if [ "${install_status}" -eq 0 ] && grep -q 'key\[end\] val\[ok\]' <<<"${install_output}"; then
+        ok "RPM installed via pkgcmd: ${rpm_basename}"
+      else
+        warn "pkgcmd did not confirm RPM installation. Falling back to rpm -Uvh."
+        sdb_shell rpm -Uvh --replacepkgs --replacefiles --force "/tmp/${rpm_basename}" \
+          || fail "RPM installation failed for ${rpm_basename}"
+        ok "RPM installed via rpm fallback: ${rpm_basename}"
+      fi
+    fi
 
     log "Cleaning up /tmp/${rpm_basename}..."
     run sdb_shell rm -f "/tmp/${rpm_basename}"

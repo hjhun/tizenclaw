@@ -8,6 +8,12 @@ License:    Apache-2.0
 Source0:    %{name}-%{version}.tar.gz
 Source1001: %{name}.manifest
 
+%ifarch armv7hl armv7l armv7el
+%global cargo_target_triple arm-unknown-linux-gnueabi
+%else
+%global cargo_target_triple x86_64-unknown-linux-gnu
+%endif
+
 # Rust build
 BuildRequires:  cmake
 BuildRequires:  cargo
@@ -61,11 +67,11 @@ TizenClaw Native Agent running as a System Service (Rust Edition).
 cp %{SOURCE1001} .
 
 %build
-%cmake . -DCMAKE_INSTALL_PREFIX=/
-%cmake_build
+%cmake . -DCMAKE_INSTALL_PREFIX=/ -DCARGO_TARGET_TRIPLE=%{cargo_target_triple}
+/usr/bin/cmake --build . --verbose
 
 %install
-%cmake_install
+DESTDIR=%{buildroot} /usr/bin/cmake --install . --verbose
 
 %post
 systemctl daemon-reload >/dev/null 2>&1 || true
