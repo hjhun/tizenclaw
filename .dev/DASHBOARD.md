@@ -234,11 +234,35 @@ Evidence:
 
 ## Stage 6: Commit & Push
 
-Status: pending
+Status: completed
 
 Commit Progress:
-- [ ] Step 0: Clean workspace using `.agent/scripts/cleanup_workspace.sh`
-- [ ] Step 1: Recheck final tracked diff
-- [ ] Step 2: Write `.tmp/commit_msg.txt`
-- [ ] Step 3: Commit with `git commit -F .tmp/commit_msg.txt`
-- [ ] Step 4: Decide whether to push `develRust`
+- [x] Step 0: Clean workspace using `.agent/scripts/cleanup_workspace.sh`
+- [x] Step 1: Recheck final tracked diff
+- [x] Step 2: Write `.tmp/commit_msg.txt`
+- [x] Step 3: Commit with `git commit -F .tmp/commit_msg.txt`
+- [x] Step 4: Decide whether to push `develRust`
+
+Commit Result:
+- Local commit created:
+  `404f76fb Improve generic document tool routing`
+- Push decision:
+  deferred; the user asked for improvement work and validation, not a
+  remote push in this cycle.
+
+## Supervisor Gate: Stage 6
+
+Status: PASS
+
+Supervisor Authority Checklist:
+- [x] Daemon Transition Intactness (Are there bypassed sequential stages?)
+- [x] Dashboard Tracking Updated correctly
+- [x] Deployment Execution Rigidity (script path matches the cycle:
+      `deploy_host.sh` by default, `deploy.sh` on explicit Tizen request)
+- [x] Real-time DASHBOARD Tracking
+- [x] Rollback attempt count within limit (<= 3)
+
+Evidence:
+- Workspace cleanup script executed before commit.
+- Commit message was written to `.tmp/commit_msg.txt`.
+- Commit used `git commit -F .tmp/commit_msg.txt` as required.
