@@ -1,9 +1,9 @@
-use std::sync::{Arc, Mutex};
-use std::os::raw::{c_char, c_int, c_void};
 use std::ffi::CStr;
+use std::os::raw::{c_char, c_int, c_void};
+use std::sync::{Arc, Mutex};
 
-use crate::tizen_sys::pkgmgr::*;
 use crate::tizen_sys::glib::*;
+use crate::tizen_sys::pkgmgr::*;
 
 #[derive(Debug, Clone)]
 pub struct PkgmgrEventArgs {
@@ -126,13 +126,9 @@ impl PkgmgrClient {
                     log::warn!("pkgmgr_client_set_status_type() returned {}", rc);
                 }
 
-                let user_data =
-                    global_client.as_ref() as *const PkgmgrClient as *mut c_void;
-                let rc = pkgmgr_client_listen_status(
-                    handle,
-                    PkgmgrClient::pkgmgr_handler,
-                    user_data,
-                );
+                let user_data = global_client.as_ref() as *const PkgmgrClient as *mut c_void;
+                let rc =
+                    pkgmgr_client_listen_status(handle, PkgmgrClient::pkgmgr_handler, user_data);
                 if rc < 0 {
                     log::error!("pkgmgr_client_listen_status() returned {}", rc);
                     pkgmgr_client_free(handle);
@@ -208,7 +204,12 @@ impl PkgmgrClient {
 
         log::debug!(
             "pkgmgr event: uid={} req={} type={} pkgid={} status={} event={}",
-            target_uid, req_id, s_pkg_type, s_pkgid, s_event_status, s_event_name
+            target_uid,
+            req_id,
+            s_pkg_type,
+            s_pkgid,
+            s_event_status,
+            s_event_name
         );
 
         let event = Arc::new(PkgmgrEventArgs {

@@ -14,8 +14,8 @@ impl PlatformLogger for DlogLogger {
     fn log(&self, level: LogLevel, tag: &str, msg: &str) {
         let prio = match level {
             LogLevel::Error => crate::tizen_sys::dlog::DLOG_ERROR,
-            LogLevel::Warn  => crate::tizen_sys::dlog::DLOG_WARN,
-            LogLevel::Info  => crate::tizen_sys::dlog::DLOG_INFO,
+            LogLevel::Warn => crate::tizen_sys::dlog::DLOG_WARN,
+            LogLevel::Info => crate::tizen_sys::dlog::DLOG_INFO,
             LogLevel::Debug => crate::tizen_sys::dlog::DLOG_DEBUG,
         };
 
@@ -31,7 +31,11 @@ impl PlatformLogger for DlogLogger {
 
 /// C ABI for platform plugin logger (called by the main daemon via dlopen)
 #[no_mangle]
-pub unsafe extern "C" fn claw_plugin_log(level: i32, tag: *const std::os::raw::c_char, msg: *const std::os::raw::c_char) {
+pub unsafe extern "C" fn claw_plugin_log(
+    level: i32,
+    tag: *const std::os::raw::c_char,
+    msg: *const std::os::raw::c_char,
+) {
     let prio = match level {
         0 => crate::tizen_sys::dlog::DLOG_ERROR,
         1 => crate::tizen_sys::dlog::DLOG_WARN,

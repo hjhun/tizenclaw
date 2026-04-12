@@ -4,7 +4,7 @@
 
 use super::backend::*;
 use crate::infra::http_client;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 const ANTHROPIC_REQUIRED_FALLBACK_MAX_TOKENS: u32 = 4096;
 

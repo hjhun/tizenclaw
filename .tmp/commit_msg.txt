@@ -1,10 +1,7 @@
-Implement rebuilt Rust CLI surface
+Migrate internal dashboard tracking to .dev
 
-Add a new `rusty-claude-cli` crate as the production Rust CLI entry point
-for the rebuilt workspace.
+Update agent rules and structure docs to point workflow tracking
+from `.dev_note` to `.dev`.
 
-This change:
-- adds modular CLI parsing, init, stdin merge, and rendering layers
-- integrates runtime, commands, tools, and plugins into structured output
-- keeps `tclaw-cli` as a thin compatibility wrapper over the new crate
-- adds representative tests for parsing, defaults, output, and resume flows
+Remove the legacy `.dev_note` dashboard and archived design docs,
+and keep the touched Rust files aligned with formatting cleanup.

@@ -13,7 +13,7 @@
 
 use super::backend::*;
 use crate::infra::http_client;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::sync::RwLock;
 
 pub struct GeminiBackend {

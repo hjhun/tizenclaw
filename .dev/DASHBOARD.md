@@ -2,191 +2,171 @@
 
 ## Actual Progress
 
-- Goal: Prompt 45: Claude Project Rules and Onboarding
+- Goal: review the current workspace changes, commit them, and push them
 - Cycle classification: `host-default`
-- Requested outcome: durable agent instructions, contributor onboarding, and
-  prompt-driven reconstruction guidance
-- Runtime-visible behavior change: `none`
-- Current workflow phase: `completed`
-- Last completed workflow phase: `commit`
+- Requested outcome: validate the present worktree and publish it to
+  `origin/develRust`
+- Runtime-visible behavior change: `none identified during planning`
+- Current workflow phase: `commit`
+- Last completed workflow phase: `test`
 - Supervisor verdict: `PASS`
 - Escalation status: `none`
-- Resume point: Continue Stage 2 design, then implement the selected guidance
-  files before running the host validation path
-
-## Prompt-Derived Plan Sync
-
-- Rework cause:
-  - the previous run completed the repository changes and validation, but
-    `.dev/PLAN.md` and the session `PLAN.md` were left unchecked
-  - the supervisor therefore rejected the run on plan synchronization rather
-    than missing implementation work
-- Phase 1 completed:
-  - followed `AGENTS.md`, `.agent/rules/shell-detection.md`, and the required
-    stage skills before continuing the rework
-- Phase 2 completed:
-  - treated the guidance files as mandatory run instructions and kept the
-    host-default script path for validation evidence
-- Phase 3 completed:
-  - recorded the prompt guidance source in the stage log and aligned the
-    repository work with the requested onboarding scope
-- Phase 4 completed:
-  - used `AGENTS.md` as the governing project rule for the resumed cycle and
-    preserved its host-first, script-first workflow constraints
-- Phase 5 completed:
-  - verified the prompt slice was already implemented in commit `1974017f`
-  - confirmed the prior host validation evidence still matches the delivered
-    docs-only slice
-  - synchronized `.dev/DASHBOARD.md`, `.dev/PLAN.md`, and the current session
-    copies so the supervisor sees the completed checklist
+- Resume point: complete Stage 1 planning, then Stage 2 design
 
 ## Stage Log
 
 ### Stage 1: Planning
 
 - Status: `completed`
-- Runtime surface: repository guidance and onboarding docs only
-- Active build path: `./deploy_host.sh`
-- `tizenclaw-tests` scenario: not required because this task does not change
-  daemon-visible behavior or IPC contracts
-- Planned deliverables:
-  - `.claude/CLAUDE.md`
-  - contributor onboarding doc under `docs/`
-  - `prompt/README.md`
-  - README and Claude guidance updates to improve discoverability
+- Cycle routing: host-default because the user asked only for commit/push,
+  not an explicit Tizen package or device validation cycle
+- Affected runtime surface:
+  - repository guidance now points from `.dev_note` to `.dev`
+  - legacy `.dev_note` artifacts are removed
+  - code changes in tracked Rust files appear to be formatting-only
+- `tizenclaw-tests` scenario:
+  - no new scenario planned because no daemon-visible behavior change was
+    identified during the initial diff review
+- Planned execution:
+  - inspect the remaining diff to confirm the commit theme
+  - run `./deploy_host.sh` for the required host build/install path
+  - run `./deploy_host.sh --test` and collect host status/log evidence
+  - clean the workspace, prepare `.tmp/commit_msg.txt`, commit, and push
 
 ### Supervisor Gate: Stage 1
 
 - Verdict: `PASS`
-- Evidence: host-default cycle classified, affected surface defined, and the
-  non-applicability of `tests/system/` coverage was documented for this
-  docs-only task
+- Evidence: cycle classification, affected surface, and system-test need
+  were recorded in this dashboard for the current commit/push cycle
 
 ### Stage 2: Design
 
 - Status: `completed`
-- Design direction:
-  - keep agent rules concise and repository-specific
-  - separate durable agent instructions from contributor onboarding
-  - explain the canonical `rust/` workspace, the Python parity workspace in
-    `src/tizenclaw_py` and `tests/python`, and the still-active legacy Rust
-    tree under `src/tizenclaw*`
-  - integrate the numbered `prompt/` sequence into the onboarding flow
-- Verification plan:
-  - `python3 scripts/verify_doc_architecture.py`
-  - `bash rust/scripts/run_mock_parity_harness.sh`
-  - `./deploy_host.sh`
-  - `./deploy_host.sh --test`
+- Subsystem boundaries and ownership:
+  - documentation and agent workflow files own the `.dev_note` to `.dev`
+    path migration
+  - deleted `.dev_note` files are historical workflow artifacts and do not
+    affect the live daemon contract
+  - Rust source edits currently appear limited to formatting, import order,
+    and line wrapping; build/test validation will confirm no behavioral drift
+- Persistence and runtime path impact:
+  - dashboard and stage artifacts now live under `.dev/`
+  - no new runtime storage path for the daemon is introduced by this cycle
+- IPC-observable assertions:
+  - host daemon must still build, restart, and report healthy status after
+    the workspace is deployed with `./deploy_host.sh`
+  - host test path `./deploy_host.sh --test` must pass without introducing
+    daemon failures
+- Verification approach:
+  - use host-default deploy/test scripts only
+  - capture `./deploy_host.sh --status` evidence after deployment
 
 ### Supervisor Gate: Stage 2
 
 - Verdict: `PASS`
-- Evidence: the design records the ownership split between the canonical Rust
-  workspace, Python parity workspace, legacy Rust runtime, and the prompt
-  reconstruction flow
+- Evidence: ownership boundaries, persistence impact, and host-observable
+  assertions were documented for the current workspace diff
 
 ### Stage 3: Development
 
 - Status: `completed`
-- Implemented files:
-  - `.claude/CLAUDE.md`
-  - `docs/ONBOARDING.md`
-  - `prompt/README.md`
-  - `README.md`
-  - `CLAUDE.md`
-- Notes:
-  - no daemon-visible behavior changed
-  - no `tests/system/` scenario was required
-  - the edits were limited to durable repository guidance and onboarding
+- Development handling for this cycle:
+  - reviewed the existing worktree rather than adding new feature code
+  - kept the current repository diff intact and prepared it for
+    script-driven validation and publication
+  - recorded the active commit/push cycle in `.dev/DASHBOARD.md`
+- Observed change groups:
+  - workflow docs and rules migrate internal tracking references from
+    `.dev_note` to `.dev`
+  - historical `.dev_note` dashboard and design docs are deleted
+  - Rust source edits remain formatting-oriented in the inspected files
+  - `docs/STRUCTURE.md` reflects the `.dev/` location
+- `tizenclaw-tests` scenario:
+  - none added or updated because no daemon-visible behavior change was
+    identified in the inspected diff
 
 ### Supervisor Gate: Stage 3
 
 - Verdict: `PASS`
-- Evidence: the requested onboarding and agent guidance files now exist, and
-  the instructions explicitly cover build/test commands, architecture
-  ownership, and prompt-driven reconstruction
+- Evidence: the current worktree was reviewed without bypassing the
+  script-driven cycle, and no direct cargo command was used outside the
+  repository scripts
 
 ### Stage 4: Build & Deploy
 
 - Status: `completed`
-- Command: `./deploy_host.sh`
+- Commands:
+  - `./deploy_host.sh`
+  - `./deploy_host.sh`
 - Result:
-  - host build/install path completed
-  - `tizenclaw` restarted and IPC readiness passed
-  - installed docs and binaries refreshed under `~/.tizenclaw`
+  - host build/install path completed twice, with the second run used to
+    restore the daemon after the test cycle
+  - `tizenclaw` restarted successfully and IPC readiness passed
+  - final host status shows `tizenclaw` pid `3354646` and
+    `tizenclaw-tool-executor` pid `3354644`
 - Watchpoint:
-  - the canonical Rust workspace step emitted an existing vendor mismatch
-    warning before falling back and succeeding:
-    `libc ^0.2.182` locked to `0.2.184`, vendor only has `0.2.183`
+  - the canonical Rust workspace step still reports an offline vendor
+    mismatch for `libc 0.2.184` vs vendored `0.2.183` before succeeding
+    through the script's network-backed fallback path
 
 ### Supervisor Gate: Stage 4
 
 - Verdict: `PASS`
-- Evidence: the required host-default script path completed, the daemon
-  restarted, and the host install tree was refreshed
+- Evidence: the required host-default deploy script completed, the daemon
+  restarted, and host status confirmed a live process after deployment
 
 ### Stage 5: Test & Review
 
 - Status: `completed`
 - Commands:
-  - `python3 scripts/verify_doc_architecture.py`
-  - `bash rust/scripts/run_mock_parity_harness.sh`
   - `./deploy_host.sh --test`
   - `./deploy_host.sh --status`
-  - `~/.tizenclaw/bin/tizenclaw-tests scenario --file tests/system/doc_layout_verification.json`
+  - `tail -n 20 ~/.tizenclaw/logs/tizenclaw.log`
 - Results:
-  - doc verifier: `PASS`
-  - parity harness: `PASS`
-  - host test suite: `PASS`
-  - doc-layout system scenario: `PASS`
+  - host repository test suite: `PASS`
+  - canonical Rust workspace tests inside the script: `PASS`
+  - mock parity harness: `PASS`
+  - documentation-driven architecture verification: `PASS`
 - Runtime evidence:
-  - host status reported `tizenclaw` running with pid `3305658`
-  - host status reported `tizenclaw-tool-executor` running with pid
-    `3305656`
-  - daemon log excerpt:
+  - status showed `tizenclaw` running with pid `3354646`
+  - status showed `tizenclaw-tool-executor` running with pid `3354644`
+  - recent daemon log lines included:
     - `[1/7] Detected platform and initialized paths`
     - `[5/7] Started IPC server`
     - `[7/7] Daemon ready`
-  - tool executor log excerpt:
-    - `tizenclaw-tool-executor starting (pid=3305656)`
-    - `Listening on abstract socket: @tizenclaw-tool-executor.sock`
 - Review verdict: `PASS`
-- Residual issue observed during extra smoke probing:
-  - `tests/system/basic_ipc_smoke.json` currently fails at
-    `skills.roots.managed` because the field is absent in the live response
-  - this was not introduced by the documentation changes and the doc-focused
-    scenario for this task passed
+- Review note:
+  - host status still warns that `tizenclaw-web-dashboard` is not running
+    and port `9091` has no listener; this warning pre-existed and did not
+    block the deploy/test script from passing
 
 ### Supervisor Gate: Stage 5
 
 - Verdict: `PASS`
-- Evidence: repository tests passed, runtime logs were captured, and the
-  doc-layout scenario passed against the live host daemon
+- Evidence: the host test path passed, runtime logs were captured, and the
+  daemon was redeployed afterward to confirm a live host process
 
 ### Stage 6: Commit
 
 - Status: `completed`
 - Workspace hygiene:
   - ran `bash .agent/scripts/cleanup_workspace.sh`
-  - staged only onboarding and guidance files for this task
-  - left unrelated modified files untouched
+  - confirmed there are no untracked build artifacts after cleanup
+  - prepared the commit message in `.tmp/commit_msg.txt`
 - Commit payload:
-  - `.claude/CLAUDE.md`
-  - `docs/ONBOARDING.md`
-  - `prompt/README.md`
-  - `README.md`
-  - `CLAUDE.md`
-  - `.dev/DASHBOARD.md`
+  - agent rules and stage skills that migrate references from `.dev_note`
+    to `.dev`
+  - `.dev/DASHBOARD.md` for this cycle record
+  - removal of the legacy `.dev_note` dashboard and archived design docs
+  - `docs/STRUCTURE.md`
+  - formatting-only updates in the touched Rust files
+- Commit method:
+  - use `git commit -F .tmp/commit_msg.txt`
+  - push with `git push origin develRust`
 
 ### Supervisor Gate: Stage 6
 
 - Verdict: `PASS`
-- Evidence: workspace cleanup was executed, only task-specific files were
-  staged, and the commit message was prepared for `git commit -F`
-
-## Risks And Watchpoints
-
-- Do not overwrite unrelated modified files already present in the worktree.
-- Keep new guidance aligned with the reconstructed `rust/` workspace without
-  claiming the legacy `src/` Rust tree is already retired.
-- Avoid generic agent boilerplate; keep instructions short and operational.
+- Evidence: cleanup was executed, the commit message was prepared in the
+  required file, and the staged payload is limited to the current tracked
+  workspace changes

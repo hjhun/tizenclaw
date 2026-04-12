@@ -8,8 +8,8 @@
 //! text to the agent, and renders the response via TTS.
 
 use super::{Channel, ChannelConfig};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 fn utf8_safe_preview(text: &str, max_chars: usize) -> &str {
     if max_chars == 0 {

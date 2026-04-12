@@ -116,8 +116,8 @@ pub fn default_tools_dir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::{
-        HOST_DASHBOARD_PORT, RuntimeTopology, TIZEN_DASHBOARD_PORT,
-        default_dashboard_base_url, default_dashboard_port_for_runtime,
+        default_dashboard_base_url, default_dashboard_port_for_runtime, RuntimeTopology,
+        HOST_DASHBOARD_PORT, TIZEN_DASHBOARD_PORT,
     };
     use std::path::Path;
 
@@ -151,8 +151,14 @@ mod tests {
     fn runtime_topology_exposes_expected_contract_dirs() {
         let topology = RuntimeTopology::from_data_dir("/tmp/tizenclaw-topology");
 
-        assert_eq!(topology.config_dir, Path::new("/tmp/tizenclaw-topology/config"));
-        assert_eq!(topology.state_dir, Path::new("/tmp/tizenclaw-topology/state"));
+        assert_eq!(
+            topology.config_dir,
+            Path::new("/tmp/tizenclaw-topology/config")
+        );
+        assert_eq!(
+            topology.state_dir,
+            Path::new("/tmp/tizenclaw-topology/state")
+        );
         assert_eq!(
             topology.registry_dir,
             Path::new("/tmp/tizenclaw-topology/state/registry")

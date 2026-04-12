@@ -84,7 +84,11 @@ impl RegisteredPaths {
         let snapshot = snapshot_path(config_dir);
         if let Some(parent) = snapshot.parent() {
             std::fs::create_dir_all(parent).map_err(|err| {
-                format!("Failed to create registry dir '{}': {}", parent.display(), err)
+                format!(
+                    "Failed to create registry dir '{}': {}",
+                    parent.display(),
+                    err
+                )
             })?;
         }
         let snapshot_content = serde_json::to_string_pretty(&normalized)
@@ -346,11 +350,12 @@ mod tests {
         ));
 
         let compatibility = registrations.save(&dir.path().join("config")).unwrap();
-        let snapshot = dir
-            .path()
-            .join("state/registry/registered_paths.v2.json");
+        let snapshot = dir.path().join("state/registry/registered_paths.v2.json");
 
-        assert_eq!(compatibility, dir.path().join("config/registered_paths.json"));
+        assert_eq!(
+            compatibility,
+            dir.path().join("config/registered_paths.json")
+        );
         assert!(snapshot.exists());
     }
 
@@ -371,7 +376,13 @@ mod tests {
         let registrations = RegisteredPaths::load(&config_dir);
 
         assert_eq!(registrations.entries.len(), 2);
-        assert!(registrations.entries.iter().any(|entry| entry.kind == "tool"));
-        assert!(registrations.entries.iter().any(|entry| entry.kind == "skill"));
+        assert!(registrations
+            .entries
+            .iter()
+            .any(|entry| entry.kind == "tool"));
+        assert!(registrations
+            .entries
+            .iter()
+            .any(|entry| entry.kind == "skill"));
     }
 }

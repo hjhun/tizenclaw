@@ -77,7 +77,7 @@ process.
 - **Activity**: Analyze whether the cycle should use the default
   host workflow (`./deploy_host.sh`) or an explicitly requested Tizen
   workflow (`./deploy.sh`), then organize the required daemon behavior.
-- **Artifact**: Update stage status in `.dev_note/DASHBOARD.md`
+- **Artifact**: Update stage status in `.dev/DASHBOARD.md`
 - **Skill Usage**:
   [`.agent/skills/planning-project/SKILL.md`](.agent/skills/planning-project/SKILL.md)
 
@@ -86,7 +86,7 @@ process.
 - **Activity**: Define the Rust architecture, host/Tizen execution
   boundaries, async traits (Tokio), FFI boundaries, and zero-cost
   abstraction rules that fit the requested environment.
-- **Artifact**: Update stage status in `.dev_note/DASHBOARD.md`
+- **Artifact**: Update stage status in `.dev/DASHBOARD.md`
 - **Skill Usage**:
   [`.agent/skills/designing-architecture/SKILL.md`](.agent/skills/designing-architecture/SKILL.md)
 
@@ -98,7 +98,7 @@ process.
   Tizen/emulator/device validation. When runtime-visible behavior changes,
   first add or update a `tizenclaw-tests` scenario and use it as the system
   test contract for the implementation.
-- **Artifact**: Update stage status in `.dev_note/DASHBOARD.md`
+- **Artifact**: Update stage status in `.dev/DASHBOARD.md`
 - **Skill Usage**:
   [`.agent/skills/developing-code/SKILL.md`](.agent/skills/developing-code/SKILL.md),
   [`.agent/skills/testing-with-tizenclaw-tests/SKILL.md`](.agent/skills/testing-with-tizenclaw-tests/SKILL.md)
@@ -119,7 +119,7 @@ process.
 - **Activity**: Run `./deploy_host.sh` by default for host install/restart
   validation, or `./deploy.sh` when the user explicitly requests Tizen
   packaging/deployment.
-- **Artifact**: Update stage status in `.dev_note/DASHBOARD.md`
+- **Artifact**: Update stage status in `.dev/DASHBOARD.md`
 - **Skill Usage**:
   [`.agent/skills/building-deploying/SKILL.md`](.agent/skills/building-deploying/SKILL.md)
 
@@ -131,7 +131,7 @@ process.
   the user explicitly requests a Tizen cycle. For daemon-visible behavior,
   execute the relevant `tizenclaw-tests` scenario against the live host
   daemon in addition to repository tests.
-- **Artifact**: Update stage status in `.dev_note/DASHBOARD.md`
+- **Artifact**: Update stage status in `.dev/DASHBOARD.md`
 - **Skill Usage**:
   [`.agent/skills/reviewing-code/SKILL.md`](.agent/skills/reviewing-code/SKILL.md),
   [`.agent/skills/testing-with-tizenclaw-tests/SKILL.md`](.agent/skills/testing-with-tizenclaw-tests/SKILL.md)
@@ -140,7 +140,7 @@ process.
 - **Role**: Record final deliverables to Git.
 - **Activity**: Clean up unnecessary build artifacts, write a commit
   message adhering to upstream rules, and commit.
-- **Artifact**: Update stage status in `.dev_note/DASHBOARD.md`
+- **Artifact**: Update stage status in `.dev/DASHBOARD.md`
 - **Skill Usage**:
   [`.agent/skills/managing-versions/SKILL.md`](.agent/skills/managing-versions/SKILL.md)
 
@@ -205,7 +205,7 @@ verdict.
 
 - **Skill Usage**:
   [`.agent/skills/supervising-workflow/SKILL.md`](.agent/skills/supervising-workflow/SKILL.md)
-- **Artifact**: Audit records are logged in `.dev_note/DASHBOARD.md`
+- **Artifact**: Audit records are logged in `.dev/DASHBOARD.md`
 
 ### Updated Cycle Diagram (with Supervisor Gates)
 
@@ -221,7 +221,7 @@ the wrong execution script for the cycle, direct `cargo` / `cmake`
 usage, inline `-m` commit):
 
 1. The Supervisor writes a **Violation Record** inside
-   `.dev_note/DASHBOARD.md` documenting which SKILL.md rule was broken.
+   `.dev/DASHBOARD.md` documenting which SKILL.md rule was broken.
 2. Control is returned to the **violating stage's agent** with the
    violation report as corrective guidance.
 3. The stage agent re-reads its SKILL.md, applies the corrective action,
@@ -235,16 +235,16 @@ usage, inline `-m` commit):
 
 ---
 
-## Operation Log (`.dev_note`)
+## Operation Log (`.dev`)
 
 All stages' thought processes and autonomous logic are recorded
-exclusively in the single `.dev_note/DASHBOARD.md` tracking file.
+exclusively in the single `.dev/DASHBOARD.md` tracking file.
 Keep the dashboard concise.
 
 ## Documentation Location
 
 All development-process documents created during Planning, Design,
-Review, or similar stage work MUST be created under `.dev_note/docs/`.
+Review, or similar stage work MUST be created under `.dev/docs/`.
 Do not create new workflow or stage artifact documents under `docs/`.
 
 //turbo-all

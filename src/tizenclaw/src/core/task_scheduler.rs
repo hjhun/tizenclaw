@@ -339,7 +339,8 @@ impl TaskScheduler {
                             let prompt = task.execution_prompt();
                             let task_name = task.name.clone();
                             tokio::spawn(async move {
-                                let response = agent.process_prompt(&session_id, &prompt, None).await;
+                                let response =
+                                    agent.process_prompt(&session_id, &prompt, None).await;
                                 log::info!(
                                     "Scheduler: task '{}' completed with response: {}",
                                     task_name,

@@ -125,7 +125,11 @@ pub async fn stat_path_via_system(path: &Path) -> Result<PathStatSummary, String
         OsString::from("%F\t%s\t%a"),
         OsString::from(path.as_os_str()),
     ];
-    let arg_refs = [args[0].as_os_str(), args[1].as_os_str(), args[2].as_os_str()];
+    let arg_refs = [
+        args[0].as_os_str(),
+        args[1].as_os_str(),
+        args[2].as_os_str(),
+    ];
     let output = execute_system_command("stat", &arg_refs, None).await?;
     if !output["success"].as_bool().unwrap_or(false) {
         return Err(command_failure("stat", &output));
@@ -207,7 +211,9 @@ pub async fn copy_via_system(src: &Path, dst: &Path, recursive: bool) -> Result<
     if !output["success"].as_bool().unwrap_or(false) {
         return Err(command_failure("cp", &output));
     }
-    Ok(std::fs::metadata(dst).map(|metadata| metadata.len()).unwrap_or(0))
+    Ok(std::fs::metadata(dst)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0))
 }
 
 pub async fn move_via_system(src: &Path, dst: &Path) -> Result<(), String> {
@@ -216,7 +222,11 @@ pub async fn move_via_system(src: &Path, dst: &Path) -> Result<(), String> {
         OsString::from(src.as_os_str()),
         OsString::from(dst.as_os_str()),
     ];
-    let arg_refs = [args[0].as_os_str(), args[1].as_os_str(), args[2].as_os_str()];
+    let arg_refs = [
+        args[0].as_os_str(),
+        args[1].as_os_str(),
+        args[2].as_os_str(),
+    ];
     let output = execute_system_command("mv", &arg_refs, None).await?;
     if output["success"].as_bool().unwrap_or(false) {
         Ok(())
@@ -298,13 +308,17 @@ async fn execute_system_command(
     args: &[&std::ffi::OsStr],
     cwd: Option<&Path>,
 ) -> Result<Value, String> {
-    let resolved = resolve_command(binary).ok_or_else(|| format!("Required command '{}' was not found on PATH", binary))?;
+    let resolved = resolve_command(binary)
+        .ok_or_else(|| format!("Required command '{}' was not found on PATH", binary))?;
     let binary_str = resolved.to_string_lossy().to_string();
     let owned_args = args
         .iter()
         .map(|arg| arg.to_string_lossy().to_string())
         .collect::<Vec<_>>();
-    let arg_refs = owned_args.iter().map(|arg| arg.as_str()).collect::<Vec<_>>();
+    let arg_refs = owned_args
+        .iter()
+        .map(|arg| arg.as_str())
+        .collect::<Vec<_>>();
     let cwd_str = cwd.map(|path| path.to_string_lossy().to_string());
     let engine = ContainerEngine::new();
     engine
@@ -325,14 +339,17 @@ fn command_failure(command: &str, output: &Value) -> String {
     if stderr.is_empty() {
         format!("{} failed with exit code {}", command, exit_code)
     } else {
-        format!("{} failed with exit code {}: {}", command, exit_code, stderr)
+        format!(
+            "{} failed with exit code {}: {}",
+            command, exit_code, stderr
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        DirEntrySummary, PathStatSummary, embedded_summary, embedded_descriptor_names, summarize,
+        embedded_descriptor_names, embedded_summary, summarize, DirEntrySummary, PathStatSummary,
     };
     use crate::core::registration_store::RegisteredPaths;
     use libtizenclaw_core::framework::paths::PlatformPaths;
@@ -368,8 +385,12 @@ mod tests {
         paths.ensure_dirs();
 
         let mut registrations = RegisteredPaths::default();
-        registrations.tool_paths.push("/tmp/tools-extra".to_string());
-        registrations.skill_paths.push("/tmp/skills-extra".to_string());
+        registrations
+            .tool_paths
+            .push("/tmp/tools-extra".to_string());
+        registrations
+            .skill_paths
+            .push("/tmp/skills-extra".to_string());
 
         let summary = summarize(&paths, &registrations);
         assert!(summary["runtimes"]["bash"]["available"].is_boolean());

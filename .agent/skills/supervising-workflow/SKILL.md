@@ -28,15 +28,15 @@ Read the completed stage's SKILL.md and extract all **mandatory checklist items*
 
 ### Step 3: Verify Workflow Integrity Against Requirements
 Cross-reference the stage's outputs against the Per-Stage Validation Criteria (see table below). Check:
-- Was the stage status formally updated in `.dev_note/DASHBOARD.md`?
+- Was the stage status formally updated in `.dev/DASHBOARD.md`?
 - Were all mandatory checklist items completed?
 - Was code and functionality actually tested or just written?
 
 ### Step 4: Verify DASHBOARD.md Update
-Confirm that `.dev_note/DASHBOARD.md` was updated to reflect the completed stage's status.
+Confirm that `.dev/DASHBOARD.md` was updated to reflect the completed stage's status.
 
 ### Step 5: Issue Verdict
-- **PASS**: All criteria are met. Authorize stage transition. Record the PASS audit directly in `.dev_note/DASHBOARD.md`.
+- **PASS**: All criteria are met. Authorize stage transition. Record the PASS audit directly in `.dev/DASHBOARD.md`.
 - **FAIL**: One or more violations detected. Trigger the Rollback Procedure (below).
 
 ---
@@ -59,7 +59,7 @@ Confirm that `.dev_note/DASHBOARD.md` was updated to reflect the completed stage
 When the Supervisor issues a FAIL verdict:
 
 ### 1. Write Violation Record
-Append a violation record directly to `.dev_note/DASHBOARD.md` with the following detail:
+Append a violation record directly to `.dev/DASHBOARD.md` with the following detail:
 
 ```markdown
 # Violation Record: Stage <N> — <Stage Name> (Attempt <M>/3)
@@ -89,7 +89,7 @@ Upon the stage agent's re-completion, the Supervisor re-runs the Validation Gate
 
 > [!CAUTION]
 > **Maximum 3 retry attempts per stage gate.** If the violation persists after 3 attempts, the Supervisor MUST:
-> 1. Write a final escalation record into `.dev_note/DASHBOARD.md`
+> 1. Write a final escalation record into `.dev/DASHBOARD.md`
 > 2. Halt the development cycle
 > 3. Escalate to the user for manual intervention
 
@@ -127,7 +127,7 @@ Whenever complex AI Logic transitions, verify the progress and code against supr
 7. **Commit & Push (`managing-versions`)**: Did the commit message reflect Gerrit policies exactly? Were caches destroyed globally?
 
 ### Dashboard Execution Policies
-Enforce the continuous execution layout via `.dev_note/DASHBOARD.md` natively:
+Enforce the continuous execution layout via `.dev/DASHBOARD.md` natively:
 - Truncate and refine preceding iteration nodes seamlessly minimizing context sprawl.
 - Checklists materialize evaluating the exact active subsystem.
 - Sub-agents generate `[x]` ONLY when you manually confirm artifact compliance rigorously.
@@ -138,7 +138,7 @@ If integration faults or cognitive omissions execute natively, explicitly instru
 
 ## Audit Trail
 
-Every gate execution **must** produce a brief gate record entry directly inside `.dev_note/DASHBOARD.md` for PASS, FAIL, or Escalation events. Do not generate individual markdown files for gate passes or audits.
+Every gate execution **must** produce a brief gate record entry directly inside `.dev/DASHBOARD.md` for PASS, FAIL, or Escalation events. Do not generate individual markdown files for gate passes or audits.
 
 ## 🔗 Reference Workflows
 - **TizenClaw Core Constraints**: `../../rules/AGENTS.md`

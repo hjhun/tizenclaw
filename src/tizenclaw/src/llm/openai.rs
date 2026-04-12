@@ -4,10 +4,10 @@
 
 use super::backend::*;
 use crate::infra::http_client;
-use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
 use futures_util::StreamExt;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -1467,12 +1467,12 @@ impl LlmBackend for OpenAiBackend {
 #[cfg(test)]
 mod tests {
     use super::{
-        CHATGPT_BACKEND_API, CodexAuthSource, OPENAI_CODEX_RESPONSES_PATH, OPENAI_RESPONSES_PATH,
-        OpenAiBackend, OpenAiTransport,
+        CodexAuthSource, OpenAiBackend, OpenAiTransport, CHATGPT_BACKEND_API,
+        OPENAI_CODEX_RESPONSES_PATH, OPENAI_RESPONSES_PATH,
     };
     use crate::llm::backend::{LlmBackend, LlmMessage, LlmToolCall, LlmToolDecl};
     use base64::Engine;
-    use serde_json::{Value, json};
+    use serde_json::{json, Value};
     use tempfile::tempdir;
 
     fn create_jwt(payload: Value) -> String {
@@ -1830,12 +1830,10 @@ mod tests {
         assert_eq!(input.len(), 1);
         assert_eq!(input[0]["type"], json!("message"));
         assert_eq!(input[0]["role"], json!("assistant"));
-        assert!(
-            input[0]["content"][0]["text"]
-                .as_str()
-                .unwrap_or_default()
-                .contains("Historical tool call 'run_coding_agent'")
-        );
+        assert!(input[0]["content"][0]["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Historical tool call 'run_coding_agent'"));
     }
 
     #[test]

@@ -12,7 +12,7 @@ workspace before making changes or deploying the daemon.
 ```text
 tizenclaw/
 ├── .agent/                 Agent workflow rules and stage skills
-├── .dev_note/              Internal planning, design, and dashboard tracking
+├── .dev/                   Internal planning, design, and dashboard tracking
 ├── data/                   Static assets, including dashboard resources
 ├── docs/                   Public documentation
 ├── packaging/              Tizen packaging and build metadata

@@ -264,29 +264,17 @@ impl AgentLoopState {
         self.needs_follow_up = value;
     }
 
-    pub fn record_transition(
-        &mut self,
-        reason: LoopTransitionReason,
-        detail: impl Into<String>,
-    ) {
+    pub fn record_transition(&mut self, reason: LoopTransitionReason, detail: impl Into<String>) {
         self.last_transition_reason = reason.as_str().to_string();
         self.last_transition_detail = detail.into();
     }
 
-    pub fn mark_follow_up(
-        &mut self,
-        reason: LoopTransitionReason,
-        detail: impl Into<String>,
-    ) {
+    pub fn mark_follow_up(&mut self, reason: LoopTransitionReason, detail: impl Into<String>) {
         self.needs_follow_up = true;
         self.record_transition(reason, detail);
     }
 
-    pub fn mark_terminal(
-        &mut self,
-        reason: LoopTransitionReason,
-        detail: impl Into<String>,
-    ) {
+    pub fn mark_terminal(&mut self, reason: LoopTransitionReason, detail: impl Into<String>) {
         self.needs_follow_up = false;
         self.record_transition(reason, detail);
     }

@@ -224,7 +224,9 @@ impl ToolDispatcher {
             loaded.push(ToolDecl {
                 name,
                 description: descriptor.description.unwrap_or_default(),
-                parameters: descriptor.parameters.unwrap_or_else(Self::default_parameters_schema),
+                parameters: descriptor
+                    .parameters
+                    .unwrap_or_else(Self::default_parameters_schema),
                 binary_path: resolved_binary,
                 prepend_args,
                 timeout_secs: descriptor.timeout_secs.unwrap_or(DEFAULT_TIMEOUT_SECS),
@@ -271,7 +273,11 @@ impl ToolDispatcher {
         let entries = match fs::read_dir(root) {
             Ok(entries) => entries,
             Err(error) => {
-                log::warn!("ToolDispatcher: cannot read tools root '{}': {}", root, error);
+                log::warn!(
+                    "ToolDispatcher: cannot read tools root '{}': {}",
+                    root,
+                    error
+                );
                 return;
             }
         };
@@ -362,7 +368,9 @@ impl ToolDispatcher {
     }
 
     pub fn side_effect_for_tool(&self, tool_name: &str) -> Option<&str> {
-        self.tools.get(tool_name).map(|decl| decl.side_effect.as_str())
+        self.tools
+            .get(tool_name)
+            .map(|decl| decl.side_effect.as_str())
     }
 
     pub async fn execute(
@@ -371,7 +379,8 @@ impl ToolDispatcher {
         args: &Value,
         timeout_override: Option<u64>,
     ) -> Result<Value, String> {
-        self.execute_in_dir(name, args, timeout_override, None).await
+        self.execute_in_dir(name, args, timeout_override, None)
+            .await
     }
 
     pub async fn execute_in_dir(
@@ -626,7 +635,10 @@ impl ToolDispatcher {
             return (script_path.to_string_lossy().to_string(), Vec::new());
         }
 
-        (Self::resolve_binary_path(tool_dir, original_name), Vec::new())
+        (
+            Self::resolve_binary_path(tool_dir, original_name),
+            Vec::new(),
+        )
     }
 
     fn resolve_relative_path(tool_dir: &Path, value: &str) -> Option<PathBuf> {
@@ -784,7 +796,11 @@ impl ToolDispatcher {
     }
 
     fn infer_runtime_from_shebang(path: &Path) -> Option<String> {
-        let first_line = fs::read_to_string(path).ok()?.lines().next()?.to_ascii_lowercase();
+        let first_line = fs::read_to_string(path)
+            .ok()?
+            .lines()
+            .next()?
+            .to_ascii_lowercase();
         if !first_line.starts_with("#!") {
             return None;
         }
@@ -848,7 +864,10 @@ where
     let mut buffer = [0u8; 8192];
 
     loop {
-        let read = reader.read(&mut buffer).await.map_err(|error| error.to_string())?;
+        let read = reader
+            .read(&mut buffer)
+            .await
+            .map_err(|error| error.to_string())?;
         if read == 0 {
             break;
         }
@@ -1013,7 +1032,10 @@ mod tests {
             audit: ToolAuditMetadata::default(),
         });
 
-        let error = dispatcher.execute("missing", &json!({}), None).await.unwrap_err();
+        let error = dispatcher
+            .execute("missing", &json!({}), None)
+            .await
+            .unwrap_err();
         assert!(error.contains("binary check failed"));
     }
 
@@ -1044,7 +1066,10 @@ mod tests {
             audit: ToolAuditMetadata::default(),
         });
 
-        let error = dispatcher.execute("slow", &json!({}), None).await.unwrap_err();
+        let error = dispatcher
+            .execute("slow", &json!({}), None)
+            .await
+            .unwrap_err();
         assert!(error.contains("timed out"));
         assert!(marker.exists());
     }
@@ -1098,6 +1123,9 @@ mod tests {
             .execute_in_dir("pwd", &json!({}), None, Some(runtime.data_dir.as_path()))
             .await
             .unwrap();
-        assert_eq!(result["cwd"], runtime.data_dir.to_string_lossy().to_string());
+        assert_eq!(
+            result["cwd"],
+            runtime.data_dir.to_string_lossy().to_string()
+        );
     }
 }

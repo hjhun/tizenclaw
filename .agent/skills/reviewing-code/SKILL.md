@@ -58,7 +58,7 @@ originally.
   - Tizen examples: `sdb shell journalctl -u tizenclaw`,
     `dlogutil -v threadtime TIZENCLAW`, or
     `/opt/usr/share/tizenclaw/logs/tizenclaw.log`
-  Paste the empirical proof directly into the `.dev_note` report showing
+  Paste the empirical proof directly into the `.dev` report showing
   the agent executing the desired state transition accurately. "Pass"
   without concrete logs is prohibited.
 
@@ -70,8 +70,8 @@ originally.
 
 Before yielding to the Supervisor for validation, confirm:
 1. All checklist items above are marked `[x]`
-2. Stage status is recorded directly in `.dev_note/DASHBOARD.md`
-3. `.dev_note/DASHBOARD.md` is updated with Test & Review stage status
+2. Stage status is recorded directly in `.dev/DASHBOARD.md`
+3. `.dev/DASHBOARD.md` is updated with Test & Review stage status
 4. Runtime logs from the selected environment were captured and embedded
    as evidence
 5. A PASS/FAIL verdict was issued with concrete log proofs (not just

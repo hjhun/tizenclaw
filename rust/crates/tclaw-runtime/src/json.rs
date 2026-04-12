@@ -48,8 +48,8 @@ mod tests {
 
     #[test]
     fn json_envelope_parses_boundary_payloads() {
-        let envelope = JsonEnvelope::parse(r#"{"kind":"prompt","payload":{"id":1}}"#)
-            .expect("parse envelope");
+        let envelope =
+            JsonEnvelope::parse(r#"{"kind":"prompt","payload":{"id":1}}"#).expect("parse envelope");
 
         assert_eq!(envelope.kind, "prompt");
         assert_eq!(envelope.payload["id"], 1);

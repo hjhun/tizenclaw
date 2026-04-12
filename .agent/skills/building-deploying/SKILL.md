@@ -74,8 +74,8 @@ the Tizen/emulator/device path.
 
 Before yielding to the Supervisor for validation, confirm:
 1. All checklist items above are marked `[x]`
-2. Stage status is recorded directly in `.dev_note/DASHBOARD.md`
-3. `.dev_note/DASHBOARD.md` is updated with Build & Deploy stage status
+2. Stage status is recorded directly in `.dev/DASHBOARD.md`
+3. `.dev/DASHBOARD.md` is updated with Build & Deploy stage status
 4. `./deploy_host.sh` was used by default, or `./deploy.sh` was used only
    because the user explicitly requested the Tizen path
 5. No direct local `cargo build` was used

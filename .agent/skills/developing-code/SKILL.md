@@ -65,8 +65,8 @@ Development Progress (TDD Cycle):
 
 Before yielding to the Supervisor for validation, confirm:
 1. All checklist items above are marked `[x]`
-2. Stage status is recorded directly in `.dev_note/DASHBOARD.md`
-3. `.dev_note/DASHBOARD.md` is updated with Development stage status
+2. Stage status is recorded directly in `.dev/DASHBOARD.md`
+3. `.dev/DASHBOARD.md` is updated with Development stage status
 4. No direct local `cargo` / `cmake` command was executed during this
    stage
 5. `./deploy_host.sh` was used by default, or `./deploy.sh` was used only
