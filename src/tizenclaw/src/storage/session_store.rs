@@ -182,8 +182,18 @@ fn utf8_prefix(text: &str, max_chars: usize) -> String {
     text.chars().take(max_chars).collect()
 }
 
+fn utf8_suffix(text: &str, max_chars: usize) -> String {
+    let total = text.chars().count();
+    if total <= max_chars {
+        return text.to_string();
+    }
+    text.chars().skip(total.saturating_sub(max_chars)).collect()
+}
+
 fn summarize_large_argument_fields(value: &Value) -> Value {
-    const MAX_INLINE_ARG_CHARS: usize = 400;
+    const MAX_INLINE_ARG_CHARS: usize = 1600;
+    const MAX_INLINE_ARG_HEAD_CHARS: usize = 1000;
+    const MAX_INLINE_ARG_TAIL_CHARS: usize = 400;
 
     match value {
         Value::Object(map) => {
@@ -195,7 +205,8 @@ fn summarize_large_argument_fields(value: &Value) -> Value {
                             && text.chars().count() > MAX_INLINE_ARG_CHARS =>
                     {
                         json!({
-                            "preview": utf8_prefix(text, MAX_INLINE_ARG_CHARS),
+                            "preview": utf8_prefix(text, MAX_INLINE_ARG_HEAD_CHARS),
+                            "tail_preview": utf8_suffix(text, MAX_INLINE_ARG_TAIL_CHARS),
                             "char_count": text.chars().count(),
                             "truncated": true
                         })
@@ -1733,7 +1744,7 @@ mod tests {
                 "tool_call_id": "call_big",
                 "arguments": {
                     "path": "daily_briefing.md",
-                    "content": "A".repeat(1200)
+                    "content": "A".repeat(2200)
                 }
             })],
         );
@@ -1749,12 +1760,56 @@ mod tests {
 
         assert_eq!(content[0]["arguments"]["path"], json!("daily_briefing.md"));
         assert_eq!(content[0]["arguments"]["content"]["truncated"], json!(true));
-        assert_eq!(content[0]["arguments"]["content"]["char_count"], json!(1200));
+        assert_eq!(content[0]["arguments"]["content"]["char_count"], json!(2200));
         assert!(content[0]["arguments"]["content"]["preview"]
             .as_str()
             .unwrap()
-            .len()
-            < 1200);
+            .chars()
+            .count() < 2200);
+        assert_eq!(
+            content[0]["arguments"]["content"]["tail_preview"],
+            json!("A".repeat(400))
+        );
+    }
+
+    #[test]
+    fn test_structured_transcript_keeps_head_and_tail_for_large_mixed_content() {
+        let tmp = tempdir().unwrap();
+        let store = make_store(tmp.path());
+        let large = format!("{}MIDDLE{}", "A".repeat(1200), "Z".repeat(500));
+
+        store.add_structured_tool_call_message(
+            "bench_s4",
+            vec![json!({
+                "type": "toolCall",
+                "name": "file_write",
+                "actual_tool_name": "file_write",
+                "tool_call_id": "call_mixed",
+                "arguments": {
+                    "path": "alpha_summary.md",
+                    "content": large
+                }
+            })],
+        );
+
+        let transcript = tmp
+            .path()
+            .join("sessions")
+            .join("bench_s4")
+            .join("transcript.jsonl");
+        let transcript_text = std::fs::read_to_string(transcript).unwrap();
+        let event: Value = serde_json::from_str(transcript_text.lines().next().unwrap()).unwrap();
+        let payload = &event["message"]["content"][0]["arguments"]["content"];
+
+        assert_eq!(payload["truncated"], json!(true));
+        assert!(payload["preview"]
+            .as_str()
+            .unwrap()
+            .starts_with(&"A".repeat(200)));
+        assert!(payload["tail_preview"]
+            .as_str()
+            .unwrap()
+            .ends_with(&"Z".repeat(200)));
     }
 
     #[test]

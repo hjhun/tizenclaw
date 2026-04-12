@@ -26,6 +26,7 @@ static RPC_REQUEST_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 const DEFAULT_SOCKET_NAME: &str = "tizenclaw.sock";
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
+const DEFAULT_PROMPT_TIMEOUT_MS: u64 = 180_000;
 const MAX_IPC_MESSAGE_SIZE: usize = 10 * 1024 * 1024;
 const CONNECTION_ERROR_MESSAGE: &str = "Cannot connect to tizenclaw daemon. Is it running?";
 const STREAM_CHUNK_METHOD: &str = "stream_chunk";
@@ -240,10 +241,11 @@ impl IpcClient {
         prompt: &str,
         stream: bool,
     ) -> Result<PromptCall, String> {
+        let prompt_client = self.with_timeout_floor(Duration::from_millis(DEFAULT_PROMPT_TIMEOUT_MS));
         if stream {
-            self.process_prompt_stream(session_id, prompt)
+            prompt_client.process_prompt_stream(session_id, prompt)
         } else {
-            let payload = self.call_raw_with_fallback(
+            let payload = prompt_client.call_raw_with_fallback(
                 "process_prompt",
                 json!({
                     "prompt": prompt,
@@ -263,6 +265,20 @@ impl IpcClient {
                 text,
                 stream_received: false,
             })
+        }
+    }
+
+    fn with_timeout_floor(&self, minimum_timeout: Duration) -> Self {
+        let timeout = if self.timeout < minimum_timeout {
+            minimum_timeout
+        } else {
+            self.timeout
+        };
+
+        Self {
+            socket_path: self.socket_path.clone(),
+            socket_name: self.socket_name.clone(),
+            timeout,
         }
     }
 
@@ -2602,9 +2618,11 @@ mod tests {
     use super::{
         codex_auth_string, codex_oauth_snapshot, dashboard_port_from_doc, extract_ndjson_deltas,
         merge_missing, parse_chat_ids, parse_cli, parse_codex_login_state, reload_message,
-        should_retry_reload_error, try_reload_llm_backends_with, CommandMode,
+        should_retry_reload_error, try_reload_llm_backends_with, CliOptions, CommandMode,
+        IpcClient, DEFAULT_PROMPT_TIMEOUT_MS, DEFAULT_TIMEOUT_MS,
     };
     use serde_json::json;
+    use std::time::Duration;
 
     #[test]
     fn parse_chat_ids_accepts_comma_separated_ids() {
@@ -2846,6 +2864,33 @@ mod tests {
         let parsed = parse_cli(&["--timeout".to_string(), "2500".to_string()]).unwrap();
         assert_eq!(parsed.options.timeout_ms, 2500);
         assert!(matches!(parsed.mode, CommandMode::Interactive));
+    }
+
+    #[test]
+    fn process_prompt_uses_longer_timeout_floor() {
+        let options = CliOptions::default();
+        let client = IpcClient::from_options(&options);
+        let prompt_client =
+            client.with_timeout_floor(Duration::from_millis(DEFAULT_PROMPT_TIMEOUT_MS));
+
+        assert_eq!(client.timeout, Duration::from_millis(DEFAULT_TIMEOUT_MS));
+        assert_eq!(
+            prompt_client.timeout,
+            Duration::from_millis(DEFAULT_PROMPT_TIMEOUT_MS)
+        );
+    }
+
+    #[test]
+    fn process_prompt_preserves_explicitly_longer_timeout() {
+        let options = CliOptions {
+            timeout_ms: 240_000,
+            ..CliOptions::default()
+        };
+        let client = IpcClient::from_options(&options);
+        let prompt_client =
+            client.with_timeout_floor(Duration::from_millis(DEFAULT_PROMPT_TIMEOUT_MS));
+
+        assert_eq!(prompt_client.timeout, Duration::from_millis(240_000));
     }
 
     #[test]

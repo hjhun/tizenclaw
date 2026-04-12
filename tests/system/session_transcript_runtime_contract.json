@@ -1,0 +1,48 @@
+{
+  "name": "session-transcript-runtime-contract",
+  "steps": [
+    {
+      "name": "prompt-creates-session-transcript",
+      "method": "process_prompt",
+      "params": {
+        "session_id": "${unique_session_id:session-transcript}",
+        "prompt": "Write a short note to note.txt saying transcript runtime contract verified, then confirm briefly."
+      },
+      "assertions": [
+        {
+          "path": "session_id",
+          "exists": true
+        },
+        {
+          "path": "text",
+          "exists": true
+        }
+      ]
+    },
+    {
+      "name": "session-runtime-reports-transcript-artifacts",
+      "method": "get_session_runtime",
+      "params": {
+        "session_id": "${unique_session_id:session-transcript}"
+      },
+      "assertions": [
+        {
+          "path": "status",
+          "equals": "ok"
+        },
+        {
+          "path": "session.transcript_exists",
+          "equals": true
+        },
+        {
+          "path": "session.transcript_path",
+          "contains": "transcript.jsonl"
+        },
+        {
+          "path": "session.resume_ready",
+          "equals": true
+        }
+      ]
+    }
+  ]
+}

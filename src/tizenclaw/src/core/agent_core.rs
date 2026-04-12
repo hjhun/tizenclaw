@@ -1249,10 +1249,12 @@ fn expected_file_management_targets(prompt: &str) -> Vec<Vec<String>> {
     let intent_prompt = normalize_prompt_intent_text(prompt);
     let mut groups = extract_relative_file_paths(intent_prompt)
         .into_iter()
+        .filter(|path| path_is_likely_output_target(intent_prompt, path))
         .map(|path| vec![path])
         .collect::<Vec<_>>();
 
     if prompt_mentions_readme(intent_prompt)
+        && prompt_requests_file_output(intent_prompt)
         && !groups.iter().any(|group| {
             group.iter().any(|path| {
                 path.eq_ignore_ascii_case("README") || path.eq_ignore_ascii_case("README.md")
@@ -1263,6 +1265,7 @@ fn expected_file_management_targets(prompt: &str) -> Vec<Vec<String>> {
     }
 
     if prompt_mentions_gitignore(intent_prompt)
+        && prompt_requests_file_output(intent_prompt)
         && !groups.iter().any(|group| {
             group.iter()
                 .any(|path| path.eq_ignore_ascii_case(".gitignore"))
@@ -1272,6 +1275,50 @@ fn expected_file_management_targets(prompt: &str) -> Vec<Vec<String>> {
     }
 
     groups
+}
+
+fn prompt_requests_file_output(prompt: &str) -> bool {
+    let prompt_lower = normalize_prompt_intent_text(prompt).to_ascii_lowercase();
+    [
+        "create",
+        "write",
+        "save",
+        "generate",
+        "draft",
+        "document",
+        "update",
+        "append",
+        "export",
+    ]
+    .iter()
+    .any(|needle| prompt_lower.contains(needle))
+}
+
+fn path_is_likely_output_target(prompt: &str, path: &str) -> bool {
+    let prompt_lower = normalize_prompt_intent_text(prompt).to_ascii_lowercase();
+    let path_lower = path.to_ascii_lowercase();
+    let Some(path_index) = prompt_lower.find(&path_lower) else {
+        return false;
+    };
+
+    let context_start = path_index.saturating_sub(120);
+    let context = &prompt_lower[context_start..path_index];
+
+    [
+        "create",
+        "write",
+        "save",
+        "saved to",
+        "save it to",
+        "generate",
+        "draft",
+        "document",
+        "update",
+        "append",
+        "export",
+    ]
+    .iter()
+    .any(|needle| context.contains(needle))
 }
 
 fn prompt_mentions_history_or_memory(prompt: &str) -> bool {
@@ -5768,6 +5815,8 @@ impl AgentCore {
         // Extract intent keywords for optimal tool injection
         let intent_keywords = Self::extract_intent_keywords(prompt);
 
+        let literal_json_output = prompt_requires_literal_json_output(prompt);
+
         let registrations = self.list_registered_paths();
         let skill_capabilities =
             skill_capability_manager::load_snapshot(&self.platform.paths, &registrations);
@@ -5820,10 +5869,16 @@ impl AgentCore {
         {
             loop_state.max_tool_rounds = max_iterations;
         }
-        let skill_reference_docs =
-            crate::core::skill_support::list_skill_reference_docs(&self.platform.paths.docs_dir);
-        let prefetched_skills =
-            select_relevant_skills(prompt, &textual_skills, MAX_PREFETCHED_SKILLS);
+        let skill_reference_docs = if literal_json_output {
+            Vec::new()
+        } else {
+            crate::core::skill_support::list_skill_reference_docs(&self.platform.paths.docs_dir)
+        };
+        let prefetched_skills = if literal_json_output {
+            Vec::new()
+        } else {
+            select_relevant_skills(prompt, &textual_skills, MAX_PREFETCHED_SKILLS)
+        };
         for skill in &prefetched_skills {
             log::info!(
                 "[SkillAudit] skill='{}' shell_prelude={} code_fence_languages={:?} prelude_excerpt='{}'",
@@ -5941,7 +5996,13 @@ impl AgentCore {
         }
 
         // Build System Prompt
-        let (system_prompt, dynamic_context) = {
+        let (system_prompt, dynamic_context) = if literal_json_output {
+            (
+                "You are TizenClaw. Follow the user's formatting contract exactly. Return only the requested JSON object with no commentary, no markdown, and no tool calls when the prompt forbids tools."
+                    .to_string(),
+                None,
+            )
+        } else {
             let prompt_doc = llm_config_store::load(&self.platform.paths.config_dir)
                 .unwrap_or_else(|_| llm_config_store::default_document());
             let mut builder = crate::core::prompt_builder::SystemPromptBuilder::new()
@@ -5978,19 +6039,17 @@ impl AgentCore {
                 let bn = self.backend_name.read().unwrap_or_else(|e| e.into_inner());
                 (*bn).clone()
             };
+            let prompt_mode = session_profile
+                .as_ref()
+                .and_then(|profile| profile.prompt_mode)
+                .unwrap_or_else(|| prompt_mode_from_doc(&prompt_doc, &model_name));
+            let reasoning_policy = session_profile
+                .as_ref()
+                .and_then(|profile| profile.reasoning_policy)
+                .unwrap_or_else(|| reasoning_policy_from_doc(&prompt_doc, &model_name));
             builder = builder
-                .set_prompt_mode(
-                    session_profile
-                        .as_ref()
-                        .and_then(|profile| profile.prompt_mode)
-                        .unwrap_or_else(|| prompt_mode_from_doc(&prompt_doc, &model_name)),
-                )
-                .set_reasoning_policy(
-                    session_profile
-                        .as_ref()
-                        .and_then(|profile| profile.reasoning_policy)
-                        .unwrap_or_else(|| reasoning_policy_from_doc(&prompt_doc, &model_name)),
-                );
+                .set_prompt_mode(prompt_mode)
+                .set_reasoning_policy(reasoning_policy);
             let platform_name = self.platform.platform_name().to_string();
             let data_dir = session_workdir.to_string_lossy().to_string();
             let now = std::time::SystemTime::now()
@@ -6024,15 +6083,25 @@ impl AgentCore {
                 ),
             );
         }
-        inject_context_message(
-            &mut messages,
-            format!(
-                "## Working Directory\nUse '{}' as the primary working directory for file reads, file writes, generated scripts, and task artifacts unless the user explicitly gives a different absolute path.",
-                session_workdir.to_string_lossy()
-            ),
-        );
-        let explicit_prompt_paths = extract_explicit_file_paths(prompt);
-        let explicit_output_dirs = extract_explicit_directory_paths(prompt);
+        if !literal_json_output {
+            inject_context_message(
+                &mut messages,
+                format!(
+                    "## Working Directory\nUse '{}' as the primary working directory for file reads, file writes, generated scripts, and task artifacts unless the user explicitly gives a different absolute path.",
+                    session_workdir.to_string_lossy()
+                ),
+            );
+        }
+        let explicit_prompt_paths = if literal_json_output {
+            Vec::new()
+        } else {
+            extract_explicit_file_paths(prompt)
+        };
+        let explicit_output_dirs = if literal_json_output {
+            Vec::new()
+        } else {
+            extract_explicit_directory_paths(prompt)
+        };
         if !explicit_prompt_paths.is_empty() {
             for prefetched_message in build_prefetched_prompt_file_messages(&explicit_prompt_paths)
             {
@@ -6114,7 +6183,7 @@ impl AgentCore {
 
         // Load long term memory dynamically and inject into messages (preserves system_prompt cache)
         let mut memory_context_for_log: Option<String> = None;
-        if should_skip_memory_for_prompt(prompt) {
+        if literal_json_output || should_skip_memory_for_prompt(prompt) {
             loop_state.record_prefetch_memory(None);
         } else if let Ok(ms) = self.memory_store.lock() {
             if let Some(store) = ms.as_ref() {
@@ -6216,7 +6285,7 @@ impl AgentCore {
         } else {
             // Optional LLM Cognitive Step for Complex Prompts
             if crate::core::intent_analyzer::IntentAnalyzer::is_complex_task(prompt)
-                && !prompt_requires_literal_json_output(prompt)
+                && !literal_json_output
             {
                 log::debug!(
                     "[AgentLoop] Complex prompt detected. Triggering explicit Plan-and-Solve..."
@@ -6391,7 +6460,7 @@ impl AgentCore {
                         &tools,
                         on_chunk,
                         &system_prompt,
-                        None,
+                        if literal_json_output { Some(1024) } else { None },
                     )
                     .await;
             }
@@ -10052,6 +10121,23 @@ startxref
     }
 
     #[test]
+    fn expected_file_management_targets_ignore_input_filenames_when_output_is_explicit() {
+        let targets = expected_file_management_targets(
+            "The emails have been provided to you in the inbox/ folder in your workspace (files named `email_01.txt` through `email_13.txt`). Read all 13 emails and create a triage report saved to `triage_report.md`.",
+        );
+
+        assert!(targets
+            .iter()
+            .any(|group| group.iter().any(|path| path == "triage_report.md")));
+        assert!(!targets
+            .iter()
+            .any(|group| group.iter().any(|path| path == "email_01.txt")));
+        assert!(!targets
+            .iter()
+            .any(|group| group.iter().any(|path| path == "email_13.txt")));
+    }
+
+    #[test]
     fn missing_file_management_targets_reports_uncreated_relative_files() {
         let dir = tempdir().unwrap();
         let messages = vec![LlmMessage::tool_result(
@@ -10078,9 +10164,7 @@ startxref
 
         let targets = expected_file_management_targets(wrapped);
 
-        assert!(targets.iter().any(|group| group
-            .iter()
-            .any(|path| path == "data/sample/llm_config.json.sample")));
+        assert!(targets.is_empty());
         assert!(!targets
             .iter()
             .any(|group| group.iter().any(|path| path == "gpt-5.4")));
