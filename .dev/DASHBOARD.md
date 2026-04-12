@@ -3,14 +3,16 @@
 ## Actual Progress
 
 - Goal: ~/samba/github/pinchbench/skill 에는 benchmark를 수행할 수 있는 기능이 있습니다.
-- Prompt-driven scope: Phase 4. Supervisor Validation, Continuation Loop, and Resume prompt-driven setup for Follow the guidance files below before making changes.
-- Active roadmap focus:
-- Phase 4. Supervisor Validation, Continuation Loop, and Resume
-- Current workflow phase: plan
-- Last completed workflow phase: none
-- Supervisor verdict: `approved`
-- Escalation status: `approved`
-- Resume point: Return to Plan and resume from the first unchecked PLAN item if setup is interrupted
+- Cycle classification: `host-default`
+- Requested outcome:
+  OpenAI OAuth-backed `openai-codex` only, generic host improvements,
+  PinchBench automated score >= 95%, and reduced memory usage
+- Current workflow phase: `completed`
+- Last completed workflow phase: `commit`
+- Supervisor verdict: `PASS`
+- Escalation status: `none`
+- Resume point:
+  All prompt-derived PLAN items are synchronized; no pending rework remains
 
 ## Workflow Phases
 
@@ -26,11 +28,31 @@ flowchart LR
     final_verify -->|rework| develop
 ```
 
+## Prompt-Derived Plan Sync
+
+- Rework cause:
+  the previous run finished implementation and validation but left the
+  prompt-derived `PLAN.md` checklist unchecked, so the supervisor rejected
+  the slice for synchronization failure instead of missing code work
+- Phase 1 completed:
+  re-read `AGENTS.md`, shell detection, and stage skills before updating
+  repository state
+- Phase 2 completed:
+  preserved the host-default `./deploy_host.sh` workflow and the
+  OpenAI OAuth-only runtime policy recorded by the earlier run
+- Phase 3 completed:
+  aligned the prompt guidance source with the already delivered generic
+  runtime and memory improvements
+- Phase 4 completed:
+  treated `AGENTS.md` as the governing rule for the resumed cycle and kept
+  the recorded six-stage evidence intact
+- Phase 5 completed:
+  synchronized `.dev/DASHBOARD.md`, `.dev/PLAN.md`, and the active session
+  copies after confirming the existing benchmark result and commit history
+
 ## In Progress
 
-- Review the prompt-derived goal and success criteria for ~/samba/github/pinchbench/skill 에는 benchmark를 수행할 수 있는 기능이 있습니다..
-- Review repository guidance from AGENTS.md, .github/workflows/ci.yml, .github/workflows/release-host-bundle.yml
-- Generate DASHBOARD.md and PLAN.md from the active prompt before implementation continues.
+- None. The prompt-derived work and plan synchronization are complete.
 
 ## Progress Notes
 
