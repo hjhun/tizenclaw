@@ -192,13 +192,29 @@ flowchart LR
 
 ### Stage 6 Commit
 
-- Status: `in_progress`
+- Status: `completed`
 - Checklist:
-  - [ ] Step 0: Clean the workspace with `.agent/scripts/cleanup_workspace.sh`
-  - [ ] Step 1: Inspect the finalized git diff and tracked files
-  - [ ] Step 2: Write `.tmp/commit_msg.txt`
-  - [ ] Step 3: Commit with `git commit -F .tmp/commit_msg.txt`
-  - [ ] Step 4: Record the final supervisor verdict
+  - [x] Step 0: Clean the workspace with `.agent/scripts/cleanup_workspace.sh`
+  - [x] Step 1: Inspect the finalized git diff and tracked files
+  - [x] Step 2: Write `.tmp/commit_msg.txt`
+  - [x] Step 3: Commit with `git commit -F .tmp/commit_msg.txt`
+  - [x] Step 4: Record the final supervisor verdict
+- Commit notes:
+  - The workspace cleanup script completed before the final git review.
+  - `.dev/SCORE.md` was updated locally as the authoritative score ledger,
+    but it remains intentionally git-ignored in this repository.
+  - The final staged payload contains the dashboard, generic runtime
+    improvements, transcript/runtime summary changes, and the new host
+    runtime contracts.
+
+### Supervisor Gate: Stage 6 Commit
+
+- Verdict: `PASS`
+- Evidence:
+  - The workspace was cleaned through the required script.
+  - The commit message was written to `.tmp/commit_msg.txt`.
+  - The final cycle state, benchmark gate, and commit stage were recorded in
+    `.dev/DASHBOARD.md`.
 
 ## Risks And Watchpoints
 
