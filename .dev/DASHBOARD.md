@@ -7,12 +7,14 @@
 - Requested outcome:
   OpenAI OAuth-backed `openai-codex` only, generic host improvements,
   PinchBench automated score >= 95%, and reduced memory usage
-- Current workflow phase: `completed`
+- Current workflow phase: `develop`
 - Last completed workflow phase: `commit`
-- Supervisor verdict: `PASS`
-- Escalation status: `none`
+- Supervisor verdict: `rework_required`
+- Escalation status: `rework_required`
 - Resume point:
-  All prompt-derived PLAN items are synchronized; no pending rework remains
+  Latest supervisor report reviewed; saved benchmark evidence and commit
+  history remain valid, and the session is synchronized for a develop
+  retry before final verification reruns
 
 ## Workflow Phases
 
@@ -31,9 +33,10 @@ flowchart LR
 ## Prompt-Derived Plan Sync
 
 - Rework cause:
-  the previous run finished implementation and validation but left the
-  prompt-derived `PLAN.md` checklist unchecked, so the supervisor rejected
-  the slice for synchronization failure instead of missing code work
+  the latest supervisor report flagged a resume run that stopped after
+  state sync, so the saved implementation evidence had to be restated in
+  `PLAN.md` and `.dev/DASHBOARD.md` without introducing new blocking
+  questions
 - Phase 1 completed:
   re-read `AGENTS.md`, shell detection, and stage skills before updating
   repository state
@@ -49,10 +52,17 @@ flowchart LR
 - Phase 5 completed:
   synchronized `.dev/DASHBOARD.md`, `.dev/PLAN.md`, and the active session
   copies after confirming the existing benchmark result and commit history
+- Phase 6 completed:
+  reviewed
+  `.dev/sessions/dormammu-20260412-124556-0900/supervisor_report.md`,
+  confirmed that `7c73eb5f` and the OpenAI OAuth-only `95.9%` benchmark
+  result still describe the active repository state, and added the
+  supervisor-resume task to `PLAN.md` before marking it complete
 
 ## In Progress
 
-- None. The prompt-derived work and plan synchronization are complete.
+- Final verification should rerun from the saved host benchmark evidence
+  instead of asking new environment-setup questions.
 
 ## Progress Notes
 
