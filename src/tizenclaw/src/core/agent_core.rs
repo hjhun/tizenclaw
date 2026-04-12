@@ -173,7 +173,7 @@ fn requested_word_budget_bounds(prompt: &str) -> Option<(usize, usize)> {
     }
 
     if prompt_requests_longform_markdown_writing(prompt) {
-        let tolerance = (target_words / 6).clamp(40, 85);
+        let tolerance = (target_words / 10).clamp(35, 50);
         Some((
             target_words.saturating_sub(tolerance),
             target_words.saturating_add(tolerance),
@@ -363,8 +363,20 @@ fn split_match_patterns(pattern: &str) -> Vec<String> {
     deduped
 }
 
+fn paragraph_preview(text: &str, max_paragraphs: usize, max_chars_per_paragraph: usize) -> String {
+    text.split("\n\n")
+        .map(str::trim)
+        .filter(|paragraph| !paragraph.is_empty())
+        .take(max_paragraphs)
+        .map(|paragraph| utf8_safe_preview(paragraph, max_chars_per_paragraph).to_string())
+        .collect::<Vec<_>>()
+        .join(" | ")
+}
+
 fn build_text_read_payload(content: &str, pattern: Option<&str>, max_chars: usize) -> Value {
     let total_chars = content.chars().count();
+    let paragraph_count = paragraph_count(content);
+    let preview = paragraph_preview(content, 3, 72);
     let pattern = pattern.map(str::trim).filter(|value| !value.is_empty());
     let snippets = pattern.map(|value| {
         let mut collected = Vec::new();
@@ -401,6 +413,8 @@ fn build_text_read_payload(content: &str, pattern: Option<&str>, max_chars: usiz
     let (truncated_content, truncated) = truncate_text_with_head_tail(&combined, max_chars);
 
     json!({
+        "paragraph_count": paragraph_count,
+        "paragraph_preview": preview,
         "content": truncated_content,
         "truncated": truncated || total_chars > max_chars,
         "total_chars": total_chars,
@@ -1673,6 +1687,13 @@ fn prompt_requests_date_field(prompt: &str) -> bool {
         .any(|needle| prompt_lower.contains(needle))
 }
 
+fn prompt_requests_location_field(prompt: &str) -> bool {
+    let prompt_lower = normalize_prompt_intent_text(prompt).to_ascii_lowercase();
+    ["location", "locations", "where", "city", "country"]
+        .iter()
+        .any(|needle| prompt_lower.contains(needle))
+}
+
 fn requested_research_entry_count(prompt: &str) -> Option<usize> {
     let prompt_normalized = normalize_prompt_intent_text(prompt);
     let patterns = [
@@ -1771,6 +1792,45 @@ fn tokenize_significant_research_text(text: &str) -> HashSet<String> {
         .collect()
 }
 
+fn tokenize_research_branding_text(text: &str) -> HashSet<String> {
+    let stopwords = [
+        "and",
+        "conference",
+        "conferences",
+        "congress",
+        "event",
+        "events",
+        "for",
+        "in",
+        "location",
+        "name",
+        "website",
+        "year",
+    ];
+    let stopwords: HashSet<&str> = stopwords.into_iter().collect();
+
+    let Ok(token_re) = regex::Regex::new(r"[A-Za-z0-9][A-Za-z0-9:+-]*") else {
+        return HashSet::new();
+    };
+
+    token_re
+        .find_iter(text)
+        .filter_map(|matched| {
+            let token = matched
+                .as_str()
+                .trim_matches(|ch: char| !ch.is_ascii_alphanumeric())
+                .to_ascii_lowercase();
+            if token.len() < 3 || token.chars().all(|ch| ch.is_ascii_digit()) {
+                return None;
+            }
+            if stopwords.contains(token.as_str()) {
+                return None;
+            }
+            Some(token)
+        })
+        .collect()
+}
+
 fn extract_url_identity_text(url: &str) -> Option<String> {
     let Some(parsed) = reqwest::Url::parse(url).ok() else {
         return None;
@@ -1785,7 +1845,437 @@ fn extract_url_identity_text(url: &str) -> Option<String> {
     Some(combined)
 }
 
-fn output_contains_suspicious_research_host_mismatch(content: &str) -> bool {
+fn url_host_looks_like_event_aggregator(url: &str) -> bool {
+    let raw = url.trim_end_matches(|ch: char| ",.;|".contains(ch));
+    let Some(host) = reqwest::Url::parse(raw)
+        .ok()
+        .and_then(|parsed| parsed.host_str().map(|value| value.to_ascii_lowercase()))
+    else {
+        return false;
+    };
+
+    [
+        "ventureport",
+        "expolume",
+        "m2mconference",
+        "startmybusiness",
+        "showsbee",
+        "tradefest",
+        "eventseye",
+        "eventswow",
+        "bullyevents",
+        "networkalmanac",
+        "submitforge",
+        "executiveaccommodationandservices",
+        "whimsicalexhibits",
+        "guidantech",
+    ]
+    .iter()
+    .any(|needle| host.contains(needle))
+}
+
+fn prompt_requests_current_year_scope(prompt: &str) -> bool {
+    let prompt_lower = normalize_prompt_intent_text(prompt).to_ascii_lowercase();
+    if prompt_lower.contains("this year") || prompt_lower.contains("current year") {
+        return true;
+    }
+
+    if prompt_requests_conference_roundup(prompt) {
+        let Ok(year_re) = regex::Regex::new(r"\b20\d{2}\b") else {
+            return true;
+        };
+        return !year_re.is_match(&prompt_lower);
+    }
+
+    false
+}
+
+fn prompt_requests_conference_roundup(prompt: &str) -> bool {
+    if !prompt_requests_current_web_research(prompt) {
+        return false;
+    }
+
+    let prompt_lower = normalize_prompt_intent_text(prompt).to_ascii_lowercase();
+    ["conference", "conferences", "summit", "congress", "expo", "forum"]
+        .iter()
+        .any(|needle| prompt_lower.contains(needle))
+}
+
+fn current_utc_year() -> Option<u32> {
+    format_unix_timestamp_utc(unix_timestamp_secs())
+        .get(0..4)
+        .and_then(|value| value.parse::<u32>().ok())
+}
+
+fn conference_entry_looks_low_authority(name: &str) -> bool {
+    let normalized = normalize_prompt_intent_text(name).to_ascii_lowercase();
+    if normalized.is_empty() {
+        return false;
+    }
+
+    let weak_keywords = [
+        "bootcamp",
+        "course",
+        "hackathon",
+        "hack day",
+        "hack night",
+        "masterclass",
+        "meetup",
+        "roadshow",
+        "tour",
+        "training",
+        "user group",
+        "webinar",
+        "workshop",
+    ];
+    if weak_keywords
+        .iter()
+        .any(|needle| normalized.contains(needle))
+    {
+        return true;
+    }
+
+    regex::Regex::new(r"(?i)\bx\s+[A-Z]{2,4}\b")
+        .map(|re| re.is_match(name))
+        .unwrap_or(false)
+}
+
+fn text_contains_specific_location(text: &str) -> bool {
+    regex::Regex::new(
+        r"(?x)
+        \b
+        [A-Z][A-Za-z.]+
+        (?:\s+[A-Z][A-Za-z.]+){0,3}
+        \s*,\s*
+        [A-Z][A-Za-z.]+
+        (?:\s+[A-Z][A-Za-z.]+){0,3}
+        \b",
+    )
+    .map(|re| re.is_match(text))
+    .unwrap_or(false)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ResearchOutputEntry {
+    name: String,
+    date: String,
+    location: String,
+    url: String,
+}
+
+fn normalize_url_host(url: &str) -> Option<String> {
+    reqwest::Url::parse(url)
+        .ok()
+        .and_then(|parsed| parsed.host_str().map(|value| value.to_ascii_lowercase()))
+        .map(|host| host.trim_start_matches("www.").to_string())
+}
+
+fn content_mentions_virtual_only_location(text: &str) -> bool {
+    let normalized = normalize_prompt_intent_text(text).to_ascii_lowercase();
+    normalized.contains("virtual") || normalized.contains("online")
+}
+
+fn month_token_alias(token: &str) -> Option<&'static str> {
+    match token.to_ascii_lowercase().as_str() {
+        "jan" | "january" => Some("jan"),
+        "feb" | "february" => Some("feb"),
+        "mar" | "march" => Some("mar"),
+        "apr" | "april" => Some("apr"),
+        "may" => Some("may"),
+        "jun" | "june" => Some("jun"),
+        "jul" | "july" => Some("jul"),
+        "aug" | "august" => Some("aug"),
+        "sep" | "sept" | "september" => Some("sep"),
+        "oct" | "october" => Some("oct"),
+        "nov" | "november" => Some("nov"),
+        "dec" | "december" => Some("dec"),
+        _ => None,
+    }
+}
+
+fn collect_date_support_tokens(text: &str) -> std::collections::BTreeSet<String> {
+    let mut tokens = std::collections::BTreeSet::new();
+    let normalized = text
+        .replace('–', " ")
+        .replace('-', " ")
+        .replace(',', " ")
+        .replace('/', " ");
+
+    for raw in normalized.split_whitespace() {
+        if let Some(month) = month_token_alias(raw.trim_matches(|ch: char| !ch.is_ascii_alphanumeric()))
+        {
+            tokens.insert(month.to_string());
+            continue;
+        }
+
+        let cleaned = raw.trim_matches(|ch: char| !ch.is_ascii_digit());
+        if cleaned.is_empty() {
+            continue;
+        }
+        if cleaned.len() == 4 {
+            tokens.insert(cleaned.to_string());
+            continue;
+        }
+        if let Ok(day) = cleaned.parse::<u32>() {
+            if (1..=31).contains(&day) {
+                tokens.insert(day.to_string());
+            }
+        }
+    }
+
+    if tokens.is_empty() {
+        let Ok(iso_re) = regex::Regex::new(r"\b(20\d{2})-(\d{2})-(\d{2})\b") else {
+            return tokens;
+        };
+        for caps in iso_re.captures_iter(text) {
+            if let Some(year) = caps.get(1) {
+                tokens.insert(year.as_str().to_string());
+            }
+            if let Some(month) = caps
+                .get(2)
+                .and_then(|value| value.as_str().parse::<usize>().ok())
+            {
+                if let Some(alias) = [
+                    "", "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep",
+                    "oct", "nov", "dec",
+                ]
+                .get(month)
+                {
+                    if !alias.is_empty() {
+                        tokens.insert((*alias).to_string());
+                    }
+                }
+            }
+            if let Some(day) = caps
+                .get(3)
+                .and_then(|value| value.as_str().parse::<u32>().ok())
+            {
+                tokens.insert(day.to_string());
+            }
+        }
+    }
+
+    tokens
+}
+
+fn evidence_supports_entry_date(date: &str, evidence_text: &str) -> bool {
+    let date_tokens = collect_date_support_tokens(date);
+    if date_tokens.is_empty() {
+        return false;
+    }
+
+    let evidence_tokens = collect_date_support_tokens(evidence_text);
+    !evidence_tokens.is_empty()
+        && date_tokens
+            .iter()
+            .all(|token| evidence_tokens.contains(token))
+}
+
+fn evidence_supports_entry_location(location: &str, evidence_text: &str) -> bool {
+    if text_contains_specific_location(evidence_text) {
+        return true;
+    }
+
+    let location_tokens = tokenize_significant_research_text(location);
+    if location_tokens.is_empty() {
+        return false;
+    }
+
+    let evidence_lower = evidence_text.to_ascii_lowercase();
+    location_tokens
+        .iter()
+        .filter(|token| evidence_lower.contains(token.as_str()))
+        .count()
+        >= 2
+}
+
+fn extract_current_research_output_entries(content: &str) -> Vec<ResearchOutputEntry> {
+    let Ok(url_re) = regex::Regex::new(r#"https?://[^\s)>"]+"#) else {
+        return Vec::new();
+    };
+
+    content
+        .lines()
+        .filter_map(|line| {
+            let url_match = url_re.find(line)?;
+            let url = url_match
+                .as_str()
+                .trim_end_matches(|ch: char| ",.;|".contains(ch))
+                .to_string();
+            if line.trim_start().starts_with("|---") {
+                return None;
+            }
+
+            let columns: Vec<String> = line
+                .split('|')
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .collect();
+            if columns.len() >= 4 {
+                let name = columns.first()?.to_string();
+                if name.eq_ignore_ascii_case("name") {
+                    return None;
+                }
+                return Some(ResearchOutputEntry {
+                    name,
+                    date: columns.get(1).cloned().unwrap_or_default(),
+                    location: columns.get(2).cloned().unwrap_or_default(),
+                    url,
+                });
+            }
+
+            let name = line[..url_match.start()]
+                .replace('|', " ")
+                .trim()
+                .trim_start_matches(|ch: char| ch.is_ascii_digit() || ch == '.' || ch == '-' || ch == '*')
+                .trim()
+                .to_string();
+            if name.is_empty() {
+                return None;
+            }
+            Some(ResearchOutputEntry {
+                name,
+                date: String::new(),
+                location: String::new(),
+                url,
+            })
+        })
+        .collect()
+}
+
+fn tool_evidence_text_for_output_entry(entry: &ResearchOutputEntry, messages: &[LlmMessage]) -> String {
+    let entry_host = normalize_url_host(&entry.url);
+    let entry_tokens = tokenize_significant_research_text(&entry.name);
+    let mut corpus = String::new();
+
+    for message in messages.iter().filter(|message| message.role == "tool") {
+        if message.tool_name == "web_search" {
+            if let Some(results) = message
+                .tool_result
+                .get("result")
+                .and_then(|value| value.get("results"))
+                .and_then(Value::as_array)
+            {
+                for result in results {
+                    let url = result.get("url").and_then(Value::as_str).unwrap_or("");
+                    let title = result.get("title").and_then(Value::as_str).unwrap_or("");
+                    let snippet = result.get("snippet").and_then(Value::as_str).unwrap_or("");
+                    let result_host_matches = entry_host
+                        .as_ref()
+                        .zip(normalize_url_host(url).as_ref())
+                        .map(|(entry_host, result_host)| entry_host == result_host)
+                        .unwrap_or(false);
+                    if result_host_matches {
+                        let evidence_text = format!("{title}\n{snippet}\n{url}");
+                        corpus.push_str(&evidence_text);
+                        corpus.push('\n');
+                    }
+                }
+            }
+            continue;
+        }
+
+        let mut raw = String::new();
+        if !message.text.trim().is_empty() {
+            raw.push_str(&message.text);
+        }
+        if !message.tool_result.is_null() {
+            if !raw.is_empty() {
+                raw.push('\n');
+            }
+            if let Ok(serialized) = serde_json::to_string(&message.tool_result) {
+                raw.push_str(&serialized);
+            }
+        }
+        if raw.is_empty() {
+            continue;
+        }
+
+        let raw_lower = raw.to_ascii_lowercase();
+        let host_matches = entry_host
+            .as_ref()
+            .map(|host| raw_lower.contains(host))
+            .unwrap_or(false);
+        let token_matches = entry_tokens
+            .iter()
+            .filter(|token| raw_lower.contains(token.as_str()))
+            .count();
+        if host_matches || token_matches >= 2 {
+            corpus.push_str(&raw);
+            corpus.push('\n');
+        }
+    }
+
+    corpus
+}
+
+fn output_entries_lack_direct_research_support(
+    prompt: &str,
+    content: &str,
+    messages: &[LlmMessage],
+) -> bool {
+    if !prompt_requests_current_web_research(prompt) {
+        return false;
+    }
+
+    let entries = extract_current_research_output_entries(content);
+    if entries.is_empty() {
+        return false;
+    }
+
+    let date_pattern = regex::Regex::new(
+        r"(?ix)
+        \b
+        (?:
+            (?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|
+             jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|
+             nov(?:ember)?|dec(?:ember)?)
+            \s+\d{1,2}(?:\s*[–-]\s*\d{1,2})?,\s+\d{4}
+            |
+            \d{4}-\d{2}-\d{2}
+        )
+        \b",
+    )
+    .ok();
+
+    entries.into_iter().any(|entry| {
+        if prompt_requests_conference_roundup(prompt)
+            && entry.url.to_ascii_lowercase().contains("/virtual/")
+            && !content_mentions_virtual_only_location(&entry.location)
+        {
+            return true;
+        }
+
+        let evidence_text = tool_evidence_text_for_output_entry(&entry, messages);
+        if evidence_text.trim().is_empty() {
+            return true;
+        }
+
+        if prompt_requests_date_field(prompt)
+            && (!date_pattern
+                .as_ref()
+                .map(|pattern| pattern.is_match(&evidence_text))
+                .unwrap_or(false)
+                || !evidence_supports_entry_date(&entry.date, &evidence_text))
+        {
+            return true;
+        }
+
+        if prompt_requests_location_field(prompt)
+            && !content_mentions_virtual_only_location(&entry.location)
+            && !evidence_supports_entry_location(&entry.location, &evidence_text)
+        {
+            return true;
+        }
+
+        false
+    })
+}
+
+fn output_contains_unsupported_research_branding(
+    content: &str,
+    messages: &[LlmMessage],
+) -> bool {
     let Ok(url_re) = regex::Regex::new(r#"https?://[^\s)>"]+"#) else {
         return false;
     };
@@ -1797,17 +2287,75 @@ fn output_contains_suspicious_research_host_mismatch(content: &str) -> bool {
         let url = url_match
             .as_str()
             .trim_end_matches(|ch: char| ",.;|".contains(ch));
-        let line_prefix = line[..url_match.start()].replace('|', " ");
-        let name_tokens = tokenize_significant_research_text(&line_prefix);
+        let raw_prefix = line[..url_match.start()].replace('|', " ");
+        let entry_name = line
+            .split('|')
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .next()
+            .unwrap_or(raw_prefix.trim());
+        let name_tokens = tokenize_significant_research_text(entry_name);
+        let branding_tokens = tokenize_research_branding_text(entry_name);
         if name_tokens.len() < 2 {
             return false;
         }
         let Some(url_identity) = extract_url_identity_text(url) else {
             return false;
         };
-        !name_tokens
+
+        if name_tokens
             .iter()
             .any(|token| url_identity.contains(token.as_str()))
+        {
+            return false;
+        }
+
+        let entry = ResearchOutputEntry {
+            name: entry_name.trim().to_string(),
+            date: String::new(),
+            location: String::new(),
+            url: url.to_string(),
+        };
+        let evidence_text = tool_evidence_text_for_output_entry(&entry, messages);
+        if evidence_text.trim().is_empty() {
+            return true;
+        }
+
+        let evidence_lower = evidence_text.to_ascii_lowercase();
+        let supported_name_tokens = name_tokens
+            .iter()
+            .filter(|token| evidence_lower.contains(token.as_str()))
+            .count();
+        if supported_name_tokens >= name_tokens.len().min(2) {
+            return false;
+        }
+
+        let supported_branding_tokens = branding_tokens
+            .iter()
+            .filter(|token| evidence_lower.contains(token.as_str()))
+            .count();
+        if !branding_tokens.is_empty()
+            && supported_branding_tokens < branding_tokens.len().min(2)
+        {
+            return true;
+        }
+
+        let branded_acronyms = entry_name
+            .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == ':'))
+            .filter_map(|token| {
+                let trimmed = token.trim_matches(':');
+                if (2..=8).contains(&trimmed.len())
+                    && trimmed.chars().all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit())
+                {
+                    Some(trimmed.to_ascii_lowercase())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        !branded_acronyms
+            .iter()
+            .any(|token| evidence_lower.contains(token.as_str()))
     })
 }
 
@@ -1849,6 +2397,12 @@ fn output_lacks_current_research_details(prompt: &str, content: &str) -> bool {
         if url_count < expected_entries {
             return true;
         }
+        if trimmed
+            .split_whitespace()
+            .any(|token| token.starts_with("http") && url_host_looks_like_event_aggregator(token))
+        {
+            return true;
+        }
         let host_counts = extract_url_host_counts(trimmed);
         if expected_entries >= 4 && host_counts.len() < 3 {
             return true;
@@ -1857,8 +2411,19 @@ fn output_lacks_current_research_details(prompt: &str, content: &str) -> bool {
         if expected_entries >= 5 && dominant_host_count > 2 {
             return true;
         }
-        if output_contains_suspicious_research_host_mismatch(trimmed) {
-            return true;
+        if prompt_requests_conference_roundup(prompt) {
+            let Ok(url_re) = regex::Regex::new(r#"https?://[^\s)>"]+"#) else {
+                return true;
+            };
+            if trimmed.lines().any(|line| {
+                let Some(url_match) = url_re.find(line) else {
+                    return false;
+                };
+                let name = line[..url_match.start()].replace('|', " ");
+                conference_entry_looks_low_authority(name.trim())
+            }) {
+                return true;
+            }
         }
     }
 
@@ -1879,6 +2444,39 @@ fn output_lacks_current_research_details(prompt: &str, content: &str) -> bool {
         .map(|re| re.find_iter(trimmed).count())
         .unwrap_or(0);
         if specific_date_count < expected_entries {
+            return true;
+        }
+        if prompt_requests_current_year_scope(prompt) {
+            let Some(current_year) = current_utc_year() else {
+                return true;
+            };
+            let Ok(year_re) = regex::Regex::new(r"\b(20\d{2})\b") else {
+                return true;
+            };
+            if year_re
+                .captures_iter(trimmed)
+                .filter_map(|caps| caps.get(1).and_then(|m| m.as_str().parse::<u32>().ok()))
+                .any(|year| year != current_year)
+            {
+                return true;
+            }
+        }
+    }
+
+    if prompt_requests_location_field(prompt) {
+        let location_count = regex::Regex::new(
+            r"(?x)
+            \b
+            [A-Z][A-Za-z.]+
+            (?:\s+[A-Z][A-Za-z.]+){0,3}
+            \s*,\s*
+            [A-Z][A-Za-z.]+
+            (?:\s+[A-Z][A-Za-z.]+){0,3}
+            \b",
+        )
+        .map(|re| re.find_iter(trimmed).count())
+        .unwrap_or(0);
+        if location_count < expected_entries {
             return true;
         }
     }
@@ -1948,8 +2546,19 @@ fn output_lacks_markdown_research_structure(prompt: &str, content: &str) -> bool
                     .unwrap_or(false)
         })
         .count();
+    let trailing_process_note = trimmed
+        .lines()
+        .rev()
+        .find(|line| !line.trim().is_empty())
+        .map(|line| line.trim().to_ascii_lowercase())
+        .map(|line| {
+            ["verified against", "downloaded during research", "researched using"]
+                .iter()
+                .any(|needle| line.contains(needle))
+        })
+        .unwrap_or(false);
 
-    !(has_table || (has_heading && list_count >= expected_entries.min(3)))
+    trailing_process_note || !(has_table || (has_heading && list_count >= expected_entries.min(3)))
 }
 
 fn prompt_requests_longform_markdown_writing(prompt: &str) -> bool {
@@ -2053,6 +2662,101 @@ fn tool_results_lack_direct_current_research_evidence(
         .count();
 
     direct_evidence_calls == 0
+        && !search_results_provide_direct_current_research_evidence(prompt, messages)
+}
+
+fn search_results_provide_direct_current_research_evidence(
+    prompt: &str,
+    messages: &[LlmMessage],
+) -> bool {
+    if !prompt_requests_current_web_research(prompt) {
+        return false;
+    }
+
+    let expected_entries = requested_research_entry_count(prompt).unwrap_or(1);
+    if expected_entries < 4 {
+        return false;
+    }
+
+    let date_pattern = regex::Regex::new(
+        r"(?ix)
+        \b
+        (?:
+            (?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|
+             jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|
+             nov(?:ember)?|dec(?:ember)?)
+            \s+\d{1,2}(?:\s*[–-]\s*\d{1,2})?,\s+\d{4}
+            |
+            \d{4}-\d{2}-\d{2}
+        )
+        \b",
+    )
+    .ok();
+
+    let mut grounded_entries = 0usize;
+    let mut hosts = std::collections::BTreeSet::new();
+
+    for message in messages
+        .iter()
+        .filter(|message| message.role == "tool" && message.tool_name == "web_search")
+    {
+        let Some(results) = message
+            .tool_result
+            .get("result")
+            .and_then(|value| value.get("results"))
+            .and_then(Value::as_array)
+        else {
+            continue;
+        };
+
+        for entry in results {
+            let url = entry.get("url").and_then(Value::as_str).unwrap_or("");
+            if url.is_empty() || url_host_looks_like_event_aggregator(url) {
+                continue;
+            }
+            if prompt_requests_conference_roundup(prompt)
+                && entry
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .map(conference_entry_looks_low_authority)
+                    .unwrap_or(false)
+            {
+                continue;
+            }
+
+            let mut evidence_text = String::new();
+            if let Some(title) = entry.get("title").and_then(Value::as_str) {
+                evidence_text.push_str(title);
+                evidence_text.push('\n');
+            }
+            if let Some(snippet) = entry.get("snippet").and_then(Value::as_str) {
+                evidence_text.push_str(snippet);
+            }
+
+            let has_specific_date = date_pattern
+                .as_ref()
+                .map(|pattern| pattern.is_match(&evidence_text))
+                .unwrap_or(false);
+            if !has_specific_date {
+                continue;
+            }
+            if prompt_requests_location_field(prompt)
+                && !text_contains_specific_location(&evidence_text)
+            {
+                continue;
+            }
+
+            grounded_entries += 1;
+            if let Some(host) = reqwest::Url::parse(url)
+                .ok()
+                .and_then(|parsed| parsed.host_str().map(ToString::to_string))
+            {
+                hosts.insert(host);
+            }
+        }
+    }
+
+    grounded_entries >= expected_entries && hosts.len() >= 3
 }
 
 fn tool_results_lack_current_research_grounding(prompt: &str, messages: &[LlmMessage]) -> bool {
@@ -2114,6 +2818,7 @@ fn tool_results_lack_current_research_grounding(prompt: &str, messages: &[LlmMes
 
 fn should_force_current_research_synthesis(
     prompt: &str,
+    session_workdir: &Path,
     messages: &[LlmMessage],
     has_expected_file_targets: bool,
     literal_json_output: bool,
@@ -2128,7 +2833,12 @@ fn should_force_current_research_synthesis(
     }
 
     if collect_successful_file_management_actions(messages) > 0 {
-        return false;
+        if !missing_file_management_targets(prompt, session_workdir, messages).is_empty() {
+            return false;
+        }
+        if invalid_file_management_targets(prompt, session_workdir, messages).is_empty() {
+            return false;
+        }
     }
 
     if tool_results_lack_current_research_grounding(prompt, messages) {
@@ -2143,8 +2853,66 @@ fn should_force_current_research_synthesis(
         return false;
     }
 
-    let expected_entries = requested_research_entry_count(prompt).unwrap_or(1);
-    round >= 2 && total_tool_calls >= expected_entries
+    round >= 1 && total_tool_calls >= 1
+}
+
+fn completed_current_research_file_targets(
+    prompt: &str,
+    session_workdir: &Path,
+    messages: &[LlmMessage],
+    literal_json_output: bool,
+) -> Vec<String> {
+    if literal_json_output || !prompt_requests_current_web_research(prompt) {
+        return Vec::new();
+    }
+
+    if collect_successful_file_management_actions(messages) == 0 {
+        return Vec::new();
+    }
+
+    let expected_targets = expected_file_management_targets(prompt);
+    if expected_targets.is_empty() {
+        return Vec::new();
+    }
+
+    if !missing_file_management_targets(prompt, session_workdir, messages).is_empty() {
+        return Vec::new();
+    }
+
+    if !invalid_file_management_targets(prompt, session_workdir, messages).is_empty() {
+        return Vec::new();
+    }
+
+    expected_targets
+        .into_iter()
+        .filter_map(|group| group.into_iter().next())
+        .collect()
+}
+
+fn pending_current_research_rewrite_details(
+    prompt: &str,
+    session_workdir: &Path,
+    messages: &[LlmMessage],
+    literal_json_output: bool,
+) -> Vec<String> {
+    if literal_json_output || !prompt_requests_current_web_research(prompt) {
+        return Vec::new();
+    }
+
+    if collect_successful_file_management_actions(messages) == 0 {
+        return Vec::new();
+    }
+
+    if !missing_file_management_targets(prompt, session_workdir, messages).is_empty() {
+        return Vec::new();
+    }
+
+    let invalid_targets = invalid_file_management_targets(prompt, session_workdir, messages);
+    if invalid_targets.is_empty() {
+        return Vec::new();
+    }
+
+    describe_invalid_file_management_targets(prompt, session_workdir, &invalid_targets)
 }
 
 fn prompt_requests_gitignore_file(prompt: &str) -> bool {
@@ -2258,6 +3026,12 @@ fn invalid_file_management_targets(
                     .and_then(|value| value.to_str())
                     .unwrap_or("")
                     .to_ascii_lowercase();
+                let validation_cutoff = successful_file_management_cutoff_for_target(
+                    messages,
+                    candidate,
+                    &absolute,
+                );
+                let validation_messages = &messages[..validation_cutoff];
 
                 if matches!(ext.as_str(), "txt" | "md" | "json" | "csv" | "yaml" | "yml")
                     && is_effectively_empty_text_file(&absolute)
@@ -2268,9 +3042,13 @@ fn invalid_file_management_targets(
                 if matches!(ext.as_str(), "txt" | "md")
                     && std::fs::read_to_string(&absolute)
                         .map(|content| {
-                            output_lacks_descriptive_answer(prompt, &content)
+                                output_lacks_descriptive_answer(prompt, &content)
                                 || output_lacks_numeric_market_fact(prompt, &content)
                                 || output_lacks_current_research_details(prompt, &content)
+                                || output_contains_unsupported_research_branding(
+                                    &content,
+                                    validation_messages,
+                                )
                                 || output_lacks_longform_markdown_structure(prompt, &content)
                                 || output_violates_requested_word_budget(prompt, &content)
                                 || output_lacks_concise_summary_structure(prompt, &content)
@@ -2278,10 +3056,22 @@ fn invalid_file_management_targets(
                                     && output_lacks_markdown_research_structure(
                                         prompt, &content,
                                     ))
-                                || tool_results_lack_current_research_grounding(prompt, messages)
-                                || tool_results_lack_current_research_diversity(prompt, messages)
+                                || output_entries_lack_direct_research_support(
+                                    prompt,
+                                    &content,
+                                    validation_messages,
+                                )
+                                || tool_results_lack_current_research_grounding(
+                                    prompt,
+                                    validation_messages,
+                                )
+                                || tool_results_lack_current_research_diversity(
+                                    prompt,
+                                    validation_messages,
+                                )
                                 || tool_results_lack_direct_current_research_evidence(
-                                    prompt, messages,
+                                    prompt,
+                                    validation_messages,
                                 )
                         })
                         .unwrap_or(false)
@@ -2378,9 +3168,23 @@ fn describe_invalid_file_management_targets(
                         "{target}: too many entries come from one organizer or domain; replace weaker duplicates with other strong verified conferences from different hosts."
                     );
                 }
-                if output_contains_suspicious_research_host_mismatch(&content) {
+                if output_contains_unsupported_research_branding(&content, &[]) {
                     return format!(
-                        "{target}: at least one event name does not match its website branding; replace that entry with a conference whose official URL clearly aligns with the event name."
+                        "{target}: at least one event name is over-expanded or does not align with the verified branding; keep the official conference name as it appears in the supporting evidence instead of inventing a longer expansion."
+                    );
+                }
+                if prompt_requests_conference_roundup(prompt)
+                    && content
+                        .lines()
+                        .filter_map(|line| {
+                            let url_re = regex::Regex::new(r#"https?://[^\s)>"]+"#).ok()?;
+                            let url_match = url_re.find(line)?;
+                            Some(line[..url_match.start()].replace('|', " "))
+                        })
+                        .any(|name| conference_entry_looks_low_authority(name.trim()))
+                {
+                    return format!(
+                        "{target}: replace local workshop-style or weak city-edition entries with established annual tech conferences whose official pages show exact dates and locations."
                     );
                 }
             }
@@ -3282,6 +4086,36 @@ fn collect_successful_file_management_paths(messages: &[LlmMessage]) -> HashSet<
                 .map(|value| value.to_string())
         })
         .collect()
+}
+
+fn successful_file_management_cutoff_for_target(
+    messages: &[LlmMessage],
+    candidate: &str,
+    absolute: &Path,
+) -> usize {
+    let absolute_path = absolute.to_string_lossy();
+
+    messages
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, message)| {
+            message.role == "tool"
+                && matches!(message.tool_name.as_str(), "file_manager" | "file_write")
+                && message
+                    .tool_result
+                    .get("success")
+                    .and_then(|value| value.as_bool())
+                    .unwrap_or(false)
+                && message
+                    .tool_result
+                    .get("path")
+                    .and_then(|value| value.as_str())
+                    .map(|path| path == candidate || path == absolute_path.as_ref())
+                    .unwrap_or(false)
+        })
+        .map(|(index, _)| index + 1)
+        .unwrap_or(messages.len())
 }
 
 fn missing_file_management_targets(
@@ -6857,12 +7691,22 @@ impl AgentCore {
             );
             inject_context_message(
                 &mut messages,
-                "## Research Verification Hint\nWhen the task asks for current dates, URLs, or other factual fields, do not finalize from vague search snippets alone. If the first search results do not contain the exact field values, fetch or read the cited source pages in the workspace and write only the facts that are explicitly grounded in those tool results.".to_string(),
+                "## Research Verification Hint\nWhen the task asks for current dates, URLs, or other factual fields, do not finalize from vague search snippets alone. If the official search results already expose the exact field values, synthesize directly from those grounded results. Only fetch or read cited source pages when the search results are still missing the required exact facts.".to_string(),
             );
             inject_context_message(
                 &mut messages,
-                "## Multi-Item Research Guard\nFor multi-item current-research roundups, search snippets are only for candidate discovery. Before you finalize the saved artifact, inspect direct source evidence for the strongest candidates by downloading or reading the cited official pages in the workspace. Do not rely only on snippet text for exact dates or locations.".to_string(),
+                "## Multi-Item Research Guard\nFor multi-item current-research roundups, use official search results for candidate discovery and prefer direct synthesis once those results already show the exact dates, locations, and URLs you need. Download or read cited official pages only for candidates whose required fields are still missing. Save only the requested artifact and omit trailing process notes about how the research was verified unless the user asked for them.".to_string(),
             );
+            if prompt_requests_conference_roundup(prompt) {
+                inject_context_message(
+                    &mut messages,
+                    "## Conference Quality Guard\nFor general conference roundups, prefer established annual conference series with official event pages, exact dates, and clear locations. Avoid meetup-style events, workshops, training programs, or weak local city editions unless the user explicitly asked for that narrower scope. If the official page for the current upcoming edition still does not publish an exact date or location, leave that event out and pick a different conference instead of inferring the missing details.".to_string(),
+                );
+                inject_context_message(
+                    &mut messages,
+                    "## Conference Search Strategy\nStart with broad, organizer-diverse searches for flagship annual tech conferences that are upcoming now. If the user did not specify a year, your initial conference search query must not contain an explicit four-digit year token such as 2026 or 2027. Use neutral \"upcoming\", \"this year\", or \"official event\" wording first, then keep only entries whose official evidence clearly shows the relevant upcoming edition. Do not anchor on a single month or a narrow niche unless the user explicitly asked for that scope. Prefer globally recognized vendor, developer, cloud, infrastructure, AI, security, or cross-industry technology conferences over secondary community or product-marketing events.".to_string(),
+                );
+            }
             if expected_file_management_targets(prompt)
                 .iter()
                 .flatten()
@@ -6987,7 +7831,7 @@ impl AgentCore {
             inject_context_message(
                 &mut messages,
                 format!(
-                    "## Long-Form Writing Contract\nFor a blog post or article saved to Markdown, draft the full article mentally first, then save one polished final version with a clear title, an introduction, multiple titled body sections, and an explicit conclusion. Cover several distinct points instead of restating the same benefit, and make the body specific to the requested audience or role with concrete reasoning, examples, or practical implications. Avoid extra stat or reread verification after a successful text-file write unless you are correcting a known issue. If the prompt gives a target word count, treat it as a planning budget rather than a loose suggestion, and bias the first draft slightly under the number rather than over it.{}",
+                    "## Long-Form Writing Contract\nFor a blog post or article saved to Markdown, draft the full article mentally first, then save one polished final version with a clear title, an introduction, multiple titled body sections, and an explicit conclusion. Cover several distinct points instead of restating the same benefit, and make the body specific to the requested audience or role with concrete reasoning, examples, or practical implications. Include at least one concrete scenario, developer workflow, or before/after example instead of keeping every section abstract. Avoid extra stat or reread verification after a successful text-file write unless you are correcting a known issue. If the prompt gives a target word count, treat it as a planning budget rather than a loose suggestion, and bias the first draft slightly under the number rather than over it.{}",
                     exact_budget
                 ),
             );
@@ -8313,6 +9157,7 @@ impl AgentCore {
 
                 if should_force_current_research_synthesis(
                     prompt,
+                    &session_workdir,
                     &messages,
                     has_expected_file_targets,
                     literal_json_output,
@@ -8329,8 +9174,83 @@ impl AgentCore {
                         ..Default::default()
                     });
                     messages.push(LlmMessage::user(
-                        "The task is not complete yet, but you already have enough verified current research evidence in the existing tool results. Stop gathering more sources and create the requested file now using only the strongest verified entries already collected. For a general roundup, prefer diverse organizers or ecosystems instead of filling the list from one event family. If one candidate is weak, replace it with a stronger verified candidate from the existing evidence instead of searching again.",
+                        "The task is not complete yet, but you already have enough verified current research evidence in the existing tool results. Stop gathering more sources and create the requested file now using only the strongest verified entries already collected. For a general roundup, prefer diverse organizers or ecosystems instead of filling the list from one event family. If the user did not request a specific year, do not rewrite the list around a guessed year; keep only conferences whose official evidence clearly matches the currently upcoming edition. If one candidate looks like a workshop, training program, weak local city edition, or niche secondary event, replace it with a stronger established flagship conference from the existing evidence instead of searching again.",
                     ));
+                    loop_state.transition(AgentPhase::RePlanning);
+                    continue;
+                }
+
+                let completed_research_targets = completed_current_research_file_targets(
+                    prompt,
+                    &session_workdir,
+                    &messages,
+                    literal_json_output,
+                );
+                if !completed_research_targets.is_empty() {
+                    loop_state.transition(AgentPhase::Evaluating);
+                    loop_state.last_eval_verdict = EvalVerdict::GoalAchieved;
+                    loop_state.mark_terminal(
+                        LoopTransitionReason::GoalAchieved,
+                        "current research file outputs are complete and validated",
+                    );
+
+                    let text = if completed_research_targets.len() == 1 {
+                        format!(
+                            "Completed. Saved `{}` in the working directory.",
+                            completed_research_targets[0]
+                        )
+                    } else {
+                        format!(
+                            "Completed. Saved the requested files in the working directory: {}.",
+                            completed_research_targets
+                                .iter()
+                                .map(|path| format!("`{path}`"))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )
+                    };
+
+                    if let Ok(ss) = self.session_store.lock() {
+                        if let Some(store) = ss.as_ref() {
+                            store.add_message(session_id, "assistant", &text);
+                            store.add_structured_assistant_text_message(session_id, &text);
+                        }
+                    }
+
+                    if !skip_memory_extraction {
+                        self.extract_and_save_memory(&messages, &text).await;
+                    }
+
+                    loop_state.transition(AgentPhase::ResultReporting);
+                    loop_state.transition(AgentPhase::Complete);
+                    loop_state.log_self_inspection();
+                    self.persist_loop_snapshot(&loop_state);
+
+                    log_conversation("Assistant", &text);
+                    return text;
+                }
+
+                let pending_research_rewrite =
+                    pending_current_research_rewrite_details(
+                        prompt,
+                        &session_workdir,
+                        &messages,
+                        literal_json_output,
+                    );
+                if !pending_research_rewrite.is_empty() {
+                    loop_state.mark_follow_up(
+                        LoopTransitionReason::FileTargetsMissing,
+                        "current research output requires a targeted rewrite",
+                    );
+                    messages.push(LlmMessage {
+                        role: "assistant".into(),
+                        text: response.text.clone(),
+                        ..Default::default()
+                    });
+                    messages.push(LlmMessage::user(&format!(
+                        "The task is not complete yet. The current research output file exists but is still invalid:\n{}\nRewrite only the listed output file with one clean Markdown structure that satisfies the request. Prefer a heading plus a four-column table when the user asked for named fields such as name, date, location, and website. If the user did not specify a year, do not lock onto a guessed year while rewriting; keep only conferences whose official evidence clearly matches the current upcoming edition. Do not keep experimenting with multiple formats or launch more broad searches unless the invalid detail explicitly shows that a field is still missing from the collected evidence.",
+                        pending_research_rewrite.join("\n")
+                    )));
                     loop_state.transition(AgentPhase::RePlanning);
                     continue;
                 }
@@ -8432,7 +9352,7 @@ impl AgentCore {
                             ..Default::default()
                         });
                         messages.push(LlmMessage::user(&format!(
-                            "The task is not complete yet. The following requested files exist but are still invalid:\n{}\nRewrite only those listed output files with a targeted fix for the stated issue. Do not overwrite other prompt-referenced source or input files unless the user explicitly asked for that. Use specialized native tools for PDFs, images, spreadsheets, or current web research instead of placeholders. For general current-research roundups, prefer diverse organizers or ecosystems instead of multiple entries from one source family unless the prompt explicitly asks for that source. If the target file is Markdown, keep it as real Markdown that matches the requested task shape rather than raw JSON or CSV.",
+                            "The task is not complete yet. The following requested files exist but are still invalid:\n{}\nRewrite only those listed output files with a targeted fix for the stated issue. Do not overwrite other prompt-referenced source or input files unless the user explicitly asked for that. Use specialized native tools for PDFs, images, spreadsheets, or current web research instead of placeholders. For general current-research roundups, prefer diverse organizers or ecosystems instead of multiple entries from one source family unless the prompt explicitly asks for that source. For conference roundups, replace niche or mixed-quality picks with stronger flagship annual conferences whose official pages clearly publish exact dates and locations. If the target file is Markdown, keep it as real Markdown that matches the requested task shape rather than raw JSON or CSV.",
                             invalid_target_details.join("\n")
                         )));
                         loop_state.transition(AgentPhase::RePlanning);
@@ -9469,7 +10389,9 @@ mod tests {
         generated_code_runtime_spec, generated_code_script_path, invalid_file_management_targets,
         is_simple_file_management_request, manage_generated_code_tool,
         missing_file_management_targets, normalize_conversation_log_text,
-        output_lacks_concise_summary_structure, output_lacks_current_research_details,
+        output_contains_unsupported_research_branding,
+        output_entries_lack_direct_research_support, output_lacks_concise_summary_structure,
+        output_lacks_current_research_details,
         output_lacks_descriptive_answer, output_lacks_expected_ignore_patterns,
         output_lacks_markdown_research_structure, output_lacks_longform_markdown_structure,
         output_lacks_numeric_market_fact, output_violates_requested_word_budget,
@@ -9483,7 +10405,9 @@ mod tests {
         reasoning_policy_from_doc, requested_paragraph_count, requested_word_target,
         role_relevance_score, score_tool_search_match, sanitize_generated_code_name,
         select_delegate_roles, select_relevant_skills, should_force_current_research_synthesis,
-        should_skip_memory_for_prompt, tool_results_lack_direct_current_research_evidence,
+        should_skip_memory_for_prompt, completed_current_research_file_targets,
+        pending_current_research_rewrite_details,
+        tool_results_lack_direct_current_research_evidence,
         tool_results_lack_current_research_diversity, tool_results_lack_current_research_grounding,
         utf8_safe_preview, validate_generated_code_execution_output,
         validate_generated_code_grounding, AgentRole, LlmConfig,
@@ -9496,6 +10420,7 @@ mod tests {
     use crate::llm::plugin_manager::PluginManager;
     use serde_json::json;
     use std::collections::HashSet;
+    use std::path::Path;
     use tempfile::tempdir;
 
     #[test]
@@ -9838,6 +10763,65 @@ mod tests {
     }
 
     #[test]
+    fn invalid_file_management_targets_rejects_post_write_grounding_for_current_research() {
+        let dir = tempdir().unwrap();
+        let output = dir.path().join("events.md");
+        std::fs::write(
+            &output,
+            "# Upcoming Tech Conferences\n\n| Name | Date | Location | Website |\n|---|---|---|---|\n| TDX 2026 | March 4-5, 2026 | San Francisco, California, USA | https://www.salesforce.com/tdx/ |\n| WWDC26 | June 8-12, 2026 | Cupertino, California, USA | https://developer.apple.com/wwdc26/ |\n| NVIDIA GTC 2026 | March 16-19, 2026 | San Jose, California, USA | https://www.nvidia.com/gtc/session-catalog/ |\n| WeAreDevelopers World Congress: North America | September 23-25, 2026 | San Jose, California, USA | https://www.wearedevelopers.com/world-congress-north-america |\n| Black Hat USA 2026 | August 1-6, 2026 | Las Vegas, Nevada, USA | https://www.blackhat.com/us-26/ |\n",
+        )
+        .unwrap();
+
+        let invalid = invalid_file_management_targets(
+            "Find 5 upcoming tech conferences and create events.md with name, date, location, and website for each.",
+            dir.path(),
+            &[
+                LlmMessage::tool_result(
+                    "call_1",
+                    "web_search",
+                    json!({
+                        "status": "success",
+                        "query": "official tech conferences 2026",
+                        "result": {
+                            "results": [
+                                {"title": "WWDC26 - Apple Developer", "url": "https://developer.apple.com/wwdc26/", "snippet": ""},
+                                {"title": "TDX 2026 - Salesforce", "url": "https://www.salesforce.com/tdx/", "snippet": "Salesforce developer conference"},
+                                {"title": "NVIDIA GTC San Jose 2026 Highlights", "url": "https://www.nvidia.com/gtc/", "snippet": "AI conference highlights"},
+                                {"title": "WeAreDevelopers World Congress: North America", "url": "https://www.wearedevelopers.com/world-congress-north-america", "snippet": "September 2026 San Jose"},
+                                {"title": "Black Hat USA 2026", "url": "https://www.blackhat.com/us-26/", "snippet": ""}
+                            ]
+                        }
+                    }),
+                ),
+                LlmMessage::tool_result(
+                    "call_2",
+                    "file_write",
+                    json!({"success": true, "path": output.to_string_lossy()}),
+                ),
+                LlmMessage::tool_result(
+                    "call_3",
+                    "web_search",
+                    json!({
+                        "status": "success",
+                        "query": "official TDX 2026 dates location",
+                        "result": {
+                            "results": [
+                                {"title": "TDX 2026 - Salesforce", "url": "https://www.salesforce.com/tdx/", "snippet": "March 4-5, 2026 in San Francisco"},
+                                {"title": "WWDC26 - Apple Developer", "url": "https://developer.apple.com/wwdc26/", "snippet": "June 8-12, 2026 Cupertino, California"},
+                                {"title": "NVIDIA GTC Session Catalog", "url": "https://www.nvidia.com/gtc/session-catalog/", "snippet": "March 16-19, 2026 San Jose, California"},
+                                {"title": "WeAreDevelopers World Congress: North America", "url": "https://www.wearedevelopers.com/world-congress-north-america", "snippet": "September 23-25, 2026 San Jose, California"},
+                                {"title": "Black Hat USA 2026 Travel", "url": "https://www.blackhat.com/us-26/travel.html", "snippet": "Mandalay Bay Convention Center, Las Vegas"}
+                            ]
+                        }
+                    }),
+                ),
+            ],
+        );
+
+        assert_eq!(invalid, vec!["events.md".to_string()]);
+    }
+
+    #[test]
     fn tool_results_lack_current_research_grounding_flags_ungrounded_dates() {
         let prompt =
             "Find 5 upcoming tech conferences and create events.md with name, date, location, and website for each.";
@@ -9924,11 +10908,11 @@ mod tests {
                 "query": "upcoming tech conferences 2026",
                 "result": {
                     "results": [
-                        {"title": "CES 2026 | January 6-9, 2026", "url": "https://www.ces.tech/", "snippet": ""},
-                        {"title": "SXSW Conferences & Festivals | March 12-18, 2026", "url": "https://schedule.sxsw.com/?year=2026", "snippet": ""},
-                        {"title": "Google Cloud Next 2026 | April 22-24, 2026", "url": "https://www.googlecloudevents.com/next-vegas", "snippet": ""},
-                        {"title": "Data + AI Summit 2026 | June 8-11, 2026", "url": "https://dataaisummit.databricks.com/flow/db/dais2026/landing/page/home", "snippet": ""},
-                        {"title": "WWDC 2026 | June 8-12, 2026", "url": "https://developer.apple.com/wwdc26/", "snippet": ""}
+                        {"title": "CES 2026", "url": "https://www.ces.tech/", "snippet": "Major consumer tech event"},
+                        {"title": "SXSW Conferences & Festivals", "url": "https://schedule.sxsw.com/?year=2026", "snippet": "Austin conference schedule"},
+                        {"title": "Google Cloud Next 2026", "url": "https://www.googlecloudevents.com/next-vegas", "snippet": "Cloud conference landing page"},
+                        {"title": "Data + AI Summit 2026", "url": "https://dataaisummit.databricks.com/flow/db/dais2026/landing/page/home", "snippet": "Databricks conference home"},
+                        {"title": "WWDC 2026", "url": "https://developer.apple.com/wwdc26/", "snippet": "Apple developer conference"}
                     ]
                 }
             }),
@@ -9955,6 +10939,15 @@ mod tests {
         let content = "# Upcoming Tech Conferences\n\n| Name | Date | Location | Website |\n|---|---|---|---|\n| CES 2026 | January 6-9, 2026 | Las Vegas, Nevada, USA | https://www.ces.tech/ |\n| SXSW 2026 | March 12-18, 2026 | Austin, Texas, USA | https://schedule.sxsw.com/?year=2026 |\n| Google Cloud Next 2026 | April 22-24, 2026 | Las Vegas, Nevada, USA | https://www.googlecloudevents.com/next-vegas |\n| Data + AI Summit 2026 | June 8-11, 2026 | San Francisco, California, USA | https://dataaisummit.databricks.com/flow/db/dais2026/landing/page/home |\n| WWDC 2026 | June 8-12, 2026 | Cupertino, California, USA | https://developer.apple.com/wwdc26/ |\n";
 
         assert!(!output_lacks_markdown_research_structure(prompt, content));
+    }
+
+    #[test]
+    fn output_lacks_markdown_research_structure_flags_trailing_process_note() {
+        let prompt =
+            "Find 5 upcoming tech conferences and create events.md with name, date, location, and website for each.";
+        let content = "# Upcoming Tech Conferences\n\n| Name | Date | Location | Website |\n|---|---|---|---|\n| CES 2026 | January 6-9, 2026 | Las Vegas, Nevada, USA | https://www.ces.tech/ |\n| SXSW 2026 | March 12-18, 2026 | Austin, Texas, USA | https://schedule.sxsw.com/?year=2026 |\n| Google Cloud Next 2026 | April 22-24, 2026 | Las Vegas, Nevada, USA | https://www.googlecloudevents.com/next-vegas |\n| Data + AI Summit 2026 | June 8-11, 2026 | San Francisco, California, USA | https://dataaisummit.databricks.com/flow/db/dais2026/landing/page/home |\n| WWDC 2026 | June 8-12, 2026 | Cupertino, California, USA | https://developer.apple.com/wwdc26/ |\n\nAll entries above were verified against official event pages downloaded during research.\n";
+
+        assert!(output_lacks_markdown_research_structure(prompt, content));
     }
 
     #[test]
@@ -9985,7 +10978,7 @@ mod tests {
     fn output_violates_requested_word_budget_accepts_near_target_blog_post() {
         let prompt =
             "Write a 500-word blog post about the benefits of remote work for software developers. Save it to blog_post.md.";
-        let content = "word ".repeat(579);
+        let content = "word ".repeat(549);
         assert!(!output_violates_requested_word_budget(prompt, &content));
     }
 
@@ -9993,7 +10986,7 @@ mod tests {
     fn output_violates_requested_word_budget_flags_long_blog_post_past_relaxed_window() {
         let prompt =
             "Write a 500-word blog post about the benefits of remote work for software developers. Save it to blog_post.md.";
-        let content = "word ".repeat(590);
+        let content = "word ".repeat(563);
         assert!(output_violates_requested_word_budget(prompt, &content));
     }
 
@@ -10007,21 +11000,102 @@ mod tests {
     }
 
     #[test]
-    fn output_lacks_current_research_details_flags_brand_host_mismatch() {
+    fn output_contains_unsupported_research_branding_flags_host_mismatch() {
+        let content = "# Upcoming Tech Conferences\n\n| Name | Date | Location | Website |\n|---|---|---|---|\n| AI Dev 26 x SF | April 28-29, 2026 | San Francisco, California, USA | https://ai-dev.deeplearning.ai/ |\n| NDC Toronto 2026 | May 5-8, 2026 | Toronto, Canada | https://ndctoronto.com/ |\n| Web Summit Vancouver | May 11-14, 2026 | Vancouver, Canada | https://collisionconf.com/ |\n| 76th IEEE Electronic Components and Technology Conference (ECTC) | May 26-29, 2026 | Orlando, Florida, USA | https://ectc.net/ |\n| Fortune Brainstorm Tech 2026 | June 8-10, 2026 | Aspen, Colorado, USA | https://conferences.fortune.com/brainstorm-tech/ |\n";
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "web_search",
+            json!({
+                "status": "success",
+                "query": "upcoming tech conferences 2026",
+                "result": {
+                    "results": [
+                        {"title": "AI Dev 26 x SF | April 28-29, 2026", "url": "https://ai-dev.deeplearning.ai/", "snippet": "San Francisco, California, USA"},
+                        {"title": "NDC Toronto 2026 | May 5-8, 2026", "url": "https://ndctoronto.com/", "snippet": "Toronto, Canada"},
+                        {"title": "Collision 2026 | May 11-14, 2026", "url": "https://collisionconf.com/", "snippet": "Vancouver, Canada"},
+                        {"title": "ECTC 2026 | May 26-29, 2026", "url": "https://ectc.net/", "snippet": "Orlando, Florida, USA"},
+                        {"title": "Fortune Brainstorm Tech 2026 | June 8-10, 2026", "url": "https://conferences.fortune.com/brainstorm-tech/", "snippet": "Aspen, Colorado, USA"}
+                    ]
+                }
+            }),
+        )];
+
+        assert!(output_contains_unsupported_research_branding(
+            content,
+            &messages
+        ));
+    }
+
+    #[test]
+    fn output_contains_unsupported_research_branding_accepts_supported_acronym_branding() {
+        let content = "# Upcoming Tech Conferences\n\n| Name | Date | Location | Website |\n|---|---|---|---|\n| GIDS 2026 | April 21-24, 2026 | Bangalore, India | https://developersummit.com/ |\n| Open Source Summit North America 2026 | May 18-20, 2026 | Minneapolis, Minnesota, USA | https://events.linuxfoundation.org/open-source-summit-north-america/ |\n| WWDC26 | June 8-12, 2026 | Cupertino, California, USA | https://developer.apple.com/wwdc26/ |\n| Web Summit 2026 | November 9-12, 2026 | Lisbon, Portugal | https://websummit.com/web-summit-2026/ |\n| AWS re:Invent 2026 | November 30-December 4, 2026 | Las Vegas, Nevada, USA | https://aws.amazon.com/events/reinvent/ |\n";
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "web_search",
+            json!({
+                "status": "success",
+                "query": "site:developersummit.com GIDS 2026 official date location",
+                "result": {
+                    "results": [
+                        {"title": "GIDS 2026 - Asia-Pacific's Biggest Software Developer Summit", "url": "https://developersummit.com/", "snippet": "April 21-24, 2026 Bangalore, India"},
+                        {"title": "Open Source Summit North America 2026 | May 18-20, 2026", "url": "https://events.linuxfoundation.org/open-source-summit-north-america/", "snippet": "Minneapolis, Minnesota, USA"},
+                        {"title": "WWDC26 | June 8-12, 2026", "url": "https://developer.apple.com/wwdc26/", "snippet": "Cupertino, California, USA"},
+                        {"title": "Web Summit 2026 | November 9-12, 2026", "url": "https://websummit.com/web-summit-2026/", "snippet": "Lisbon, Portugal"},
+                        {"title": "AWS re:Invent 2026 | November 30-December 4, 2026", "url": "https://aws.amazon.com/events/reinvent/", "snippet": "Las Vegas, Nevada, USA"}
+                    ]
+                }
+            }),
+        )];
+
+        assert!(!output_contains_unsupported_research_branding(
+            content,
+            &messages
+        ));
+    }
+
+    #[test]
+    fn output_lacks_current_research_details_accepts_major_conference_series() {
         let prompt =
             "Find 5 upcoming tech conferences and create events.md with name, date, location, and website for each.";
-        let content = "# Upcoming Tech Conferences\n\n| Name | Date | Location | Website |\n|---|---|---|---|\n| AI Dev 26 x SF | April 28-29, 2026 | San Francisco, California, USA | https://ai-dev.deeplearning.ai/ |\n| NDC Toronto 2026 | May 5-8, 2026 | Toronto, Canada | https://ndctoronto.com/ |\n| Web Summit Vancouver | May 11-14, 2026 | Vancouver, Canada | https://collisionconf.com/ |\n| 76th IEEE Electronic Components and Technology Conference (ECTC) | May 26-29, 2026 | Orlando, Florida, USA | https://ectc.net/ |\n| Fortune Brainstorm Tech 2026 | June 8-10, 2026 | Aspen, Colorado, USA | https://conferences.fortune.com/brainstorm-tech/ |\n";
+        let content = "# Upcoming Tech Conferences\n\n| Name | Date | Location | Website |\n|---|---|---|---|\n| Google Cloud Next 2026 | April 22-24, 2026 | Las Vegas, Nevada, USA | https://www.googlecloudevents.com/next-vegas |\n| NDC Toronto 2026 | May 5-8, 2026 | Toronto, Canada | https://ndctoronto.com/ |\n| Web Summit Vancouver 2026 | May 11-14, 2026 | Vancouver, Canada | https://vancouver.websummit.com/ |\n| 76th IEEE Electronic Components and Technology Conference (ECTC) | May 26-29, 2026 | Orlando, Florida, USA | https://ectc.net/ |\n| Fortune Brainstorm Tech 2026 | June 8-10, 2026 | Aspen, Colorado, USA | https://conferences.fortune.com/brainstorm-tech/ |\n";
+
+        assert!(!output_lacks_current_research_details(prompt, content));
+    }
+
+    #[test]
+    fn output_lacks_current_research_details_flags_aggregator_host() {
+        let prompt =
+            "Find 5 upcoming tech conferences and create events.md with name, date, location, and website for each.";
+        let content = "# Upcoming Tech Conferences\n\n| Name | Date | Location | Website |\n|---|---|---|---|\n| VivaTech 2026 | June 17-20, 2026 | Paris, France | https://www.ventureport.com/events/vivatech-2026 |\n| Web Summit 2026 | November 9-12, 2026 | Lisbon, Portugal | https://websummit.com/web-summit-2026/ |\n| GITEX Europe 2026 | June 30-July 1, 2026 | Berlin, Germany | https://www.gitexeurope.com/ |\n| TechCrunch Disrupt 2026 | October 13-15, 2026 | San Francisco, California, USA | https://techcrunch.com/events/tc-disrupt-2026/ |\n| MWC Barcelona 2026 | March 2-5, 2026 | Barcelona, Spain | https://www.mwcbarcelona.com/ |\n";
 
         assert!(output_lacks_current_research_details(prompt, content));
     }
 
     #[test]
-    fn output_lacks_current_research_details_accepts_matching_brand_and_host() {
+    fn output_lacks_current_research_details_flags_wrong_year_for_this_year_prompt() {
+        let prompt =
+            "Find 5 upcoming tech conferences happening this year and create events.md with name, date, location, and website for each.";
+        let content = "# Upcoming Tech Conferences\n\n| Name | Date | Location | Website |\n|---|---|---|---|\n| VivaTech 2026 | June 17-20, 2026 | Paris, France | https://vivatechnology.com/ |\n| Web Summit 2026 | November 9-12, 2026 | Lisbon, Portugal | https://websummit.com/web-summit-2026/ |\n| GITEX Europe 2026 | June 30-July 1, 2026 | Berlin, Germany | https://www.gitexeurope.com/ |\n| TechCrunch Disrupt 2026 | October 13-15, 2026 | San Francisco, California, USA | https://techcrunch.com/events/tc-disrupt-2026/ |\n| MWC Barcelona 2027 | March 1-4, 2027 | Barcelona, Spain | https://www.mwcbarcelona.com/about/ |\n";
+
+        assert!(output_lacks_current_research_details(prompt, content));
+    }
+
+    #[test]
+    fn output_lacks_current_research_details_flags_non_current_year_for_upcoming_roundup() {
         let prompt =
             "Find 5 upcoming tech conferences and create events.md with name, date, location, and website for each.";
-        let content = "# Upcoming Tech Conferences\n\n| Name | Date | Location | Website |\n|---|---|---|---|\n| AI Dev 26 x SF | April 28-29, 2026 | San Francisco, California, USA | https://ai-dev.deeplearning.ai/ |\n| NDC Toronto 2026 | May 5-8, 2026 | Toronto, Canada | https://ndctoronto.com/ |\n| Web Summit Vancouver | May 11-14, 2026 | Vancouver, Canada | https://vancouver.websummit.com/ |\n| 76th IEEE Electronic Components and Technology Conference (ECTC) | May 26-29, 2026 | Orlando, Florida, USA | https://ectc.net/ |\n| Fortune Brainstorm Tech 2026 | June 8-10, 2026 | Aspen, Colorado, USA | https://conferences.fortune.com/brainstorm-tech/ |\n";
+        let content = "# Upcoming Tech Conferences\n\n| Name | Date | Location | Website |\n|---|---|---|---|\n| Google Cloud Next 2026 | April 22-24, 2026 | Las Vegas, Nevada, USA | https://www.googlecloudevents.com/next-vegas |\n| Microsoft Build 2026 | June 2-3, 2026 | San Francisco, California, USA | https://build.microsoft.com/en-US/home |\n| Cisco Live 2026 Amsterdam | February 9-13, 2026 | Amsterdam, Netherlands | https://www.ciscolive.com/ |\n| AWS re:Invent 2026 | November 30-December 4, 2026 | Las Vegas, Nevada, USA | https://aws.amazon.com/events/reinvent/ |\n| KubeCon + CloudNativeCon North America 2025 | November 10-13, 2025 | Atlanta, Georgia, USA | https://events.linuxfoundation.org/kubecon-cloudnativecon-north-america/ |\n";
 
-        assert!(!output_lacks_current_research_details(prompt, content));
+        assert!(output_lacks_current_research_details(prompt, content));
+    }
+
+    #[test]
+    fn output_lacks_current_research_details_flags_low_authority_city_edition() {
+        let prompt =
+            "Find 5 upcoming tech conferences and create events.md with name, date, location, and website for each.";
+        let content = "# Upcoming Tech Conferences\n\n| Name | Date | Location | Website |\n|---|---|---|---|\n| CES 2026 | January 6-9, 2026 | Las Vegas, Nevada, USA | https://www.ces.tech/ |\n| AI Dev 26 x SF | April 28-29, 2026 | San Francisco, California, USA | https://ai-dev.deeplearning.ai/ |\n| KubeCon + CloudNativeCon Europe 2026 | March 23-26, 2026 | Amsterdam, Netherlands | https://events.linuxfoundation.org/kubecon-cloudnativecon-europe/ |\n| Web Summit 2026 | November 9-12, 2026 | Lisbon, Portugal | https://websummit.com/web-summit-2026/ |\n| AWS re:Invent 2026 | November 30-December 4, 2026 | Las Vegas, Nevada, USA | https://aws.amazon.com/events/reinvent/ |\n";
+
+        assert!(output_lacks_current_research_details(prompt, content));
     }
 
     #[test]
@@ -10058,11 +11132,11 @@ mod tests {
                 "query": "upcoming tech conferences 2026",
                 "result": {
                     "results": [
-                        {"title": "CES 2026 | January 6-9, 2026", "url": "https://www.ces.tech/", "snippet": ""},
-                        {"title": "SXSW Conferences & Festivals | March 12-18, 2026", "url": "https://schedule.sxsw.com/?year=2026", "snippet": ""},
-                        {"title": "Google Cloud Next 2026 | April 22-24, 2026", "url": "https://www.googlecloudevents.com/next-vegas", "snippet": ""},
-                        {"title": "Data + AI Summit 2026 | June 8-11, 2026", "url": "https://dataaisummit.databricks.com/flow/db/dais2026/landing/page/home", "snippet": ""},
-                        {"title": "WWDC 2026 | June 8-12, 2026", "url": "https://developer.apple.com/wwdc26/", "snippet": ""}
+                        {"title": "CES 2026", "url": "https://www.ces.tech/", "snippet": "Major consumer tech event"},
+                        {"title": "SXSW Conferences & Festivals", "url": "https://schedule.sxsw.com/?year=2026", "snippet": "Austin conference schedule"},
+                        {"title": "Google Cloud Next 2026", "url": "https://www.googlecloudevents.com/next-vegas", "snippet": "Cloud conference landing page"},
+                        {"title": "Data + AI Summit 2026", "url": "https://dataaisummit.databricks.com/flow/db/dais2026/landing/page/home", "snippet": "Databricks conference home"},
+                        {"title": "WWDC 2026", "url": "https://developer.apple.com/wwdc26/", "snippet": "Apple developer conference"}
                     ]
                 }
             }),
@@ -10109,6 +11183,213 @@ mod tests {
     }
 
     #[test]
+    fn tool_results_lack_direct_current_research_evidence_accepts_grounded_official_search_results(
+    ) {
+        let prompt =
+            "Find 5 upcoming tech conferences and create events.md with name, date, location, and website for each.";
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "web_search",
+            json!({
+                "status": "success",
+                "query": "upcoming tech conferences 2026",
+                "result": {
+                    "results": [
+                        {"title": "CES 2026 | January 6-9, 2026", "url": "https://www.ces.tech/", "snippet": "Las Vegas, Nevada"},
+                        {"title": "MWC Barcelona | March 2-5, 2026", "url": "https://www.mwcbarcelona.com/", "snippet": "Barcelona, Spain"},
+                        {"title": "SXSW 2026 | March 12-18, 2026", "url": "https://www.sxsw.com/", "snippet": "Austin, Texas"},
+                        {"title": "Google Cloud Next 2026 | April 22-24, 2026", "url": "https://www.googlecloudevents.com/next-vegas", "snippet": "Las Vegas, Nevada"},
+                        {"title": "WWDC 2026 | June 8-12, 2026", "url": "https://developer.apple.com/wwdc26/", "snippet": "Cupertino, California"}
+                    ]
+                }
+            }),
+        )];
+
+        assert!(!tool_results_lack_direct_current_research_evidence(prompt, &messages));
+    }
+
+    #[test]
+    fn tool_results_lack_direct_current_research_evidence_rejects_aggregator_search_results() {
+        let prompt =
+            "Find 5 upcoming tech conferences and create events.md with name, date, location, and website for each.";
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "web_search",
+            json!({
+                "status": "success",
+                "query": "upcoming tech conferences 2026",
+                "result": {
+                    "results": [
+                        {"title": "VivaTech 2026 | June 17-20, 2026", "url": "https://www.ventureport.com/events/vivatech-2026", "snippet": "Paris, France"},
+                        {"title": "GITEX Europe 2026 | June 30-July 1, 2026", "url": "https://expolume.com/expo/gitex-europe/", "snippet": "Berlin, Germany"},
+                        {"title": "TechCrunch Disrupt 2026 | October 13-15, 2026", "url": "https://www.vktr.com/events/conference/techcrunch-disrupt-san-francisco-2026/", "snippet": "San Francisco, California"},
+                        {"title": "MWC Barcelona 2027 | March 1-4, 2027", "url": "https://www.showsbee.com/fairs/83605-Mobile-World-Congress-2027.html", "snippet": "Barcelona, Spain"},
+                        {"title": "CES 2027 | January 6-9, 2027", "url": "https://guidantech.com/ces-2027-confirmed-dates-venue-themes-and-registration-details-announced/", "snippet": "Las Vegas, Nevada"}
+                    ]
+                }
+            }),
+        )];
+
+        assert!(tool_results_lack_direct_current_research_evidence(prompt, &messages));
+    }
+
+    #[test]
+    fn tool_results_lack_direct_current_research_evidence_rejects_low_authority_city_editions() {
+        let prompt =
+            "Find 5 upcoming tech conferences and create events.md with name, date, location, and website for each.";
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "web_search",
+            json!({
+                "status": "success",
+                "query": "upcoming tech conferences 2026",
+                "result": {
+                    "results": [
+                        {"title": "CES 2026 | January 6-9, 2026", "url": "https://www.ces.tech/", "snippet": "Las Vegas, Nevada"},
+                        {"title": "AI Dev 26 x SF | April 28-29, 2026", "url": "https://ai-dev.deeplearning.ai/", "snippet": "San Francisco, California"},
+                        {"title": "KubeCon + CloudNativeCon Europe 2026 | March 23-26, 2026", "url": "https://events.linuxfoundation.org/kubecon-cloudnativecon-europe/", "snippet": "Amsterdam, Netherlands"},
+                        {"title": "Web Summit 2026 | November 9-12, 2026", "url": "https://websummit.com/web-summit-2026/", "snippet": "Lisbon, Portugal"},
+                        {"title": "AWS re:Invent 2026 | November 30-December 4, 2026", "url": "https://aws.amazon.com/events/reinvent/", "snippet": "Las Vegas, Nevada"}
+                    ]
+                }
+            }),
+        )];
+
+        assert!(tool_results_lack_direct_current_research_evidence(prompt, &messages));
+    }
+
+    #[test]
+    fn tool_results_lack_direct_current_research_evidence_rejects_search_results_without_locations()
+    {
+        let prompt =
+            "Find 5 upcoming tech conferences and create events.md with name, date, location, and website for each.";
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "web_search",
+            json!({
+                "status": "success",
+                "query": "upcoming tech conferences 2026",
+                "result": {
+                    "results": [
+                        {"title": "Google Cloud Next 2026 | April 22-24, 2026", "url": "https://www.googlecloudevents.com/next-vegas", "snippet": "Annual cloud conference"},
+                        {"title": "AWS re:Invent 2026 | November 30-December 4, 2026", "url": "https://aws.amazon.com/events/reinvent/", "snippet": "Annual AWS event"},
+                        {"title": "Web Summit 2026 | November 9-12, 2026", "url": "https://websummit.com/web-summit-2026/", "snippet": "Major technology conference"},
+                        {"title": "KubeCon + CloudNativeCon Europe 2026 | March 23-26, 2026", "url": "https://events.linuxfoundation.org/kubecon-cloudnativecon-europe/", "snippet": "Cloud native conference"},
+                        {"title": "Data Center World 2026 | April 20-23, 2026", "url": "https://datacenterworld.com/", "snippet": "Infrastructure conference"}
+                    ]
+                }
+            }),
+        )];
+
+        assert!(tool_results_lack_direct_current_research_evidence(prompt, &messages));
+    }
+
+    #[test]
+    fn output_entries_lack_direct_research_support_flags_virtual_url_with_physical_location() {
+        let prompt =
+            "Find 5 upcoming tech conferences and create events.md with name, date, location, and website for each.";
+        let content = "# Upcoming Tech Conferences\n\n| Name | Date | Location | Website |\n|---|---|---|---|\n| DeveloperWeek 2026 | February 18-20, 2026 | San Jose, CA, USA | https://www.developerweek.com/virtual/ |\n| WWDC26 | June 8-12, 2026 | Cupertino, CA, USA | https://developer.apple.com/wwdc26/ |\n| AWS re:Invent 2026 | November 30-December 4, 2026 | Las Vegas, NV, USA | https://aws.amazon.com/events/reinvent/ |\n| Web Summit 2026 | November 9-12, 2026 | Lisbon, Portugal | https://websummit.com/web-summit-2026/ |\n| KubeCon + CloudNativeCon Europe 2026 | March 23-26, 2026 | Amsterdam, Netherlands | https://events.linuxfoundation.org/kubecon-cloudnativecon-europe/ |\n";
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "web_search",
+            json!({
+                "status": "success",
+                "query": "upcoming tech conferences 2026",
+                "result": {
+                    "results": [
+                        {"title": "DeveloperWeek Global (Virtual) | March 4, 2026", "url": "https://www.developerweek.com/virtual/", "snippet": "Virtual"},
+                        {"title": "WWDC26 | June 8-12, 2026", "url": "https://developer.apple.com/wwdc26/", "snippet": "Cupertino, California"},
+                        {"title": "AWS re:Invent 2026 | November 30-December 4, 2026", "url": "https://aws.amazon.com/events/reinvent/", "snippet": "Las Vegas, Nevada"},
+                        {"title": "Web Summit 2026 | November 9-12, 2026", "url": "https://websummit.com/web-summit-2026/", "snippet": "Lisbon, Portugal"},
+                        {"title": "KubeCon + CloudNativeCon Europe 2026 | March 23-26, 2026", "url": "https://events.linuxfoundation.org/kubecon-cloudnativecon-europe/", "snippet": "Amsterdam, Netherlands"}
+                    ]
+                }
+            }),
+        )];
+
+        assert!(output_entries_lack_direct_research_support(prompt, content, &messages));
+    }
+
+    #[test]
+    fn output_entries_lack_direct_research_support_flags_entry_without_host_aligned_dates() {
+        let prompt =
+            "Find 5 upcoming tech conferences and create events.md with name, date, location, and website for each.";
+        let content = "# Upcoming Tech Conferences\n\n| Name | Date | Location | Website |\n|---|---|---|---|\n| CES 2026 | January 6-9, 2026 | Las Vegas, Nevada, USA | https://www.ces.tech/ |\n| WWDC26 | June 8-12, 2026 | Cupertino, California, USA | https://developer.apple.com/wwdc26/ |\n| AWS re:Invent 2026 | November 30-December 4, 2026 | Las Vegas, Nevada, USA | https://aws.amazon.com/events/reinvent/ |\n| WeAreDevelopers World Congress: North America | September 23-25, 2026 | San Jose, California, USA | https://www.wearedevelopers.com/world-congress-north-america |\n| Black Hat USA 2026 | August 1, 2026 | Las Vegas, Nevada, USA | https://www.blackhat.com/us-26/ |\n";
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "web_search",
+            json!({
+                "status": "success",
+                "query": "upcoming tech conferences 2026",
+                "result": {
+                    "results": [
+                        {"title": "CES 2026 | January 6-9, 2026", "url": "https://www.ces.tech/", "snippet": "Las Vegas, Nevada"},
+                        {"title": "WWDC26 | June 8-12, 2026", "url": "https://developer.apple.com/wwdc26/", "snippet": "Cupertino, California"},
+                        {"title": "AWS re:Invent 2026 | November 30-December 4, 2026", "url": "https://aws.amazon.com/events/reinvent/", "snippet": "Las Vegas, Nevada"},
+                        {"title": "WeAreDevelopers World Congress: North America | September 23-25, 2026", "url": "https://www.wearedevelopers.com/world-congress-north-america", "snippet": "San Jose, California"},
+                        {"title": "Black Hat USA 2026", "url": "https://www.blackhat.com/us-26/", "snippet": "Official event page"}
+                    ]
+                }
+            }),
+        )];
+
+        assert!(output_entries_lack_direct_research_support(prompt, content, &messages));
+    }
+
+    #[test]
+    fn output_entries_lack_direct_research_support_flags_mismatched_entry_date_tokens() {
+        let prompt =
+            "Find 5 upcoming tech conferences and create events.md with name, date, location, and website for each.";
+        let content = "# Upcoming Tech Conferences\n\n| Name | Date | Location | Website |\n|---|---|---|---|\n| Google Cloud Next 2026 | April 22-24, 2026 | Las Vegas, Nevada, USA | https://www.googlecloudevents.com/next-vegas |\n| Adobe Summit 2026 | April 19-22, 2026 | Las Vegas, Nevada, USA + Online | https://summit.adobe.com/na/ |\n| Cisco Live 2026 | May 31-June 4, 2026 | Las Vegas, Nevada, USA | https://www.ciscolive.com/global/attend.html |\n| Databricks Data + AI Summit 2026 | June 15-18, 2026 | San Francisco, California, USA + Virtual | https://www.databricks.com/dataaisummit |\n| AWS re:Invent 2026 | November 30-December 4, 2026 | Las Vegas, Nevada, USA | https://aws.amazon.com/events/reinvent/ |\n";
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "web_search",
+            json!({
+                "status": "success",
+                "query": "official Google Cloud Next 2026 Las Vegas date location",
+                "result": {
+                    "results": [
+                        {"title": "Google Cloud Next 2026 - Las Vegas Conference", "url": "https://www.googlecloudevents.com/next-vegas", "snippet": "Join us April 23-25, 2026 in Las Vegas."},
+                        {"title": "Adobe Summit - The Customer Experience Conference | April 19-22, 2026", "url": "https://summit.adobe.com/na/", "snippet": "Attend in person in Las Vegas or join us online."},
+                        {"title": "Attend - Cisco Live 2026 Las Vegas", "url": "https://www.ciscolive.com/global/attend.html", "snippet": "Join us in Las Vegas from May 31 - June 4."},
+                        {"title": "Data + AI Summit 2026", "url": "https://www.databricks.com/dataaisummit", "snippet": "June 15-18, 2026 San Francisco, California"},
+                        {"title": "AWS re:Invent 2026 | Nov 30-Dec 4, 2026", "url": "https://aws.amazon.com/events/reinvent/", "snippet": "Nov 30-Dec 4, 2026 in Las Vegas, NV."}
+                    ]
+                }
+            }),
+        )];
+
+        assert!(output_entries_lack_direct_research_support(prompt, content, &messages));
+    }
+
+    #[test]
+    fn output_entries_lack_direct_research_support_rejects_third_party_search_match_for_official_url()
+    {
+        let prompt =
+            "Find 5 upcoming tech conferences and create events.md with name, date, location, and website for each.";
+        let content = "# Upcoming Tech Conferences\n\n| Name | Date | Location | Website |\n|---|---|---|---|\n| Google Cloud Next 2026 | April 22-24, 2026 | Las Vegas, Nevada, USA | https://www.googlecloudevents.com/next-vegas |\n| Adobe Summit 2026 | April 19-22, 2026 | Las Vegas, Nevada, USA + Online | https://summit.adobe.com/na/ |\n| Cisco Live 2026 | May 31-June 4, 2026 | Las Vegas, Nevada, USA | https://www.ciscolive.com/global/attend.html |\n| Databricks Data + AI Summit 2026 | June 15-18, 2026 | San Francisco, California, USA + Virtual | https://www.databricks.com/dataaisummit |\n| AWS re:Invent 2026 | November 30-December 4, 2026 | Las Vegas, Nevada, USA | https://aws.amazon.com/events/reinvent/ |\n";
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "web_search",
+            json!({
+                "status": "success",
+                "query": "official Google Cloud Next 2026 Las Vegas date location",
+                "result": {
+                    "results": [
+                        {"title": "Google Cloud Next Las Vegas 2026 - reworked.co", "url": "https://www.reworked.co/events/conference/google-cloud-next-las-vegas-2026/", "snippet": "Conference Date Apr 22, 2026 – Apr 24, 2026. Location Las Vegas."},
+                        {"title": "Google Cloud Next 2026 - Las Vegas Conference", "url": "https://www.googlecloudevents.com/next-vegas", "snippet": "Join us for Google Cloud Next 2026 in Las Vegas."},
+                        {"title": "Adobe Summit - The Customer Experience Conference | April 19-22, 2026", "url": "https://summit.adobe.com/na/", "snippet": "Attend in person in Las Vegas or join us online."},
+                        {"title": "Attend - Cisco Live 2026 Las Vegas", "url": "https://www.ciscolive.com/global/attend.html", "snippet": "Join us in Las Vegas from May 31 - June 4."},
+                        {"title": "AWS re:Invent 2026 | Nov 30-Dec 4, 2026", "url": "https://aws.amazon.com/events/reinvent/", "snippet": "Nov 30-Dec 4, 2026 in Las Vegas, NV."}
+                    ]
+                }
+            }),
+        )];
+
+        assert!(output_entries_lack_direct_research_support(prompt, content, &messages));
+    }
+
+    #[test]
     fn should_force_current_research_synthesis_when_grounding_is_sufficient() {
         let prompt =
             "Find 5 upcoming tech conferences and create events.md with name, date, location, and website for each.";
@@ -10143,7 +11424,34 @@ mod tests {
         ];
 
         assert!(should_force_current_research_synthesis(
-            prompt, &messages, true, false, 2, 5
+            prompt, Path::new("."), &messages, true, false, 2, 5
+        ));
+    }
+
+    #[test]
+    fn should_force_current_research_synthesis_after_first_grounded_search_round() {
+        let prompt =
+            "Find 5 upcoming tech conferences and create events.md with name, date, location, and website for each.";
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "web_search",
+            json!({
+                "status": "success",
+                "query": "upcoming tech conferences 2026",
+                "result": {
+                    "results": [
+                        {"title": "CES 2026 | January 6-9, 2026", "url": "https://www.ces.tech/", "snippet": "Las Vegas, Nevada"},
+                        {"title": "MWC Barcelona | March 2-5, 2026", "url": "https://www.mwcbarcelona.com/", "snippet": "Barcelona, Spain"},
+                        {"title": "SXSW 2026 | March 12-18, 2026", "url": "https://www.sxsw.com/", "snippet": "Austin, Texas"},
+                        {"title": "Google Cloud Next 2026 | April 22-24, 2026", "url": "https://www.googlecloudevents.com/next-vegas", "snippet": "Las Vegas, Nevada"},
+                        {"title": "WWDC 2026 | June 8-12, 2026", "url": "https://developer.apple.com/wwdc26/", "snippet": "Cupertino, California"}
+                    ]
+                }
+            }),
+        )];
+
+        assert!(should_force_current_research_synthesis(
+            prompt, Path::new("."), &messages, true, false, 1, 1
         ));
     }
 
@@ -10177,8 +11485,139 @@ mod tests {
         ];
 
         assert!(!should_force_current_research_synthesis(
-            prompt, &messages, true, false, 3, 6
+            prompt, Path::new("."), &messages, true, false, 3, 6
         ));
+    }
+
+    #[test]
+    fn should_force_current_research_synthesis_for_invalid_written_output_once_evidence_is_ready() {
+        let dir = tempdir().unwrap();
+        let output = dir.path().join("events.md");
+        std::fs::write(
+            &output,
+            "# Upcoming Tech Conferences\n\n| Name | Date | Location | Website |\n|---|---|---|---|\n| CES 2026 | January 6-9, 2026 | Las Vegas, Nevada, USA | https://www.ces.tech/ |\n| SXSW 2026 | March 2026 | Austin, Texas, USA | https://www.sxsw.com/ |\n| Google Cloud Next 2026 | April 22-24, 2026 | Las Vegas, Nevada, USA | https://www.googlecloudevents.com/next-vegas |\n| Data + AI Summit 2026 | June 8-11, 2026 | San Francisco, California, USA | https://dataaisummit.databricks.com/flow/db/dais2026/landing/page/home |\n| WWDC 2026 | June 8-12, 2026 | Cupertino, California, USA | https://developer.apple.com/wwdc26/ |\n",
+        )
+        .unwrap();
+        let prompt =
+            "Find 5 upcoming tech conferences and create events.md with name, date, location, and website for each.";
+        let messages = vec![
+            LlmMessage::tool_result(
+                "call_1",
+                "file_write",
+                json!({"success": true, "path": output.to_string_lossy()}),
+            ),
+            LlmMessage::tool_result(
+                "call_2",
+                "web_search",
+                json!({
+                    "status": "success",
+                    "query": "official tech conferences 2026 dates locations",
+                    "result": {
+                        "results": [
+                            {"title": "CES 2026 | January 6-9, 2026", "url": "https://www.ces.tech/", "snippet": "Las Vegas, Nevada"},
+                            {"title": "SXSW 2026 | March 12-18, 2026", "url": "https://www.sxsw.com/", "snippet": "Austin, Texas"},
+                            {"title": "Google Cloud Next 2026 | April 22-24, 2026", "url": "https://www.googlecloudevents.com/next-vegas", "snippet": "Las Vegas, Nevada"},
+                            {"title": "Data + AI Summit 2026 | June 8-11, 2026", "url": "https://dataaisummit.databricks.com/flow/db/dais2026/landing/page/home", "snippet": "San Francisco, California"},
+                            {"title": "WWDC 2026 | June 8-12, 2026", "url": "https://developer.apple.com/wwdc26/", "snippet": "Cupertino, California"}
+                        ]
+                    }
+                }),
+            ),
+        ];
+
+        assert!(should_force_current_research_synthesis(
+            prompt,
+            dir.path(),
+            &messages,
+            true,
+            false,
+            2,
+            2,
+        ));
+    }
+
+    #[test]
+    fn completed_current_research_file_targets_returns_valid_written_output() {
+        let dir = tempdir().unwrap();
+        let output = dir.path().join("events.md");
+        std::fs::write(
+            &output,
+            "# Upcoming Tech Conferences\n\n| Name | Date | Location | Website |\n|---|---|---|---|\n| CES 2026 | January 6-9, 2026 | Las Vegas, Nevada, USA | https://www.ces.tech/ |\n| MWC Barcelona 2026 | March 2-5, 2026 | Barcelona, Spain | https://www.mwcbarcelona.com/ |\n| Google Cloud Next 2026 | April 22-24, 2026 | Las Vegas, Nevada, USA | https://www.googlecloudevents.com/next-vegas |\n| Data + AI Summit 2026 | June 8-11, 2026 | San Francisco, California, USA | https://dataaisummit.databricks.com/flow/db/dais2026/landing/page/home |\n| Web Summit 2026 | November 9-12, 2026 | Lisbon, Portugal | https://websummit.com/web-summit-2026/ |\n",
+        )
+        .unwrap();
+        let prompt =
+            "Find 5 upcoming tech conferences and create events.md with name, date, location, and website for each.";
+        let messages = vec![
+            LlmMessage::tool_result(
+                "call_1",
+                "web_search",
+                json!({
+                    "status": "success",
+                    "query": "upcoming tech conferences 2026",
+                    "result": {
+                        "results": [
+                            {"title": "CES 2026 | January 6-9, 2026", "url": "https://www.ces.tech/", "snippet": "Las Vegas, Nevada"},
+                            {"title": "MWC Barcelona | March 2-5, 2026", "url": "https://www.mwcbarcelona.com/", "snippet": "Barcelona, Spain"},
+                            {"title": "Google Cloud Next 2026 | April 22-24, 2026", "url": "https://www.googlecloudevents.com/next-vegas", "snippet": "Las Vegas, Nevada"},
+                            {"title": "Data + AI Summit 2026 | June 8-11, 2026", "url": "https://dataaisummit.databricks.com/flow/db/dais2026/landing/page/home", "snippet": "San Francisco, California"},
+                            {"title": "Web Summit 2026 | November 9-12, 2026", "url": "https://websummit.com/web-summit-2026/", "snippet": "Lisbon, Portugal"}
+                        ]
+                    }
+                }),
+            ),
+            LlmMessage::tool_result(
+                "call_2",
+                "file_write",
+                json!({"success": true, "path": output.to_string_lossy()}),
+            ),
+        ];
+
+        assert_eq!(
+            completed_current_research_file_targets(prompt, dir.path(), &messages, false),
+            vec!["events.md".to_string()]
+        );
+    }
+
+    #[test]
+    fn pending_current_research_rewrite_details_flags_invalid_written_roundup() {
+        let dir = tempdir().unwrap();
+        let output = dir.path().join("events.md");
+        std::fs::write(
+            &output,
+            "# Upcoming Tech Conferences\n\n| Name | Date | Location | Website |\n|---|---|---|---|\n| CES 2026 | January 6-9, 2026 | Las Vegas, Nevada, USA | https://www.ces.tech/ |\n| SXSW 2026 | March 2026 | Austin, Texas, USA | https://www.sxsw.com/ |\n| Google Cloud Next 2026 | April 22-24, 2026 | Las Vegas, Nevada, USA | https://www.googlecloudevents.com/next-vegas |\n| Data + AI Summit 2026 | June 8-11, 2026 | San Francisco, California, USA | https://dataaisummit.databricks.com/flow/db/dais2026/landing/page/home |\n| WWDC 2026 | June 8-12, 2026 | Cupertino, California, USA | https://developer.apple.com/wwdc26/ |\n",
+        )
+        .unwrap();
+
+        let prompt =
+            "Find 5 upcoming tech conferences and create events.md with name, date, location, and website for each.";
+        let messages = vec![
+            LlmMessage::tool_result(
+                "call_1",
+                "web_search",
+                json!({
+                    "status": "success",
+                    "query": "official tech conferences 2026 dates locations",
+                    "result": {
+                        "results": [
+                            {"title": "CES 2026 | January 6-9, 2026", "url": "https://www.ces.tech/", "snippet": "Las Vegas, Nevada"},
+                            {"title": "SXSW 2026 | March 12-18, 2026", "url": "https://www.sxsw.com/", "snippet": "Austin, Texas"},
+                            {"title": "Google Cloud Next 2026 | April 22-24, 2026", "url": "https://www.googlecloudevents.com/next-vegas", "snippet": "Las Vegas, Nevada"},
+                            {"title": "Data + AI Summit 2026 | June 8-11, 2026", "url": "https://dataaisummit.databricks.com/flow/db/dais2026/landing/page/home", "snippet": "San Francisco, California"},
+                            {"title": "WWDC 2026 | June 8-12, 2026", "url": "https://developer.apple.com/wwdc26/", "snippet": "Cupertino, California"}
+                        ]
+                    }
+                }),
+            ),
+            LlmMessage::tool_result(
+                "call_2",
+                "file_write",
+                json!({"success": true, "path": output.to_string_lossy()}),
+            ),
+        ];
+
+        let details = pending_current_research_rewrite_details(prompt, dir.path(), &messages, false);
+        assert_eq!(details.len(), 1);
+        assert!(details[0].contains("events.md"));
     }
 
     #[test]
@@ -11185,7 +12624,34 @@ mod tests {
         assert_eq!(result["success"], json!(true));
         assert_eq!(result["truncated"], json!(true));
         assert_eq!(result["total_chars"], json!(content.chars().count()));
+        assert_eq!(result["paragraph_count"], json!(1));
         assert!(result["content"].as_str().unwrap_or("").chars().count() <= 240);
+    }
+
+    #[tokio::test]
+    async fn file_manager_tool_read_reports_paragraph_preview_for_multiline_text() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("summary.txt");
+        let content = "First paragraph about context.\n\nSecond paragraph with more detail.\n\nThird paragraph with conclusion.";
+        std::fs::write(&file_path, content).unwrap();
+
+        let result = file_manager_tool(
+            &json!({
+                "operation": "read",
+                "path": "summary.txt",
+                "backend_preference": "rust_fallback",
+                "max_chars": 400
+            }),
+            dir.path(),
+        )
+        .await;
+
+        assert_eq!(result["success"], json!(true));
+        assert_eq!(result["paragraph_count"], json!(3));
+        let preview = result["paragraph_preview"].as_str().unwrap_or("");
+        assert!(preview.contains("First paragraph"));
+        assert!(preview.contains("Second paragraph"));
+        assert!(preview.contains("Third paragraph"));
     }
 
     #[tokio::test]
