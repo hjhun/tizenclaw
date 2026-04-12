@@ -176,19 +176,23 @@ process.
 ## Global Environment Management
 
 > [!IMPORTANT]
-> **Mandatory WSL Shell (Ubuntu) Usage**: Execute all terminal commands
-> through the WSL shell (e.g., `wsl -e bash -c "..."`) as direct
-> PowerShell executions are error-prone. The default project command is
-> `./deploy_host.sh`; `./deploy.sh` is reserved for explicit Tizen cycles.
+> **Primary Shell Context**: The agent operates **directly inside a WSL
+> Ubuntu shell**. Run all project commands (build, test, git) as plain
+> bash — no `wsl -e bash -c "..."` wrapper is needed under normal
+> conditions. The wrapper is only required when the agent is invoked from
+> a Windows PowerShell session (edge case, e.g. Windows-side IDE).
 
 > [!IMPORTANT]
 > **Shell Detection Rule**: Before executing ANY command, follow the
 > [`.agent/rules/shell-detection.md`](.agent/rules/shell-detection.md)
-> decision matrix to determine the correct shell (PowerShell vs WSL
-> Bash). This rule is authoritative for all shell decisions.
+> decision matrix to confirm the active shell context. That rule is
+> authoritative for all shell decisions.
 
-Follow the background limits and sequential execution commands in the
-environment skill carefully to avoid Samba/WSL lockups.
+> [!WARNING]
+> **No Background Sub-processes**: Never spawn background sub-shells
+> (`nohup` or `&`) for build or deploy commands. Run them synchronously
+> in the foreground to avoid Samba/WSL I/O lockups.
+
 - **Rule Reference**:
   [`.agent/rules/shell-detection.md`](.agent/rules/shell-detection.md)
 - **Skill Usage**:

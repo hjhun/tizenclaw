@@ -67,10 +67,24 @@ device validation.
   or ad-hoc `cmake` for ordinary repository work.
 - Keep the default architecture focus on `x86_64`.
 - When daemon-visible behavior changes, add or update a scenario in
-  `tests/system/` before implementation and validate it against the host daemon.
+  `tests/system/` **before** implementation and validate it against the host
+  daemon using `tizenclaw-tests`.
 - Keep onboarding docs and analysis docs aligned with structural changes.
 - Prefer additive reconstruction. Do not delete the legacy runtime layout until
   migration work explicitly says so.
+
+## Commit Rules
+
+- **NEVER** use `git commit -m "..."`. Write the message to
+  `.tmp/commit_msg.txt` first, then run `git commit -F .tmp/commit_msg.txt`.
+- All commit messages must be in **English**.
+- Title: ≤ 50 characters, imperative sentence, capitalized.
+- Body: each line ≤ 80 characters.
+- No `feat:`, `fix:`, `refactor:` prefixes. No explicit `Why:` / `What:`
+  headers.
+- Push target: `git push origin develRust`.
+- All temporary files go in `.tmp/` (project root), never in `/tmp/`.
+  `.tmp/` is in `.gitignore` and must never be committed.
 
 ## Repeatable Workflows
 
@@ -89,6 +103,8 @@ device validation.
    targeted legacy runtime path.
 3. Align Python parity surfaces if the public contract changed.
 4. Validate with `./deploy_host.sh` and `./deploy_host.sh --test`.
+5. Run `tizenclaw-tests scenario --file tests/system/<name>.json` against
+   the live host daemon to confirm the IPC contract holds.
 
 ### Continue The Reconstruction
 

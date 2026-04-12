@@ -1,90 +1,125 @@
 # Shell Detection & Adaptive Command Execution Rule
 
-When executing terminal commands, the agent **must** detect the current shell environment and use the appropriate command syntax. This project operates in a **Windows + WSL hybrid** environment.
+This project runs on a **Windows + WSL hybrid** machine, but the primary
+development session operates **directly inside the WSL Ubuntu shell**.
+The correct command pattern depends on where the agent was invoked from.
 
-## Shell Environment Detection
+## Detecting the Current Shell Context
 
-The AI agent's `run_command` tool executes commands via **PowerShell (pwsh)** on the Windows host.
-To run Linux/bash commands, they **must** be wrapped with `wsl -e bash -c "..."`.
+Before executing any terminal command, determine the active shell:
 
-### Decision Matrix
+| Signal | Conclusion |
+|--------|-----------|
+| `$PSVersionTable` is defined, or `$env:OS` is `Windows_NT` | PowerShell (Windows host) |
+| `$SHELL` contains `bash`/`zsh`, or `uname` returns `Linux` | WSL Ubuntu shell (direct) |
+| Working directory starts with `\\wsl.localhost\` or `C:\` | PowerShell (Windows host) |
+| Working directory is a POSIX path (`/home/...`) | WSL Ubuntu shell (direct) |
 
-| Target | Shell | Command Pattern | Example |
-|--------|-------|-----------------|---------|
-| Linux filesystem / build / deploy | Bash (via WSL) | `wsl -e bash -c "..."` | `wsl -e bash -c "./deploy_host.sh"` |
-| Linux file content (cat, grep, find) | Bash (via WSL) | `wsl -e bash -c "..."` | `wsl -e bash -c "cat Cargo.toml"` |
-| Git operations on WSL repo | Bash (via WSL) | `wsl -e bash -c "..."` | `wsl -e bash -c "git status"` |
-| Windows-native tools (explorer, notepad) | PowerShell | Direct command | `explorer.exe .` |
-| PowerShell-specific operations | PowerShell | Direct command | `Get-ChildItem` |
-| WSL path translation | PowerShell | Direct command | `wsl wslpath -u "C:\path"` |
+## Decision Matrix
 
-## Rules
+| Active shell | Target | Command pattern | Example |
+|-------------|--------|-----------------|---------|
+| **WSL Ubuntu (direct)** | Any project command | Run directly | `./deploy_host.sh` |
+| **WSL Ubuntu (direct)** | Windows-native tool | Use `.exe` suffix | `explorer.exe .` |
+| **PowerShell (Windows)** | Linux/project command | `wsl -e bash -c "..."` | `wsl -e bash -c "./deploy_host.sh"` |
+| **PowerShell (Windows)** | Windows-native tool | Direct command | `Get-ChildItem` |
 
-### 1. Default to WSL Bash for All Project Commands
-Since the project lives entirely on the WSL filesystem (`\\wsl.localhost\Ubuntu\...`), **all project-related commands** (build, test, git, file manipulation) must use the WSL wrapper.
+## Primary Path — WSL Ubuntu Shell (Direct)
+
+**This is the normal operating context for TizenClaw development.**
+No wrapper is needed. Run all project commands directly:
+
+```bash
+# Build and deploy (host default)
+./deploy_host.sh
+
+# Run tests
+./deploy_host.sh --test
+
+# Git operations
+git status
+git commit -F .tmp/commit_msg.txt
+
+# Tizen path (explicit request only)
+./deploy.sh -d emulator-26101
+```
+
+## Edge Case — Invoked from Windows PowerShell
+
+When the agent session originates from Windows (e.g., an IDE running on the
+Windows host, or `pwsh.exe` directly), Linux commands must be wrapped:
 
 ```powershell
-# ✅ Correct — WSL wrapper, host-default path
+# ✅ Correct — WSL wrapper required from PowerShell
 wsl -e bash -c "cd /home/hjhun/samba/github/tizenclaw && ./deploy_host.sh"
 
-# ❌ Wrong — Direct PowerShell
+# ❌ Wrong — Direct PowerShell execution will fail
 ./deploy_host.sh
 ```
 
-### 2. Working Directory Handling
-PowerShell's `Cwd` parameter accepts UNC paths (`\\wsl.localhost\Ubuntu\...`), but many Linux tools do not understand them. Always use the `cd` inside the bash command or set the Cwd to the UNC path and let WSL handle the translation.
-
-```powershell
-# Option A: Explicit cd inside bash
-wsl -e bash -c "cd /home/hjhun/samba/github/tizenclaw && git status"
-
-# Option B: Use Cwd with WSL-aware path (preferred when Cwd is set)
-# Cwd: \\wsl.localhost\Ubuntu\home\hjhun\samba\github\tizenclaw
-wsl -e bash -c "git status"
-```
-
-### 3. Quoting and Escaping
-When wrapping bash commands inside PowerShell's `wsl -e bash -c`, be careful with quoting:
+### Quoting inside the WSL wrapper
 
 ```powershell
 # Single quotes inside double quotes
 wsl -e bash -c "echo 'hello world'"
 
-# Escape double quotes if needed inside the command
+# Escape double quotes if needed
 wsl -e bash -c "grep \"pattern\" file.txt"
 
-# Use single-quote wrapper for complex commands
+# Complex commands — use single-quote wrapper
 wsl -e bash -c 'find . -name "*.rs" -exec grep -l "TODO" {} +'
 ```
 
-### 4. Environment Variables
-PowerShell and Bash handle environment variables differently:
+### Working directory from PowerShell
 
 ```powershell
-# ✅ Bash env vars inside WSL wrapper
-wsl -e bash -c "export PAGER=cat && git log -5"
+# Option A: explicit cd inside bash
+wsl -e bash -c "cd /home/hjhun/samba/github/tizenclaw && git status"
 
-# ❌ Wrong — PowerShell syntax won't work in bash
-wsl -e bash -c "$env:PAGER='cat'; git log -5"
+# Option B: UNC Cwd + bare command (WSL resolves the path)
+# Cwd: \\wsl.localhost\Ubuntu\home\hjhun\samba\github\tizenclaw
+wsl -e bash -c "git status"
 ```
 
-### 5. PowerShell-Only Operations
-The following are the **only** cases where direct PowerShell commands are appropriate:
+## Sequential Execution (Both Contexts)
 
-- Checking Windows system state (`Get-Process`, `Get-Service`)
-- Opening Windows GUI apps (`explorer.exe`, `code`)
-- Managing WSL itself (`wsl --list`, `wsl --shutdown`)
-- Windows path/registry operations
+Heavy build commands (`./deploy_host.sh`, `./deploy.sh`) must run
+**synchronously in the foreground** — never background them with `nohup`
+or `&`. Background sub-shells across the WSL/Samba boundary cause I/O
+lockups regardless of the originating shell.
+
+## Pager and Prompt Suppression
+
+Long-running commands that produce paged output must suppress interactive
+prompts:
+
+```bash
+# Disable pager for git
+GIT_PAGER=cat git log
+git --no-pager log
+
+# Non-interactive apt (if needed)
+DEBIAN_FRONTEND=noninteractive apt-get install -y <packages>
+```
+
+## Windows-Native Tools from WSL
+
+Calling Windows executables from inside WSL requires the `.exe` suffix:
+
+```bash
+explorer.exe .          # open Windows Explorer
+code .                  # VS Code (if on Windows PATH)
+powershell.exe -c "..."  # run a one-off PowerShell command
+```
 
 ## Quick Reference
 
 ```
-Project command?
-├── YES → wsl -e bash -c "..."
-│   ├── Host default → wsl -e bash -c "./deploy_host.sh ..."
-│   ├── Tizen on demand → wsl -e bash -c "./deploy.sh ..."
-│   ├── Git → wsl -e bash -c "git ..."
-│   ├── File ops → wsl -e bash -c "cat/grep/find ..."
-│   └── Scripts → wsl -e bash -c "bash script.sh"
-└── NO (Windows-native) → Direct PowerShell command
+Determine active shell first:
+├── WSL Ubuntu (direct) — NORMAL CASE
+│   ├── Project commands → run directly: ./deploy_host.sh, git, etc.
+│   └── Windows tools → use .exe suffix: explorer.exe, code
+└── PowerShell (Windows) — EDGE CASE
+    ├── Project commands → wsl -e bash -c "..."
+    └── Windows tools → direct PowerShell command
 ```
