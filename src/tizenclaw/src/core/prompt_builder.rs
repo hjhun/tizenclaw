@@ -194,6 +194,7 @@ impl SystemPromptBuilder {
             }
         }
         lines.push("4. **Budget Awareness**: If a tool result arrives in truncated or summarized form, treat it as a budgeted snapshot and request a narrower follow-up tool call when necessary.".into());
+        lines.push("5. **File-Type Routing**: When the workspace already tells you the file type, call the specialized reader directly. Use `extract_document_text` for PDFs/documents and `inspect_tabular_data` for CSV/XLSX files instead of searching for another tool first.".into());
         lines.push("".into());
 
         if self.prompt_mode == PromptMode::Full {

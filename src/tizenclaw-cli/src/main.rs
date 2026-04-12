@@ -507,7 +507,7 @@ fn is_retryable_read_error(error: &io::Error) -> bool {
     matches!(
         error.kind(),
         ErrorKind::WouldBlock | ErrorKind::TimedOut | ErrorKind::Interrupted
-    )
+    ) || matches!(error.raw_os_error(), Some(11))
 }
 
 fn read_exact_with_retry<R: Read>(

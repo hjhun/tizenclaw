@@ -500,6 +500,11 @@ pub async fn extract_document_text(
         "path": source.to_string_lossy().to_string(),
         "output_path": saved_path,
         "char_count": final_text.chars().count(),
+        "content": if final_text.chars().count() <= 32_000 {
+            Value::String(final_text.clone())
+        } else {
+            Value::Null
+        },
         "text_preview": final_text.chars().take(4000).collect::<String>(),
     })
 }

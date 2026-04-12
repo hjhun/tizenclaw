@@ -199,6 +199,73 @@ fn current_timestamp_millis() -> u64 {
         .as_millis() as u64
 }
 
+fn normalize_tool_search_text(text: &str) -> String {
+    text.chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                ' '
+            }
+        })
+        .collect()
+}
+
+fn tokenize_tool_search_text(text: &str) -> Vec<String> {
+    normalize_tool_search_text(text)
+        .split_whitespace()
+        .filter(|token| token.len() > 1)
+        .filter(|token| !matches!(*token, "tool" | "tools" | "available"))
+        .map(ToString::to_string)
+        .collect()
+}
+
+fn score_tool_search_match(tool: &crate::llm::backend::LlmToolDecl, query: &str) -> usize {
+    let query = query.trim();
+    if query.is_empty() || query.eq_ignore_ascii_case("ALL") {
+        return 1;
+    }
+
+    let normalized_query = normalize_tool_search_text(query);
+    let normalized_name = normalize_tool_search_text(&tool.name);
+    let normalized_description = normalize_tool_search_text(&tool.description);
+
+    if normalized_name.trim() == normalized_query.trim() {
+        return 10_000;
+    }
+
+    let mut score = 0usize;
+    if normalized_name.contains(normalized_query.trim()) {
+        score += 2_000;
+    }
+    if normalized_description.contains(normalized_query.trim()) {
+        score += 1_000;
+    }
+
+    let query_tokens = tokenize_tool_search_text(query);
+    if query_tokens.is_empty() {
+        return score;
+    }
+
+    let mut tool_tokens: HashSet<String> = tokenize_tool_search_text(&tool.name).into_iter().collect();
+    tool_tokens.extend(tokenize_tool_search_text(&tool.description));
+
+    let overlap = query_tokens
+        .iter()
+        .filter(|token| tool_tokens.contains(token.as_str()))
+        .count();
+    if overlap == 0 {
+        return score;
+    }
+
+    score += overlap * 100;
+    if overlap == query_tokens.len() {
+        score += 500;
+    }
+
+    score
+}
+
 fn dashboard_outbound_queue_path(base_dir: &Path) -> PathBuf {
     base_dir.join("outbound").join("web_dashboard.jsonl")
 }
@@ -1806,6 +1873,97 @@ fn resolve_workspace_path(session_workdir: &Path, path_str: &str) -> Result<Path
     })
 }
 
+fn specialized_read_tool_for_path(path: &Path) -> Option<&'static str> {
+    let ext = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "pdf" => Some("extract_document_text"),
+        "xlsx" => Some("inspect_tabular_data"),
+        _ => None,
+    }
+}
+
+fn decode_tool_uri_component(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0usize;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'+' => {
+                decoded.push(b' ');
+                index += 1;
+            }
+            b'%' if index + 2 < bytes.len() => {
+                let hex = &value[index + 1..index + 3];
+                if let Ok(byte) = u8::from_str_radix(hex, 16) {
+                    decoded.push(byte);
+                    index += 3;
+                } else {
+                    decoded.push(bytes[index]);
+                    index += 1;
+                }
+            }
+            byte => {
+                decoded.push(byte);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
+fn parse_tool_uri(url: &str) -> Option<(String, HashMap<String, String>)> {
+    let raw = url.strip_prefix("tool://")?;
+    let (tool_name, raw_query) = raw.split_once('?').unwrap_or((raw, ""));
+    if tool_name.trim().is_empty() {
+        return None;
+    }
+
+    let mut params = HashMap::new();
+    for pair in raw_query.split('&') {
+        if pair.trim().is_empty() {
+            continue;
+        }
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        if key.trim().is_empty() {
+            continue;
+        }
+        params.insert(
+            decode_tool_uri_component(key.trim()),
+            decode_tool_uri_component(value.trim()),
+        );
+    }
+
+    Some((tool_name.trim().to_string(), params))
+}
+
+fn file_looks_binary(path: &Path) -> bool {
+    let Ok(bytes) = std::fs::read(path) else {
+        return false;
+    };
+    if bytes.is_empty() {
+        return false;
+    }
+    let sample = &bytes[..bytes.len().min(4096)];
+    if sample.contains(&0) {
+        return true;
+    }
+    let suspicious = sample
+        .iter()
+        .filter(|byte| {
+            !matches!(
+                byte,
+                b'\n' | b'\r' | b'\t' | 0x20..=0x7e
+            )
+        })
+        .count();
+    suspicious * 5 > sample.len()
+}
+
 fn collect_successful_file_management_actions(messages: &[LlmMessage]) -> usize {
     messages
         .iter()
@@ -1895,6 +2053,42 @@ async fn file_manager_tool(tc_args: &Value, session_workdir: &Path) -> Value {
                 Ok(path) => path,
                 Err(error) => return json!({"error": error}),
             };
+            if let Some(tool_name) = specialized_read_tool_for_path(&path) {
+                let redirected = match tool_name {
+                    "extract_document_text" => {
+                        feature_tools::extract_document_text(path_str, None, None, session_workdir)
+                            .await
+                    }
+                    "inspect_tabular_data" => {
+                        feature_tools::inspect_tabular_data(path_str, 5, session_workdir).await
+                    }
+                    _ => json!({
+                        "error": format!("Unsupported specialized read tool '{}'", tool_name)
+                    }),
+                };
+                if redirected.get("error").is_some() {
+                    return redirected;
+                }
+                let mut redirected = redirected;
+                if let Some(object) = redirected.as_object_mut() {
+                    object.insert(
+                        "redirected_from".into(),
+                        json!("file_manager.read"),
+                    );
+                    object.insert("recommended_tool".into(), json!(tool_name));
+                }
+                return redirected;
+            }
+            if file_looks_binary(&path) {
+                return json!({
+                    "error": format!(
+                        "Binary file detected at '{}'. Use a specialized extraction tool instead of file_manager read.",
+                        path.display()
+                    ),
+                    "path": path.to_string_lossy(),
+                    "recommended_tool": "extract_document_text",
+                });
+            }
             if !force_rust_fallback {
                 match runtime_capabilities::read_file_via_system(&path).await {
                     Ok(content) => {
@@ -2250,6 +2444,39 @@ async fn file_manager_tool(tc_args: &Value, session_workdir: &Path) -> Value {
                 .unwrap_or("");
             if url.is_empty() {
                 return json!({"error": "Missing required url"});
+            }
+            if let Some((tool_name, params)) = parse_tool_uri(url) {
+                return match tool_name.as_str() {
+                    "extract_document_text" => {
+                        let path = params.get("path").map(String::as_str).unwrap_or("");
+                        let output_path = params.get("output_path").map(String::as_str);
+                        let max_chars = params
+                            .get("max_chars")
+                            .and_then(|value| value.parse::<usize>().ok());
+                        feature_tools::extract_document_text(
+                            path,
+                            output_path,
+                            max_chars,
+                            session_workdir,
+                        )
+                        .await
+                    }
+                    "inspect_tabular_data" => {
+                        let path = params.get("path").map(String::as_str).unwrap_or("");
+                        let preview_rows = params
+                            .get("preview_rows")
+                            .and_then(|value| value.parse::<usize>().ok())
+                            .unwrap_or(5);
+                        feature_tools::inspect_tabular_data(path, preview_rows, session_workdir)
+                            .await
+                    }
+                    _ => json!({
+                        "error": format!(
+                            "Unsupported tool URI '{}'. Supported tool:// targets: extract_document_text, inspect_tabular_data",
+                            tool_name
+                        )
+                    }),
+                };
             }
             let dest = match resolve_workspace_path(session_workdir, dest_str) {
                 Ok(path) => path,
@@ -5830,16 +6057,35 @@ impl AgentCore {
                                 all_tools.extend(bridge.get_action_declarations());
                             }
 
-                            let mut results = Vec::new();
-                            for t in all_tools {
-                                if query == "ALL" || t.name.to_lowercase().contains(&query.to_lowercase()) || t.description.to_lowercase().contains(&query.to_lowercase()) {
-                                    results.push(serde_json::json!({
-                                        "name": t.name,
-                                        "description": t.description,
-                                        "parameters": t.parameters,
-                                    }));
-                                }
-                            }
+                            let mut scored_tools: Vec<(usize, crate::llm::backend::LlmToolDecl)> =
+                                all_tools
+                                    .into_iter()
+                                    .map(|tool| (score_tool_search_match(&tool, query), tool))
+                                    .filter(|(score, _)| *score > 0)
+                                    .collect();
+                            scored_tools.sort_by(|(left_score, left_tool), (right_score, right_tool)| {
+                                right_score
+                                    .cmp(left_score)
+                                    .then_with(|| left_tool.name.cmp(&right_tool.name))
+                            });
+
+                            let limit = if query.eq_ignore_ascii_case("ALL") {
+                                usize::MAX
+                            } else {
+                                8
+                            };
+                            let results: Vec<Value> = scored_tools
+                                .into_iter()
+                                .take(limit)
+                                .map(|(score, tool)| {
+                                    serde_json::json!({
+                                        "name": tool.name,
+                                        "description": tool.description,
+                                        "parameters": tool.parameters,
+                                        "match_score": score,
+                                    })
+                                })
+                                .collect();
                             if results.is_empty() {
                                 serde_json::json!({"error": format!("No tools found matching '{}'", query)})
                             } else {
@@ -6952,6 +7198,11 @@ impl AgentCore {
 
     pub async fn set_llm_config(&self, path: &str, value: Value) -> Result<Value, String> {
         let mut doc = llm_config_store::load(&self.platform.paths.config_dir)?;
+        if let Ok(existing) = llm_config_store::get_value(&doc, Some(path)) {
+            if existing == value {
+                return Ok(existing);
+            }
+        }
         llm_config_store::set_value(&mut doc, path, value)?;
         llm_config_store::save(&self.platform.paths.config_dir, &doc)?;
 
@@ -6964,6 +7215,9 @@ impl AgentCore {
 
     pub async fn unset_llm_config(&self, path: &str) -> Result<Value, String> {
         let mut doc = llm_config_store::load(&self.platform.paths.config_dir)?;
+        if llm_config_store::get_value(&doc, Some(path)).is_err() {
+            return Ok(Value::Null);
+        }
         let removed = llm_config_store::unset_value(&mut doc, path)?;
         llm_config_store::save(&self.platform.paths.config_dir, &doc)?;
 
@@ -7979,6 +8233,61 @@ mod tests {
     }
 
     #[test]
+    fn score_tool_search_match_finds_document_extractor_from_pdf_query() {
+        let tool = crate::llm::backend::LlmToolDecl {
+            name: "extract_document_text".into(),
+            description:
+                "Extract readable text from a local document such as TXT, Markdown, JSON, CSV, or PDF."
+                    .into(),
+            parameters: json!({"type": "object"}),
+        };
+        let unrelated = crate::llm::backend::LlmToolDecl {
+            name: "web_search".into(),
+            description: "Search the web using the configured search provider stack.".into(),
+            parameters: json!({"type": "object"}),
+        };
+
+        let extractor_score = score_tool_search_match(&tool, "PDF extract document text tool");
+        let unrelated_score = score_tool_search_match(&unrelated, "PDF extract document text tool");
+
+        assert!(extractor_score > unrelated_score);
+        assert!(extractor_score >= 400);
+    }
+
+    #[test]
+    fn score_tool_search_match_prefers_exact_tool_name() {
+        let exact = crate::llm::backend::LlmToolDecl {
+            name: "extract_document_text".into(),
+            description: "Document extractor".into(),
+            parameters: json!({"type": "object"}),
+        };
+        let partial = crate::llm::backend::LlmToolDecl {
+            name: "extract_document_summary".into(),
+            description: "Summarize extracted documents".into(),
+            parameters: json!({"type": "object"}),
+        };
+
+        assert!(score_tool_search_match(&exact, "extract_document_text")
+            > score_tool_search_match(&partial, "extract_document_text"));
+    }
+
+    #[test]
+    fn parse_tool_uri_decodes_query_parameters() {
+        let (tool_name, params) = parse_tool_uri(
+            "tool://extract_document_text?path=docs%2Freport.pdf&output_path=tmp%2Freport.txt&max_chars=1200",
+        )
+        .expect("tool uri");
+
+        assert_eq!(tool_name, "extract_document_text");
+        assert_eq!(params.get("path").map(String::as_str), Some("docs/report.pdf"));
+        assert_eq!(
+            params.get("output_path").map(String::as_str),
+            Some("tmp/report.txt")
+        );
+        assert_eq!(params.get("max_chars").map(String::as_str), Some("1200"));
+    }
+
+    #[test]
     fn parse_shell_like_args_preserves_quoted_groups() {
         let parsed = parse_shell_like_args("--name \"hello world\" 'alpha beta'");
 
@@ -8626,6 +8935,88 @@ mod tests {
         assert_eq!(result["success"], json!(true));
         assert_eq!(result["backend"], json!("rust_fallback"));
         assert_eq!(result["content"], json!("alpha\n"));
+    }
+
+    #[tokio::test]
+    async fn file_manager_tool_redirects_pdf_reads_to_document_extractor() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("paper.pdf");
+        std::fs::write(
+            &file_path,
+            br#"%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 1 /Kids [3 0 R] >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 44 >>
+stream
+BT /F1 12 Tf 72 120 Td (typed WebSocket) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000010 00000 n 
+0000000063 00000 n 
+0000000122 00000 n 
+0000000248 00000 n 
+0000000342 00000 n 
+trailer
+<< /Root 1 0 R /Size 6 >>
+startxref
+412
+%%EOF
+"#,
+        )
+        .unwrap();
+
+        let result = file_manager_tool(
+            &json!({
+                "operation": "read",
+                "path": "paper.pdf"
+            }),
+            dir.path(),
+        )
+        .await;
+
+        assert_eq!(result["status"], json!("success"));
+        assert_eq!(result["redirected_from"], json!("file_manager.read"));
+        assert_eq!(result["recommended_tool"], json!("extract_document_text"));
+        assert!(result["text_preview"]
+            .as_str()
+            .unwrap_or("")
+            .contains("typed WebSocket"));
+    }
+
+    #[tokio::test]
+    async fn file_manager_tool_rejects_binary_reads() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("blob.bin");
+        std::fs::write(&file_path, [0_u8, 159, 146, 150, 0, 1, 2, 3]).unwrap();
+
+        let result = file_manager_tool(
+            &json!({
+                "operation": "read",
+                "path": "blob.bin"
+            }),
+            dir.path(),
+        )
+        .await;
+
+        assert!(result["error"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Binary file detected"));
+        assert_eq!(result["recommended_tool"], json!("extract_document_text"));
     }
 
     #[tokio::test]

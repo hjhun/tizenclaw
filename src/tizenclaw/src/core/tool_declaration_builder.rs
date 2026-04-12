@@ -173,7 +173,7 @@ impl ToolDeclarationBuilder {
         });
         tools.push(LlmToolDecl {
             name: "file_manager".into(),
-            description: "Manage files and directories directly in the workspace using explicit operations such as read, write, append, list, mkdir, stat, copy, move, remove, and download. Prefer this over generated-code execution for normal file management tasks.".into(),
+            description: "Manage files and directories directly in the workspace using explicit operations such as read, write, append, list, mkdir, stat, copy, move, remove, and download. Prefer this over generated-code execution for normal file management tasks. For PDFs and other document formats use extract_document_text, and for spreadsheets use inspect_tabular_data instead of raw file reads.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
