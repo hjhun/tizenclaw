@@ -18,7 +18,8 @@ uses `./deploy_host.sh`; the Tizen GBS workflow uses `./deploy.sh` when
 explicitly requested. The repository is currently split across:
 
 - the canonical reconstruction workspace under `rust/`
-- the Python parity workspace under `src/tizenclaw_py` and `tests/python`
+- the repository support tools under `src/` and
+  `tests/test_porting_workspace.py`
 - the still-active legacy Rust implementation under `src/tizenclaw*`
 
 **Active branch**: `develRust`  

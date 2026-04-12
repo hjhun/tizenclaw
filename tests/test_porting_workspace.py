@@ -54,7 +54,7 @@ class PortingWorkspaceTest(unittest.TestCase):
         self.assertGreater(len(summary["rust_workspace_crates"]), 0)
         self.assertGreater(len(bootstrap["edges"]), 0)
 
-    def test_query_engine_finds_python_workspace_records(self) -> None:
+    def test_query_engine_finds_repository_records(self) -> None:
         engine = QueryEngine(ROOT)
         result = engine.search("manifest", domain="commands")
         self.assertEqual(result["match_count"], 1)
@@ -71,7 +71,7 @@ class PortingWorkspaceTest(unittest.TestCase):
         self.assertEqual(summary["message_count"], 2)
         self.assertEqual(summary["type"], "dict")
 
-    def test_parity_audit_warns_on_missing_reference_docs_only(self) -> None:
+    def test_repository_audit_warns_on_missing_reference_docs_only(self) -> None:
         report = run_parity_audit(ROOT)
         self.assertEqual(report["status"], "warn")
         self.assertEqual(report["missing_files"], [])
@@ -90,7 +90,7 @@ class PortingWorkspaceTest(unittest.TestCase):
             text=True,
         )
         payload = json.loads(completed.stdout)
-        self.assertEqual(payload["workspace"], "python-parity")
+        self.assertEqual(payload["workspace"], "repository-support")
 
     def test_cli_query_command_supports_json_output(self) -> None:
         command = [

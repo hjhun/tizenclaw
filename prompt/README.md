@@ -9,7 +9,8 @@ The files in this directory are the staged rebuild plan for the repository.
    an earlier structure.
 3. Preserve the analysis-doc architecture split while implementing each prompt:
    - canonical Rust production workspace under `rust/`
-   - Python parity workspace under `src/tizenclaw_py` and `tests/python`
+   - repository support tooling under `src/` and
+     `tests/test_porting_workspace.py`
    - legacy Rust runtime under `src/tizenclaw*` until migration is complete
 4. Turn prompt output into durable repository files, tests, and docs.
 5. Update `README.md`, `docs/ONBOARDING.md`, or `.claude/CLAUDE.md` when a
@@ -19,7 +20,7 @@ The files in this directory are the staged rebuild plan for the repository.
 
 1. `0031-rebuild-foundation-and-scope.md`
 2. `0032-rust-runtime-skeleton.md`
-3. `0033-python-parity-surface.md`
+3. `0033-python-parity-surface.md` (historical, now retired)
 4. `0034-tool-and-plugin-boundaries.md`
 5. `0035-cross-workspace-validation.md`
 
@@ -29,5 +30,5 @@ For each prompt:
 
 1. Re-read the relevant `docs/claw-code-analysis/*.md` files.
 2. Inspect the existing implementation before adding new files.
-3. Keep Rust, Python parity, tests, and docs aligned.
+3. Keep Rust, repository support tooling, tests, and docs aligned.
 4. Prefer small durable scaffolding over large speculative placeholders.

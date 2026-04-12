@@ -1,4 +1,4 @@
-"""Port manifest generation for the parity workspace."""
+"""Port manifest generation for repository support tooling."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ DOCUMENT_REFERENCES = [
 
 
 def build_port_manifest(root: Path) -> dict[str, object]:
-    """Generate a manifest describing the current parity workspace."""
+    """Generate a manifest describing the current repository tooling."""
 
     command_inventory = build_command_inventory()
     tool_pool = build_tool_pool(root)
@@ -36,11 +36,11 @@ def build_port_manifest(root: Path) -> dict[str, object]:
     ]
 
     return {
-        "workspace": "python-parity",
+        "workspace": "repository-support",
         "purpose": [
             "command and tool inventory",
-            "port manifest generation",
-            "parity audit flows",
+            "repository manifest generation",
+            "repository audit flows",
             "query and summary views",
             "lightweight CLI access",
         ],

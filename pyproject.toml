@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tizenclaw-py"
+name = "tizenclaw-repo-tools"
 version = "0.1.0"
-description = "Python parity workspace for the TizenClaw reconstruction"
+description = "Repository support tooling for the TizenClaw project"
 requires-python = ">=3.11"
 
 [tool.setuptools]

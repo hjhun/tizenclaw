@@ -1,4 +1,4 @@
-"""Command inventory and graph helpers for the parity CLI."""
+"""Command inventory and graph helpers for repository support tooling."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass, field
 
 @dataclass(frozen=True)
 class CommandSpec:
-    """Describes one top-level parity CLI command."""
+    """Describes one top-level repository support CLI command."""
 
     name: str
     mode: str
@@ -32,7 +32,7 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
     CommandSpec(
         name="manifest",
         mode="manifest",
-        summary="Generate the Python parity port manifest.",
+        summary="Generate the repository support manifest.",
         outputs=("text", "json"),
         arguments=("format",),
         tags=("manifest", "audit"),
@@ -40,7 +40,7 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
     CommandSpec(
         name="audit",
         mode="audit",
-        summary="Run parity checks against the documented workspace contract.",
+        summary="Run repository checks against the documented workspace contract.",
         outputs=("text", "json"),
         arguments=("format", "strict"),
         tags=("audit", "parity"),
@@ -80,7 +80,7 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
     CommandSpec(
         name="bootstrap",
         mode="bootstrap",
-        summary="Display the bootstrap graph for parity workspace wiring.",
+        summary="Display the bootstrap graph for support-tool wiring.",
         outputs=("text", "json"),
         arguments=("format",),
         tags=("graph", "bootstrap"),

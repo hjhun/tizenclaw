@@ -1,4 +1,4 @@
-"""Parity audit helpers for the Python mirror workspace."""
+"""Repository audit helpers for the support-tool workspace."""
 
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ EXPECTED_FILES = [
     "src/port_manifest.py",
     "src/runtime.py",
     "src/session_store.py",
-    "src/tizenclaw_py/__init__.py",
     "tests/test_porting_workspace.py",
 ]
 

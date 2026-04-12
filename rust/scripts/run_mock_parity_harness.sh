@@ -82,10 +82,10 @@ if errors:
 else:
     summary = report["summary"]
     print(
-        "[mock-parity] rust_members=%d python_surfaces=%d runtime_modules=%d"
+        "[mock-parity] rust_members=%d rust_surfaces=%d runtime_modules=%d"
         % (
             len(summary["workspace_members"]),
-            len(summary["python_surfaces"]),
+            len(summary["rust_surfaces"]),
             len(summary["runtime_module_map"]),
         )
     )

@@ -9,12 +9,11 @@ used for host and device validation.
 ## Current Layout
 
 - `src/`: active Rust workspace for the daemon, CLI, shared libraries,
-  tool executor, metadata plugins, system-test client, and web dashboard
+  tool executor, metadata plugins, system-test client, web dashboard,
+  and repository support tools
 - `rust/`: forward-looking Rust workspace for the newer modular runtime
   split (`tclaw-api`, `tclaw-runtime`, `tclaw-tools`, `tclaw-plugins`)
 - `tests/system/`: JSON system scenarios for daemon-visible contracts
-- `tests/python/`: repository and parity checks for the Python support
-  modules
 - `data/`: bundled host assets, web UI files, sample configs, and docs
   data consumed by the runtime
 - `tools/`: embedded and CLI tool payloads used by the daemon
@@ -67,10 +66,10 @@ flow.
 - `tests/system/*.json` covers daemon-visible runtime contracts such as
   IPC, dashboard control, command registry behavior, devel mode, and
   session/runtime shape
-- `tests/python/` and `tests/test_porting_workspace.py` cover the Python
-  parity and repository support modules
+- `tests/test_porting_workspace.py` covers the repository support tools
+  used for inventory, manifest, and audit checks
 - `rust/scripts/run_mock_parity_harness.sh` checks the newer Rust
-  workspace against the Python parity surface
+  workspace against the documented Rust-only repository layout
 
 ## Related Files
 

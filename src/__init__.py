@@ -1,8 +1,7 @@
-"""Python parity workspace for TizenClaw.
+"""Repository support tools for TizenClaw.
 
-This package is a runnable audit and analysis layer. It mirrors selected
-runtime concepts for manifest generation, parity checks, and lightweight CLI
-inspection. It is not the canonical runtime implementation.
+This package provides lightweight audit, manifest, and analysis helpers used
+to inspect the repository layout. It is not a supported runtime surface.
 """
 
 from .commands import build_command_graph, build_command_inventory

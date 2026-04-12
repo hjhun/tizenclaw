@@ -3,10 +3,8 @@ from __future__ import annotations
 
 import argparse
 import ast
-import importlib
 import json
 import re
-import sys
 import tomllib
 from pathlib import Path
 
@@ -44,9 +42,8 @@ def documented_rust_crates(root: Path) -> list[str]:
 
 
 def documented_domain_split(root: Path) -> list[str]:
-    # The repository keeps the parity workspace in Python while the
-    # canonical runtime split remains the Rust surfaces listed below.
-    return ["api", "cli", "plugins", "python", "runtime", "tools"]
+    # The supported public architecture is the Rust workspace split below.
+    return ["api", "cli", "plugins", "runtime", "tools"]
 
 
 def documented_shell_test_roots(root: Path) -> list[str]:
@@ -55,7 +52,6 @@ def documented_shell_test_roots(root: Path) -> list[str]:
         "deploy_host.sh",
         "deploy.sh",
         "tests/system/",
-        "tests/python/",
         "rust/scripts/run_mock_parity_harness.sh",
     }
     paths.update(
@@ -95,20 +91,6 @@ def rust_surface_names(root: Path) -> list[str]:
     return sorted(set(re.findall(r'name:\s*"([^"]+)"', text)))
 
 
-def python_surface_names(root: Path) -> list[str]:
-    if str(root) not in sys.path:
-        sys.path.insert(0, str(root))
-    package = importlib.import_module("src.tizenclaw_py")
-    surfaces = [
-        package.API_SURFACE,
-        package.CLI_SURFACE,
-        package.PLUGIN_SURFACE,
-        package.RUNTIME_SURFACE,
-        package.TOOL_SURFACE,
-    ]
-    return sorted(surface["name"] for surface in surfaces)
-
-
 def file_presence(root: Path) -> dict[str, bool]:
     required = [
         "install.sh",
@@ -139,7 +121,6 @@ def build_report(root: Path) -> dict[str, object]:
     module_map = runtime_module_map(root)
     runtime_modules = runtime_source_modules(root)
     rust_surfaces = rust_surface_names(root)
-    python_surfaces = python_surface_names(root)
     required_files = file_presence(root)
 
     errors: list[str] = []
@@ -153,15 +134,6 @@ def build_report(root: Path) -> dict[str, object]:
     )
     if missing_doc_surfaces:
         errors.append(f"rust canonical surfaces missing documented domains: {missing_doc_surfaces}")
-    missing_python_surfaces = sorted(
-        {"api", "cli", "runtime", "tools", "plugins"} - set(python_surfaces)
-    )
-    if missing_python_surfaces:
-        errors.append(
-            f"python parity surfaces missing documented domains: {missing_python_surfaces}"
-        )
-    if docs_domains and not any("python" in domain.lower() for domain in docs_domains):
-        errors.append("expert-overview no longer advertises the python parity workspace")
     if set(module_map) != set(runtime_modules):
         missing_from_map = sorted(set(runtime_modules) - set(module_map))
         stale_in_map = sorted(set(module_map) - set(runtime_modules))
@@ -187,7 +159,6 @@ def build_report(root: Path) -> dict[str, object]:
             "crate_directories": crate_dirs,
             "documented_domains": docs_domains,
             "rust_surfaces": rust_surfaces,
-            "python_surfaces": python_surfaces,
             "runtime_module_map": module_map,
             "runtime_source_modules": runtime_modules,
             "documented_shell_test_roots": docs_shell_tests,

@@ -1,4 +1,6 @@
 # Prompt 0033: Python Parity Surface
 
-Expand the Python parity workspace so it mirrors the Rust surface clearly for
-audit and explanation.
+Historical prompt retained for roadmap continuity.
+
+The Python parity surface it described has been retired because Python is not
+part of the supported Tizen runtime.

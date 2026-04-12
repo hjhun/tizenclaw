@@ -1,4 +1,4 @@
-"""CLI shim for the Python parity workspace."""
+"""CLI shim for repository support tooling."""
 
 from __future__ import annotations
 
@@ -48,11 +48,11 @@ def _format_inventory(root: Path, section: str) -> dict[str, object]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m src.main",
-        description="TizenClaw Python parity workspace CLI",
+        description="TizenClaw repository support CLI",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    inventory = subparsers.add_parser("inventory", help="Show parity inventory")
+    inventory = subparsers.add_parser("inventory", help="Show support-tool inventory")
     inventory.add_argument(
         "section",
         nargs="?",
@@ -64,11 +64,11 @@ def build_parser() -> argparse.ArgumentParser:
     manifest = subparsers.add_parser("manifest", help="Generate port manifest")
     manifest.add_argument("--format", choices=("json",), default="json")
 
-    audit = subparsers.add_parser("audit", help="Run parity audit")
+    audit = subparsers.add_parser("audit", help="Run repository audit")
     audit.add_argument("--format", choices=("json",), default="json")
     audit.add_argument("--strict", action="store_true")
 
-    query = subparsers.add_parser("query", help="Search parity records")
+    query = subparsers.add_parser("query", help="Search repository records")
     query.add_argument("term")
     query.add_argument(
         "--domain",

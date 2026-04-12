@@ -2,19 +2,183 @@
 
 ## Actual Progress
 
-- Goal: analyze the current implementation, refresh `README.md`, remove
-  the repository documents under `docs/`, and publish the result
+- Goal: retire the unsupported Python parity layer and align repository
+  structure, docs, and verification with the Tizen-first Rust runtime
 - Cycle classification: `host-default`
-- Requested outcome: align the root README with the live codebase and
-  delete the obsolete `docs/` tree
-- Runtime-visible behavior change: `none`
-- Current workflow phase: `commit`
-- Last completed workflow phase: `commit`
-- Supervisor verdict: `PASS after regression`
+- Requested outcome: prepare a safe repository cleanup plan for removing
+  `src/tizenclaw_py` and related Python-only parity references
+- Runtime-visible behavior change: `none` planned yet
+- Current workflow phase: `planning`
+- Last completed workflow phase: `planning`
+- Supervisor verdict: `PASS`
 - Escalation status: `none`
-- Resume point: workflow complete
+- Resume point: wait for user approval before Design/Development
 
 ## Stage Log
+
+### Stage 1: Planning (Python parity retirement)
+
+- Status: `completed`
+- Cycle routing: host-default because the request is repository cleanup
+  planning, not explicit Tizen packaging or device validation
+- Affected runtime surface:
+  - remove the unsupported Python parity package under `src/tizenclaw_py`
+  - remove Python-only tests under `tests/python`
+  - update repository docs that still advertise Python support, including
+    `README.md`, `CLAUDE.md`, and `prompt/README.md`
+  - update parity and audit helpers that currently import or enumerate the
+    Python surface, especially `rust/scripts/run_mock_parity_diff.py` and
+    `src/parity_audit.py`
+  - keep daemon IPC, plugin loading, packaging, and host/Tizen runtime
+    behavior unchanged
+- `tizenclaw-tests` scenario:
+  - none planned because the intended change is repository cleanup and
+    unsupported-surface removal, not a daemon-visible behavior change
+- Planned execution:
+  - classify all Python parity references as one of: delete, replace with
+    Rust workspace references, or keep temporarily behind explicit docs
+  - remove `src/tizenclaw_py` and `tests/python`
+  - rewrite parity/audit tooling so verification targets Rust-only
+    repository surfaces
+  - update contributor-facing docs to stop advertising Python support
+  - validate through `./deploy_host.sh` and `./deploy_host.sh --test`
+
+### Supervisor Gate: Stage 1 (Python parity retirement)
+
+- Verdict: `PASS`
+- Evidence: the cycle classification, affected surface, verification path,
+  and the absence of daemon-visible behavior changes were recorded before
+  any implementation
+
+### Stage 2: Design (Python parity retirement)
+
+- Status: `completed`
+- Subsystem boundaries and ownership:
+  - remove the compatibility-only package under `src/tizenclaw_py`
+  - remove the Python-only foundation tests under `tests/python`
+  - keep the repository support modules under `src/*.py` intact because
+    the parity and documentation tooling still use them during host
+    verification
+  - convert the mock parity verification flow in
+    `rust/scripts/run_mock_parity_diff.py` from Python-surface parity to
+    Rust workspace and repository-layout consistency checks
+  - narrow `src/parity_audit.py` so it audits the remaining repository
+    support modules instead of a removed Python package
+  - update contributor docs to describe a Rust-only supported runtime
+    surface
+- Persistence and runtime path impact:
+  - no daemon persistence directories or Tizen packaging assets change
+  - host verification scripts continue to read repository metadata from
+    the existing Python support modules under `src/`
+  - no IPC schema, plugin manifest, or runtime configuration format
+    changes
+- IPC-observable assertions:
+  - none newly introduced because daemon-visible behavior is unchanged
+  - host deploy/test scripts must still pass after the cleanup
+  - the live host daemon must still restart and report healthy status
+  - no `tizenclaw-tests` scenario update is required because the cleanup
+    does not alter external daemon contracts
+- Verification approach:
+  - run `./deploy_host.sh` to confirm the host build/install/restart path
+  - run `./deploy_host.sh --test` to confirm repository regressions,
+    including the adjusted parity/audit tooling
+  - capture status and daemon log evidence during Test & Review
+
+### Supervisor Gate: Stage 2 (Python parity retirement)
+
+- Verdict: `PASS`
+- Evidence: removal boundaries, retained support modules, and the
+  Rust-only verification strategy were documented before edits
+
+### Stage 3: Development (Python parity retirement)
+
+- Status: `completed`
+- Development handling for this cycle:
+  - removed the compatibility-only Python package under
+    `src/tizenclaw_py`
+  - removed the Python-only tests under `tests/python`
+  - updated `rust/scripts/run_mock_parity_diff.py` and
+    `rust/scripts/run_mock_parity_harness.sh` so host verification no
+    longer imports or reports Python parity surfaces
+  - renamed the surviving `src/*.py` support layer in docs and metadata
+    from "Python parity workspace" to "repository support tooling"
+  - updated repository prompts, roadmap, and contributor docs to stop
+    advertising Python runtime support
+- `tizenclaw-tests` scenario:
+  - none added or updated because daemon-visible behavior is unchanged
+- TDD note:
+  - no new failing system test was introduced because the change removes
+    unsupported repository scaffolding rather than altering external
+    daemon behavior
+  - regression coverage will come from the existing host-default test
+    path in the next stages
+
+### Supervisor Gate: Stage 3 (Python parity retirement)
+
+- Verdict: `PASS`
+- Evidence: the unsupported Python parity surface was removed, the
+  repository verification scripts were updated accordingly, and no
+  direct `cargo` or ad-hoc build command was used
+
+### Stage 4: Build & Deploy (Python parity retirement)
+
+- Status: `completed`
+- Commands:
+  - `./deploy_host.sh`
+  - `./deploy_host.sh`
+- Result:
+  - the initial host deploy completed successfully and restarted
+    `tizenclaw-tool-executor` with pid `3385655` and `tizenclaw` with
+    pid `3385657`
+  - after the test cycle stopped the daemon, a final host deploy
+    restored the live state with `tizenclaw-tool-executor` pid
+    `3388206` and `tizenclaw` pid `3388209`
+  - both deploy runs confirmed IPC readiness through the abstract socket
+- Watchpoint:
+  - the canonical `rust/` workspace still reports the known offline
+    vendor mismatch for `libc 0.2.184` vs vendored `0.2.183` before the
+    script succeeds through its fallback path
+
+### Supervisor Gate: Stage 4 (Python parity retirement)
+
+- Verdict: `PASS`
+- Evidence: the required host-default deploy script completed, the host
+  daemon was restored to a live state, and IPC readiness was confirmed
+
+### Stage 5: Test & Review (Python parity retirement)
+
+- Status: `completed`
+- Commands:
+  - `./deploy_host.sh --test`
+  - `./deploy_host.sh --status`
+  - `tail -n 20 ~/.tizenclaw/logs/tizenclaw.log`
+  - `grep -n "Daemon ready\\|Completed startup indexing\\|Started IPC server\\|Initialized logging backend" ~/.tizenclaw/logs/tizenclaw.log | tail -n 10`
+- Results:
+  - root workspace host tests: `PASS`
+  - canonical `rust/` workspace tests: `PASS`
+  - mock parity harness: `PASS`
+  - documentation-driven architecture verification: `PASS`
+- Runtime evidence:
+  - the host test cycle needed to send `SIGKILL` to pid `3385657` after
+    graceful stop stalled, then completed normally
+  - final host status reported `tizenclaw` pid `3388209` and
+    `tizenclaw-tool-executor` pid `3388206`
+  - recent daemon log lines included `Initialized logging backend`,
+    `Started IPC server`, `Completed startup indexing`, and
+    `Daemon ready`
+- Review verdict: `PASS`
+- Review note:
+  - `tizenclaw-web-dashboard` remains stopped by default on the host and
+    port `9091` has no listener until the dashboard is started manually
+  - the known canonical workspace vendor warning is still present but did
+    not block this cleanup cycle
+
+### Supervisor Gate: Stage 5 (Python parity retirement)
+
+- Verdict: `PASS`
+- Evidence: the host QA path passed with concrete test output, parity
+  harness output, and runtime status/log evidence after the final
+  redeploy
 
 ### Stage 1: Planning
 
