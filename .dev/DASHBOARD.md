@@ -8,12 +8,11 @@
 - Requested outcome: align the root README with the live codebase and
   delete the obsolete `docs/` tree
 - Runtime-visible behavior change: `none`
-- Current workflow phase: `test`
-- Last completed workflow phase: `test`
+- Current workflow phase: `commit`
+- Last completed workflow phase: `commit`
 - Supervisor verdict: `PASS after regression`
 - Escalation status: `none`
-- Resume point: proceed to Stage 6 commit after the successful Stage 5
-  retry
+- Resume point: workflow complete
 
 ## Stage Log
 
@@ -196,3 +195,22 @@
 - Evidence: the host QA path passed with concrete test output, parity
   verification, and runtime log evidence, and the daemon was redeployed
   afterward
+
+### Stage 6: Commit
+
+- Status: `completed`
+- Workspace hygiene:
+  - ran `bash .agent/scripts/cleanup_workspace.sh`
+  - confirmed only the intended documentation and parity-harness files
+    were staged for the main delivery commit
+  - prepared `.tmp/commit_msg.txt` and used it for commit creation
+- Commit result:
+  - created commit `584e0f1f` with message
+    `Refresh README and remove docs tree`
+
+### Supervisor Gate: Stage 6
+
+- Verdict: `PASS`
+- Evidence: cleanup was executed, the commit used
+  `git commit -F .tmp/commit_msg.txt`, and the cycle outputs are now
+  recorded in this dashboard

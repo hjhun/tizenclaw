@@ -1,7 +1,4 @@
-Migrate internal dashboard tracking to .dev
+Record dashboard workflow completion
 
-Update agent rules and structure docs to point workflow tracking
-from `.dev_note` to `.dev`.
-
-Remove the legacy `.dev_note` dashboard and archived design docs,
-and keep the touched Rust files aligned with formatting cleanup.
+Update the cycle dashboard after the delivery commit so the
+repository workflow log reflects the completed Stage 6 result.
