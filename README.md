@@ -1,67 +1,80 @@
 # TizenClaw
 
-TizenClaw is being reconstructed from documentation so the repository can
-converge on the analyzed `claw-code` architecture without repeated layout
-churn.
+TizenClaw is a Rust-first autonomous agent daemon that supports a
+host-first Linux workflow and an explicit Tizen deployment path. The
+repository already includes a runnable daemon, a sandboxed tool executor,
+a web dashboard, IPC/system test scenarios, and the packaging scripts
+used for host and device validation.
 
-## Workspace Policy
+## Current Layout
 
-- Rust under `rust/` is the canonical production runtime.
-- Python under `src/` and `tests/` is the parity, audit, and explanation
-  workspace.
-- The existing legacy Rust tree under `src/tizenclaw*` remains in place during
-  the reconstruction and migration period.
+- `src/`: active Rust workspace for the daemon, CLI, shared libraries,
+  tool executor, metadata plugins, system-test client, and web dashboard
+- `rust/`: forward-looking Rust workspace for the newer modular runtime
+  split (`tclaw-api`, `tclaw-runtime`, `tclaw-tools`, `tclaw-plugins`)
+- `tests/system/`: JSON system scenarios for daemon-visible contracts
+- `tests/python/`: repository and parity checks for the Python support
+  modules
+- `data/`: bundled host assets, web UI files, sample configs, and docs
+  data consumed by the runtime
+- `tools/`: embedded and CLI tool payloads used by the daemon
+- `packaging/`: Tizen RPM packaging assets
 
-## Intended Architecture
+## Implemented Components
 
-The reconstructed project keeps the domain split described by the analysis
-docs:
+- `tizenclaw`: Tokio-based daemon with platform detection, logging,
+  startup indexing, IPC server startup, task scheduling, mDNS scanning,
+  optional devel mode, and channel registry management
+- `libtizenclaw-core`: core framework and plugin SDK with dynamic Tizen
+  library loading and C headers for integration boundaries
+- `tizenclaw-tool-executor`: isolated tool execution daemon that speaks a
+  length-prefixed JSON protocol over Unix sockets or stdio
+- `tizenclaw-web-dashboard`: Axum-based web dashboard that proxies daemon
+  IPC endpoints and serves the bundled UI
+- `tizenclaw-tests`: system-test client used with the scenarios in
+  `tests/system/`
+- metadata plugins: parser/export libraries for CLI, skill, and LLM
+  backend metadata
 
-- `rust/crates/tclaw-runtime`: long-running runtime and orchestration core
-- `rust/crates/tclaw-api`: stable contracts shared across surfaces
-- `rust/crates/tclaw-cli`: CLI entrypoint on top of the Rust runtime
-- `rust/crates/tclaw-tools`: host and platform tool adapters
-- `rust/crates/tclaw-plugins`: plugin registry and loading boundaries
-- `src/tizenclaw_py`: Python parity modules for auditing and explanation
-- `tests/`: Python tests plus daemon/system scenario assets
+## Workflows
 
-## Repository Status
+### Host-first development
 
-This repository already contains a substantial Rust implementation in the
-legacy workspace rooted at [src](/home/hjhun/samba/github/tizenclaw/src). The
-new `rust/` workspace added in this prompt is the forward-looking canonical
-layout for future reconstruction work. Later prompts should add runtime code to
-`rust/crates/` first, then retire or absorb legacy paths intentionally.
+Use the repository scripts instead of direct `cargo build` or
+`cargo test` commands.
 
-## Key Documents
+- Build, install, and restart on the host: `./deploy_host.sh`
+- Run the host validation path: `./deploy_host.sh --test`
+- Check daemon status: `./deploy_host.sh --status`
+- Follow daemon logs: `./deploy_host.sh --log`
+- Install from the current checkout: `./install.sh --local-checkout`
+
+Host installs live under `~/.tizenclaw/`, including binaries, configs,
+logs, tools, and the bundled web assets.
+
+### Tizen deployment
+
+Use `./deploy.sh` only when you need the Tizen packaging and deployment
+flow.
+
+- Full build and deploy: `./deploy.sh`
+- Build for an explicit architecture: `./deploy.sh -a x86_64`
+- Deploy to a specific device: `./deploy.sh -d <serial>`
+
+## Verification Surfaces
+
+- `./deploy_host.sh --test` runs the repository's host validation path
+- `tests/system/*.json` covers daemon-visible runtime contracts such as
+  IPC, dashboard control, command registry behavior, devel mode, and
+  session/runtime shape
+- `tests/python/` and `tests/test_porting_workspace.py` cover the Python
+  parity and repository support modules
+- `rust/scripts/run_mock_parity_harness.sh` checks the newer Rust
+  workspace against the Python parity surface
+
+## Related Files
 
 - [ROADMAP.md](/home/hjhun/samba/github/tizenclaw/ROADMAP.md)
-- [docs/ONBOARDING.md](/home/hjhun/samba/github/tizenclaw/docs/ONBOARDING.md)
-- [.claude/CLAUDE.md](/home/hjhun/samba/github/tizenclaw/.claude/CLAUDE.md)
-- [docs/claw-code-analysis/README.md](/home/hjhun/samba/github/tizenclaw/docs/claw-code-analysis/README.md)
-- [docs/STRUCTURE.md](/home/hjhun/samba/github/tizenclaw/docs/STRUCTURE.md)
 - [prompt/README.md](/home/hjhun/samba/github/tizenclaw/prompt/README.md)
-
-## Build And Test Bootstrap
-
-- Host-first repository validation remains `./deploy_host.sh`
-- Rust canonical workspace bootstrap lives in `rust/`
-- Python parity bootstrap is configured through `pyproject.toml` and
-  `pytest.ini`
-- Local checkout installation from the repository root is supported through
-  `./install.sh` or `./install.sh --local-checkout`
-- Documentation and parity verification helpers live at
-  `scripts/verify_doc_architecture.py` and
-  `rust/scripts/run_mock_parity_harness.sh`
-
-## Root Commands
-
-- Install the current checkout: `./install.sh --local-checkout`
-- Run the host validation path: `./deploy_host.sh --test`
-- Run only the doc/layout verifier:
-  `python3 scripts/verify_doc_architecture.py`
-- Run only the parity harness:
-  `bash rust/scripts/run_mock_parity_harness.sh`
-
-This prompt establishes the foundation only. It does not claim feature parity
-with the analyzed system yet.
+- [rust/README.md](/home/hjhun/samba/github/tizenclaw/rust/README.md)
+- [.claude/CLAUDE.md](/home/hjhun/samba/github/tizenclaw/.claude/CLAUDE.md)

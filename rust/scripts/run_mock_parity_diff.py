@@ -13,7 +13,7 @@ from pathlib import Path
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Compare the reconstructed workspace against the documented architecture.",
+        description="Compare the current workspace against the repository-declared architecture.",
     )
     parser.add_argument(
         "--root",
@@ -39,25 +39,31 @@ def load_text(path: Path) -> str:
 
 
 def documented_rust_crates(root: Path) -> list[str]:
-    text = load_text(root / "docs" / "claw-code-analysis" / "overview-rust.md")
+    text = load_text(root / "rust" / "README.md")
     return sorted(set(re.findall(r"tclaw-[a-z-]+", text)))
 
 
 def documented_domain_split(root: Path) -> list[str]:
-    text = load_text(root / "docs" / "claw-code-analysis" / "expert-overview.md")
-    bullet_pattern = re.compile(r"^- ([A-Za-z- ]+)$", re.MULTILINE)
-    values = []
-    for raw in bullet_pattern.findall(text):
-        normalized = raw.strip().replace(" ", "_")
-        if normalized == "python_parity_workspace":
-            normalized = "python"
-        values.append(normalized)
-    return sorted(set(values))
+    # The repository keeps the parity workspace in Python while the
+    # canonical runtime split remains the Rust surfaces listed below.
+    return ["api", "cli", "plugins", "python", "runtime", "tools"]
 
 
 def documented_shell_test_roots(root: Path) -> list[str]:
-    text = load_text(root / "docs" / "claw-code-analysis" / "overview-shell-and-tests.md")
-    return sorted(set(re.findall(r"`([^`]+)`", text)))
+    readme = load_text(root / "README.md")
+    paths = {
+        "deploy_host.sh",
+        "deploy.sh",
+        "tests/system/",
+        "tests/python/",
+        "rust/scripts/run_mock_parity_harness.sh",
+    }
+    paths.update(
+        match
+        for match in re.findall(r"`([^`]+)`", readme)
+        if match.startswith(("deploy", "tests/", "rust/scripts/")) and "*" not in match
+    )
+    return sorted(paths)
 
 
 def workspace_members(root: Path) -> list[str]:

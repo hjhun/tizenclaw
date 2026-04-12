@@ -2,120 +2,170 @@
 
 ## Actual Progress
 
-- Goal: review the current workspace changes, commit them, and push them
+- Goal: analyze the current implementation, refresh `README.md`, remove
+  the repository documents under `docs/`, and publish the result
 - Cycle classification: `host-default`
-- Requested outcome: validate the present worktree and publish it to
-  `origin/develRust`
-- Runtime-visible behavior change: `none identified during planning`
-- Current workflow phase: `commit`
+- Requested outcome: align the root README with the live codebase and
+  delete the obsolete `docs/` tree
+- Runtime-visible behavior change: `none`
+- Current workflow phase: `test`
 - Last completed workflow phase: `test`
-- Supervisor verdict: `PASS`
+- Supervisor verdict: `PASS after regression`
 - Escalation status: `none`
-- Resume point: complete Stage 1 planning, then Stage 2 design
+- Resume point: proceed to Stage 6 commit after the successful Stage 5
+  retry
 
 ## Stage Log
 
 ### Stage 1: Planning
 
 - Status: `completed`
-- Cycle routing: host-default because the user asked only for commit/push,
-  not an explicit Tizen package or device validation cycle
+- Cycle routing: host-default because the user asked for repository
+  documentation maintenance, not Tizen packaging or device validation
 - Affected runtime surface:
-  - repository guidance now points from `.dev_note` to `.dev`
-  - legacy `.dev_note` artifacts are removed
-  - code changes in tracked Rust files appear to be formatting-only
+  - repository-facing documentation in the root `README.md`
+  - removal of the obsolete documents under `docs/`
+  - no daemon, IPC, plugin, FFI, or packaging behavior changes
 - `tizenclaw-tests` scenario:
-  - no new scenario planned because no daemon-visible behavior change was
-    identified during the initial diff review
+  - none planned because the request changes documentation only
 - Planned execution:
-  - inspect the remaining diff to confirm the commit theme
-  - run `./deploy_host.sh` for the required host build/install path
-  - run `./deploy_host.sh --test` and collect host status/log evidence
-  - clean the workspace, prepare `.tmp/commit_msg.txt`, commit, and push
+  - inspect the current workspaces, scripts, and system scenarios
+  - rewrite `README.md` around the implemented host daemon workflow
+  - remove all files under `docs/`
+  - validate with the host-default deploy/test scripts
 
 ### Supervisor Gate: Stage 1
 
 - Verdict: `PASS`
-- Evidence: cycle classification, affected surface, and system-test need
-  were recorded in this dashboard for the current commit/push cycle
+- Evidence: cycle classification, affected surface, and the lack of a
+  daemon-visible behavior change were recorded in this dashboard
 
 ### Stage 2: Design
 
 - Status: `completed`
 - Subsystem boundaries and ownership:
-  - documentation and agent workflow files own the `.dev_note` to `.dev`
-    path migration
-  - deleted `.dev_note` files are historical workflow artifacts and do not
-    affect the live daemon contract
-  - Rust source edits currently appear limited to formatting, import order,
-    and line wrapping; build/test validation will confirm no behavioral drift
+  - `README.md` will describe the current root Rust workspace under
+    `src/`, the forward-looking workspace under `rust/`, the host install
+    path, and the test surfaces under `tests/`
+  - `docs/` will be removed entirely rather than partially rewritten
+  - implementation code, runtime configuration, and packaging files stay
+    untouched
 - Persistence and runtime path impact:
-  - dashboard and stage artifacts now live under `.dev/`
-  - no new runtime storage path for the daemon is introduced by this cycle
+  - no runtime persistence paths change
+  - documentation references should avoid `docs/` dependencies after the
+    removal
 - IPC-observable assertions:
-  - host daemon must still build, restart, and report healthy status after
-    the workspace is deployed with `./deploy_host.sh`
-  - host test path `./deploy_host.sh --test` must pass without introducing
-    daemon failures
+  - the host daemon should still build, install, and restart through
+    `./deploy_host.sh`
+  - repository test validation should still pass through
+    `./deploy_host.sh --test`
+  - no `tizenclaw-tests` scenario update is required because runtime
+    behavior is unchanged
 - Verification approach:
-  - use host-default deploy/test scripts only
-  - capture `./deploy_host.sh --status` evidence after deployment
+  - use `./deploy_host.sh` for build/deploy confirmation
+  - use `./deploy_host.sh --test` plus host status/log evidence for QA
 
 ### Supervisor Gate: Stage 2
 
 - Verdict: `PASS`
-- Evidence: ownership boundaries, persistence impact, and host-observable
-  assertions were documented for the current workspace diff
+- Evidence: ownership boundaries, runtime impact, and host verification
+  expectations were documented before editing
 
 ### Stage 3: Development
 
 - Status: `completed`
 - Development handling for this cycle:
-  - reviewed the existing worktree rather than adding new feature code
-  - kept the current repository diff intact and prepared it for
-    script-driven validation and publication
-  - recorded the active commit/push cycle in `.dev/DASHBOARD.md`
-- Observed change groups:
-  - workflow docs and rules migrate internal tracking references from
-    `.dev_note` to `.dev`
-  - historical `.dev_note` dashboard and design docs are deleted
-  - Rust source edits remain formatting-oriented in the inspected files
-  - `docs/STRUCTURE.md` reflects the `.dev/` location
+  - rewrote the root `README.md` to match the live repository structure,
+    scripts, and implemented runtime surfaces
+  - removed every tracked document under `docs/`
+  - kept runtime code, packaging, tests, and host/Tizen scripts unchanged
 - `tizenclaw-tests` scenario:
-  - none added or updated because no daemon-visible behavior change was
-    identified in the inspected diff
+  - none added or updated because the request changes documentation only
+- TDD note:
+  - no runtime-visible behavior changed, so no new failing system test was
+    introduced for this cycle
 
 ### Supervisor Gate: Stage 3
 
 - Verdict: `PASS`
-- Evidence: the current worktree was reviewed without bypassing the
-  script-driven cycle, and no direct cargo command was used outside the
-  repository scripts
+- Evidence: only documentation files changed, the dashboard was updated,
+  and no direct `cargo` or ad-hoc build command was used in this stage
 
 ### Stage 4: Build & Deploy
 
 - Status: `completed`
 - Commands:
   - `./deploy_host.sh`
-  - `./deploy_host.sh`
 - Result:
-  - host build/install path completed twice, with the second run used to
-    restore the daemon after the test cycle
-  - `tizenclaw` restarted successfully and IPC readiness passed
-  - final host status shows `tizenclaw` pid `3354646` and
-    `tizenclaw-tool-executor` pid `3354644`
+  - host build, install, and restart completed successfully
+  - `tizenclaw-tool-executor` restarted with pid `3361480`
+  - `tizenclaw` restarted with pid `3361482`
+  - IPC readiness passed through the abstract socket check
 - Watchpoint:
-  - the canonical Rust workspace step still reports an offline vendor
+  - the canonical `rust/` workspace still hits the known offline vendor
     mismatch for `libc 0.2.184` vs vendored `0.2.183` before succeeding
-    through the script's network-backed fallback path
+    through the script's fallback path
 
 ### Supervisor Gate: Stage 4
 
 - Verdict: `PASS`
-- Evidence: the required host-default deploy script completed, the daemon
-  restarted, and host status confirmed a live process after deployment
+- Evidence: the required host-default deploy script completed, the host
+  daemon restarted, and IPC readiness was confirmed
 
 ### Stage 5: Test & Review
+
+- Status: `failed`
+- Failure evidence:
+  - `./deploy_host.sh --test` failed in the canonical `rust/` workspace
+    parity harness
+  - `rust/scripts/run_mock_parity_diff.py` still read
+    `docs/claw-code-analysis/overview-rust.md` after the `docs/` tree was
+    removed
+- Corrective action:
+  - return to Stage 3 development
+  - remove the parity harness dependency on deleted `docs/` files
+
+### Supervisor Gate: Stage 5
+
+- Verdict: `FAIL`
+- Evidence: the host QA path exposed a real repository dependency on the
+  deleted `docs/` files, so the change set could not proceed to commit
+
+### Stage 3: Development (Regression)
+
+- Status: `completed`
+- Corrective implementation:
+  - updated `rust/scripts/run_mock_parity_diff.py` to read repository
+    declarations from `README.md` and `rust/README.md` instead of the
+    removed `docs/claw-code-analysis/*` files
+  - kept the `docs/` removal intact while restoring the parity harness
+    contract
+
+### Supervisor Gate: Stage 3 (Regression)
+
+- Verdict: `PASS`
+- Evidence: the failing parity harness path was repaired without using
+  direct `cargo` commands, and the change remains documentation-focused
+
+### Stage 4: Build & Deploy (Retry)
+
+- Status: `completed`
+- Commands:
+  - `./deploy_host.sh`
+  - `./deploy_host.sh`
+- Result:
+  - the host build/install path succeeded after the regression fix
+  - the final post-QA redeploy restored the live daemon
+  - final host processes are `tizenclaw-tool-executor` pid `3370208` and
+    `tizenclaw` pid `3370210`
+
+### Supervisor Gate: Stage 4 (Retry)
+
+- Verdict: `PASS`
+- Evidence: the host-default deploy path was rerun after the regression
+  fix and the daemon was restored to a live state
+
+### Stage 5: Test & Review (Retry)
 
 - Status: `completed`
 - Commands:
@@ -123,50 +173,26 @@
   - `./deploy_host.sh --status`
   - `tail -n 20 ~/.tizenclaw/logs/tizenclaw.log`
 - Results:
-  - host repository test suite: `PASS`
-  - canonical Rust workspace tests inside the script: `PASS`
+  - root workspace host tests: `PASS`
+  - canonical `rust/` workspace tests: `PASS`
   - mock parity harness: `PASS`
   - documentation-driven architecture verification: `PASS`
 - Runtime evidence:
-  - status showed `tizenclaw` running with pid `3354646`
-  - status showed `tizenclaw-tool-executor` running with pid `3354644`
-  - recent daemon log lines included:
-    - `[1/7] Detected platform and initialized paths`
-    - `[5/7] Started IPC server`
-    - `[7/7] Daemon ready`
+  - host status before the test cycle showed `tizenclaw` pid `3367858`
+    and `tizenclaw-tool-executor` pid `3367856`
+  - recent daemon log lines included `Initialized logging backend`,
+    `Started IPC server`, `Completed startup indexing`, and
+    `Daemon ready`
 - Review verdict: `PASS`
 - Review note:
-  - host status still warns that `tizenclaw-web-dashboard` is not running
-    and port `9091` has no listener; this warning pre-existed and did not
-    block the deploy/test script from passing
+  - the host script still reports the known vendor mismatch warning for
+    offline canonical workspace resolution before its fallback path
+  - `tizenclaw-web-dashboard` remains stopped by default on the host and
+    port `9091` has no listener until the dashboard is started manually
 
-### Supervisor Gate: Stage 5
-
-- Verdict: `PASS`
-- Evidence: the host test path passed, runtime logs were captured, and the
-  daemon was redeployed afterward to confirm a live host process
-
-### Stage 6: Commit
-
-- Status: `completed`
-- Workspace hygiene:
-  - ran `bash .agent/scripts/cleanup_workspace.sh`
-  - confirmed there are no untracked build artifacts after cleanup
-  - prepared the commit message in `.tmp/commit_msg.txt`
-- Commit payload:
-  - agent rules and stage skills that migrate references from `.dev_note`
-    to `.dev`
-  - `.dev/DASHBOARD.md` for this cycle record
-  - removal of the legacy `.dev_note` dashboard and archived design docs
-  - `docs/STRUCTURE.md`
-  - formatting-only updates in the touched Rust files
-- Commit method:
-  - use `git commit -F .tmp/commit_msg.txt`
-  - push with `git push origin develRust`
-
-### Supervisor Gate: Stage 6
+### Supervisor Gate: Stage 5 (Retry)
 
 - Verdict: `PASS`
-- Evidence: cleanup was executed, the commit message was prepared in the
-  required file, and the staged payload is limited to the current tracked
-  workspace changes
+- Evidence: the host QA path passed with concrete test output, parity
+  verification, and runtime log evidence, and the daemon was redeployed
+  afterward
