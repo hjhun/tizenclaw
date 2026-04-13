@@ -11,3 +11,6 @@
 [O] Phase 5. Re-run the host OpenAI OAuth PinchBench slice, update
     `.dev/SCORE.md`, synchronize `.dev/DASHBOARD.md`, and complete the commit
     stage only if the verified score is `>=95%`.
+[O] Phase 6. Review the latest supervisor report, re-run the required host
+    verification evidence, and synchronize `PLAN.md` with
+    `.dev/DASHBOARD.md` for the resume cycle.

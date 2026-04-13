@@ -5,14 +5,45 @@
 - Goal: <!-- dormammu:goal_source=/home/hjhun/.dormammu/goals/pinchbench.md -->
 - Active cycle: `host-default`
 - Current workflow phase: `commit`
-- Last completed workflow phase: `test/review`
+- Last completed workflow phase: `commit`
 - Success target: `pinchbench >= 95.0%` using the deployed host daemon
   and OpenAI OAuth
 - Live validation artifact:
   `/home/hjhun/samba/github/pinchbench/skill/results/0155_tizenclaw_openai-codex-gpt-5-4.json`
 - Live benchmark result: `95.7%` (`23.9145 / 25.0`)
-- Resume point: complete the commit/push stage without staging unrelated
-  workspace changes
+- Resume point: await supervisor verification of the synchronized
+  prompt-derived plan state
+
+## Resume Verification Sync
+
+- Status: `PASS`
+- Root cause of the failing verification:
+  `.dev/PLAN.md` still had all prompt-derived items unchecked and
+  `.dev/workflow_state.json` still reported an active `plan` phase,
+  while the completed host run, committed implementation, root
+  `PLAN.md`, and `.dev/SCORE.md` already showed a successful cycle.
+- Phase 1 completed: re-read `AGENTS.md`,
+  `.agent/rules/shell-detection.md`, and
+  `.agent/skills/managing-environment/SKILL.md`, confirmed the
+  `host-default` path, and identified the stale `.dev` plan state as the
+  verification failure source.
+- Phase 2 completed: confirmed the committed runtime/test changes stayed
+  generic and matched the required guidance without introducing
+  benchmark-specific logic.
+- Phase 3 completed: confirmed `AGENTS.md` remained the required
+  guidance file for this run and that the saved cycle followed the
+  script-first host workflow.
+- Phase 4 completed: re-verified the live host evidence with
+  `./deploy_host.sh --status` and preserved the accepted full-suite host
+  result from run `0155` at `95.7%` (`23.9145 / 25.0`) with `747942`
+  tokens.
+- Phase 5 completed: synchronized `.dev/PLAN.md`,
+  `.dev/workflow_state.json`, and `.dev/session.json` with the completed
+  host cycle so the prompt-derived plan, dashboard, and machine state
+  now agree.
+- Supervisor-ready state: all prompt-derived plan items are complete and
+  the final verification evidence still points to the live `0155` host
+  benchmark result.
 
 ## Stage 1 Planning
 
