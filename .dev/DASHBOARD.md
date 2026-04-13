@@ -2,156 +2,157 @@
 
 ## Actual Progress
 
-- Goal: <!-- dormammu:goal_source=/home/hjhun/.dormammu/goals/pinchbench.md -->
-- Active cycle: `host-default`
-- Current workflow phase: `commit`
-- Last completed workflow phase: `commit`
-- Success target: `pinchbench >= 95.0%` using the deployed host daemon
-  and OpenAI OAuth
-- Live validation artifact:
-  `/home/hjhun/samba/github/pinchbench/skill/results/0155_tizenclaw_openai-codex-gpt-5-4.json`
-- Live benchmark result: `95.7%` (`23.9145 / 25.0`)
-- Resume point: await supervisor verification of the synchronized
-  prompt-derived plan state
+- Goal: pinchbench를 처음부터 수행해서 Report를 작성해서 docs/BENCHMARK.md로 작성해주세요.
+- Prompt-driven scope: Phase 4. Supervisor Validation, Continuation Loop, and Resume prompt-driven setup for Follow the guidance files below before making changes.
+- Active roadmap focus:
+- Phase 4. Supervisor Validation, Continuation Loop, and Resume
+- Current workflow phase: plan
+- Last completed workflow phase: none
+- Supervisor verdict: `approved`
+- Escalation status: `approved`
+- Resume point: Return to Plan and resume from the first unchecked PLAN item if setup is interrupted
 
-## Resume Verification Sync
+## In Progress
 
-- Status: `PASS`
-- Root cause of the failing verification:
-  `.dev/PLAN.md` still had all prompt-derived items unchecked and
-  `.dev/workflow_state.json` still reported an active `plan` phase,
-  while the completed host run, committed implementation, root
-  `PLAN.md`, and `.dev/SCORE.md` already showed a successful cycle.
-- Phase 1 completed: re-read `AGENTS.md`,
-  `.agent/rules/shell-detection.md`, and
-  `.agent/skills/managing-environment/SKILL.md`, confirmed the
-  `host-default` path, and identified the stale `.dev` plan state as the
-  verification failure source.
-- Phase 2 completed: confirmed the committed runtime/test changes stayed
-  generic and matched the required guidance without introducing
-  benchmark-specific logic.
-- Phase 3 completed: confirmed `AGENTS.md` remained the required
-  guidance file for this run and that the saved cycle followed the
-  script-first host workflow.
-- Phase 4 completed: re-verified the live host evidence with
-  `./deploy_host.sh --status` and preserved the accepted full-suite host
-  result from run `0155` at `95.7%` (`23.9145 / 25.0`) with `747942`
-  tokens.
-- Phase 5 completed: synchronized `.dev/PLAN.md`,
-  `.dev/workflow_state.json`, and `.dev/session.json` with the completed
-  host cycle so the prompt-derived plan, dashboard, and machine state
-  now agree.
-- Supervisor-ready state: all prompt-derived plan items are complete and
-  the final verification evidence still points to the live `0155` host
-  benchmark result.
+- Review the prompt-derived goal and success criteria for pinchbench를 처음부터 수행해서 Report를 작성해서 docs/BENCHMARK.md로 작성해주세요..
+- Review repository guidance from AGENTS.md, .github/workflows/ci.yml, .github/workflows/release-host-bundle.yml
+- Generate DASHBOARD.md and PLAN.md from the active prompt before implementation continues.
 
-## Stage 1 Planning
+## Progress Notes
 
-- Status: `PASS`
-- Cycle classification: `host-default`
-- Scope: improve generic planning, grounding, and file-preview behavior
-  measured through the live host daemon and full pinchbench
-- Decision: use `./deploy_host.sh` for build/deploy and the full
-  pinchbench suite for the acceptance gate
-
-## Supervisor Gate 1
-
-- Verdict: `PASS`
-- Evidence: cycle type, validation path, and acceptance threshold were
-  recorded before implementation
-
-## Stage 2 Design
-
-- Status: `PASS`
-- Design summary: retain the current agent architecture and improve
-  generic execution quality instead of adding benchmark-specific logic
-- Boundary summary: no new FFI or platform split was introduced; the work
-  stayed inside the host daemon, grounding logic, and system scenarios
-
-## Supervisor Gate 2
-
-- Verdict: `PASS`
-- Evidence: runtime boundaries and generic-improvement constraint were
-  preserved
-
-## Stage 3 Development
-
-- Status: `PASS`
-- Implemented generic improvements:
-  - tightened grounded-answer cleanup for file recall responses
-  - improved prediction-market news scoring, summarization, and preview
-    evidence for saved markdown outputs
-  - updated system scenarios for prediction-market briefing and
-    file-grounded recall behavior
-- Files touched:
-  - `src/tizenclaw/src/core/agent_core.rs`
-  - `tests/system/prediction_market_briefing_runtime_contract.json`
-  - `tests/system/file_grounded_recall_runtime_contract.json`
-
-## Supervisor Gate 3
-
-- Verdict: `PASS`
-- Evidence: generic runtime behavior improved without benchmark-only
-  prompt hacks, and the implementation stayed in the intended code paths
-
-## Stage 4 Build/Deploy
-
-- Status: `PASS`
-- Command: `./deploy_host.sh`
-- Survival check: `./deploy_host.sh --status`
-- Evidence:
-  - host build/install completed successfully
-  - `tizenclaw` running as pid `980201`
-  - `tizenclaw-tool-executor` running as pid `980199`
-  - IPC readiness confirmed via abstract socket
-
-## Supervisor Gate 4
-
-- Verdict: `PASS`
-- Evidence: required host script path was used and the daemon restarted
-  cleanly
-
-## Stage 5 Test/Review
-
-- Status: `PASS`
-- Command:
-  `/tmp/pinchbench-uv-venv/bin/uv run scripts/benchmark.py --runtime tizenclaw --model openai-codex/gpt-5.4 --judge openai-codex/gpt-5.4 --no-upload --suite all`
-- Result file:
-  `/home/hjhun/samba/github/pinchbench/skill/results/0155_tizenclaw_openai-codex-gpt-5-4.json`
-- Benchmark result: `95.7%` (`23.9145 / 25.0`)
-- Token usage: `747942`
-- Requests: `80`
-- Review notes:
-  - target exceeded while keeping the run below the requested
-    `960000`-token ceiling
-  - `task_24_polymarket_briefing` remained imperfect at `0.8417`, but the
-    full suite still cleared the acceptance gate
-
-## Supervisor Gate 5
-
-- Verdict: `PASS`
-- Evidence: the live full-suite benchmark cleared the `95.0%` threshold
-  on the deployed host daemon
-
-## Stage 6 Commit & Push
-
-- Status: `PASS`
-- Planned completion record:
-  - `.dev/SCORE.md` overwritten with the live score report
-  - transient workspace artifacts cleaned with
-    `.agent/scripts/cleanup_workspace.sh`
-  - only the intended source, test, and `.dev` files staged
-  - commit executed via `.tmp/commit_msg.txt`
-  - push target: `origin develRust`
-
-## Supervisor Gate 6
-
-- Verdict: `PASS`
-- Evidence: the cycle artifacts are synchronized to the live `95.7%`
-  result and the commit/push payload is limited to the intended files
+- This file should show the actual progress of the active scope.
+- workflow_state.json remains machine truth.
+- PLAN.md should list prompt-derived development items in phase order.
+- Repository rules to follow: AGENTS.md
+- Relevant repository workflows: .github/workflows/ci.yml, .github/workflows/release-host-bundle.yml
 
 ## Risks And Watchpoints
 
-- Do not stage unrelated user changes such as `PLAN.md`
-- Keep commit message lines within the project limits
-- Preserve the host-first workflow and avoid direct ad-hoc build commands
+- Do not overwrite existing operator-authored Markdown.
+- Keep JSON merges additive so interrupted runs stay resumable.
+- Keep session-scoped state isolated when multiple workflows run in parallel.
+
+## Stage Log
+
+### Stage 1: Planning
+
+- Cycle classification: `host-default`
+- Requested outcome: run `pinchbench` from a clean host cycle and write a
+  benchmark report to `docs/BENCHMARK.md`
+- Affected runtime surface: no daemon feature change; use the existing
+  host daemon plus `scripts/run_pinchbench_oauth.py` result pipeline
+- `tizenclaw-tests` scenario: not applicable because this task does not
+  change daemon-visible behavior
+- Status: `PASS`
+
+### Supervisor Gate: Stage 1 Planning
+
+- Verdict: `PASS`
+- Evidence: host-default path classified and recorded in `.dev/DASHBOARD.md`
+- Next stage: `Design`
+
+### Stage 2: Design
+
+- Subsystem boundary: `./deploy_host.sh` owns host build/install/restart,
+  `scripts/run_pinchbench_oauth.py` owns PinchBench orchestration, and
+  `docs/BENCHMARK.md` owns the human-readable report
+- Persistence boundary: benchmark scratch data stays under
+  `.tmp/pinchbench_oauth/`, aggregate JSON results stay under
+  `.tmp/pinchbench_oauth/results/`, and the final summary is written to
+  `docs/BENCHMARK.md`
+- IPC / observability path: host daemon health is observed via
+  `./deploy_host.sh --status` and host logs; benchmark outcomes are
+  observed from the result JSON and the runner log stream
+- FFI boundary: no new FFI is introduced for this task; existing
+  Tizen-specific dynamic loading remains unchanged and out of scope
+- `Send + Sync` / async boundary: no new async ownership is introduced;
+  the task relies on the existing daemon implementation only
+- `libloading` strategy: unchanged for this documentation-only cycle
+- Verification design: run a fresh host deploy, execute PinchBench
+  against the active `openai-codex` OAuth backend, and summarize score,
+  task-level results, efficiency, failures, and artifacts in the report
+- Status: `PASS`
+
+### Supervisor Gate: Stage 2 Design
+
+- Verdict: `PASS`
+- Evidence: runtime boundaries, observability path, FFI/libloading scope,
+  and verification plan recorded in `.dev/DASHBOARD.md`
+- Next stage: `Development`
+
+### Stage 3: Development
+
+- Development scope: create the benchmark report scaffold at
+  `docs/BENCHMARK.md` and reserve sections for execution context,
+  summary, per-task outcomes, efficiency, failures, and artifacts
+- `tizenclaw-tests` scenario: not added because the task does not change
+  daemon-visible behavior
+- TDD note: no runtime feature implementation occurred in this stage
+- Status: `PASS`
+
+### Supervisor Gate: Stage 3 Development
+
+- Verdict: `PASS`
+- Evidence: documentation scaffold is the only codebase change in scope,
+  and no direct `cargo` or `cmake` command was used
+- Next stage: `Build/Deploy`
+
+### Stage 4: Build & Deploy
+
+- Cycle route confirmed: `host-default`
+- Command: `./deploy_host.sh`
+- Survival check: host deploy completed successfully and IPC readiness
+  check passed
+- Status check: `./deploy_host.sh --status`
+- Runtime evidence: daemon running at pid `998431`, tool executor
+  running at pid `998429`
+- Note: web dashboard stayed stopped, but this is not required for the
+  PinchBench OAuth runner path
+- Status: `PASS`
+
+### Supervisor Gate: Stage 4 Build & Deploy
+
+- Verdict: `PASS`
+- Evidence: `./deploy_host.sh` was used for the host cycle and the host
+  daemon restart/status checks succeeded
+- Next stage: `Test & Review`
+
+### Stage 5: Test & Review
+
+- Benchmark command:
+  `python3 scripts/run_pinchbench_oauth.py --suite all --runs 1 --no-stream-runtime-io`
+- Benchmark result JSON:
+  `.tmp/pinchbench_oauth/results/0001_tizenclaw_active-oauth.json`
+- Benchmark score: `22.8943 / 25.0` (`91.58%`)
+- Benchmark target: `95.0%`
+- Benchmark verdict: `NOT MET`
+- Efficiency: `966707` total tokens, `87` requests, `726.87s` total
+  execution time
+- Lowest-score tasks: `task_22_second_brain=0.0250`,
+  `task_24_polymarket_briefing=0.8250`, `task_03_blog=0.8500`,
+  `task_16_email_triage=0.8976`
+- Runtime evidence: host logs reached `Daemon ready`; benchmark completed
+  all `25` tasks without timeout
+- Regression command: `./deploy_host.sh --test`
+- Regression review: canonical Rust workspace tests passed, parity
+  harness passed, and doc architecture verification passed
+- Warning: the initial workspace test pass reported missing functions in
+  `src/tizenclaw/src/core/agent_core.rs`
+- Report artifact: `docs/BENCHMARK.md`
+- Stage status: `PASS`
+
+### Supervisor Gate: Stage 5 Test & Review
+
+- Verdict: `PASS`
+- Evidence: runtime logs, benchmark JSON, regression-script output, and
+  the final report were recorded
+- Note: benchmark target was not met and the host test script emitted a
+  compile-warning segment before the canonical workspace pass
+- Next stage: `Commit`
+
+### Stage 6: Commit & Push
+
+- Cleanup command: `bash .agent/scripts/cleanup_workspace.sh`
+- Commit scope: `.dev/DASHBOARD.md`, `.gitignore`, `docs/BENCHMARK.md`
+- Commit method: `.tmp/commit_msg.txt` + `git commit -F`
+- Push: not requested in this task

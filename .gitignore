@@ -104,6 +104,7 @@ DORMAMMU.log
 docs/
 !docs/
 docs/*
+!docs/BENCHMARK.md
 !docs/llm_config_benchmark_design.md
 !docs/llm_cache_telemetry_design.md
 !docs/tizenclaw_cli_pinchbench_guide_ko.md
