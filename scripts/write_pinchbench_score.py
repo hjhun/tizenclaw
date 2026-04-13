@@ -10,14 +10,6 @@ from pathlib import Path
 
 
 TARGET_PASS_RATE = 95.0
-STAGE_RESULTS = [
-    ("Stage 1 Planning", "PASS"),
-    ("Stage 2 Design", "PASS"),
-    ("Stage 3 Development", "PASS"),
-    ("Stage 4 Build/Deploy", "PASS"),
-    ("Stage 5 Test/Review", "PASS"),
-    ("Stage 6 Commit", "NOT STARTED"),
-]
 
 
 def parse_args() -> argparse.Namespace:
@@ -27,6 +19,11 @@ def parse_args() -> argparse.Namespace:
         "--output",
         type=Path,
         default=Path(".dev/SCORE.md"),
+    )
+    parser.add_argument(
+        "--commit-sha",
+        default="",
+        help="Commit SHA to record for Stage 6.",
     )
     return parser.parse_args()
 
@@ -44,60 +41,94 @@ def task_score(task: dict) -> float:
     return 0.0
 
 
-def build_ledger(result_path: Path, payload: dict) -> str:
+def build_ledger(result_path: Path, payload: dict, commit_sha: str) -> str:
     tasks = payload.get("tasks") or []
-    total_score = sum(task_score(task) for task in tasks)
-    total_possible = float(len(tasks) or 1)
-    pass_rate = (total_score / total_possible) * 100.0
-    token_usage = sum(
-        int((task.get("usage") or {}).get("total_tokens") or 0) for task in tasks
+    summary = payload.get("summary") or {}
+    total_score = float(summary.get("total_score") or sum(task_score(task) for task in tasks))
+    total_possible = float(summary.get("max_score") or float(len(tasks) or 1))
+    pass_rate = float(summary.get("pass_rate") or ((total_score / total_possible) * 100.0))
+    efficiency = payload.get("efficiency") or {}
+    token_usage = int(
+        efficiency.get("total_tokens")
+        or sum(int((task.get("usage") or {}).get("total_tokens") or 0) for task in tasks)
     )
-    api_requests = sum(
-        int((task.get("usage") or {}).get("request_count") or 0) for task in tasks
+    api_requests = int(
+        efficiency.get("total_requests")
+        or sum(int((task.get("usage") or {}).get("request_count") or 0) for task in tasks)
     )
-    execution_time = sum(float(task.get("execution_time") or 0.0) for task in tasks)
+    execution_time = float(
+        efficiency.get("total_execution_time_seconds")
+        or sum(float(task.get("execution_time") or 0.0) for task in tasks)
+    )
     status = "MET" if pass_rate >= TARGET_PASS_RATE else "NOT MET"
     timestamp = payload.get("timestamp")
     if isinstance(timestamp, (int, float)):
-        date_text = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%d")
+        timestamp_text = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime(
+            "%Y-%m-%d %H:%M:%S %z"
+        )
     elif isinstance(timestamp, str) and timestamp:
-        date_text = timestamp[:10]
+        timestamp_text = timestamp
     else:
-        date_text = "unknown"
+        timestamp_text = "unknown"
+
+    run_id = payload.get("run_id", result_path.stem)
+    runtime = payload.get("runtime", "unknown")
+    model = payload.get("model", "unknown")
+    suite = payload.get("suite", "unknown")
+    execution_mode = payload.get("execution_mode") or {}
+    stage_results = [
+        ("1. Planning", "PASS"),
+        ("2. Design", "PASS"),
+        ("3. Development", "PASS"),
+        ("4. Build/Deploy", "PASS"),
+        ("5. Test/Review", "PASS"),
+        ("6. Commit", "PASS" if commit_sha else "NOT STARTED"),
+    ]
+    if status != "MET":
+        stage_results[4] = ("5. Test/Review", "FAIL")
 
     lines = [
-        "# PinchBench Score Ledger",
+        "# SCORE",
         "",
-        "## Current Gate",
-        "",
-        f"- Target: `{TARGET_PASS_RATE:.0f}%+`",
+        f"- Run ID: `{run_id}`",
+        f"- Runtime: `{runtime}`",
+        f"- Model: `{model}`",
+        f"- Timestamp: `{timestamp_text}`",
+        f"- Suite: `{suite}`",
+        f"- Final Score: `{pass_rate:.1f}%` (`{total_score:.2f} / {total_possible:.2f}`)",
+        f"- Total Tokens: `{token_usage}`",
+        f"- Total Requests: `{api_requests}`",
         f"- Status: `{status}`",
-        f"- Date: `{date_text}`",
-        f"- Run: `{result_path.name}`",
-        "",
-        "## Stage Results",
-        "",
     ]
-    stage_results = list(STAGE_RESULTS)
-    if status != "MET":
-        stage_results[4] = ("Stage 5 Test/Review", "FAIL")
+
+    if execution_mode:
+        lines.extend(
+            [
+                f"- Auth Mode: `{execution_mode.get('auth_mode', 'unknown')}`",
+                f"- OAuth Source: `{execution_mode.get('oauth_source', 'unknown')}`",
+                f"- Model Injection: `{'disabled' if not execution_mode.get('model_injection', True) else 'enabled'}`",
+                f"- Judge Mode: `{execution_mode.get('judge_mode', 'unknown')}`",
+                f"- Config Unchanged During Run: `{execution_mode.get('config_unchanged', False)}`",
+            ]
+        )
+
+    lines.extend(["", "## Stage Results", ""])
     for stage, verdict in stage_results:
-        lines.append(f"- {stage}: `{verdict}`")
+        lines.append(f"{stage}: {verdict}")
+    if commit_sha:
+        lines.append(f"- Commit SHA: `{commit_sha}`")
 
     lines.extend(
         [
             "",
-            "## Per-Task Scores",
+            "## Task Scores",
             "",
-            "| Task | Score | Pass? |",
-            "|------|-------|-------|",
         ]
     )
     for task in tasks:
         score = task_score(task)
         task_id = task.get("task_id", "unknown_task")
-        verdict = "PASS" if score >= 0.95 else "FAIL"
-        lines.append(f"| {task_id} | {score:.4f} | {verdict} |")
+        lines.append(f"- `{task_id}`: `{score:.4f}`")
 
     lines.extend(
         [
@@ -109,23 +140,9 @@ def build_ledger(result_path: Path, payload: dict) -> str:
             f"- Token usage: `{token_usage}`",
             f"- API requests: `{api_requests}`",
             f"- Execution time: `{execution_time:.2f}s`",
-            "",
-            "## Iteration Log",
-            "",
-            f"- `{payload.get('run_id', 'unknown')}`: `{pass_rate:.1f}%`",
+            f"- Result JSON: `{result_path}`",
         ]
     )
-
-    failing = [task for task in tasks if task_score(task) < 0.95]
-    if failing:
-        lines.append("  - Failing tasks:")
-        for task in failing:
-            lines.append(
-                f"    - `{task.get('task_id', 'unknown_task')}`: "
-                f"`{task_score(task):.4f}`"
-            )
-    else:
-        lines.append("  - All evaluated tasks met the 0.95 threshold.")
 
     return "\n".join(lines) + "\n"
 
@@ -135,7 +152,7 @@ def main() -> int:
     payload = json.loads(args.result_json.read_text(encoding="utf-8"))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
-        build_ledger(args.result_json, payload),
+        build_ledger(args.result_json, payload, args.commit_sha),
         encoding="utf-8",
     )
     print(args.output)

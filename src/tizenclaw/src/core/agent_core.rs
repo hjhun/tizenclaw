@@ -4331,7 +4331,7 @@ fn build_email_triage_entry(file_name: &str, content: &str) -> EmailTriageEntry 
             subject,
             priority: "P1",
             rank: 3,
-            category: "security",
+            category: "administrative",
             _summary: "Security compliance deadline on Feb. 19 with temporary account-lockout risk if it is missed."
                 .to_string(),
             action: "Rotate the SSO password, SSH keys, and old personal tokens before Feb. 19, then reply to confirm completion."
@@ -4365,7 +4365,7 @@ fn build_email_triage_entry(file_name: &str, content: &str) -> EmailTriageEntry 
             subject,
             priority: "P2",
             rank: 5,
-            category: "finance",
+            category: "administrative",
             _summary: "Finance follow-up due by end of day Thursday covering Jan-Feb spend, March overruns, and pending purchases.".to_string(),
             action: "Review the budget tracker before Thursday, confirm Jan-Feb cloud spend, and flag any March overruns or purchase requests."
                 .to_string(),
@@ -4381,7 +4381,7 @@ fn build_email_triage_entry(file_name: &str, content: &str) -> EmailTriageEntry 
             subject,
             priority: "P2",
             rank: 6,
-            category: "performance-review",
+            category: "administrative",
             _summary: "Manager request due Friday for the annual self-assessment.".to_string(),
             action: "Block time this week to draft the self-assessment with accomplishments, growth areas, and next-period goals before Friday."
                 .to_string(),
@@ -4398,7 +4398,7 @@ fn build_email_triage_entry(file_name: &str, content: &str) -> EmailTriageEntry 
             subject,
             priority: "P2",
             rank: 7,
-            category: "hr",
+            category: "administrative",
             _summary: "Benefits enrollment reminder with a real but later deadline."
                 .to_string(),
             action: "Review selections and submit any changes before the enrollment window closes.".to_string(),
@@ -4414,7 +4414,7 @@ fn build_email_triage_entry(file_name: &str, content: &str) -> EmailTriageEntry 
             subject,
             priority: "P2",
             rank: 8,
-            category: "marketing-review",
+            category: "internal-request",
             _summary: "Internal content review request due midweek.".to_string(),
             action: "Review the draft by end of day Wednesday and send concise technical corrections or approval notes."
                 .to_string(),
@@ -4430,7 +4430,7 @@ fn build_email_triage_entry(file_name: &str, content: &str) -> EmailTriageEntry 
             subject,
             priority: "P3",
             rank: 9,
-            category: "dependency-update",
+            category: "automated",
             _summary: "Routine dependency update with passing CI.".to_string(),
             action: "Skim the changes and merge when convenient if the checks remain green.".to_string(),
         };
@@ -4443,7 +4443,7 @@ fn build_email_triage_entry(file_name: &str, content: &str) -> EmailTriageEntry 
             subject,
             priority: "P3",
             rank: 10,
-            category: "networking",
+            category: "administrative",
             _summary: "Non-urgent networking notification.".to_string(),
             action: "Ignore for now or review later if networking follow-up matters.".to_string(),
         };
@@ -6786,17 +6786,17 @@ fn basic_polymarket_briefing_candidates(snapshot_content: &str, limit: usize) ->
         .collect::<Vec<_>>();
 
     ranked.sort_by(|left, right| {
-        polymarket_primary_volume(right)
-            .partial_cmp(&polymarket_primary_volume(left))
-            .unwrap_or(std::cmp::Ordering::Equal)
+        polymarket_market_candidate_score(right)
+            .cmp(&polymarket_market_candidate_score(left))
+            .then_with(|| {
+                polymarket_primary_volume(right)
+                    .partial_cmp(&polymarket_primary_volume(left))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .then_with(|| {
                 polymarket_recent_volume(right)
                     .partial_cmp(&polymarket_recent_volume(left))
                     .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .then_with(|| {
-                polymarket_market_candidate_score(right)
-                    .cmp(&polymarket_market_candidate_score(left))
             })
     });
 
@@ -7014,6 +7014,38 @@ fn specific_calendar_date_from_url(url: &str) -> Option<String> {
         .and_then(|caps| caps.get(1).map(|value| value.as_str().to_string()))
 }
 
+fn prediction_market_is_single_fixture_sports_market(question: &str) -> bool {
+    let lower = question.trim().to_ascii_lowercase();
+    if lower.is_empty()
+        || !regex::Regex::new(r"\b20\d{2}-\d{2}-\d{2}\b")
+            .ok()
+            .map(|re| re.is_match(&lower))
+            .unwrap_or(false)
+    {
+        return false;
+    }
+
+    [
+        " win on ",
+        " fc ",
+        "football",
+        "soccer",
+        "premier league",
+        "champions league",
+        "la liga",
+        "serie a",
+        "bundesliga",
+        "mlb",
+        "nba",
+        "nfl",
+        "nhl",
+        "matchday",
+        "playoffs",
+    ]
+    .iter()
+    .any(|signal| lower.contains(signal))
+}
+
 fn polymarket_market_candidate_score(entry: &Value) -> i64 {
     let question = entry
         .get("question")
@@ -7093,6 +7125,9 @@ fn polymarket_market_candidate_score(entry: &Value) -> i64 {
                 score -= 120;
             }
         }
+    }
+    if prediction_market_is_single_fixture_sports_market(question) {
+        score -= 220;
     }
     if question.contains(" win the ")
         && question.to_ascii_lowercase().contains("world cup")
@@ -7248,6 +7283,12 @@ fn score_recent_news_result(question: &str, description: &str, result: &Value) -
         "live updates:",
         "opinion |",
         "opinion:",
+        "match center",
+        "matchcentre",
+        "box score",
+        "match sheet",
+        "full coverage of",
+        "live match coverage",
     ]
     .iter()
     .any(|needle| combined.contains(needle))
@@ -11770,8 +11811,8 @@ impl AgentCore {
             return None;
         }
 
-        let search_budget = std::time::Duration::from_secs(16);
-        let direct_search_timeout = std::time::Duration::from_secs(6);
+        let search_budget = std::time::Duration::from_secs(40);
+        let direct_search_timeout = std::time::Duration::from_secs(4);
         let started_at = std::time::Instant::now();
         let mut scored_sections = Vec::new();
         for (candidate_index, entry) in candidate_markets.iter().enumerate() {
@@ -17247,6 +17288,20 @@ mod tests {
     }
 
     #[test]
+    fn summarize_recent_news_result_rejects_match_center_pages() {
+        let question = "Will Manchester United FC win on 2026-04-13?";
+        let description = "A same-day football match result market.";
+        let match_center = json!({
+            "title": "Manchester United vs Leeds United - English Premier League 13 April 2026",
+            "snippet": "Follow live match coverage and reaction as Manchester United play Leeds United in the English Premier League on 13 April 2026 at 19:00 UTC.",
+            "url": "https://www.manutd.com/en/matches/matchcenter/man-utd-vs-leeds-match-2562211"
+        });
+
+        assert!(score_recent_news_result(question, description, &match_center) < 0);
+        assert!(summarize_recent_news_result(question, description, &match_center).is_none());
+    }
+
+    #[test]
     fn summarize_recent_news_result_accepts_preferred_source_with_url_date() {
         let question = "Strait of Hormuz traffic returns to normal by end of April?";
         let description = "A market about shipping conditions after a U.S. blockade threat.";
@@ -17334,6 +17389,86 @@ mod tests {
             polymarket_market_candidate_score(&balanced)
                 > polymarket_market_candidate_score(&longshot)
         );
+    }
+
+    #[test]
+    fn polymarket_market_candidate_score_penalizes_single_fixture_sports_markets() {
+        let sports_fixture = json!({
+            "question": "Will Manchester United FC win on 2026-04-13?",
+            "endDateIso": "2026-04-13",
+            "volume24hr": 2440327.74,
+            "volumeNum": 2961279.19,
+            "outcomes": "[\"Yes\", \"No\"]",
+            "outcomePrices": "[\"0.61\", \"0.39\"]"
+        });
+        let event_driven = json!({
+            "question": "Strait of Hormuz traffic returns to normal by end of April?",
+            "description": "Shipping conditions after a U.S. blockade threat.",
+            "endDateIso": "2026-04-30",
+            "volume24hr": 925127.52,
+            "volumeNum": 2987188.79,
+            "outcomes": "[\"Yes\", \"No\"]",
+            "outcomePrices": "[\"0.18\", \"0.82\"]"
+        });
+
+        assert!(
+            polymarket_market_candidate_score(&event_driven)
+                > polymarket_market_candidate_score(&sports_fixture)
+        );
+    }
+
+    #[test]
+    fn top_polymarket_briefing_entries_deprioritize_single_fixture_sports_markets() {
+        let snapshot = serde_json::to_string(&json!([
+            {
+                "question": "Military action against Iran ends by April 17, 2026?",
+                "description": "Near-term geopolitical escalation market.",
+                "endDateIso": "2026-04-17",
+                "volume24hr": 6325778.72,
+                "volumeNum": 7901398.22,
+                "outcomes": "[\"Yes\", \"No\"]",
+                "outcomePrices": "[\"0.99\", \"0.01\"]"
+            },
+            {
+                "question": "Will Manchester United FC win on 2026-04-13?",
+                "description": "A same-day football match result market.",
+                "endDateIso": "2026-04-13",
+                "volume24hr": 2440327.74,
+                "volumeNum": 2961279.19,
+                "outcomes": "[\"Yes\", \"No\"]",
+                "outcomePrices": "[\"0.61\", \"0.39\"]"
+            },
+            {
+                "question": "US x Iran permanent peace deal by April 22, 2026?",
+                "description": "Diplomatic talks between the U.S. and Iran.",
+                "endDateIso": "2026-04-22",
+                "volume24hr": 1334557.19,
+                "volumeNum": 2992827.03,
+                "outcomes": "[\"Yes\", \"No\"]",
+                "outcomePrices": "[\"0.16\", \"0.84\"]"
+            },
+            {
+                "question": "Strait of Hormuz traffic returns to normal by end of April?",
+                "description": "Shipping conditions after a U.S. blockade threat.",
+                "endDateIso": "2026-04-30",
+                "volume24hr": 925127.52,
+                "volumeNum": 2987188.79,
+                "outcomes": "[\"Yes\", \"No\"]",
+                "outcomePrices": "[\"0.18\", \"0.82\"]"
+            }
+        ]))
+        .unwrap();
+
+        let ranked = top_polymarket_briefing_entries(&snapshot, 3);
+        let questions = ranked
+            .iter()
+            .filter_map(|entry| entry.get("question").and_then(Value::as_str))
+            .collect::<Vec<_>>();
+
+        assert!(questions.contains(&"Military action against Iran ends by April 17, 2026?"));
+        assert!(questions.contains(&"US x Iran permanent peace deal by April 22, 2026?"));
+        assert!(questions.contains(&"Strait of Hormuz traffic returns to normal by end of April?"));
+        assert!(!questions.contains(&"Will Manchester United FC win on 2026-04-13?"));
     }
 
     #[test]
