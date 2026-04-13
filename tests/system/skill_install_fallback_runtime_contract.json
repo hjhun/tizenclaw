@@ -40,6 +40,31 @@
           "contains": "Saved `humanized_blog.txt`"
         }
       ]
+    },
+    {
+      "name": "skill-install-session-runtime-stays-resumable",
+      "method": "get_session_runtime",
+      "params": {
+        "session_id": "${unique_session_id:skill-install-fallback}"
+      },
+      "assertions": [
+        {
+          "path": "status",
+          "equals": "ok"
+        },
+        {
+          "path": "session.transcript_exists",
+          "equals": true
+        },
+        {
+          "path": "session.assistant_message_count",
+          "greater_than": 1
+        },
+        {
+          "path": "session.resume_ready",
+          "equals": true
+        }
+      ]
     }
   ]
 }

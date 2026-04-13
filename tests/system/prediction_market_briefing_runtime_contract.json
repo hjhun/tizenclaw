@@ -24,6 +24,10 @@
         {
           "path": "text",
           "contains": "polymarket_briefing.md"
+        },
+        {
+          "path": "text",
+          "contains": "Completed"
         }
       ]
     },

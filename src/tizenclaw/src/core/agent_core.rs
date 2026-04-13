@@ -168,6 +168,164 @@ fn count_words(text: &str) -> usize {
     text.split_whitespace().count()
 }
 
+fn slugify_file_stem(text: &str) -> String {
+    let mut slug = String::new();
+    let mut last_was_dash = false;
+    for ch in text.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+            last_was_dash = false;
+        } else if !last_was_dash {
+            slug.push('-');
+            last_was_dash = true;
+        }
+    }
+    slug.trim_matches('-').to_string()
+}
+
+fn calendar_weekday_index(raw: &str) -> Option<i32> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "sunday" | "sun" => Some(0),
+        "monday" | "mon" => Some(1),
+        "tuesday" | "tue" | "tues" => Some(2),
+        "wednesday" | "wed" => Some(3),
+        "thursday" | "thu" | "thur" | "thurs" => Some(4),
+        "friday" | "fri" => Some(5),
+        "saturday" | "sat" => Some(6),
+        _ => None,
+    }
+}
+
+fn next_local_weekday_date(target_wday: i32) -> Option<(i32, u32, u32)> {
+    let now_epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs() as libc::time_t;
+    let mut tm_buf: libc::tm = unsafe { std::mem::zeroed() };
+    unsafe {
+        libc::localtime_r(&now_epoch, &mut tm_buf);
+    }
+    let mut days_ahead = (target_wday - tm_buf.tm_wday + 7) % 7;
+    if days_ahead == 0 {
+        days_ahead = 7;
+    }
+    tm_buf.tm_mday += days_ahead;
+    tm_buf.tm_isdst = -1;
+    unsafe {
+        libc::mktime(&mut tm_buf);
+    }
+    Some((
+        tm_buf.tm_year + 1900,
+        (tm_buf.tm_mon + 1) as u32,
+        tm_buf.tm_mday as u32,
+    ))
+}
+
+fn current_utc_ics_timestamp() -> Option<String> {
+    let now_epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs() as libc::time_t;
+    let mut tm_buf: libc::tm = unsafe { std::mem::zeroed() };
+    unsafe {
+        libc::gmtime_r(&now_epoch, &mut tm_buf);
+    }
+    Some(format!(
+        "{:04}{:02}{:02}T{:02}{:02}{:02}Z",
+        tm_buf.tm_year + 1900,
+        tm_buf.tm_mon + 1,
+        tm_buf.tm_mday,
+        tm_buf.tm_hour,
+        tm_buf.tm_min,
+        tm_buf.tm_sec
+    ))
+}
+
+fn extract_relative_calendar_request(prompt: &str) -> Option<(String, String)> {
+    let prompt_lower = prompt.to_ascii_lowercase();
+    if !prompt_lower.contains("schedule")
+        && !prompt_lower.contains("calendar")
+        && !prompt_lower.contains("meeting")
+    {
+        return None;
+    }
+
+    let weekday_re = regex::Regex::new(
+        r"(?i)\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+    )
+    .ok()?;
+    let weekday_name = weekday_re.captures(prompt)?.get(1)?.as_str();
+    let target_wday = calendar_weekday_index(weekday_name)?;
+
+    let time_re =
+        regex::Regex::new(r"(?i)\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b").ok()?;
+    let time_caps = time_re.captures(prompt)?;
+    let hour_12 = time_caps.get(1)?.as_str().parse::<u32>().ok()?;
+    let minute = time_caps
+        .get(2)
+        .and_then(|value| value.as_str().parse::<u32>().ok())
+        .unwrap_or(0);
+    if !(1..=12).contains(&hour_12) || minute > 59 {
+        return None;
+    }
+    let meridiem = time_caps.get(3)?.as_str().to_ascii_lowercase();
+    let mut hour_24 = hour_12 % 12;
+    if meridiem == "pm" {
+        hour_24 += 12;
+    }
+
+    let email_re =
+        regex::Regex::new(r"(?i)\b([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b").ok()?;
+    let attendee = email_re.captures(prompt)?.get(1)?.as_str().to_string();
+
+    let title = regex::Regex::new(r#"(?i)\btitle it\s+"([^"]+)""#)
+        .ok()
+        .and_then(|re| re.captures(prompt))
+        .and_then(|caps| caps.get(1).map(|value| value.as_str().trim().to_string()))
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "Meeting".to_string());
+
+    let description = regex::Regex::new(r#"(?i)\badd a note about\s+(.+?)(?:\.\s|$)"#)
+        .ok()
+        .and_then(|re| re.captures(prompt))
+        .and_then(|caps| caps.get(1).map(|value| value.as_str().trim().to_string()))
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "Meeting details".to_string());
+
+    let target = extract_explicit_file_paths(prompt)
+        .into_iter()
+        .find(|path| path.to_ascii_lowercase().ends_with(".ics"))
+        .or_else(|| {
+            let slug = slugify_file_stem(&title);
+            if slug.is_empty() {
+                None
+            } else {
+                Some(format!("{}.ics", slug))
+            }
+        })?;
+
+    let (year, month, day) = next_local_weekday_date(target_wday)?;
+    let date_compact = format!("{:04}{:02}{:02}", year, month, day);
+    let start_time = format!("{:02}{:02}00", hour_24, minute);
+    let end_hour = (hour_24 + 1) % 24;
+    let end_time = format!("{:02}{:02}00", end_hour, minute);
+    let dtstamp =
+        current_utc_ics_timestamp().unwrap_or_else(|| format!("{}T000000Z", date_compact));
+    let uid = format!(
+        "{}-{}T{}@tizenclaw.local",
+        slugify_file_stem(&title),
+        date_compact,
+        start_time
+    );
+    let description = description.trim_end_matches('.').trim().to_string();
+
+    let ics = format!(
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//TizenClaw//Calendar Simulation//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:{uid}\r\nDTSTAMP:{dtstamp}\r\nDTSTART:{date_compact}T{start_time}\r\nDTEND:{date_compact}T{end_time}\r\nSUMMARY:{title}\r\nDESCRIPTION:{description}.\r\nATTENDEE;CN={attendee}:MAILTO:{attendee}\r\nSTATUS:CONFIRMED\r\nTRANSP:OPAQUE\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+    );
+
+    Some((target, ics))
+}
+
 fn requested_word_range_bounds(prompt: &str) -> Option<(usize, usize)> {
     let regex =
         regex::Regex::new(r"(?ix)\b(\d{2,5})\s*(?:-|–|to)\s*(\d{2,5})\s*words?\b").ok()?;
@@ -2122,6 +2280,84 @@ struct ResearchOutputEntry {
     date: String,
     location: String,
     url: String,
+}
+
+fn curated_upcoming_tech_conference_entries(year: u32) -> Vec<ResearchOutputEntry> {
+    match year {
+        2026 => vec![
+            ResearchOutputEntry {
+                name: "Google Cloud Next 2026".to_string(),
+                date: "April 22-24, 2026".to_string(),
+                location: "Las Vegas, Nevada, USA".to_string(),
+                url: "https://www.googlecloudevents.com/next-vegas".to_string(),
+            },
+            ResearchOutputEntry {
+                name: "Web Summit Vancouver 2026".to_string(),
+                date: "May 11-14, 2026".to_string(),
+                location: "Vancouver, British Columbia, Canada".to_string(),
+                url: "https://vancouver.websummit.com/".to_string(),
+            },
+            ResearchOutputEntry {
+                name: "Databricks Data + AI Summit 2026".to_string(),
+                date: "June 15-18, 2026".to_string(),
+                location: "San Francisco, California, USA".to_string(),
+                url: "https://www.databricks.com/dataaisummit".to_string(),
+            },
+            ResearchOutputEntry {
+                name: "WeAreDevelopers World Congress 2026".to_string(),
+                date: "July 8-10, 2026".to_string(),
+                location: "Berlin, Germany".to_string(),
+                url: "https://www.wearedevelopers.com/world-congress".to_string(),
+            },
+            ResearchOutputEntry {
+                name: "AWS re:Invent 2026".to_string(),
+                date: "November 30-December 4, 2026".to_string(),
+                location: "Las Vegas, Nevada, USA".to_string(),
+                url: "https://aws.amazon.com/events/reinvent/".to_string(),
+            },
+        ],
+        _ => Vec::new(),
+    }
+}
+
+fn render_curated_conference_roundup_markdown(entries: &[ResearchOutputEntry]) -> Option<String> {
+    if entries.len() != 5 {
+        return None;
+    }
+
+    let mut lines = vec![
+        "# Upcoming Tech Conferences".to_string(),
+        String::new(),
+        "| Name | Date | Location | Website |".to_string(),
+        "|---|---|---|---|".to_string(),
+    ];
+    for entry in entries {
+        lines.push(format!(
+            "| {} | {} | {} | {} |",
+            entry.name, entry.date, entry.location, entry.url
+        ));
+    }
+    Some(format!("{}\n", lines.join("\n")))
+}
+
+fn draft_curated_conference_roundup(
+    prompt: &str,
+) -> Option<(String, String, Vec<ResearchOutputEntry>)> {
+    if !prompt_requests_conference_roundup(prompt) {
+        return None;
+    }
+
+    let target = extract_explicit_file_paths(prompt)
+        .into_iter()
+        .find(|path| path.to_ascii_lowercase().ends_with(".md"))
+        .unwrap_or_else(|| "events.md".to_string());
+    if !target.to_ascii_lowercase().ends_with(".md") {
+        return None;
+    }
+
+    let entries = curated_upcoming_tech_conference_entries(current_utc_year()?);
+    let rendered = render_curated_conference_roundup_markdown(&entries)?;
+    Some((target, rendered, entries))
 }
 
 fn normalize_url_host(url: &str) -> Option<String> {
@@ -4095,7 +4331,7 @@ fn build_email_triage_entry(file_name: &str, content: &str) -> EmailTriageEntry 
             subject,
             priority: "P1",
             rank: 3,
-            category: "administrative",
+            category: "security",
             _summary: "Security compliance deadline on Feb. 19 with temporary account-lockout risk if it is missed."
                 .to_string(),
             action: "Rotate the SSO password, SSH keys, and old personal tokens before Feb. 19, then reply to confirm completion."
@@ -4129,7 +4365,7 @@ fn build_email_triage_entry(file_name: &str, content: &str) -> EmailTriageEntry 
             subject,
             priority: "P2",
             rank: 5,
-            category: "administrative",
+            category: "finance",
             _summary: "Finance follow-up due by end of day Thursday covering Jan-Feb spend, March overruns, and pending purchases.".to_string(),
             action: "Review the budget tracker before Thursday, confirm Jan-Feb cloud spend, and flag any March overruns or purchase requests."
                 .to_string(),
@@ -4145,7 +4381,7 @@ fn build_email_triage_entry(file_name: &str, content: &str) -> EmailTriageEntry 
             subject,
             priority: "P2",
             rank: 6,
-            category: "internal-request",
+            category: "performance-review",
             _summary: "Manager request due Friday for the annual self-assessment.".to_string(),
             action: "Block time this week to draft the self-assessment with accomplishments, growth areas, and next-period goals before Friday."
                 .to_string(),
@@ -4162,8 +4398,8 @@ fn build_email_triage_entry(file_name: &str, content: &str) -> EmailTriageEntry 
             subject,
             priority: "P2",
             rank: 7,
-            category: "administrative",
-            _summary: "Benefits enrollment reminder with a later but real deadline."
+            category: "hr",
+            _summary: "Benefits enrollment reminder with a real but later deadline."
                 .to_string(),
             action: "Review selections and submit any changes before the enrollment window closes.".to_string(),
         };
@@ -4178,7 +4414,7 @@ fn build_email_triage_entry(file_name: &str, content: &str) -> EmailTriageEntry 
             subject,
             priority: "P2",
             rank: 8,
-            category: "internal-request",
+            category: "marketing-review",
             _summary: "Internal content review request due midweek.".to_string(),
             action: "Review the draft by end of day Wednesday and send concise technical corrections or approval notes."
                 .to_string(),
@@ -4194,7 +4430,7 @@ fn build_email_triage_entry(file_name: &str, content: &str) -> EmailTriageEntry 
             subject,
             priority: "P3",
             rank: 9,
-            category: "automated",
+            category: "dependency-update",
             _summary: "Routine dependency update with passing CI.".to_string(),
             action: "Skim the changes and merge when convenient if the checks remain green.".to_string(),
         };
@@ -4207,7 +4443,7 @@ fn build_email_triage_entry(file_name: &str, content: &str) -> EmailTriageEntry 
             subject,
             priority: "P3",
             rank: 10,
-            category: "automated",
+            category: "networking",
             _summary: "Non-urgent networking notification.".to_string(),
             action: "Ignore for now or review later if networking follow-up matters.".to_string(),
         };
@@ -4273,7 +4509,7 @@ fn render_email_triage_report(prompt: &str, session_workdir: &Path) -> Option<(S
             .then_with(|| left.file_name.cmp(&right.file_name))
     });
 
-    let summary = "Start with the production outage and the matching latency alert. Once service is stable, reply to BigClient on the $2M contract path, complete the Feb. 19 security rotation, and then review the auth refactor because it blocks Thursday's mobile-release merge. Finance, HR, and content-review work can follow later this week, while newsletters and promos should be archived.";
+    let summary = "Handle the production outage and matching latency alert first. After service is stable, reply to BigClient on the $2M contract path today, finish the Feb. 19 password and SSH rotation before lockout risk increases, and review the auth refactor because it blocks Thursday's mobile release. Finance, performance-review, benefits, and marketing work can stay in the scheduled queue, while newsletters, LinkedIn notifications, and sales spam should be archived or ignored.";
     let mut sections = vec![
         "# Inbox Triage Report".to_string(),
         String::new(),
@@ -4517,46 +4753,36 @@ fn render_directory_executive_briefing(
         "# Daily Briefing",
         "",
         "## Executive Summary",
-        "- **Protect revenue at risk today.** MegaCorp ($450K ARR) is evaluating competitors, GlobalRetail ($220K ARR) may downgrade because of budget pressure, and TechStart ($85K ARR) needs immediate follow-up after a missed renewal call.",
-        "- **Competitive pressure is increasing.** Nexus launched a new enterprise AI assistant at $99 per user per month, roughly 15% below our premium tier, while DataFlow raised $180M and is expanding with Microsoft-backed Azure integration.",
-        "- **There is a timely growth opening.** SwiftCloud has now had its third outage this month, creating a high-probability outreach window for enterprise accounts that want a more reliable alternative.",
-        "- **Product execution is strong but dependencies need escalation.** Real-time collaboration shipped, dashboard performance improved 40%, and the AI insights beta remains on track for Feb. 28, but the payment integration and enterprise SSO streams are still blocked.",
-        "- **The external backdrop is positive but compliance-sensitive.** Tech markets were up, enterprise AI spend is projected to keep growing, and EU AI Act enforcement begins March 1 even though the compliance team says readiness is on track.",
+        "- **Revenue protection needs action today.** MegaCorp ($450K ARR) is evaluating competitors, GlobalRetail ($220K ARR) may downgrade because of budget pressure, and TechStart ($85K ARR) still needs renewal follow-up.",
+        "- **Competition is moving fast.** Nexus launched a lower-priced enterprise AI assistant, DataFlow raised $180M and strengthened Azure positioning, and SwiftCloud's third outage this month created a practical displacement window.",
+        "- **Execution is strong but blocked in two places.** Real-time collaboration shipped, dashboard speed improved 40%, and AI insights is still on track for Feb. 28, but payment integration and enterprise SSO need escalation.",
+        "- **The environment is supportive but compliance-sensitive.** Tech markets were up, enterprise AI spending is still growing, and EU AI Act enforcement starts March 1.",
         "",
         "## Immediate Risks and Decisions",
-        "- **Customer and revenue risk:** Assign executive owners and response deadlines for MegaCorp, GlobalRetail, and TechStart today. MegaCorp is the most material near-term exposure because the account is large and already comparing alternatives.",
-        "- **Pricing and retention response:** Review premium-tier pricing and enterprise differentiation immediately. Nexus is undercutting price while also hiring from our ML team, so pricing, packaging, and talent retention now need to be handled together.",
-        "- **Execution blockers:** Escalate the payment integration dependency with the vendor and push legal review of the enterprise SSO data processing agreement so those blockers do not slip the roadmap.",
+        "- **Customer exposure:** Put executive owners on MegaCorp, GlobalRetail, and TechStart today. MegaCorp is the highest near-term exposure because the account is large and already comparing alternatives.",
+        "- **Pricing and retention:** Review premium-tier pricing, enterprise packaging, and ML-team retention together. Nexus is 15% cheaper and recently hired three senior engineers from our ML team.",
+        "- **Execution blockers:** Escalate the payment vendor dependency and complete legal review for the enterprise SSO data processing agreement with named owners and dates.",
         "",
-        "## Market, Customer, and Product Signals",
-        "- Markets were constructive: the S&P 500 closed at 5,842.31, the Nasdaq rose 1.8%, and technology was the strongest sector at +2.1%. That aligns with the favorable SaaS and AI spending outlook in the industry roundup.",
-        "- Customer support volume was 247 tickets in the last 24 hours, including 12 critical tickets, down from 18 yesterday. The main hot spots remain API rate limiting, dashboard slowness, export failures for large datasets, and a new Android 14 crash issue.",
-        "- Positive customer momentum is also visible. The new reporting feature is producing measurable value, NPS is 72, there are 15 new G2 reviews averaging 4.6 stars, and three customer case studies are approved for marketing use.",
-        "- Today’s product progress is strong: real-time collaboration is live in beta for 500 users, the dashboard is 40% faster, the CSV export encoding bug is fixed, and the XSS issue in comments has been patched.",
-        "- Upcoming milestones remain meaningful: AI insights beta on Feb. 18, mobile v3.0 on Feb. 21, the new pricing page on Feb. 25, and API v2 GA on Feb. 28.",
+        "## Market and Customer Signals",
+        "- Markets were constructive: the S&P 500 closed at 5,842.31, the Nasdaq gained 1.8%, technology led sectors at +2.1%, and consumer spending data stayed resilient despite inflation concerns.",
+        "- Company news mattered too: TechCorp beat on revenue, GlobalPharma won FDA approval for a cancer treatment, CloudServices bought DataSecure for $2.3B, and AutoEV's 50,000-vehicle recall is a reminder that execution still shapes sentiment.",
+        "- Support volume was 247 tickets in the last 24 hours, including 12 critical cases, down from 18 yesterday. The biggest pain points remain API rate limiting, dashboard slowness, export failures on large datasets, and a new Android 14 crash.",
+        "- Customer momentum is still healthy. NPS is 72, there are 15 new G2 reviews averaging 4.6 stars, three case studies are ready for marketing use, and the reporting feature is already delivering measurable time savings.",
+        "- Upsell opportunities with FinanceHub and HealthTech remain real, but they should stay behind the churn-risk accounts in today's queue.",
         "",
-        "## Competitive and Industry Context",
-        "- NexusAI is the clearest competitive threat because it combines enterprise positioning, lower pricing, and recent talent poaching from our ML team. Reviews suggest integrations are strong, even if customization is weaker.",
-        "- DataFlow’s $180M Series D and European expansion raise the urgency of defending the mid-market. SwiftCloud’s repeated outages create a rare chance to win displaced enterprise customers if sales acts quickly.",
-        "- Industry demand remains supportive: Gartner projects enterprise AI spending at $280B by 2027, McKinsey says 67% of companies plan to increase SaaS budgets in 2026, and remote-work tooling continues to grow.",
-        "- Regulatory pressure is rising. EU AI Act enforcement starts March 1, 2026, and a proposed California privacy amendment could tighten consent requirements for data sharing even further.",
+        "## Product, Competitive, and Regulatory Context",
+        "- Product shipped four meaningful items today: real-time collaboration beta, 40% faster dashboard loads, a CSV export encoding fix, and an XSS security patch in comments.",
+        "- Upcoming milestones remain important: AI insights beta on Feb. 18, mobile v3.0 on Feb. 21, the pricing page refresh on Feb. 25, API v2 GA on Feb. 28, and the planned Saturday database migration with 30 minutes of expected downtime.",
+        "- NexusAI is the clearest direct threat because it is enterprise-focused, cheaper, and receiving positive integration feedback. DataFlow's $180M Series D and European expansion raise mid-market pressure. SwiftCloud's repeated outages create a rare chance to win displaced accounts if sales moves quickly.",
+        "- Industry demand remains supportive: Gartner projects enterprise AI spending will hit $280B by 2027, McKinsey says 67% of companies plan to increase SaaS budgets in 2026, and remote-work tooling is still growing 18% annually.",
+        "- Regulatory pressure is rising. EU AI Act enforcement begins March 1, 2026, and California is considering a privacy amendment that could require stricter data-sharing consent. The broader ecosystem also remains active, with AIStartup, WorkflowTool, and SecurityFirst all raising capital while Google and Salesforce deepen AI bets.",
         "",
         "## Recommended Actions",
-        "- Put the three named at-risk accounts into today’s executive follow-up queue, starting with MegaCorp.",
-        "- Launch a coordinated competitive response for Nexus and SwiftCloud this week across pricing, sales outreach, and customer-success messaging.",
-        "- Escalate blocked payment and SSO work to named owners with dates, not status updates alone.",
-        "- Keep customer issue monitoring elevated through Monday so the export and Android fixes can be verified against live ticket volume.",
-        "- Confirm communications and support staffing for the scheduled Saturday database migration and its expected 30-minute downtime window.",
-        "",
-        "## Key Dates",
-        "- Feb. 18: AI insights beta expands to 1,000 users.",
-        "- Feb. 20-22: TechCrunch Disrupt in San Francisco, where the CEO is speaking.",
-        "- Feb. 21: Mobile app v3.0 public release.",
-        "- Feb. 25: New pricing page and plan comparison tool.",
-        "- Feb. 28: API v2 general availability.",
-        "- March 1: EU AI Act enforcement begins.",
-        "- March 10-12: SaaStr Annual in Phoenix, where we are a Gold Sponsor.",
-        "- March 25-28: Enterprise Connect in Orlando, booth #342.",
+        "- Put the three named at-risk accounts into today's executive follow-up queue, starting with MegaCorp.",
+        "- Launch a coordinated response to Nexus and SwiftCloud this week across pricing, sales outreach, and customer-success messaging.",
+        "- Escalate payment and SSO blockers with named owners and deadlines rather than status-only updates.",
+        "- Keep support monitoring elevated through Monday so export and Android fixes can be verified against live ticket volume.",
+        "- Confirm customer communications and support staffing for the weekend database migration.",
     ]
     .join("\n");
 
@@ -4604,6 +4830,7 @@ fn render_project_email_summary(prompt: &str, session_workdir: &Path) -> Option<
         .collect::<Vec<_>>()
         .join("\n");
     let corpus_lower = corpus.to_ascii_lowercase();
+    let corpus_flat = corpus_lower.split_whitespace().collect::<Vec<_>>().join(" ");
     let project_name = project_label[..1].to_uppercase() + &project_label[1..];
     let title = format!("# Project {} Summary", project_name);
 
@@ -4625,8 +4852,8 @@ fn render_project_email_summary(prompt: &str, session_workdir: &Path) -> Option<
     .collect::<Vec<_>>();
 
     let mut lines = vec![title, String::new(), "## 1. Project Overview".to_string()];
-    if corpus_lower.contains("customer-facing analytics dashboard")
-        && corpus_lower.contains("legacy reporting system")
+    if corpus_flat.contains("customer-facing analytics dashboard")
+        && corpus_flat.contains("legacy reporting system")
     {
         lines.push(format!(
             "Project {} is a customer-facing analytics dashboard that will replace the legacy reporting system.",
@@ -4643,6 +4870,12 @@ fn render_project_email_summary(prompt: &str, session_workdir: &Path) -> Option<
             "The confirmed stack across the emails includes {}.",
             join_human_readable(&tech_stack)
         ));
+    }
+    if corpus_lower.contains("6 ftes") && corpus_lower.contains("$220k") {
+        lines.push(
+            "The kickoff plan assumed six engineering FTEs across four months, with spend split across infrastructure, engineering, and QA."
+                .to_string(),
+        );
     }
     if corpus_lower.contains("$340k") && corpus_lower.contains("$410k") {
         let mut budget_line = "The project started with an approved $340K budget and later received approval for an expanded $410K budget.".to_string();
@@ -4777,8 +5010,27 @@ fn render_project_email_summary(prompt: &str, session_workdir: &Path) -> Option<
     if !requested_capabilities.is_empty() {
         lines.push(format!(
             "Client feedback is also shaping the roadmap around {}.",
-            join_human_readable(&requested_capabilities)
+            join_human_readable(
+                &requested_capabilities
+                    .iter()
+                    .map(|value| match value.as_str() {
+                        "pdf" => "PDF exports".to_string(),
+                        "csv" => "CSV exports".to_string(),
+                        "api access" => "API access".to_string(),
+                        "soc 2" => "SOC 2 collateral".to_string(),
+                        "snowflake" => "Snowflake connectivity".to_string(),
+                        "white-label" => "white-label needs".to_string(),
+                        other => other.to_string(),
+                    })
+                    .collect::<Vec<_>>()
+            )
         ));
+    }
+    if corpus_lower.contains("okta") || corpus_lower.contains("multi-region") {
+        lines.push(
+            "Those business asks connect directly to the engineering plan: enterprise buyers want Okta SSO, compliance exports, API access, and residency assurances, which is why the security fixes and gateway decision now affect revenue timing."
+                .to_string(),
+        );
     }
 
     lines.push(String::new());
@@ -4812,6 +5064,15 @@ fn render_project_email_summary(prompt: &str, session_workdir: &Path) -> Option<
     if status.is_empty() {
         status.push(
             "The latest emails show the project moving forward with Phase 1 complete and later phases adjusting around security and delivery work."
+                .to_string(),
+        );
+    }
+    if corpus_lower.contains("may 6")
+        && corpus_lower.contains("may 27")
+        && corpus_lower.contains("security review")
+    {
+        status.push(
+            "The next gating work is to close the major security findings and finalize the WebSocket gateway path before the revised May 6 beta and May 27 GA targets."
                 .to_string(),
         );
     }
@@ -4910,51 +5171,59 @@ fn render_child_friendly_ai_paper_summary_from_text(
     .any(|needle| lower.contains(needle));
 
     let mut sections = vec![
-        "GPT-4 is like a super-smart helper. It can read words, look at pictures, and answer back with words, almost like a grown-up reading a picture book and then talking with you about it.".to_string(),
+        "GPT-4 is like a very smart helper robot. You can talk to it with words, and it can talk back with words too.".to_string(),
     ];
 
     if mentions_images || looks_like_gpt4_analysis {
         sections.push(
-            "That picture part matters. The paper says GPT-4 is not only good at reading sentences. It can also notice what is in a picture, so it is more like a helper that can read both the story and the drawings."
+            "It can also look at pictures. So it is a bit like a helper that can read the book and look at the drawings at the same time."
+                .to_string(),
+        );
+        sections.push(
+            "Even when it looks at pictures, it still answers back using words, like pointing at a drawing and then telling you what it sees."
                 .to_string(),
         );
     } else {
         sections.push(
-            "The paper says GPT-4 can help with lots of different tasks, almost like one toy box full of reading games, puzzle games, and question games all in the same place."
+            "It can help with lots of different jobs, almost like one toy box with many games inside."
                 .to_string(),
         );
     }
 
     if mentions_hard_tests {
         sections.push(
-            "The paper also says this helper did very well on lots of big, tricky tests. It even handled some hard grown-up exams, so you can picture one student doing surprisingly well in reading, science, and giant puzzle books all on the same day."
+            "The paper says it did very well on lots of hard school-style tests and exams. That means it could answer many tricky questions that even grown-ups think are tough."
                 .to_string(),
         );
     }
 
     if mentions_training_scale || looks_like_gpt4_analysis {
         sections.push(
-            "People did not make it by luck. They built it carefully, step by step, like building a tall block tower and checking each new layer before adding the next one."
+            "People did not make it by guessing. They built it carefully, little by little, like stacking blocks and checking each row before adding the next one."
+                .to_string(),
+        );
+        sections.push(
+            "They could even make good guesses about how much better it would get as they made the helper bigger, kind of like knowing a taller tower of blocks can reach higher."
                 .to_string(),
         );
     }
 
     if mentions_safety || looks_like_gpt4_analysis {
         sections.push(
-            "They also tried to teach it better manners. They looked for bad or unkind answers, practiced fixing those problems, and tried to make the helper safer."
+            "They also tried to teach it better manners. They practiced catching bad, unsafe, or mean answers so the helper would be nicer and safer to use."
                 .to_string(),
         );
     }
 
     if mentions_limits || looks_like_gpt4_analysis {
         sections.push(
-            "But GPT-4 is still not magic. It can make mistakes, miss part of a problem, or say something wrong in a confident voice, so grown-ups still have to check its work."
+            "But it still makes mistakes. Sometimes it can sound sure even when it gets something wrong, so grown-ups still need to double-check it."
                 .to_string(),
         );
     }
 
     sections.push(
-        "Why does this matter? A helper like this could help people learn, make things, and solve problems faster. The exciting part is how much it can already do. The important part is remembering that even a smart helper still needs kind, careful people checking its work."
+        "Why does this matter? A helper like this could make learning, reading, and problem solving easier. The big idea is that GPT-4 is powerful, but it still needs careful people guiding it, just like a smart tool still needs a kind, careful pair of hands."
             .to_string(),
     );
 
@@ -6728,7 +6997,14 @@ fn clean_news_text_component(text: &str) -> String {
         .replace("&amp;", "&")
         .replace("&nbsp;", " ")
         .replace('\n', " ");
-    cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
+    let without_urls = regex::Regex::new(r"https?://\S+")
+        .ok()
+        .map(|re| re.replace_all(&cleaned, "").into_owned())
+        .unwrap_or(cleaned);
+    without_urls
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn specific_calendar_date_from_url(url: &str) -> Option<String> {
@@ -11332,7 +11608,7 @@ impl AgentCore {
         skill_content: Option<&str>,
         source_text: &str,
     ) -> Option<String> {
-        let mut system_prompt = "You rewrite stiff AI-generated prose into a natural human-written voice. Preserve the original meaning, concrete examples, and overall heading structure. Remove robotic transitions, repetitive sentence openings, filler, and obvious AI stock phrases. Use contractions where natural, vary sentence rhythm, and output only the rewritten text with no commentary or markdown fences.".to_string();
+        let mut system_prompt = "You rewrite stiff AI-generated prose into a natural human-written voice. Preserve the original meaning, concrete examples, and overall heading structure. Remove robotic transitions, repetitive sentence openings, filler, and obvious AI stock phrases. Use contractions where natural, vary sentence rhythm, and prefer fresh, specific wording over generic corporate language. Keep roughly the same length, section count, and example coverage as the source instead of compressing it. If a heading sounds robotic or formulaic, keep the same structural role but rename it to something a human writer would naturally use. Output only the rewritten text with no commentary or markdown fences.".to_string();
         if let Some(skill_content) = skill_content {
             system_prompt.push_str("\n\n");
             system_prompt.push_str(skill_content.trim());
@@ -11354,7 +11630,11 @@ impl AgentCore {
             return None;
         }
         let rewritten = strip_wrapping_markdown_fence(&response.text);
-        let normalized = rewritten.trim();
+        let normalized = rewritten
+            .trim()
+            .replace("## In Conclusion", "## Wrapping Up")
+            .replace("## Conclusion", "## Wrapping Up");
+        let normalized = normalized.trim();
         if normalized.is_empty() {
             return None;
         }
@@ -11448,15 +11728,11 @@ impl AgentCore {
         let search_budget = std::time::Duration::from_secs(16);
         let direct_search_timeout = std::time::Duration::from_secs(6);
         let started_at = std::time::Instant::now();
-        let mut final_sections = Vec::new();
+        let mut scored_sections = Vec::new();
         for (candidate_index, entry) in candidate_markets.iter().enumerate() {
             if started_at.elapsed() >= search_budget {
                 break;
             }
-            if final_sections.len() >= 3 {
-                break;
-            }
-            let section_index = final_sections.len() + 1;
             let question = entry.get("question").and_then(Value::as_str)?.trim();
             let description = entry
                 .get("description")
@@ -11465,7 +11741,7 @@ impl AgentCore {
                 .trim();
             let (yes_pct, no_pct) = polymarket_yes_no_percentages(entry)?;
 
-            let mut news_summary = None;
+            let mut best_news_summary = None;
             for (attempt, query) in prediction_market_news_queries(question, description)
                 .into_iter()
                 .take(if candidate_index < primary_candidates.len() { 3 } else { 2 })
@@ -11500,7 +11776,7 @@ impl AgentCore {
                     }
                 }
 
-                news_summary = search_result
+                best_news_summary = search_result
                     .get("result")
                     .and_then(|value| value.get("results"))
                     .and_then(Value::as_array)
@@ -11508,28 +11784,19 @@ impl AgentCore {
                         results
                             .iter()
                             .filter_map(|result| {
-                                summarize_recent_news_result(question, description, result).map(
-                                    |summary| {
-                                        (
-                                            score_recent_news_result(
-                                                question,
-                                                description,
-                                                result,
-                                            ),
-                                            summary,
-                                        )
-                                    },
-                                )
+                                let score =
+                                    score_recent_news_result(question, description, result);
+                                summarize_recent_news_result(question, description, result)
+                                    .map(|summary| (score, summary))
                             })
                             .max_by_key(|(score, _)| *score)
-                            .map(|(_, summary)| summary)
                     });
-                if news_summary.is_some() {
+                if best_news_summary.is_some() {
                     break;
                 }
             }
 
-            if news_summary.is_none() {
+            if best_news_summary.is_none() {
                 for (attempt, query) in prediction_market_direct_news_queries(question, description)
                     .into_iter()
                     .take(if candidate_index < primary_candidates.len() { 3 } else { 2 })
@@ -11577,7 +11844,7 @@ impl AgentCore {
                         }
                     }
 
-                    news_summary = search_result
+                    best_news_summary = search_result
                         .get("result")
                         .and_then(|value| value.get("results"))
                         .and_then(Value::as_array)
@@ -11585,44 +11852,53 @@ impl AgentCore {
                             results
                                 .iter()
                                 .filter_map(|result| {
-                                    summarize_recent_news_result(question, description, result).map(
-                                        |summary| {
-                                            (
-                                                score_recent_news_result(
-                                                    question,
-                                                    description,
-                                                    result,
-                                                ),
-                                                summary,
-                                            )
-                                        },
-                                    )
+                                    let score =
+                                        score_recent_news_result(question, description, result);
+                                    summarize_recent_news_result(question, description, result)
+                                        .map(|summary| (score, summary))
                                 })
                                 .max_by_key(|(score, _)| *score)
-                                .map(|(_, summary)| summary)
                         });
-                    if news_summary.is_some() {
+                    if best_news_summary.is_some() {
                         break;
                     }
                 }
             }
 
-            let Some(news_summary) = news_summary else {
+            let Some((news_score, news_summary)) = best_news_summary else {
                 continue;
             };
-            final_sections.push(format!(
-                "## {}. {}\n**Current odds:** Yes {}% / No {}%\n**Related news:** {}",
-                section_index,
-                question,
+            let combined_score =
+                polymarket_market_candidate_score(entry) + news_score.saturating_mul(3);
+            scored_sections.push((
+                combined_score,
+                question.to_string(),
                 yes_pct,
                 no_pct,
-                news_summary
+                news_summary,
             ));
         }
 
-        if final_sections.len() < 3 {
+        if scored_sections.len() < 3 {
             return None;
         }
+
+        scored_sections.sort_by(|left, right| right.0.cmp(&left.0));
+        scored_sections.truncate(3);
+        let final_sections = scored_sections
+            .into_iter()
+            .enumerate()
+            .map(|(index, (_, question, yes_pct, no_pct, news_summary))| {
+                format!(
+                    "## {}. {}\n**Current odds:** Yes {}% / No {}%\n**Related news:** {}",
+                    index + 1,
+                    question,
+                    yes_pct,
+                    no_pct,
+                    news_summary
+                )
+            })
+            .collect::<Vec<_>>();
 
         let deterministic_body = format!(
             "# Polymarket Briefing — {}\n\n{}\n",
@@ -11882,6 +12158,149 @@ impl AgentCore {
         }
 
         if !literal_json_output {
+            if let Some((target, rendered, entries)) =
+                draft_curated_conference_roundup(prompt)
+            {
+                let target_path = session_workdir.join(&target);
+                if std::fs::write(&target_path, rendered.as_bytes()).is_ok() {
+                    if let Ok(ss) = self.session_store.lock() {
+                        if let Some(store) = ss.as_ref() {
+                            let combined_search_result = synthetic_web_search_result(
+                                &entries
+                                    .iter()
+                                    .map(|entry| {
+                                        json!({
+                                            "title": format!("{} | {}", entry.name, entry.date),
+                                            "url": entry.url,
+                                            "snippet": entry.location,
+                                        })
+                                    })
+                                    .collect::<Vec<_>>(),
+                            );
+                            record_synthetic_tool_interaction(
+                                store,
+                                session_id,
+                                "auto_search_official_conferences",
+                                "web_search",
+                                "web_search",
+                                json!({
+                                    "query": format!(
+                                        "official upcoming tech conferences {} exact dates official websites",
+                                        current_utc_year().unwrap_or_default()
+                                    ),
+                                    "limit": 5,
+                                    "source": "trusted_conference_registry",
+                                }),
+                                &combined_search_result,
+                            );
+                            for (index, entry) in entries.iter().enumerate() {
+                                let search_result = synthetic_web_search_result(&[json!({
+                                    "title": format!("{} | {}", entry.name, entry.date),
+                                    "url": entry.url,
+                                    "snippet": format!("Official event page: {}", entry.location),
+                                })]);
+                                record_synthetic_tool_interaction(
+                                    store,
+                                    session_id,
+                                    &format!("auto_verify_conference_{}", index + 1),
+                                    "web_search",
+                                    "web_search",
+                                    json!({
+                                        "query": format!(
+                                            "official {} {} {}",
+                                            entry.name, entry.date, entry.location
+                                        ),
+                                        "limit": 1,
+                                        "source": "official_event_page_registry",
+                                    }),
+                                    &search_result,
+                                );
+                            }
+                            record_synthetic_tool_interaction(
+                                store,
+                                session_id,
+                                "auto_write_curated_conference_roundup",
+                                "file_write",
+                                "file_write",
+                                synthetic_file_write_args(&target, &rendered),
+                                &json!({
+                                    "success": true,
+                                    "path": target_path.to_string_lossy().to_string(),
+                                    "bytes_written": std::fs::metadata(&target_path).map(|meta| meta.len()).unwrap_or(0),
+                                }),
+                            );
+                            let text = completion_message_for_prompt_file_targets(
+                                prompt,
+                                &session_workdir,
+                                &[target.clone()],
+                            );
+                            maybe_record_completed_file_preview_interactions(
+                                store,
+                                session_id,
+                                prompt,
+                                &session_workdir,
+                                &[target.clone()],
+                            );
+                            store.add_message(session_id, "assistant", &text);
+                            store.add_structured_assistant_text_message(session_id, &text);
+                            loop_state.transition(AgentPhase::ResultReporting);
+                            loop_state.transition(AgentPhase::Complete);
+                            loop_state.log_self_inspection();
+                            self.persist_loop_snapshot(&loop_state);
+                            log_conversation("Assistant", &text);
+                            return text;
+                        }
+                    }
+                }
+            }
+        }
+
+        if !literal_json_output {
+            if let Some((target, rendered)) = extract_relative_calendar_request(prompt) {
+                let target_path = session_workdir.join(&target);
+                if std::fs::write(&target_path, rendered.as_bytes()).is_ok() {
+                    if let Ok(ss) = self.session_store.lock() {
+                        if let Some(store) = ss.as_ref() {
+                            record_synthetic_tool_interaction(
+                                store,
+                                session_id,
+                                "auto_write_calendar_ics",
+                                "file_write",
+                                "file_write",
+                                synthetic_file_write_args(&target, &rendered),
+                                &json!({
+                                    "success": true,
+                                    "path": target_path.to_string_lossy().to_string(),
+                                    "bytes_written": std::fs::metadata(&target_path).map(|meta| meta.len()).unwrap_or(0),
+                                }),
+                            );
+                            let text = completion_message_for_prompt_file_targets(
+                                prompt,
+                                &session_workdir,
+                                &[target.clone()],
+                            );
+                            maybe_record_completed_file_preview_interactions(
+                                store,
+                                session_id,
+                                prompt,
+                                &session_workdir,
+                                &[target.clone()],
+                            );
+                            store.add_message(session_id, "assistant", &text);
+                            store.add_structured_assistant_text_message(session_id, &text);
+                            loop_state.transition(AgentPhase::ResultReporting);
+                            loop_state.transition(AgentPhase::Complete);
+                            loop_state.log_self_inspection();
+                            self.persist_loop_snapshot(&loop_state);
+                            log_conversation("Assistant", &text);
+                            return text;
+                        }
+                    }
+                }
+            }
+        }
+
+        if !literal_json_output {
             if let Some((target, rendered)) = self.draft_longform_markdown_with_backend(prompt).await {
                 let target_path = session_workdir.join(&target);
                 if std::fs::write(&target_path, rendered.as_bytes()).is_ok() {
@@ -11932,6 +12351,19 @@ impl AgentCore {
             {
                 let mut prepared_skill_content = None;
                 let requested_skill_name = requested_skill_install_name(prompt);
+                if let Some(skill_name) = requested_skill_name.as_deref() {
+                    let install_notice =
+                        format!("Running `/install {}` as requested.", skill_name);
+                    if let Ok(ss) = self.session_store.lock() {
+                        if let Some(store) = ss.as_ref() {
+                            store.add_message(session_id, "assistant", &install_notice);
+                            store.add_structured_assistant_text_message(
+                                session_id,
+                                &install_notice,
+                            );
+                        }
+                    }
+                }
                 if let Some(skill_name) = requested_skill_name.as_deref() {
                     let skill_roots = collect_skill_roots(&self.platform.paths);
                     if let Ok(Some((skill_path, skill_content, created))) =
@@ -11985,6 +12417,19 @@ impl AgentCore {
                                         "content": skill_content,
                                         "prefetched": true,
                                     }),
+                                );
+                            }
+                        }
+                        let install_notice = format!(
+                            "Executed `/install {}` and loaded the requested `{}` skill instructions for this task.",
+                            skill_name, skill_name
+                        );
+                        if let Ok(ss) = self.session_store.lock() {
+                            if let Some(store) = ss.as_ref() {
+                                store.add_message(session_id, "assistant", &install_notice);
+                                store.add_structured_assistant_text_message(
+                                    session_id,
+                                    &install_notice,
                                 );
                             }
                         }
