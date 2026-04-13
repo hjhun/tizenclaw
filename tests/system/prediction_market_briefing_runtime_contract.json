@@ -6,7 +6,7 @@
       "method": "process_prompt",
       "params": {
         "session_id": "${unique_session_id:prediction-market-briefing}",
-        "prompt": "Using only the evidence below, write polymarket_briefing.md in markdown. Start with a date header, then include exactly three numbered sections with **Current odds:** and **Related news:** in each section.\n\n1. Will the Fed decrease interest rates by 50+ bps after the April 2026 meeting?\nCurrent odds: Yes 1% / No 99%\nRelated news: April 12, 2026 Reuters reported that traders raised bets on a bigger Fed cut after softer inflation data.\n\n2. Will the Iranian regime fall by April 30?\nCurrent odds: Yes 3% / No 97%\nRelated news: April 12, 2026 AP reported new protests and succession concerns around Iran's leadership.\n\n3. Will Bitcoin reach $150,000 in April?\nCurrent odds: Yes 47% / No 53%\nRelated news: April 13, 2026 Bloomberg reported that spot ETF inflows stayed strong while traders debated upside targets."
+        "prompt": "Using only the evidence below, write polymarket_briefing.md in markdown. Start with a date header, then include exactly three numbered sections with **Current odds:** and **Related news:** in each section.\n\n1. Will the Fed decrease interest rates by 50+ bps after the April 2026 meeting?\nCurrent odds: Yes 1% / No 99%\nRelated news: April 12, 2026 Reuters reported that traders raised bets on a bigger Fed cut after softer inflation data. https://www.reuters.com/world/us/fed-officials-weigh-larger-rate-cut-april-2026-meeting-2026-04-12/\n\n2. Will the Iranian regime fall by April 30?\nCurrent odds: Yes 3% / No 97%\nRelated news: April 12, 2026 AP reported new protests and succession concerns around Iran's leadership. https://apnews.com/article/iran-protests-leadership-2026-04-12\n\n3. Will Bitcoin reach $150,000 in April?\nCurrent odds: Yes 47% / No 53%\nRelated news: April 13, 2026 Bloomberg reported that spot ETF inflows stayed strong while traders debated upside targets. https://www.bloomberg.com/news/articles/2026-04-13/bitcoin-etf-inflows-stay-strong-as-traders-debate-upside-targets"
       },
       "assertions": [
         {
@@ -28,6 +28,20 @@
         {
           "path": "text",
           "contains": "Completed"
+        }
+      ]
+    },
+    {
+      "name": "prediction-market-briefing-retains-grounded-url",
+      "method": "process_prompt",
+      "params": {
+        "session_id": "${unique_session_id:prediction-market-briefing}",
+        "prompt": "Read polymarket_briefing.md and reply with the Reuters article URL from the first related-news entry only."
+      },
+      "assertions": [
+        {
+          "path": "text",
+          "contains": "https://www.reuters.com/world/us/fed-officials-weigh-larger-rate-cut-april-2026-meeting-2026-04-12/"
         }
       ]
     },

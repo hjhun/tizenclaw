@@ -24,7 +24,7 @@
       "method": "process_prompt",
       "params": {
         "session_id": "${unique_session_id:file-grounded-recall}",
-        "prompt": "I previously saved some information in memory/MEMORY.md. Please read that file and answer these questions:\n1. What is my favorite programming language?\n2. When did I start learning it?\n3. What is my mentor's name and affiliation?\n4. What is my project called and what does it do?\n5. What is my team's secret code phrase?"
+        "prompt": "I previously saved some personal information in a file called `memory/MEMORY.md`. Please read that file and answer these questions:\n1. What is my favorite programming language?\n2. When did I start learning it?\n3. What is my mentor's name and affiliation?\n4. What is my project called and what does it do?\n5. What is my team's secret code phrase?"
       },
       "assertions": [
         {
@@ -46,6 +46,14 @@
         {
           "path": "text",
           "contains": "purple elephant sunrise"
+        },
+        {
+          "path": "text",
+          "contains": "1. Your favorite programming language is Rust."
+        },
+        {
+          "path": "text",
+          "contains": "4. Your project is NeonDB, a distributed key-value store."
         }
       ]
     },
@@ -54,7 +62,7 @@
       "method": "process_prompt",
       "params": {
         "session_id": "${unique_session_id:file-grounded-recall}",
-        "prompt": "What programming language am I learning? And what's the name of my current project? You can check the memory/MEMORY.md file if needed."
+        "prompt": "What programming language am I learning? And what's the name of my current project? You can check the `memory/MEMORY.md` file if needed."
       },
       "assertions": [
         {

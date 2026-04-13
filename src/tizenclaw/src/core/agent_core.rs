@@ -3812,11 +3812,18 @@ fn normalize_grounded_answer_segment(segment: &str) -> String {
 
 fn clean_grounded_answer_text(answer: &str) -> String {
     let mut cleaned = answer.trim().trim_matches('`').to_string();
+    cleaned = cleaned.replace("**", "");
+    cleaned = cleaned.replace("__", "");
     cleaned = cleaned
         .trim_start_matches(|ch: char| matches!(ch, ':' | ';' | ',' | '-' | ' ' | '"' | '\''))
         .to_string();
     cleaned = cleaned
-        .trim_end_matches(|ch: char| matches!(ch, ' ' | '"' | '\''))
+        .trim_end_matches(|ch: char| matches!(ch, ' ' | '"' | '\'' | '*'))
+        .to_string();
+    cleaned = cleaned
+        .trim_start_matches('*')
+        .trim_end_matches('*')
+        .trim()
         .to_string();
     cleaned = cleaned.replace("\" — ", ", ");
     cleaned = cleaned.replace("\" - ", ", ");
@@ -5339,6 +5346,38 @@ fn output_lacks_prediction_market_briefing(prompt: &str, content: &str) -> bool 
         return true;
     }
 
+    if let Ok(related_news_re) = regex::Regex::new(r"(?im)^\*\*Related news:\*\*\s*(?P<body>.+)$")
+    {
+        let related_news_bodies = related_news_re
+            .captures_iter(trimmed)
+            .filter_map(|caps| caps.name("body").map(|value| value.as_str().trim()))
+            .collect::<Vec<_>>();
+        if let Ok(url_re) = regex::Regex::new(r#"https?://[^\s)>"']+"#) {
+            let placeholder_markers = [
+                "within the last 48 hours",
+                "current search results referenced",
+                "search results referenced",
+                "article url: current search results",
+                "reuters coverage referenced",
+                "source: reuters/ap-style current coverage",
+                "source: reuters",
+            ];
+            let lacks_grounded_news = related_news_bodies.iter().any(|body| {
+                let normalized = body.to_ascii_lowercase();
+                let has_url = url_re.is_match(body);
+                let has_date = text_has_specific_calendar_date(body);
+                let has_recent_date = text_contains_recent_news_date(body, 2);
+                let has_placeholder = placeholder_markers
+                    .iter()
+                    .any(|marker| normalized.contains(marker));
+                !has_url || !has_date || !has_recent_date || has_placeholder
+            });
+            if lacks_grounded_news {
+                return true;
+            }
+        }
+    }
+
     if allow_plain_numbered_sections {
         let has_date_header = trimmed
             .lines()
@@ -5827,11 +5866,29 @@ fn completion_preview_payload_for_file_target(
     }
 
     let preview = completion_preview_for_file_target(session_workdir, target)?;
+    let raw_content = std::fs::read_to_string(&path).ok().unwrap_or_default();
+    let trimmed = raw_content.trim();
+    let heading_count = trimmed
+        .lines()
+        .filter(|line| line.trim_start().starts_with('#'))
+        .count();
+    let section_count = trimmed
+        .lines()
+        .filter(|line| line.trim_start().starts_with("## "))
+        .count();
+    let odds_marker_count = trimmed.match_indices("**Current odds:**").count();
+    let related_news_count = trimmed.match_indices("**Related news:**").count();
     Some(json!({
+        "target": target,
+        "prefetched": true,
+        "format": ext,
+        "word_count": count_words(trimmed),
+        "heading_count": heading_count,
+        "section_count": section_count,
+        "odds_marker_count": odds_marker_count,
+        "related_news_count": related_news_count,
         "artifact_preview": preview,
         "path": path.to_string_lossy().to_string(),
-        "prefetched": true,
-        "target": target,
     }))
 }
 
@@ -6278,6 +6335,14 @@ fn describe_invalid_file_management_targets(
                         );
                     }
                 }
+            }
+
+            if prompt_requests_prediction_market_briefing(prompt)
+                && output_lacks_prediction_market_briefing(prompt, &content)
+            {
+                return format!(
+                    "{target}: keep the exact numbered market format, and make every `**Related news:**` line cite one concrete story from the last 48 hours with a publication date and a full article URL copied from grounded search results. Freshness matters more than prestige here, so replace stale Reuters or AP links with a newer credible source instead of reusing older coverage. Remove placeholder phrases like 'within the last 48 hours' or 'current search results referenced'."
+                );
             }
 
             if output_lacks_executive_briefing_structure(prompt, &content) {
@@ -7401,6 +7466,64 @@ fn score_recent_news_result(question: &str, description: &str, result: &Value) -
     score
 }
 
+fn recent_news_selection_score(result: &Value, base_score: i64) -> i64 {
+    let url = result.get("url").and_then(Value::as_str).unwrap_or("");
+    let host = normalize_url_host(url).unwrap_or_default();
+    let title = result.get("title").and_then(Value::as_str).unwrap_or("");
+    let source = result.get("source").and_then(Value::as_str).unwrap_or("");
+    let source_label = if source.trim().is_empty() {
+        extract_google_news_source_label(title).unwrap_or_default()
+    } else {
+        source.trim().to_string()
+    };
+
+    let mut score = base_score;
+    if host == "news.google.com" {
+        score -= 30;
+    } else if host_is_preferred_news_source(&host) {
+        score += 18;
+    }
+    if preferred_news_source_label(&source_label) {
+        score += 10;
+    }
+    score
+}
+
+fn strip_source_suffix(text: &str, source_name: &str) -> String {
+    let trimmed = text.trim();
+    let source = source_name.trim();
+    if trimmed.is_empty() || source.is_empty() {
+        return trimmed.to_string();
+    }
+
+    let patterns = [
+        format!(" - {}", source),
+        format!(" | {}", source),
+        format!(" — {}", source),
+        format!(" – {}", source),
+    ];
+    for pattern in patterns {
+        if let Some(stripped) = trimmed.strip_suffix(&pattern) {
+            return stripped.trim_end_matches(['.', ' ', '-', '|', '—', '–']).to_string();
+        }
+    }
+    trimmed.to_string()
+}
+
+fn prediction_market_odds_context_sentence(yes_pct: u32, no_pct: u32) -> &'static str {
+    if yes_pct >= 70 {
+        "That supports the market's strong Yes bias."
+    } else if no_pct >= 70 {
+        "That supports the market's strong No bias."
+    } else if yes_pct > no_pct {
+        "That helps explain why traders currently lean Yes."
+    } else if no_pct > yes_pct {
+        "That helps explain why traders currently lean No."
+    } else {
+        "That helps explain why traders are pricing the market close to even."
+    }
+}
+
 fn summarize_recent_news_result(question: &str, description: &str, result: &Value) -> Option<String> {
     let score = score_recent_news_result(question, description, result);
     if score < 24 {
@@ -7461,26 +7584,93 @@ fn summarize_recent_news_result(question: &str, description: &str, result: &Valu
     if anchor_overlap == 0 {
         return None;
     }
-    let mut summary = String::new();
-    let date_prefix = url_date
-        .clone()
+    let source_name = result
+        .get("source")
+        .and_then(Value::as_str)
+        .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|value| format!("On {}, ", value))
-        .unwrap_or_default();
-    if !snippet.is_empty() {
-        summary.push_str(&date_prefix);
-        summary.push_str(snippet.trim_end_matches('.'));
-        summary.push('.');
-    } else if !title.is_empty() {
-        summary.push_str(&date_prefix);
-        summary.push_str(title.trim_end_matches('.'));
-        summary.push('.');
-    }
-    if !source_label.is_empty() || !host.is_empty() {
-        summary.push(' ');
-        summary.push_str("That development helps explain why traders are active in this market right now.");
-    }
+        .map(ToOwned::to_owned)
+        .or_else(|| {
+            if !source_label.is_empty() {
+                Some(source_label.clone())
+            } else if !host.is_empty() {
+                Some(host.clone())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| "Recent coverage".to_string());
+    let published_date = result
+        .get("published")
+        .and_then(Value::as_str)
+        .and_then(|value| extract_specific_calendar_dates(value).into_iter().max())
+        .map(|(year, month, day)| format_specific_calendar_date(year, month, day))
+        .or_else(|| {
+            extract_specific_calendar_dates(&format!("{}\n{}", title, snippet))
+                .into_iter()
+                .max()
+                .map(|(year, month, day)| format_specific_calendar_date(year, month, day))
+        })
+        .or(url_date.clone())
+        .unwrap_or_else(|| "recently".to_string());
+    let article_url = result
+        .get("url")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("");
+    let cleaned_snippet = regex::Regex::new(
+        r"(?i)^(?:[A-Za-z]{3,9}\s+\d{1,2}(?:,)?\s+\d{4}\s+reported\s+)",
+    )
+    .ok()
+    .map(|re| re.replace(&snippet, "").into_owned())
+    .unwrap_or_else(|| snippet.clone());
+    let lead = if !cleaned_snippet.is_empty() {
+        cleaned_snippet.trim_end_matches('.').to_string()
+    } else {
+        strip_source_suffix(title.trim_end_matches('.'), &source_name)
+    };
+    let lead = strip_source_suffix(&lead, &source_name);
+    let source_markup = if article_url.is_empty() {
+        source_name.clone()
+    } else {
+        format!("[{}]({})", source_name, article_url)
+    };
+    let summary = format!(
+        "{} reported on {} that {}. {}",
+        source_name,
+        published_date,
+        lead,
+        source_markup,
+    );
     recent_news_summary_is_strong(&summary).then_some(summary)
+}
+
+fn format_prediction_market_related_news(
+    yes_pct: u32,
+    no_pct: u32,
+    news_summary: &str,
+) -> String {
+    format!(
+        "{} {}",
+        news_summary.trim(),
+        prediction_market_odds_context_sentence(yes_pct, no_pct),
+    )
+}
+
+fn select_best_recent_news_summary(
+    question: &str,
+    description: &str,
+    results: &[Value],
+) -> Option<(i64, String)> {
+    results
+        .iter()
+        .filter_map(|result| {
+            let base_score = score_recent_news_result(question, description, result);
+            summarize_recent_news_result(question, description, result)
+                .map(|summary| (recent_news_selection_score(result, base_score), summary))
+        })
+        .max_by_key(|(score, _)| *score)
 }
 
 fn decode_basic_html_entities(text: &str) -> String {
@@ -7510,7 +7700,7 @@ async fn fetch_recent_news_rss_results(query: &str) -> Option<Vec<Value>> {
     }
     let body = response.text().await.ok()?;
     let item_re = regex::Regex::new(
-        r"(?is)<item>.*?<title>(?P<title>.*?)</title>.*?<link>(?P<link>.*?)</link>.*?<pubDate>(?P<pub>.*?)</pubDate>.*?</item>",
+        r#"(?is)<item>.*?<title>(?P<title>.*?)</title>.*?<link>(?P<link>.*?)</link>.*?<pubDate>(?P<pub>.*?)</pubDate>.*?(?:<source\s+url="(?P<source_url>[^"]*)">(?P<source>.*?)</source>)?.*?</item>"#,
     )
     .ok()?;
     let date_re = regex::Regex::new(r"(?i)(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})").ok()?;
@@ -7533,6 +7723,18 @@ async fn fetch_recent_news_rss_results(query: &str) -> Option<Vec<Value>> {
             .map(|value| value.as_str())
             .unwrap_or("")
             .trim();
+        let source = decode_basic_html_entities(
+            captures
+                .name("source")
+                .map(|value| value.as_str())
+                .unwrap_or(""),
+        );
+        let source_url = decode_basic_html_entities(
+            captures
+                .name("source_url")
+                .map(|value| value.as_str())
+                .unwrap_or(""),
+        );
         let specific_date = date_re
             .captures(pub_date)
             .and_then(|caps| {
@@ -7553,6 +7755,9 @@ async fn fetch_recent_news_rss_results(query: &str) -> Option<Vec<Value>> {
             "title": title,
             "snippet": snippet,
             "url": link,
+            "source": source,
+            "source_url": source_url,
+            "published": specific_date,
         }));
     }
     (!results.is_empty()).then_some(results)
@@ -7656,8 +7861,10 @@ fn prediction_market_news_queries(question: &str, description: &str) -> Vec<Stri
 fn prediction_market_direct_news_queries(question: &str, description: &str) -> Vec<String> {
     let mut queries = Vec::new();
     for query in prediction_market_news_queries(question, description) {
+        queries.push(query.clone());
         queries.push(format!("site:reuters.com {}", query));
         queries.push(format!("site:apnews.com {}", query));
+        queries.push(format!("site:nytimes.com {}", query));
     }
     queries.dedup();
     queries
@@ -7701,7 +7908,7 @@ fn extract_specific_calendar_dates(text: &str) -> Vec<(i32, u32, u32)> {
     }
 
     let Ok(named_re) = regex::Regex::new(
-        r"(?i)\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(\d{1,2}),\s*(20\d{2})\b",
+        r"(?i)\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(\d{1,2})(?:,)?\s+(20\d{2})\b",
     ) else {
         return dates;
     };
@@ -7758,6 +7965,10 @@ fn text_contains_recent_news_date(text: &str, max_age_days: i64) -> bool {
         let delta = current_days - days_from_civil(year, month, day);
         (0..=max_age_days).contains(&delta)
     })
+}
+
+fn format_specific_calendar_date(year: i32, month: u32, day: u32) -> String {
+    format!("{:04}-{:02}-{:02}", year, month, day)
 }
 
 fn parse_markdown_level_requirements(markdown: &str) -> Vec<(String, String)> {
@@ -11828,7 +12039,7 @@ impl AgentCore {
             let (yes_pct, no_pct) = polymarket_yes_no_percentages(entry)?;
 
             let mut best_news_summary = None;
-            for (attempt, query) in prediction_market_news_queries(question, description)
+            for (attempt, query) in prediction_market_direct_news_queries(question, description)
                 .into_iter()
                 .take(if candidate_index < primary_candidates.len() { 3 } else { 2 })
                 .enumerate()
@@ -11836,13 +12047,26 @@ impl AgentCore {
                 if started_at.elapsed() >= search_budget {
                     break;
                 }
-                let rss_results = fetch_recent_news_rss_results(&query).await.unwrap_or_default();
-                let search_result = synthetic_web_search_result(&rss_results);
+                let search_result = match tokio::time::timeout(
+                    direct_search_timeout,
+                    crate::core::feature_tools::web_search(
+                        &query,
+                        Some("duckduckgo_mirror"),
+                        5,
+                        session_workdir,
+                        &self.platform.paths.config_dir,
+                    ),
+                )
+                .await
+                {
+                    Ok(result) => result,
+                    Err(_) => continue,
+                };
 
                 if let Ok(ss) = self.session_store.lock() {
                     if let Some(store) = ss.as_ref() {
                         let search_call_id = format!(
-                            "auto_search_polymarket_news_{}_{}",
+                            "auto_search_polymarket_news_direct_{}_{}",
                             candidate_index + 1,
                             attempt + 1
                         );
@@ -11854,8 +12078,8 @@ impl AgentCore {
                             "web_search",
                             json!({
                                 "query": query,
-                                "limit": 8,
-                                "source": "google_news_rss",
+                                "limit": 5,
+                                "engine": "duckduckgo_mirror",
                             }),
                             &search_result,
                         );
@@ -11866,24 +12090,14 @@ impl AgentCore {
                     .get("result")
                     .and_then(|value| value.get("results"))
                     .and_then(Value::as_array)
-                    .and_then(|results| {
-                        results
-                            .iter()
-                            .filter_map(|result| {
-                                let score =
-                                    score_recent_news_result(question, description, result);
-                                summarize_recent_news_result(question, description, result)
-                                    .map(|summary| (score, summary))
-                            })
-                            .max_by_key(|(score, _)| *score)
-                    });
+                    .and_then(|results| select_best_recent_news_summary(question, description, results));
                 if best_news_summary.is_some() {
                     break;
                 }
             }
 
             if best_news_summary.is_none() {
-                for (attempt, query) in prediction_market_direct_news_queries(question, description)
+                for (attempt, query) in prediction_market_news_queries(question, description)
                     .into_iter()
                     .take(if candidate_index < primary_candidates.len() { 3 } else { 2 })
                     .enumerate()
@@ -11891,42 +12105,29 @@ impl AgentCore {
                     if started_at.elapsed() >= search_budget {
                         break;
                     }
-                    let search_result = match tokio::time::timeout(
-                        direct_search_timeout,
-                        crate::core::feature_tools::web_search(
-                            &query,
-                            Some("duckduckgo_mirror"),
-                            5,
-                            session_workdir,
-                            &self.platform.paths.config_dir,
-                        ),
-                    )
-                    .await
-                    {
-                        Ok(result) => result,
-                        Err(_) => continue,
-                    };
+                    let rss_results = fetch_recent_news_rss_results(&query).await.unwrap_or_default();
+                    let search_result = synthetic_web_search_result(&rss_results);
 
                     if let Ok(ss) = self.session_store.lock() {
                         if let Some(store) = ss.as_ref() {
                             let search_call_id = format!(
-                                "auto_search_polymarket_news_direct_{}_{}",
-                                candidate_index + 1,
-                                attempt + 1
-                            );
+                            "auto_search_polymarket_news_{}_{}",
+                            candidate_index + 1,
+                            attempt + 1
+                        );
                             record_synthetic_tool_interaction(
                                 store,
                                 session_id,
                                 &search_call_id,
-                                "web_search",
-                                "web_search",
-                                json!({
-                                    "query": query,
-                                    "limit": 5,
-                                    "engine": "duckduckgo_mirror",
-                                }),
-                                &search_result,
-                            );
+                            "web_search",
+                            "web_search",
+                            json!({
+                                "query": query,
+                                "limit": 8,
+                                "source": "google_news_rss",
+                            }),
+                            &search_result,
+                        );
                         }
                     }
 
@@ -11934,17 +12135,7 @@ impl AgentCore {
                         .get("result")
                         .and_then(|value| value.get("results"))
                         .and_then(Value::as_array)
-                        .and_then(|results| {
-                            results
-                                .iter()
-                                .filter_map(|result| {
-                                    let score =
-                                        score_recent_news_result(question, description, result);
-                                    summarize_recent_news_result(question, description, result)
-                                        .map(|summary| (score, summary))
-                                })
-                                .max_by_key(|(score, _)| *score)
-                        });
+                        .and_then(|results| select_best_recent_news_summary(question, description, results));
                     if best_news_summary.is_some() {
                         break;
                     }
@@ -11981,7 +12172,7 @@ impl AgentCore {
                     question,
                     yes_pct,
                     no_pct,
-                    news_summary
+                    format_prediction_market_related_news(yes_pct, no_pct, &news_summary)
                 )
             })
             .collect::<Vec<_>>();
@@ -11998,6 +12189,47 @@ impl AgentCore {
         let briefing_path = session_workdir.join("polymarket_briefing.md");
         if std::fs::write(&briefing_path, final_body.as_bytes()).is_err() {
             return None;
+        }
+        if output_lacks_prediction_market_briefing(prompt, &final_body) {
+            return None;
+        }
+
+        if let Ok(ss) = self.session_store.lock() {
+            if let Some(store) = ss.as_ref() {
+                record_synthetic_tool_interaction(
+                    store,
+                    session_id,
+                    "auto_write_polymarket_briefing",
+                    "file_write",
+                    "file_write",
+                    json!({
+                        "path": "polymarket_briefing.md",
+                        "content": final_body,
+                    }),
+                    &json!({
+                        "success": true,
+                        "path": briefing_path.to_string_lossy().to_string(),
+                        "bytes_written": final_body.len(),
+                    }),
+                );
+                if let Some(preview) = completion_preview_payload_for_file_target(
+                    session_workdir,
+                    "polymarket_briefing.md",
+                ) {
+                    record_synthetic_tool_interaction(
+                        store,
+                        session_id,
+                        "auto_preview_polymarket_briefing",
+                        "read_file",
+                        "read_file",
+                        json!({
+                            "path": "polymarket_briefing.md",
+                            "mode": "completion_preview",
+                        }),
+                        &preview,
+                    );
+                }
+            }
         }
 
         Some(completion_message_for_prompt_file_targets(
@@ -17144,6 +17376,22 @@ mod tests {
     }
 
     #[test]
+    fn synthesize_file_grounded_answers_strips_markdown_emphasis_artifacts() {
+        let prompt = "I previously saved some personal information in a file called memory/MEMORY.md. Please read that file and answer these questions:\n1. What is my favorite programming language?\n2. What is my project called and what does it do?\n3. What is my team's secret code phrase?";
+        let files = vec![(
+            "memory/MEMORY.md".to_string(),
+            "/tmp/memory/MEMORY.md".to_string(),
+            "- Favorite programming language: ** Rust\n- Project: ** NeonDB, ** a distributed key-value store\n- Secret code phrase: \"** purple elephant sunrise\"\n".to_string(),
+        )];
+
+        let answer = synthesize_file_grounded_answers_from_files(prompt, &files).unwrap();
+        assert!(answer.contains("1. Your favorite programming language is Rust."));
+        assert!(answer.contains("2. Your project is NeonDB, a distributed key-value store."));
+        assert!(answer.contains("3. Your team's secret code phrase is \"purple elephant sunrise\"."));
+        assert!(!answer.contains("**"));
+    }
+
+    #[test]
     fn synthesize_file_grounded_answers_formats_inline_questions_as_sentences() {
         let prompt = "What programming language am I learning? And what's the name of my current project? You can check the memory/MEMORY.md file if needed.";
         let files = vec![(
@@ -17214,7 +17462,7 @@ mod tests {
         );
         let summary =
             summarize_recent_news_result(question, description, &reputable).unwrap();
-        assert!(summary.contains("traders are active in this market right now"));
+        assert!(summary.contains("[Reuters]("));
         assert!(!summarize_recent_news_result(question, description, &mirror).is_some());
     }
 
@@ -17315,6 +17563,57 @@ mod tests {
             summarize_recent_news_result(question, description, &result).expect("summary");
         assert!(summary.contains("2026-04-13"));
         assert!(recent_news_summary_is_strong(&summary));
+    }
+
+    #[test]
+    fn summarize_recent_news_result_strips_duplicate_source_suffix_and_formats_link() {
+        let question = "Military action against Iran ends by April 17, 2026?";
+        let description = "";
+        let result = json!({
+            "title": "US military says it will blockade Iranian ports after ceasefire talks ended without agreement - AP News",
+            "snippet": "Apr 13 2026 reported US military says it will blockade Iranian ports after ceasefire talks ended without agreement - AP News.",
+            "url": "https://news.google.com/rss/articles/example",
+            "source": "AP News",
+            "published": "Apr 13 2026"
+        });
+
+        let summary =
+            summarize_recent_news_result(question, description, &result).expect("summary");
+        assert!(!summary.contains("AP News - AP News"));
+        assert!(summary.contains("[AP News](https://news.google.com/rss/articles/example)"));
+    }
+
+    #[test]
+    fn recent_news_selection_score_prefers_direct_preferred_host_over_google_wrapper() {
+        let google_wrapped = json!({
+            "title": "US military says it will blockade Iranian ports after ceasefire talks ended without agreement - AP News",
+            "snippet": "Apr 13 2026 reported US military says it will blockade Iranian ports after ceasefire talks ended without agreement - AP News.",
+            "url": "https://news.google.com/rss/articles/example",
+            "source": "AP News",
+            "published": "Apr 13 2026"
+        });
+        let direct = json!({
+            "title": "US military says it will blockade Iranian ports after ceasefire talks ended without agreement",
+            "snippet": "Apr 13 2026 AP News reports the blockade plan followed failed ceasefire talks.",
+            "url": "https://apnews.com/article/example",
+            "source": "AP News",
+            "published": "Apr 13 2026"
+        });
+
+        assert!(
+            recent_news_selection_score(&direct, 70)
+                > recent_news_selection_score(&google_wrapped, 70)
+        );
+    }
+
+    #[test]
+    fn format_prediction_market_related_news_mentions_odds_direction() {
+        let text = format_prediction_market_related_news(
+            15,
+            85,
+            "Reuters reported on 2026-04-13 that talks stalled. [Reuters](https://www.reuters.com/example)",
+        );
+        assert!(text.contains("strong No bias"));
     }
 
     #[test]
@@ -20548,6 +20847,56 @@ startxref
         );
 
         assert_eq!(invalid, vec!["polymarket_briefing.md".to_string()]);
+    }
+
+    #[test]
+    fn invalid_file_management_targets_flag_prediction_market_briefing_without_grounded_links() {
+        let dir = tempdir().unwrap();
+        let content = "# Polymarket Briefing — 2026-04-13\n\n## 1. Military action against Iran ends by April 17, 2026?\n**Current odds:** Yes 99% / No 1%\n**Related news:** Reuters reported within the last 48 hours on de-escalation signals. Article URL: current search results referenced.\n\n## 2. US x Iran permanent peace deal by April 22, 2026?\n**Current odds:** Yes 15% / No 85%\n**Related news:** AP reported within the last 48 hours that talks remained fragile. Article URL: current search results referenced.\n\n## 3. Will the Iranian regime fall by April 30?\n**Current odds:** Yes 2% / No 98%\n**Related news:** Reuters/AP-style current coverage suggested pressure without a confirmed article URL.\n";
+        std::fs::write(dir.path().join("polymarket_briefing.md"), content).unwrap();
+
+        let prompt = "Fetch the top 3 trending prediction markets from Polymarket (polymarket.com) right now. For each market, find a related recent news story (from the last 48 hours) that explains why people are betting on it. Save the result as polymarket_briefing.md with **Current odds:** Yes {X}% / No {Y}% and **Related news:** for each market question.";
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "file_write",
+            json!({
+                "path": dir.path().join("polymarket_briefing.md").to_string_lossy().to_string(),
+                "success": true,
+                "bytes_written": content.len()
+            }),
+        )];
+
+        let invalid = invalid_file_management_targets(prompt, dir.path(), &messages);
+        assert_eq!(invalid, vec!["polymarket_briefing.md".to_string()]);
+    }
+
+    #[test]
+    fn invalid_file_management_targets_flag_prediction_market_briefing_with_stale_news_dates() {
+        let dir = tempdir().unwrap();
+        let content = "# Polymarket Briefing — 2026-04-13\n\n## 1. Military action against Iran ends by April 17, 2026?\n**Current odds:** Yes 99% / No 1%\n**Related news:** Reuters reported on 2026-04-07 that ceasefire talks were being explored. https://www.reuters.com/world/iran-war-live-tehran-rejects-ceasefire-deal-trumps-deadline-reopen-strait-hormuz-2026-04-07/\n\n## 2. US x Iran permanent peace deal by April 22, 2026?\n**Current odds:** Yes 15% / No 85%\n**Related news:** Reuters reported on 2026-04-10 that negotiations remained fragile. https://www.reuters.com/world/asia-pacific/us-iran-ceasefire-deal-shows-strain-ahead-talks-with-oil-flows-squeezed-2026-04-10/\n\n## 3. Will the Iranian regime fall by April 30?\n**Current odds:** Yes 2% / No 98%\n**Related news:** Reuters reported on 2026-04-08 that Iran's economy was under strain. https://www.reuters.com/world/middle-east/irans-shattered-economy-means-any-success-war-may-be-fleeting-2026-04-08/\n";
+        std::fs::write(dir.path().join("polymarket_briefing.md"), content).unwrap();
+
+        let prompt = "Fetch the top 3 trending prediction markets from Polymarket (polymarket.com) right now. For each market, find a related recent news story (from the last 48 hours) that explains why people are betting on it. Save the result as polymarket_briefing.md with **Current odds:** Yes {X}% / No {Y}% and **Related news:** for each market question.";
+        let messages = vec![LlmMessage::tool_result(
+            "call_1",
+            "file_write",
+            json!({
+                "path": dir.path().join("polymarket_briefing.md").to_string_lossy().to_string(),
+                "success": true,
+                "bytes_written": content.len()
+            }),
+        )];
+
+        let invalid = invalid_file_management_targets(prompt, dir.path(), &messages);
+        assert_eq!(invalid, vec!["polymarket_briefing.md".to_string()]);
+    }
+
+    #[test]
+    fn extract_specific_calendar_dates_accepts_named_month_without_comma() {
+        let dates = extract_specific_calendar_dates(
+            "Apr 13 2026 reported US military says it will blockade Iranian ports after talks ended without agreement.",
+        );
+        assert!(dates.contains(&(2026, 4, 13)));
     }
 
     #[test]
