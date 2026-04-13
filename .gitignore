@@ -94,12 +94,13 @@ journal.txt
 
 # Local workflow metadata
 /.agent/
+/.dev/
+/ROADMAP.md
 
 # Claude Code (local dev only)
 .claude/
 
 # Dev workspace
-/.dev/
 DORMAMMU.log
 docs/
 !docs/
