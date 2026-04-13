@@ -7149,6 +7149,41 @@ fn prediction_market_anchor_tokens(question: &str, description: &str) -> Vec<Str
     tokens
 }
 
+fn prediction_market_token_variants(token: &str) -> Vec<String> {
+    let normalized = token.trim().to_ascii_lowercase();
+    if normalized.is_empty() {
+        return Vec::new();
+    }
+
+    let mut variants = vec![normalized.clone()];
+    if normalized.ends_with("ian") && normalized.len() > 6 {
+        let root = normalized[..normalized.len() - 4].to_string();
+        if root.len() >= 4 {
+            variants.push(root);
+        }
+    }
+
+    variants.sort();
+    variants.dedup();
+    variants
+}
+
+fn prediction_market_text_matches_token(text: &str, token: &str) -> bool {
+    prediction_market_token_variants(token)
+        .into_iter()
+        .any(|variant| text.contains(&variant))
+}
+
+fn prediction_market_match_count<'a>(
+    text: &str,
+    tokens: impl IntoIterator<Item = &'a str>,
+) -> usize {
+    tokens
+        .into_iter()
+        .filter(|token| prediction_market_text_matches_token(text, token))
+        .count()
+}
+
 fn score_recent_news_result(question: &str, description: &str, result: &Value) -> i64 {
     let title = clean_news_text_component(
         result.get("title").and_then(Value::as_str).unwrap_or(""),
@@ -7220,17 +7255,18 @@ fn score_recent_news_result(question: &str, description: &str, result: &Value) -
         return -220;
     }
     let anchor_tokens = prediction_market_anchor_tokens(question, description);
-    let anchor_overlap = anchor_tokens
-        .iter()
-        .filter(|token| combined.contains(token.as_str()))
-        .count() as i64;
+    let anchor_overlap = prediction_market_match_count(
+        &combined,
+        anchor_tokens.iter().map(|token| token.as_str()),
+    ) as i64;
     if !anchor_tokens.is_empty() && anchor_overlap == 0 {
         return -180;
     }
-    let overlap = tokenize_grounded_keywords(question)
-        .into_iter()
-        .filter(|token| combined.contains(token))
-        .count() as i64;
+    let question_tokens = tokenize_grounded_keywords(question);
+    let overlap = prediction_market_match_count(
+        &combined,
+        question_tokens.iter().map(|token| token.as_str()),
+    ) as i64;
     let mut score = overlap * 8 + anchor_overlap * 14;
 
     if host_is_preferred_news_source(&host) || preferred_news_source_label(&source_label) {
@@ -7342,10 +7378,11 @@ fn summarize_recent_news_result(question: &str, description: &str, result: &Valu
         specific_calendar_date_from_url(result.get("url").and_then(Value::as_str).unwrap_or(""));
     let source_label = extract_google_news_source_label(&title).unwrap_or_default();
     let combined = format!("{} {}", title, snippet).to_ascii_lowercase();
-    let anchor_overlap = prediction_market_anchor_tokens(question, description)
-        .into_iter()
-        .filter(|token| combined.contains(token.as_str()))
-        .count();
+    let anchor_tokens = prediction_market_anchor_tokens(question, description);
+    let anchor_overlap = prediction_market_match_count(
+        &combined,
+        anchor_tokens.iter().map(|token| token.as_str()),
+    );
     let has_recency_signal = text_has_specific_calendar_date(&title)
         || text_has_specific_calendar_date(&snippet)
         || url_date.is_some()
@@ -7493,9 +7530,13 @@ fn prediction_market_news_queries(question: &str, description: &str) -> Vec<Stri
 
     let topical_tokens = tokenize_grounded_keywords(question)
         .into_iter()
+        .flat_map(|token| prediction_market_token_variants(&token))
         .filter(|token| !blocked_tokens.iter().any(|blocked| blocked == token))
-        .take(7)
         .collect::<Vec<_>>();
+    let mut topical_tokens = topical_tokens;
+    topical_tokens.sort();
+    topical_tokens.dedup();
+    topical_tokens.truncate(7);
     if !topical_tokens.is_empty() {
         queries.push(format!(
             "{} recent news -site:polymarket.com -site:frenflow.com -site:pulptastic.com",
@@ -7504,9 +7545,13 @@ fn prediction_market_news_queries(question: &str, description: &str) -> Vec<Stri
     }
     let description_tokens = tokenize_grounded_keywords(description)
         .into_iter()
+        .flat_map(|token| prediction_market_token_variants(&token))
         .filter(|token| !blocked_tokens.iter().any(|blocked| blocked == token))
-        .take(5)
         .collect::<Vec<_>>();
+    let mut description_tokens = description_tokens;
+    description_tokens.sort();
+    description_tokens.dedup();
+    description_tokens.truncate(5);
     if !topical_tokens.is_empty() && !description_tokens.is_empty() {
         let mut combined_tokens = topical_tokens.clone();
         combined_tokens.extend(description_tokens);
@@ -16597,7 +16642,7 @@ mod tests {
         pending_current_research_rewrite_details,
         tool_results_lack_direct_current_research_evidence,
         tool_results_lack_current_research_diversity, tool_results_lack_current_research_grounding,
-        utf8_safe_preview, validate_generated_code_execution_output,
+        unix_timestamp_secs, utf8_safe_preview, validate_generated_code_execution_output,
         validate_generated_code_grounding, AgentRole, LlmConfig,
         AUTHENTICATED_BACKEND_PRIORITY_BOOST, MAX_OUTBOUND_DASHBOARD_MESSAGES,
     };
@@ -16679,6 +16724,40 @@ mod tests {
                 .iter()
                 .any(|query| query.contains("Villarreal La Liga recent news"))
         );
+    }
+
+    #[test]
+    fn prediction_market_news_queries_expand_demonym_aliases() {
+        let queries = prediction_market_news_queries(
+            "Will the Iranian regime fall by April 30?",
+            "Iran political stability market.",
+        );
+
+        assert!(queries.iter().any(|query| query.contains("iran ")));
+    }
+
+    #[test]
+    fn summarize_recent_news_result_accepts_demonym_root_overlap() {
+        let today = format_unix_timestamp_utc(unix_timestamp_secs())
+            .get(..10)
+            .unwrap_or("2026-04-14")
+            .to_string();
+        let result = json!({
+            "title": format!("Iran protests intensify amid leadership concerns - AP News"),
+            "snippet": format!(
+                "{} AP reported new protests and succession concerns around Iran's leadership.",
+                today
+            ),
+            "url": format!("https://apnews.com/article/iran-protests-{}", today),
+        });
+
+        let summary = summarize_recent_news_result(
+            "Will the Iranian regime fall by April 30?",
+            "Iran political stability market.",
+            &result,
+        );
+
+        assert!(summary.is_some());
     }
 
     #[test]
