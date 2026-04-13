@@ -172,7 +172,10 @@ main() {
   if [[ "${SKIP_BUILD}" != true ]]; then
     (
       cd "${PROJECT_DIR}"
-      ./deploy_host.sh -b
+      # Bundle generation packages release artifacts, so request a
+      # release build explicitly instead of relying on deploy_host.sh's
+      # default debug mode.
+      ./deploy_host.sh --release -b
     )
   fi
 

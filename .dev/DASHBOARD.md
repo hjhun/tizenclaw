@@ -1,5 +1,161 @@
 # DASHBOARD
 
+## 2026-04-13 Host CI Artifact Fix Cycle
+
+- Goal: `Fix GitHub Actions host bundle build failure`
+- Cycle: `host-default`
+- Current stage: `Stage 6 Commit`
+- Last completed stage: `Stage 6 Commit`
+
+### Stage Status
+
+- Stage 1 Planning: `PASS`
+- Stage 2 Design: `PASS`
+- Stage 3 Development: `PASS`
+- Stage 4 Build/Deploy: `PASS`
+- Stage 5 Test/Review: `PASS`
+- Stage 6 Commit: `PASS`
+
+### Planning Record
+
+- Execution path classified as `./deploy_host.sh` and
+  `./deploy_host.sh --test` because the user requested a host GitHub
+  workflow fix, not Tizen packaging or device validation.
+- Affected runtime surface:
+  - host CI build/bundle scripts
+  - vendored Rust dependency snapshot used by offline host builds
+- `tizenclaw-tests` scenario impact:
+  - none required because this task does not change daemon-visible
+    runtime behavior; verification will use host build/test scripts and
+    CI bundle generation flow
+- Initial root-cause hypothesis:
+  - `scripts/create_host_release_bundle.sh` expects release artifacts
+    under `~/.tizenclaw/build/cargo-target/release/`
+  - the script currently invokes `./deploy_host.sh -b`, which defaults
+    to a debug build, so CI can succeed in the canonical workspace
+    build step but still fail when the bundle step requires release
+    binaries
+  - the vendored `libc` crate version is behind `rust/Cargo.lock`,
+    forcing a network-backed retry during the offline canonical build
+
+### Design Record
+
+- Design document:
+  `.dev/docs/2026-04-13-host-ci-artifact-fix-design.md`
+- Confirmed design direction:
+  - fix the bundle script so release bundles request a release build
+  - refresh the shared vendor snapshot against both workspace manifests
+    so offline dependency resolution matches the lockfiles
+  - keep daemon runtime, IPC contracts, FFI boundaries, and libloading
+    strategy unchanged
+
+### Development Record
+
+- Red reproduction:
+  - command:
+    `CARGO_TARGET_DIR=/tmp/tclaw-clean-target bash scripts/create_host_release_bundle.sh --version ci-redcheck-clean --output-dir /tmp/tclaw-bundle-redcheck-clean`
+  - result:
+    `Missing build artifact for tizenclaw: /tmp/tclaw-clean-target/release/tizenclaw`
+  - supporting evidence:
+    `deploy_host.sh` ran in `debug` mode while the bundle script looked
+    for `release/` artifacts
+- Green implementation:
+  - updated `scripts/create_host_release_bundle.sh` to call
+    `./deploy_host.sh --release -b`
+  - refreshed `vendor/` with
+    `cargo vendor --locked --sync rust/Cargo.toml vendor`
+    so the shared vendor tree matches both lockfiles
+  - key dependency correction:
+    `vendor/libc` now provides `0.2.184` and
+    `vendor/libc-0.2.183` is retained for the host workspace version
+- Refactor outcome:
+  - bundle generation now has an explicit release-build contract instead
+    of relying on the default `debug` behavior in `deploy_host.sh`
+  - offline canonical workspace resolution no longer requires the
+    network-backed fallback path
+
+### Build/Deploy Record
+
+- Host test/build validation:
+  - command: `./deploy_host.sh --test`
+  - result: `PASS`
+  - evidence:
+    canonical rust workspace tests passed offline with `libc v0.2.184`
+    and no network-backed retry warning
+- Clean CI-style bundle validation:
+  - command:
+    `CARGO_TARGET_DIR=/tmp/tclaw-clean-target2 bash scripts/create_host_release_bundle.sh --version ci-greencheck --output-dir /tmp/tclaw-bundle-greencheck`
+  - result: `PASS`
+  - evidence:
+    release build completed under `/tmp/tclaw-clean-target2/release/`
+    and the archive was created successfully
+- Host install/restart validation:
+  - command: `./deploy_host.sh`
+  - result: `PASS`
+  - evidence:
+    `tizenclaw` and `tizenclaw-tool-executor` restarted and IPC
+    readiness succeeded
+
+### Test/Review Record
+
+- Static review verdict:
+  - `PASS`
+  - the root cause was a build-mode contract mismatch in the bundle
+    script plus stale vendored dependencies for the secondary Rust
+    workspace
+  - no daemon-visible behavior, IPC schema, FFI boundary, or async
+    ownership change was introduced
+- Runtime log and status evidence:
+  - command: `./deploy_host.sh --status`
+  - result:
+    `tizenclaw` running with pid `816493`,
+    `tizenclaw-tool-executor` running with pid `816491`
+  - command: `tail -n 20 ~/.tizenclaw/logs/tizenclaw.log`
+  - relevant lines:
+    `[5/7] Started IPC server`
+    `[6/7] Completed startup indexing`
+    `[7/7] Daemon ready`
+- Bundle content smoke evidence:
+  - archive contains:
+    `bin/tizenclaw`, `bin/tizenclaw-cli`,
+    `manage/deploy_host.sh`, `bundle-manifest.json`
+- `tizenclaw-tests` scenario impact:
+  - none required because the fix does not alter daemon-visible behavior
+    or user-facing runtime contracts
+
+### Supervisor Gate Record
+
+- Stage 1 Planning: `PASS`
+  - host/default cycle classified correctly
+  - dashboard updated with scope, verification path, and root-cause
+    hypotheses
+  - no stage-sequence violation detected
+- Stage 2 Design: `PASS`
+  - design summary recorded in
+    `.dev/docs/2026-04-13-host-ci-artifact-fix-design.md`
+  - subsystem ownership, verification path, and unchanged FFI/libloading
+    boundaries documented
+  - no stage-sequence violation detected
+- Stage 3 Development: `PASS`
+  - failing CI-style reproduction recorded first, then script and vendor
+    fixes applied
+  - no direct local `cargo build/test/check` or `cmake` command was used
+    outside the repository-prescribed script-driven build/test path
+  - dashboard updated with Red/Green/Refactor evidence
+- Stage 4 Build/Deploy: `PASS`
+  - `./deploy_host.sh --test`, clean-target bundle generation, and
+    `./deploy_host.sh` all completed on the host-default path
+  - host restart and release artifact generation were confirmed
+- Stage 5 Test/Review: `PASS`
+  - runtime status and log evidence captured from the host environment
+  - QA verdict is PASS with concrete proof for offline canonical tests,
+    bundle output, and daemon readiness
+- Stage 6 Commit: `PASS`
+  - workspace cleanup completed via
+    `.agent/scripts/cleanup_workspace.sh`
+  - commit prepared with `.tmp/commit_msg.txt` and limited to the host
+    bundle script, shared vendor refresh, and `.dev` stage artifacts
+
 ## Workflow
 
 - Goal: `PinchBench full-suite >= 95% on host Linux using OpenAI OAuth`
