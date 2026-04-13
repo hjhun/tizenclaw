@@ -3829,7 +3829,10 @@ fn clean_grounded_answer_text(answer: &str) -> String {
     cleaned = cleaned.replace("\" - ", ", ");
     cleaned = cleaned.replace(" — ", ", ");
     cleaned = cleaned.replace(" - ", ", ");
-    cleaned.trim().to_string()
+    cleaned
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn prompt_uses_numbered_questions(prompt: &str) -> bool {
@@ -6970,6 +6973,33 @@ fn preferred_news_source_label(label: &str) -> bool {
     .any(|preferred| normalized.contains(preferred))
 }
 
+fn preferred_news_host_display_name(host: &str) -> Option<&'static str> {
+    let normalized = host.trim().to_ascii_lowercase();
+    [
+        ("reuters.com", "Reuters"),
+        ("apnews.com", "AP News"),
+        ("bloomberg.com", "Bloomberg"),
+        ("wsj.com", "The Wall Street Journal"),
+        ("ft.com", "Financial Times"),
+        ("cnbc.com", "CNBC"),
+        ("cnn.com", "CNN"),
+        ("bbc.com", "BBC"),
+        ("abcnews.go.com", "ABC News"),
+        ("nbcnews.com", "NBC News"),
+        ("cbsnews.com", "CBS News"),
+        ("pbs.org", "PBS"),
+        ("nytimes.com", "New York Times"),
+        ("latimes.com", "Los Angeles Times"),
+        ("theguardian.com", "The Guardian"),
+        ("politico.com", "Politico"),
+        ("aljazeera.com", "Al Jazeera"),
+    ]
+    .iter()
+    .find_map(|(suffix, display_name)| {
+        normalized.ends_with(suffix).then_some(*display_name)
+    })
+}
+
 fn blocked_news_source_label(label: &str) -> bool {
     let normalized = label.trim().to_ascii_lowercase();
     [
@@ -7593,6 +7623,8 @@ fn summarize_recent_news_result(question: &str, description: &str, result: &Valu
         .or_else(|| {
             if !source_label.is_empty() {
                 Some(source_label.clone())
+            } else if let Some(display_name) = preferred_news_host_display_name(&host) {
+                Some(display_name.to_string())
             } else if !host.is_empty() {
                 Some(host.clone())
             } else {

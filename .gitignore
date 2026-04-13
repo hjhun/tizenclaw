@@ -95,6 +95,7 @@ journal.txt
 # Local workflow metadata
 /.agent/
 /.dev/
+/PLAN.md
 /ROADMAP.md
 
 # Claude Code (local dev only)
