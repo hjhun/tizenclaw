@@ -14,6 +14,33 @@
   conference research, transcript-visible skill installation, humanization,
   ELI5 summarization, email synthesis, and prediction-market grounding
 
+## Resume Correction
+
+- Status: `PASS`
+- Completed at: `2026-04-14T01:12:31+09:00`
+- Root cause of the supervisor rework:
+  - the prompt-derived checklist in `.dev/PLAN.md` was left unchecked even
+    after the verified host benchmark run reached `95.2%`
+  - the repo-local session mirrors still reported `active_phase: plan`, which
+    no longer matched the completed benchmark and commit state
+- Corrective action:
+  - re-read the saved guidance and confirmed the cycle remained
+    `host-default`
+  - verified that `.dev/SCORE.md` still recorded the successful OpenAI OAuth
+    PinchBench run at `95.2%` with `813723` total tokens
+  - synchronized `PLAN.md`, `.dev/PLAN.md`, `.dev/session.json`, and
+    `.dev/workflow_state.json` with the completed benchmark-closeout state
+
+## Supervisor Gate: Resume Correction
+
+- Verdict: `PASS`
+- Evidence:
+  - prompt-derived plan items were marked complete only after this dashboard
+    record was written
+  - repository workflow mirrors no longer leave the session in planning mode
+  - the verified benchmark and commit evidence remains recorded in
+    `.dev/SCORE.md`
+
 ## Stage 1 Planning
 
 - Status: `PASS`
@@ -126,7 +153,8 @@
 - Commit flow:
   - workspace cleaned with `.agent/scripts/cleanup_workspace.sh`
   - benchmark artifacts removed from the git status
-  - commit prepared through `.tmp/commit_msg.txt`
+  - commit created as `c2f07f40` through `.tmp/commit_msg.txt`
+  - commit pushed to `origin/develRust`
   - source/test/dashboard changes limited to the benchmark-improvement cycle
 
 ## Supervisor Gate: Stage 6 Commit & Push

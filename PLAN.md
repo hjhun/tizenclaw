@@ -8,6 +8,6 @@
 [O] Phase 4. Run `./deploy_host.sh --test` plus the required
     `tizenclaw-tests` runtime-contract scenarios, then record the review
     evidence in `.dev/DASHBOARD.md`.
-[ ] Phase 5. Re-run the host OpenAI OAuth PinchBench slice, update
+[O] Phase 5. Re-run the host OpenAI OAuth PinchBench slice, update
     `.dev/SCORE.md`, synchronize `.dev/DASHBOARD.md`, and complete the commit
     stage only if the verified score is `>=95%`.
