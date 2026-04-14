@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -34,18 +34,34 @@ pub enum TaskRegistryError {
     },
 }
 
+#[derive(Debug, Clone)]
+struct TaskEntryHandle {
+    inner: Arc<RwLock<TaskPacket>>,
+}
+
+impl TaskEntryHandle {
+    fn new(packet: TaskPacket) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(packet)),
+        }
+    }
+
+    fn snapshot(&self) -> TaskPacket {
+        let task = self.inner.read().expect("task entry read lock");
+        task.clone()
+    }
+}
+
 #[derive(Debug, Default)]
-struct TaskRegistryState {
+struct LaneEventState {
     next_sequence: u64,
-    tasks: BTreeMap<String, TaskPacket>,
-    completed: BTreeSet<String>,
-    failed: BTreeSet<String>,
-    lane_events: Vec<LaneEvent>,
+    events: Vec<LaneEvent>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct TaskRegistry {
-    inner: Arc<RwLock<TaskRegistryState>>,
+    tasks: Arc<RwLock<BTreeMap<String, TaskEntryHandle>>>,
+    lane_events: Arc<Mutex<LaneEventState>>,
 }
 
 impl TaskRegistry {
@@ -54,13 +70,6 @@ impl TaskRegistry {
     }
 
     pub fn register(&self, mut packet: TaskPacket) -> Result<TaskPacket, TaskRegistryError> {
-        let mut state = self.inner.write().expect("task registry write lock");
-        if state.tasks.contains_key(&packet.task_id) {
-            return Err(TaskRegistryError::DuplicateTask {
-                task_id: packet.task_id,
-            });
-        }
-
         packet.status = TaskStatus::Queued;
         let lane_id = packet
             .assignment
@@ -70,8 +79,17 @@ impl TaskRegistry {
                 task_id: packet.task_id.clone(),
             })?;
 
-        push_lane_event(
-            &mut state,
+        let mut tasks = self.tasks.write().expect("task registry index write lock");
+        if tasks.contains_key(&packet.task_id) {
+            return Err(TaskRegistryError::DuplicateTask {
+                task_id: packet.task_id,
+            });
+        }
+
+        tasks.insert(packet.task_id.clone(), TaskEntryHandle::new(packet.clone()));
+        drop(tasks);
+
+        self.push_lane_event(
             lane_id,
             Some(packet.task_id.clone()),
             None,
@@ -83,37 +101,52 @@ impl TaskRegistry {
             },
         );
 
-        state.tasks.insert(packet.task_id.clone(), packet.clone());
         Ok(packet)
     }
 
     pub fn get(&self, task_id: &str) -> Option<TaskPacket> {
-        let state = self.inner.read().expect("task registry read lock");
-        state.tasks.get(task_id).cloned()
+        let tasks = self.tasks.read().expect("task registry index read lock");
+        tasks.get(task_id).map(TaskEntryHandle::snapshot)
     }
 
     pub fn lane_events(&self) -> Vec<LaneEvent> {
-        let state = self.inner.read().expect("task registry read lock");
-        state.lane_events.clone()
+        let state = self
+            .lane_events
+            .lock()
+            .expect("task registry lane event lock");
+        state.events.clone()
     }
 
     pub fn snapshot(&self) -> TaskRegistrySnapshot {
-        let state = self.inner.read().expect("task registry read lock");
+        let entries = {
+            let tasks = self.tasks.read().expect("task registry index read lock");
+            tasks.values().cloned().collect::<Vec<_>>()
+        };
+        let lane_events = self.lane_events();
+
+        let mut active_tasks = Vec::new();
+        let mut completed_tasks = BTreeSet::new();
+        let mut failed_tasks = BTreeSet::new();
+
+        for entry in entries {
+            let task = entry.snapshot();
+            match task.status {
+                TaskStatus::Completed => {
+                    completed_tasks.insert(task.task_id);
+                }
+                TaskStatus::Failed => {
+                    failed_tasks.insert(task.task_id);
+                }
+                TaskStatus::Cancelled => {}
+                _ => active_tasks.push(task),
+            }
+        }
+
         TaskRegistrySnapshot {
-            active_tasks: state
-                .tasks
-                .values()
-                .filter(|task| {
-                    !matches!(
-                        task.status,
-                        TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled
-                    )
-                })
-                .cloned()
-                .collect(),
-            completed_tasks: state.completed.iter().cloned().collect(),
-            failed_tasks: state.failed.iter().cloned().collect(),
-            lane_events: state.lane_events.clone(),
+            active_tasks,
+            completed_tasks: completed_tasks.into_iter().collect(),
+            failed_tasks: failed_tasks.into_iter().collect(),
+            lane_events,
         }
     }
 
@@ -122,12 +155,10 @@ impl TaskRegistry {
         task_id: &str,
         resolution: TrustResolution,
     ) -> Result<TaskPacket, TaskRegistryError> {
-        let mut state = self.inner.write().expect("task registry write lock");
+        let entry = self.entry(task_id)?;
         let (task_snapshot, lane_event) = {
-            let task = state.tasks.get_mut(task_id).ok_or_else(|| TaskRegistryError::UnknownTask {
-                task_id: task_id.to_string(),
-            })?;
-            let lane_id = task_lane_id(task)?;
+            let mut task = entry.inner.write().expect("task entry write lock");
+            let lane_id = task_lane_id(&task)?;
 
             match &mut task.trust {
                 Some(gate) => gate.resolution = Some(resolution.clone()),
@@ -162,8 +193,7 @@ impl TaskRegistry {
         };
 
         if let Some((lane_id, task_id, worker_id, detail, payload)) = lane_event {
-            push_lane_event(
-                &mut state,
+            self.push_lane_event(
                 lane_id,
                 task_id,
                 worker_id,
@@ -183,14 +213,12 @@ impl TaskRegistry {
         session_id: Option<String>,
     ) -> Result<TaskPacket, TaskRegistryError> {
         let worker_id = worker_id.into();
-        let mut state = self.inner.write().expect("task registry write lock");
+        let entry = self.entry(task_id)?;
         let (task_snapshot, lane_id, event_task_id) = {
-            let task = state.tasks.get_mut(task_id).ok_or_else(|| TaskRegistryError::UnknownTask {
-                task_id: task_id.to_string(),
-            })?;
-            ensure_transition(task, TaskStatus::Assigned)?;
+            let mut task = entry.inner.write().expect("task entry write lock");
+            ensure_transition(&task, TaskStatus::Assigned)?;
 
-            let lane_id = task_lane_id(task)?;
+            let lane_id = task_lane_id(&task)?;
             let assignment = task
                 .assignment
                 .get_or_insert_with(|| TaskAssignment {
@@ -205,8 +233,7 @@ impl TaskRegistry {
             (task.clone(), lane_id, task.task_id.clone())
         };
 
-        push_lane_event(
-            &mut state,
+        self.push_lane_event(
             lane_id,
             Some(event_task_id),
             Some(worker_id.clone()),
@@ -219,14 +246,12 @@ impl TaskRegistry {
     }
 
     pub fn start_task(&self, task_id: &str) -> Result<TaskPacket, TaskRegistryError> {
-        let mut state = self.inner.write().expect("task registry write lock");
+        let entry = self.entry(task_id)?;
         let (task_snapshot, lane_id, event_task_id, worker_id) = {
-            let task = state.tasks.get_mut(task_id).ok_or_else(|| TaskRegistryError::UnknownTask {
-                task_id: task_id.to_string(),
-            })?;
-            ensure_transition(task, TaskStatus::Running)?;
+            let mut task = entry.inner.write().expect("task entry write lock");
+            ensure_transition(&task, TaskStatus::Running)?;
             task.status = TaskStatus::Running;
-            let lane_id = task_lane_id(task)?;
+            let lane_id = task_lane_id(&task)?;
             let worker_id = task
                 .assignment
                 .as_ref()
@@ -235,8 +260,7 @@ impl TaskRegistry {
             (task.clone(), lane_id, task.task_id.clone(), worker_id)
         };
 
-        push_lane_event(
-            &mut state,
+        self.push_lane_event(
             lane_id,
             Some(event_task_id),
             worker_id.clone(),
@@ -249,15 +273,13 @@ impl TaskRegistry {
     }
 
     pub fn complete_task(&self, task_id: &str) -> Result<TaskPacket, TaskRegistryError> {
-        let mut state = self.inner.write().expect("task registry write lock");
+        let entry = self.entry(task_id)?;
         let (task_snapshot, lane_id, event_task_id, worker_id) = {
-            let task = state.tasks.get_mut(task_id).ok_or_else(|| TaskRegistryError::UnknownTask {
-                task_id: task_id.to_string(),
-            })?;
-            ensure_transition(task, TaskStatus::Completed)?;
+            let mut task = entry.inner.write().expect("task entry write lock");
+            ensure_transition(&task, TaskStatus::Completed)?;
             task.status = TaskStatus::Completed;
             task.failure = None;
-            let lane_id = task_lane_id(task)?;
+            let lane_id = task_lane_id(&task)?;
             let worker_id = task
                 .assignment
                 .as_ref()
@@ -266,16 +288,14 @@ impl TaskRegistry {
             (task.clone(), lane_id, task.task_id.clone(), worker_id)
         };
 
-        push_lane_event(
-            &mut state,
+        self.push_lane_event(
             lane_id,
-            Some(event_task_id.clone()),
+            Some(event_task_id),
             worker_id.clone(),
             LaneEventKind::TaskCompleted,
             "task completed",
             LaneEventPayload::TaskCompleted { worker_id },
         );
-        state.completed.insert(event_task_id);
         Ok(task_snapshot)
     }
 
@@ -284,15 +304,13 @@ impl TaskRegistry {
         task_id: &str,
         failure: TaskFailure,
     ) -> Result<TaskPacket, TaskRegistryError> {
-        let mut state = self.inner.write().expect("task registry write lock");
+        let entry = self.entry(task_id)?;
         let (task_snapshot, lane_id, event_task_id, worker_id) = {
-            let task = state.tasks.get_mut(task_id).ok_or_else(|| TaskRegistryError::UnknownTask {
-                task_id: task_id.to_string(),
-            })?;
-            ensure_transition(task, TaskStatus::Failed)?;
+            let mut task = entry.inner.write().expect("task entry write lock");
+            ensure_transition(&task, TaskStatus::Failed)?;
             task.status = TaskStatus::Failed;
             task.failure = Some(failure.clone());
-            let lane_id = task_lane_id(task)?;
+            let lane_id = task_lane_id(&task)?;
             let worker_id = task
                 .assignment
                 .as_ref()
@@ -301,16 +319,14 @@ impl TaskRegistry {
             (task.clone(), lane_id, task.task_id.clone(), worker_id)
         };
 
-        push_lane_event(
-            &mut state,
+        self.push_lane_event(
             lane_id,
-            Some(event_task_id.clone()),
+            Some(event_task_id),
             worker_id,
             LaneEventKind::TaskFailed,
             failure.message.clone(),
             LaneEventPayload::TaskFailed { failure },
         );
-        state.failed.insert(event_task_id);
         Ok(task_snapshot)
     }
 
@@ -322,9 +338,7 @@ impl TaskRegistry {
     ) {
         let lane_id = lane_id.into();
         let worker_id = worker_id.into();
-        let mut state = self.inner.write().expect("task registry write lock");
-        push_lane_event(
-            &mut state,
+        self.push_lane_event(
             lane_id,
             None,
             Some(worker_id.clone()),
@@ -335,6 +349,42 @@ impl TaskRegistry {
                 state: state_name,
             },
         );
+    }
+
+    fn entry(&self, task_id: &str) -> Result<TaskEntryHandle, TaskRegistryError> {
+        let tasks = self.tasks.read().expect("task registry index read lock");
+        tasks
+            .get(task_id)
+            .cloned()
+            .ok_or_else(|| TaskRegistryError::UnknownTask {
+                task_id: task_id.to_string(),
+            })
+    }
+
+    fn push_lane_event(
+        &self,
+        lane_id: String,
+        task_id: Option<String>,
+        worker_id: Option<String>,
+        kind: LaneEventKind,
+        detail: impl Into<String>,
+        payload: LaneEventPayload,
+    ) {
+        let mut state = self
+            .lane_events
+            .lock()
+            .expect("task registry lane event lock");
+        let sequence = state.next_sequence;
+        state.events.push(LaneEvent::new(
+            sequence,
+            lane_id,
+            task_id,
+            worker_id,
+            kind,
+            detail,
+            payload,
+        ));
+        state.next_sequence += 1;
     }
 }
 
@@ -388,130 +438,5 @@ fn is_valid_transition(current: &TaskStatus, next: &TaskStatus) -> bool {
     }
 }
 
-fn push_lane_event(
-    state: &mut TaskRegistryState,
-    lane_id: String,
-    task_id: Option<String>,
-    worker_id: Option<String>,
-    kind: LaneEventKind,
-    detail: impl Into<String>,
-    payload: LaneEventPayload,
-) {
-    state.lane_events.push(LaneEvent::new(
-        state.next_sequence,
-        lane_id,
-        task_id,
-        worker_id,
-        kind,
-        detail,
-        payload,
-    ));
-    state.next_sequence += 1;
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::task_packet::{TaskPacket, TaskPriority};
-    use crate::trust_resolver::{
-        TrustFailureReason, TrustLevel, TrustRequirement, TrustResolver, TrustSubject,
-        TrustSubjectKind,
-    };
-
-    fn queued_task(task_id: &str) -> TaskPacket {
-        TaskPacket::queued(task_id, "review worker output", TaskPriority::High)
-            .with_lane("lane-a")
-    }
-
-    #[test]
-    fn registry_records_lane_events_for_happy_path() {
-        let registry = TaskRegistry::new();
-        registry.register(queued_task("task-1")).expect("register task");
-        registry
-            .assign_worker("task-1", "worker-1", Some("session-1".to_string()))
-            .expect("assign worker");
-        registry.start_task("task-1").expect("start task");
-        registry.complete_task("task-1").expect("complete task");
-
-        let snapshot = registry.snapshot();
-        assert!(snapshot.active_tasks.is_empty());
-        assert_eq!(snapshot.completed_tasks, vec!["task-1".to_string()]);
-        assert_eq!(snapshot.lane_events.len(), 4);
-        assert_eq!(snapshot.lane_events[0].kind, LaneEventKind::TaskQueued);
-        assert_eq!(snapshot.lane_events[1].kind, LaneEventKind::WorkerAssigned);
-        assert_eq!(snapshot.lane_events[2].kind, LaneEventKind::TaskStarted);
-        assert_eq!(snapshot.lane_events[3].kind, LaneEventKind::TaskCompleted);
-    }
-
-    #[test]
-    fn registry_blocks_tasks_when_trust_resolution_denies_execution() {
-        let registry = TaskRegistry::new();
-        registry
-            .register(
-                queued_task("task-2")
-                    .with_trust_requirement(TrustRequirement::at_least(TrustLevel::Trusted)),
-            )
-            .expect("register gated task");
-
-        let resolution = TrustResolver::deny(
-            TrustSubject::new(TrustSubjectKind::Task, "task-2"),
-            TrustRequirement::at_least(TrustLevel::Trusted),
-            TrustLevel::Restricted,
-            TrustFailureReason::InsufficientLevel {
-                required: TrustLevel::Trusted,
-                actual: TrustLevel::Restricted,
-            },
-            "worker trust gate denied execution",
-        );
-        let task = registry
-            .record_trust_resolution("task-2", resolution)
-            .expect("record trust failure");
-
-        assert_eq!(task.status, TaskStatus::BlockedByTrust);
-        assert_eq!(
-            registry
-                .lane_events()
-                .last()
-                .map(|event| event.kind.clone()),
-            Some(LaneEventKind::TrustBlocked)
-        );
-    }
-
-    #[test]
-    fn registry_records_failure_paths() {
-        let registry = TaskRegistry::new();
-        registry.register(queued_task("task-3")).expect("register task");
-        registry
-            .assign_worker("task-3", "worker-3", None)
-            .expect("assign");
-        registry.start_task("task-3").expect("start");
-        let task = registry
-            .fail_task(
-                "task-3",
-                TaskFailure {
-                    message: "delegate crashed".to_string(),
-                    retryable: true,
-                },
-            )
-            .expect("fail task");
-
-        assert_eq!(task.status, TaskStatus::Failed);
-        assert_eq!(registry.snapshot().failed_tasks, vec!["task-3".to_string()]);
-    }
-
-    #[test]
-    fn registry_rejects_invalid_status_transition() {
-        let registry = TaskRegistry::new();
-        registry.register(queued_task("task-4")).expect("register task");
-
-        let error = registry.complete_task("task-4").expect_err("complete should fail");
-        assert_eq!(
-            error,
-            TaskRegistryError::InvalidStatusTransition {
-                task_id: "task-4".to_string(),
-                from: TaskStatus::Queued,
-                to: TaskStatus::Completed,
-            }
-        );
-    }
-}
+mod tests;
