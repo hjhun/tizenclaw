@@ -2,7 +2,7 @@
 
 #![allow(clippy::all)]
 
-use super::backend::*;
+use super::{backend::*, common};
 use crate::infra::http_client;
 use serde_json::{json, Value};
 
@@ -64,7 +64,7 @@ impl AnthropicBackend {
     }
 
     fn trimmed_text(text: &str) -> String {
-        text.trim().to_string()
+        common::trimmed_text(text)
     }
 
     fn normalized_model(model: &str) -> String {
@@ -84,40 +84,15 @@ impl AnthropicBackend {
     }
 
     fn request_url(endpoint: &str) -> String {
-        let trimmed = endpoint.trim().trim_end_matches('/');
-        if trimmed.ends_with("/messages") {
-            trimmed.to_string()
-        } else {
-            format!("{}/messages", trimmed)
-        }
+        common::request_url(endpoint, "messages")
     }
 
     fn extract_error_message(body: &str) -> Option<String> {
-        let json = serde_json::from_str::<Value>(body).ok()?;
-        if let Some(message) = json
-            .get("error")
-            .and_then(|error| error.get("message"))
-            .and_then(Value::as_str)
-        {
-            return Some(message.to_string());
-        }
-        json.get("message")
-            .and_then(Value::as_str)
-            .map(|message| message.to_string())
+        common::extract_error_message(body)
     }
 
     fn configured_api_key(config: &Value) -> String {
-        config["api_key"]
-            .as_str()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToString::to_string)
-            .or_else(|| {
-                std::env::var("ANTHROPIC_API_KEY")
-                    .ok()
-                    .map(|value| value.trim().to_string())
-                    .filter(|value| !value.is_empty())
-            })
+        common::configured_api_key(config, &["api_key"], "ANTHROPIC_API_KEY")
             .unwrap_or_default()
     }
 }

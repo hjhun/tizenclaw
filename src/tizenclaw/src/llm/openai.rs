@@ -2,7 +2,7 @@
 
 #![allow(clippy::all)]
 
-use super::backend::*;
+use super::{backend::*, common};
 use crate::infra::http_client;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -93,7 +93,7 @@ impl OpenAiBackend {
     }
 
     fn trimmed_text(text: &str) -> String {
-        text.trim().to_string()
+        common::trimmed_text(text)
     }
 
     fn resolve_responses_tool_name<'a>(
@@ -118,46 +118,23 @@ impl OpenAiBackend {
     }
 
     fn config_string<'a>(config: &'a Value, path: &[&str]) -> Option<&'a str> {
-        let mut cursor = config;
-        for segment in path {
-            cursor = cursor.get(*segment)?;
-        }
-        cursor
-            .as_str()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+        common::config_string(config, path)
     }
 
     fn config_i64(config: &Value, path: &[&str]) -> Option<i64> {
-        let mut cursor = config;
-        for segment in path {
-            cursor = cursor.get(*segment)?;
-        }
-        cursor.as_i64()
+        common::config_i64(config, path)
     }
 
     fn positive_config_i64(config: &Value, path: &[&str]) -> Option<i64> {
-        Self::config_i64(config, path).filter(|value| *value > 0)
+        common::positive_config_i64(config, path)
     }
 
     fn json_string(value: &Value, key: &str) -> Option<String> {
-        value
-            .get(key)
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToString::to_string)
+        common::json_string(value, key)
     }
 
     fn configured_api_key(config: &Value) -> Option<String> {
-        Self::config_string(config, &["api_key"])
-            .map(ToString::to_string)
-            .or_else(|| {
-                std::env::var("OPENAI_API_KEY")
-                    .ok()
-                    .map(|value| value.trim().to_string())
-                    .filter(|value| !value.is_empty())
-            })
+        common::configured_api_key(config, &["api_key"], "OPENAI_API_KEY")
     }
 
     fn codex_auth_string(value: &Value, key: &str) -> Option<String> {

@@ -2,6 +2,7 @@
 
 pub mod anthropic;
 pub mod backend;
+pub mod common;
 pub mod gemini;
 pub mod ollama;
 pub mod openai;

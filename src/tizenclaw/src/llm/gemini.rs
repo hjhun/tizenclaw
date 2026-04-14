@@ -11,7 +11,7 @@
 
 #![allow(clippy::all)]
 
-use super::backend::*;
+use super::{backend::*, common};
 use crate::infra::http_client;
 use serde_json::{json, Value};
 use std::sync::RwLock;
@@ -54,17 +54,7 @@ impl GeminiBackend {
     }
 
     fn configured_api_key(config: &Value) -> String {
-        config["api_key"]
-            .as_str()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToString::to_string)
-            .or_else(|| {
-                std::env::var("GEMINI_API_KEY")
-                    .ok()
-                    .map(|value| value.trim().to_string())
-                    .filter(|value| !value.is_empty())
-            })
+        common::configured_api_key(config, &["api_key"], "GEMINI_API_KEY")
             .unwrap_or_default()
     }
 
@@ -78,7 +68,7 @@ impl GeminiBackend {
     }
 
     fn trimmed_text(text: &str) -> String {
-        text.trim().to_string()
+        common::trimmed_text(text)
     }
 
     /// Build the generateContent request body.
