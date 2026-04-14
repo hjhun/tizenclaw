@@ -1,5 +1,6 @@
 //! IPC server — Unix domain socket with JSON-RPC 2.0 protocol.
 
+use serde::Serialize;
 use serde_json::{json, Value};
 use std::fs;
 use std::io::{Read, Write};
@@ -22,6 +23,241 @@ const DEFAULT_ABSTRACT_SOCKET_NAME: &str = "tizenclaw.sock";
 
 static SESSION_COUNTER: AtomicUsize = AtomicUsize::new(1);
 static DAEMON_STARTED_AT: LazyLock<Instant> = LazyLock::new(Instant::now);
+static COMMAND_REGISTRY_ENTRIES: LazyLock<Vec<RuntimeCommandManifest>> =
+    LazyLock::new(load_runtime_command_manifests);
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum RuntimeCommandSource {
+    BuiltIn,
+    Plugin { plugin_name: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Default)]
+#[serde(rename_all = "snake_case")]
+enum RuntimeResumeBehavior {
+    #[default]
+    Unsupported,
+    Supported,
+    ResumeOnly,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+struct RuntimeCommandArgHint {
+    name: String,
+    summary: String,
+    required: bool,
+    repeatable: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+struct RuntimeCommandMetadata {
+    summary: String,
+    argument_hints: Vec<RuntimeCommandArgHint>,
+    resume_behavior: RuntimeResumeBehavior,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+struct RuntimeCommandManifest {
+    canonical_name: String,
+    aliases: Vec<String>,
+    source: RuntimeCommandSource,
+    metadata: RuntimeCommandMetadata,
+}
+
+impl RuntimeCommandManifest {
+    fn matches_name(&self, requested_name: &str) -> bool {
+        self.canonical_name == requested_name
+            || self.aliases.iter().any(|alias| alias == requested_name)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CommandSourceFilter {
+    BuiltIn,
+    Plugin,
+}
+
+impl CommandSourceFilter {
+    fn parse(raw: &str) -> Option<Self> {
+        match raw.trim() {
+            "built_in" => Some(Self::BuiltIn),
+            "plugin" => Some(Self::Plugin),
+            _ => None,
+        }
+    }
+
+    fn matches(self, source: &RuntimeCommandSource) -> bool {
+        matches!(
+            (self, source),
+            (Self::BuiltIn, RuntimeCommandSource::BuiltIn)
+                | (Self::Plugin, RuntimeCommandSource::Plugin { .. })
+        )
+    }
+}
+
+fn load_runtime_command_manifests() -> Vec<RuntimeCommandManifest> {
+    let mut manifests = built_in_command_manifests();
+    manifests.extend(load_bundled_plugin_command_manifests());
+    manifests.sort_by(|left, right| left.canonical_name.cmp(&right.canonical_name));
+    manifests
+}
+
+fn built_in_command_manifests() -> Vec<RuntimeCommandManifest> {
+    vec![
+        RuntimeCommandManifest {
+            canonical_name: "help".to_string(),
+            aliases: vec!["h".to_string()],
+            source: RuntimeCommandSource::BuiltIn,
+            metadata: RuntimeCommandMetadata {
+                summary: "List available slash commands".to_string(),
+                argument_hints: vec![RuntimeCommandArgHint {
+                    name: "command".to_string(),
+                    summary: "Optional command name to inspect".to_string(),
+                    required: false,
+                    repeatable: false,
+                }],
+                resume_behavior: RuntimeResumeBehavior::Unsupported,
+            },
+        },
+        RuntimeCommandManifest {
+            canonical_name: "plugins".to_string(),
+            aliases: vec!["plugin".to_string()],
+            source: RuntimeCommandSource::BuiltIn,
+            metadata: RuntimeCommandMetadata {
+                summary: "Inspect plugin-provided command manifests".to_string(),
+                argument_hints: vec![RuntimeCommandArgHint {
+                    name: "plugin".to_string(),
+                    summary: "Optional plugin name to filter".to_string(),
+                    required: false,
+                    repeatable: false,
+                }],
+                resume_behavior: RuntimeResumeBehavior::Unsupported,
+            },
+        },
+        RuntimeCommandManifest {
+            canonical_name: "resume".to_string(),
+            aliases: vec!["continue".to_string()],
+            source: RuntimeCommandSource::BuiltIn,
+            metadata: RuntimeCommandMetadata {
+                summary: "Resume a recorded session or continuation point".to_string(),
+                argument_hints: vec![
+                    RuntimeCommandArgHint {
+                        name: "session".to_string(),
+                        summary: "Session identifier to resume".to_string(),
+                        required: true,
+                        repeatable: false,
+                    },
+                    RuntimeCommandArgHint {
+                        name: "message".to_string(),
+                        summary: "Optional continuation note".to_string(),
+                        required: false,
+                        repeatable: false,
+                    },
+                ],
+                resume_behavior: RuntimeResumeBehavior::ResumeOnly,
+            },
+        },
+    ]
+}
+
+fn load_bundled_plugin_command_manifests() -> Vec<RuntimeCommandManifest> {
+    [
+        include_str!("../../../../rust/crates/tclaw-plugins/bundled/example-bundled/plugin.json"),
+        include_str!("../../../../rust/crates/tclaw-plugins/bundled/sample-hooks/plugin.json"),
+    ]
+    .into_iter()
+    .flat_map(parse_bundled_plugin_command_manifest)
+    .collect()
+}
+
+fn parse_bundled_plugin_command_manifest(raw_manifest: &str) -> Vec<RuntimeCommandManifest> {
+    let manifest: Value = match serde_json::from_str(raw_manifest) {
+        Ok(value) => value,
+        Err(error) => {
+            log::error!("Failed to parse bundled plugin manifest for IPC registry: {error}");
+            return Vec::new();
+        }
+    };
+
+    let Some(plugin_name) = manifest.get("name").and_then(Value::as_str) else {
+        return Vec::new();
+    };
+
+    manifest
+        .get("commands")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|command| parse_plugin_command_manifest(plugin_name, command))
+        .collect()
+}
+
+fn parse_plugin_command_manifest(
+    plugin_name: &str,
+    command: &Value,
+) -> Option<RuntimeCommandManifest> {
+    let canonical_name = command.get("name").and_then(Value::as_str)?.to_string();
+    let summary = command
+        .get("summary")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let aliases = command
+        .get("aliases")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|alias| alias.as_str().map(ToString::to_string))
+        .collect::<Vec<_>>();
+    let argument_hints = command
+        .get("argument_hints")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|hint| {
+            Some(RuntimeCommandArgHint {
+                name: hint.get("name").and_then(Value::as_str)?.to_string(),
+                summary: hint
+                    .get("summary")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                required: hint
+                    .get("required")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                repeatable: hint
+                    .get("repeatable")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    Some(RuntimeCommandManifest {
+        canonical_name,
+        aliases,
+        source: RuntimeCommandSource::Plugin {
+            plugin_name: plugin_name.to_string(),
+        },
+        metadata: RuntimeCommandMetadata {
+            summary,
+            argument_hints,
+            resume_behavior: parse_resume_behavior(
+                command.get("resume_behavior").and_then(Value::as_str),
+            ),
+        },
+    })
+}
+
+fn parse_resume_behavior(raw: Option<&str>) -> RuntimeResumeBehavior {
+    match raw.unwrap_or_default() {
+        "supported" => RuntimeResumeBehavior::Supported,
+        "resume_only" => RuntimeResumeBehavior::ResumeOnly,
+        _ => RuntimeResumeBehavior::Unsupported,
+    }
+}
 
 #[derive(Clone, Debug)]
 enum SocketEndpoint {
@@ -552,6 +788,10 @@ impl IpcServer {
                     "runtime_topology": agent.runtime_topology_summary(),
                 })
             }
+            "command_registry" => match Self::handle_command_registry(&params, &req_id) {
+                Ok(result) => result,
+                Err(response) => return response,
+            },
             "get_session_runtime" => match Self::required_str(&params, "session_id", &req_id) {
                 Ok(session_id) => agent.session_runtime_status(session_id),
                 Err(response) => return response,
@@ -698,6 +938,10 @@ impl IpcServer {
                 "parameters": tool.parameters,
             })).collect::<Vec<_>>(),
         })
+    }
+
+    fn handle_command_registry(params: &Value, req_id: &Value) -> Result<Value, String> {
+        build_command_registry_response(&COMMAND_REGISTRY_ENTRIES, params, req_id)
     }
 
     fn handle_tool_reload(
@@ -1253,9 +1497,79 @@ impl IpcServer {
     }
 }
 
+fn build_command_registry_response(
+    manifests: &[RuntimeCommandManifest],
+    params: &Value,
+    req_id: &Value,
+) -> Result<Value, String> {
+    let source_filter = match params.get("source").and_then(Value::as_str) {
+        Some(raw) => Some(CommandSourceFilter::parse(raw).ok_or_else(|| {
+            IpcServer::jsonrpc_error(req_id.clone(), -32602, format!("Invalid 'source': {raw}"))
+        })?),
+        None => None,
+    };
+
+    let command = match params.get("command").and_then(Value::as_str) {
+        Some(requested_name) => Some(
+            manifests
+                .iter()
+                .find(|entry| entry.matches_name(requested_name))
+                .map(command_manifest_to_value)
+                .ok_or_else(|| {
+                    IpcServer::jsonrpc_error(
+                        req_id.clone(),
+                        -32602,
+                        format!("Unknown command: {requested_name}"),
+                    )
+                })?,
+        ),
+        None => None,
+    };
+
+    let commands = manifests
+        .iter()
+        .filter(|entry| {
+            source_filter
+                .map(|filter| filter.matches(&entry.source))
+                .unwrap_or(true)
+        })
+        .map(command_manifest_to_value)
+        .collect::<Vec<_>>();
+
+    Ok(json!({
+        "status": "ok",
+        "count": commands.len(),
+        "commands": commands,
+        "command": command,
+    }))
+}
+
+fn command_manifest_to_value(entry: &RuntimeCommandManifest) -> Value {
+    json!({
+        "canonical_name": entry.canonical_name,
+        "aliases": entry.aliases,
+        "source": command_source_to_value(&entry.source),
+        "metadata": {
+            "summary": entry.metadata.summary,
+            "argument_hints": entry.metadata.argument_hints,
+            "resume_behavior": entry.metadata.resume_behavior,
+        }
+    })
+}
+
+fn command_source_to_value(source: &RuntimeCommandSource) -> Value {
+    match source {
+        RuntimeCommandSource::BuiltIn => json!("built_in"),
+        RuntimeCommandSource::Plugin { plugin_name } => {
+            json!({ "plugin_name": plugin_name })
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::IpcServer;
+    use super::{build_command_registry_response, CommandSourceFilter, IpcServer};
+    use serde_json::json;
     use std::io::{Read, Write};
     use std::os::unix::net::UnixStream;
 
@@ -1290,5 +1604,58 @@ mod tests {
         let mut body = [0u8; 4];
         server.read_exact(&mut body).unwrap();
         assert_eq!(&body, b"pong");
+    }
+
+    #[test]
+    fn command_registry_lists_built_in_commands() {
+        let response = build_command_registry_response(
+            &super::COMMAND_REGISTRY_ENTRIES,
+            &json!({ "source": "built_in" }),
+            &json!(1),
+        )
+        .unwrap();
+
+        assert_eq!(response["count"], json!(3));
+        assert_eq!(response["commands"][0]["source"], json!("built_in"));
+        assert_eq!(
+            response["commands"][2]["metadata"]["resume_behavior"],
+            json!("resume_only")
+        );
+    }
+
+    #[test]
+    fn command_registry_lists_plugin_commands_with_plugin_source() {
+        let response = build_command_registry_response(
+            &super::COMMAND_REGISTRY_ENTRIES,
+            &json!({ "source": "plugin" }),
+            &json!(2),
+        )
+        .unwrap();
+
+        assert_eq!(
+            response["commands"][0]["source"]["plugin_name"],
+            json!("example-bundled")
+        );
+    }
+
+    #[test]
+    fn command_registry_resolves_resume_alias_metadata() {
+        let response = build_command_registry_response(
+            &super::COMMAND_REGISTRY_ENTRIES,
+            &json!({ "command": "continue" }),
+            &json!(3),
+        )
+        .unwrap();
+
+        assert_eq!(response["command"]["canonical_name"], json!("resume"));
+        assert_eq!(
+            response["command"]["metadata"]["resume_behavior"],
+            json!("resume_only")
+        );
+    }
+
+    #[test]
+    fn command_source_filter_rejects_invalid_values() {
+        assert_eq!(CommandSourceFilter::parse("invalid"), None);
     }
 }

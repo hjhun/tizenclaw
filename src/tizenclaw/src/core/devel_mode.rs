@@ -10,6 +10,7 @@ use std::time::Duration;
 use crate::core::agent_core::AgentCore;
 
 const DEVEL_STATUS_FILE_NAME: &str = "STATUS.md";
+const DEVEL_RECURRING_TASK_FILE_NAME: &str = "devel-autonomous-cycle.md";
 const LEGACY_DEVEL_STATUS_FILE_NAME: &str = ".status";
 const RESULT_EVENT_MASK: u32 = libc::IN_CREATE
     | libc::IN_CLOSE_WRITE
@@ -103,6 +104,7 @@ pub struct LatestDevelResult {
 struct RoadmapProgress {
     total_phases: usize,
     pending_phases: usize,
+    next_phase: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -114,6 +116,9 @@ struct DevelPaths {
     status_path: PathBuf,
     legacy_status_path: PathBuf,
     roadmap_path: PathBuf,
+    recurring_task_path: PathBuf,
+    goal_path: PathBuf,
+    repo_plan_path: PathBuf,
 }
 
 impl DevelPaths {
@@ -127,6 +132,9 @@ impl DevelPaths {
             status_path: repo_root.join(".dev").join(DEVEL_STATUS_FILE_NAME),
             legacy_status_path: repo_root.join(".dev").join(LEGACY_DEVEL_STATUS_FILE_NAME),
             roadmap_path: repo_root.join(".dev").join("ROADMAP.md"),
+            recurring_task_path: repo_root.join(".dev").join(DEVEL_RECURRING_TASK_FILE_NAME),
+            goal_path: repo_root.join(".dev").join("GOAL.md"),
+            repo_plan_path: repo_root.join("PLAN.md"),
             devel_dir,
         }
     }
@@ -241,29 +249,43 @@ pub fn devel_status(_task_dir: &Path, repo_root: &Path) -> DevelStatus {
             .and_then(|slot| slot.clone())
             .filter(|path| path.is_file());
     }
+    if last_prompt_path.is_none() {
+        last_prompt_path = latest_prompt_path_from_result(&paths.result_dir);
+    }
+    if last_prompt_path.is_none() {
+        last_prompt_path = bootstrap_prompt_path(&paths);
+    }
     if last_prompt_path.is_some() {
         set_last_prompt_path(last_prompt_path.clone());
     }
     let prompt_exists = last_prompt_path.is_some();
-    let prompt_actionable = prompt_exists;
+    let prompt_actionable = prompt_exists && !status_done;
     let roadmap_has_pending_work = roadmap_progress.pending_phases > 0;
     let roadmap_all_phases_complete =
         roadmap_progress.total_phases > 0 && roadmap_progress.pending_phases == 0;
+    let recurring_task_present = paths.recurring_task_path.is_file();
+    let task_path = if recurring_task_present {
+        paths.recurring_task_path.clone()
+    } else {
+        paths.prompt_dir.clone()
+    };
+    let development_required =
+        !status_done && (prompt_actionable || roadmap_has_pending_work || recurring_task_present);
 
     DevelStatus {
         repo_root: repo_root.to_path_buf(),
-        task_path: paths.prompt_dir.clone(),
+        task_path,
         bootstrap_task_path: paths.result_dir.clone(),
         status_path: paths.status_path.clone(),
         status_done,
         prompt_exists,
         prompt_actionable,
-        status_next_phase: None,
+        status_next_phase: roadmap_progress.next_phase,
         roadmap_has_pending_work,
         roadmap_all_phases_complete,
-        recurring_task_present: false,
+        recurring_task_present,
         bootstrap_task_present: false,
-        development_required: prompt_exists,
+        development_required,
         telegram_notifications_enabled: telegram_notifications_enabled(),
         prompt_dir: paths.prompt_dir,
         progress_dir: paths.progress_dir,
@@ -307,8 +329,14 @@ pub fn devel_status_json(task_dir: &Path, repo_root: &Path) -> Value {
 pub fn latest_devel_result(repo_root: &Path) -> LatestDevelResult {
     let paths = DevelPaths::new(repo_root);
     let _ = ensure_devel_runtime_dirs(&paths);
-    let latest_prompt_path = latest_prompt_file(&paths.prompt_dir);
     let latest_result_path = latest_result_file(&paths.result_dir);
+    let latest_prompt_path = latest_prompt_file(&paths.prompt_dir)
+        .or_else(|| {
+            latest_result_path
+                .as_ref()
+                .and_then(|path| prompt_path_from_result_file(path))
+        })
+        .or_else(|| bootstrap_prompt_path(&paths));
     let latest_prompt_result_path = latest_prompt_path
         .as_ref()
         .map(|path| result_path_for_prompt(&paths.result_dir, path));
@@ -867,10 +895,19 @@ fn last_prompt_path_store() -> &'static Mutex<Option<PathBuf>> {
 fn roadmap_progress(roadmap_path: &Path) -> RoadmapProgress {
     let mut total_phases = 0usize;
     let mut pending_phases = 0usize;
+    let mut next_phase = None;
 
     if let Ok(content) = fs::read_to_string(roadmap_path) {
+        let mut in_active_roadmap = false;
         for line in content.lines() {
             let trimmed = line.trim_start();
+            if trimmed == "## Active Roadmap" {
+                in_active_roadmap = true;
+                continue;
+            }
+            if trimmed.starts_with("## ") {
+                in_active_roadmap = false;
+            }
             if trimmed.starts_with("[ ] ")
                 || trimmed.starts_with("[x] ")
                 || trimmed.starts_with("[X] ")
@@ -878,6 +915,25 @@ fn roadmap_progress(roadmap_path: &Path) -> RoadmapProgress {
                 total_phases += 1;
                 if trimmed.starts_with("[ ] ") {
                     pending_phases += 1;
+                    if next_phase.is_none() {
+                        next_phase = Some(trimmed.trim_start_matches("[ ] ").trim().to_string());
+                    }
+                }
+                continue;
+            }
+
+            if in_active_roadmap {
+                if let Some(stripped) = trimmed
+                    .split_once(". ")
+                    .filter(|(prefix, _)| prefix.chars().all(|ch| ch.is_ascii_digit()))
+                    .map(|(_, rest)| rest.trim())
+                    .filter(|rest| !rest.is_empty())
+                {
+                    total_phases += 1;
+                    pending_phases += 1;
+                    if next_phase.is_none() {
+                        next_phase = Some(stripped.to_string());
+                    }
                 }
             }
         }
@@ -886,7 +942,35 @@ fn roadmap_progress(roadmap_path: &Path) -> RoadmapProgress {
     RoadmapProgress {
         total_phases,
         pending_phases,
+        next_phase,
     }
+}
+
+fn latest_prompt_path_from_result(result_dir: &Path) -> Option<PathBuf> {
+    latest_result_file(result_dir).and_then(|path| prompt_path_from_result_file(&path))
+}
+
+fn prompt_path_from_result_file(result_path: &Path) -> Option<PathBuf> {
+    let content = fs::read_to_string(result_path).ok()?;
+    content.lines().find_map(|line| {
+        let trimmed = line.trim();
+        let prompt_path = trimmed.strip_prefix("- Prompt path: `")?;
+        prompt_path
+            .strip_suffix('`')
+            .map(PathBuf::from)
+            .or_else(|| Some(PathBuf::from(prompt_path)))
+    })
+}
+
+fn bootstrap_prompt_path(paths: &DevelPaths) -> Option<PathBuf> {
+    [
+        paths.goal_path.as_path(),
+        paths.repo_plan_path.as_path(),
+        paths.roadmap_path.as_path(),
+    ]
+    .into_iter()
+    .find(|path| path.is_file())
+    .map(PathBuf::from)
 }
 
 fn status_content_is_done(content: &str) -> bool {
@@ -974,10 +1058,10 @@ mod tests {
     use super::{
         create_prompt_file, detect_repo_root, devel_status, latest_devel_result,
         parse_inotify_events, prompt_key_for_progress_file, prompt_key_for_result_file,
-        read_progress_delta, sync_devel_tasks, DevelPaths, ProgressStreamState,
+        read_progress_delta, roadmap_progress, sync_devel_tasks, DevelPaths, ProgressStreamState,
     };
     use std::fs;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::sync::{Mutex, MutexGuard, OnceLock};
     use tempfile::tempdir;
 
@@ -1098,6 +1182,42 @@ mod tests {
     }
 
     #[test]
+    fn devel_status_bootstraps_prompt_and_task_from_repo_metadata() {
+        let (_env_lock, repo, _data_guard, _cwd_guard) = setup_repo();
+        fs::write(
+            repo.path().join(".dev/GOAL.md"),
+            "Ship the next devel slice.\n",
+        )
+        .unwrap();
+        fs::write(
+            repo.path().join(".dev/ROADMAP.md"),
+            "# ROADMAP\n\n## Active Roadmap\n1. Inspect scheduler state\n2. Run tests\n",
+        )
+        .unwrap();
+        fs::write(
+            repo.path().join(".dev/devel-autonomous-cycle.md"),
+            "Follow the devel autonomous cycle.\n",
+        )
+        .unwrap();
+
+        let status = devel_status(Path::new("unused"), repo.path());
+
+        assert!(status.prompt_exists);
+        assert_eq!(
+            status.last_prompt_path,
+            Some(repo.path().join(".dev/GOAL.md"))
+        );
+        assert!(status.recurring_task_present);
+        assert!(status.task_path.ends_with("devel-autonomous-cycle.md"));
+        assert_eq!(
+            status.status_next_phase,
+            Some("Inspect scheduler state".to_string())
+        );
+        assert!(status.roadmap_has_pending_work);
+        assert!(status.development_required);
+    }
+
+    #[test]
     fn latest_devel_result_returns_newest_file_content() {
         let (_env_lock, repo, _data_guard, _cwd_guard) = setup_repo();
         let result_dir = repo.path().join("runtime/devel/result");
@@ -1155,6 +1275,51 @@ mod tests {
         assert!(!result.latest_prompt_result_available);
         assert!(!result.latest_result_matches_latest_prompt);
         assert_eq!(result.content, "completed\n");
+    }
+
+    #[test]
+    fn latest_devel_result_recovers_prompt_path_from_result_body() {
+        let (_env_lock, repo, _data_guard, _cwd_guard) = setup_repo();
+        let result_dir = repo.path().join("runtime/devel/result");
+        fs::create_dir_all(&result_dir).unwrap();
+        let result = result_dir.join("44_prompt_RESULT.md");
+        fs::write(
+            &result,
+            "# Result\n- Prompt path: `/tmp/runtime/devel/prompt/44_prompt.md`\n",
+        )
+        .unwrap();
+
+        let latest = latest_devel_result(repo.path());
+
+        assert_eq!(
+            latest.latest_prompt_path,
+            Some(PathBuf::from("/tmp/runtime/devel/prompt/44_prompt.md"))
+        );
+        assert_eq!(
+            latest.latest_prompt_result_path,
+            Some(result_dir.join("44_prompt_RESULT.md"))
+        );
+        assert!(latest.latest_prompt_result_available);
+        assert!(latest.latest_result_matches_latest_prompt);
+    }
+
+    #[test]
+    fn roadmap_progress_detects_numbered_active_roadmap_items() {
+        let (_env_lock, repo, _data_guard, _cwd_guard) = setup_repo();
+        fs::write(
+            repo.path().join(".dev/ROADMAP.md"),
+            "# ROADMAP\n\n## Active Roadmap\n1. Fix prompt bootstrap\n2. Re-run tests\n",
+        )
+        .unwrap();
+
+        let progress = roadmap_progress(&repo.path().join(".dev/ROADMAP.md"));
+
+        assert_eq!(progress.total_phases, 2);
+        assert_eq!(progress.pending_phases, 2);
+        assert_eq!(
+            progress.next_phase,
+            Some("Fix prompt bootstrap".to_string())
+        );
     }
 
     #[test]
