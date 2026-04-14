@@ -67,9 +67,10 @@ generates the task-specific `.dev/WORKFLOWS.md` that drives the rest of the
 cycle.
 
 ```text
-refine -> plan -> design -> develop -> build/deploy -> test/review -> commit
+refine -> plan -> design -> develop -> build/deploy -> test/review
+-> commit -> evaluate
              ^          ^                ^
-      supervisor gates between phases; evaluator checkpoints only when planned
+      supervisor gates between phases; optional mid-pipeline evaluator checks
 ```
 
 `testing-with-tizenclaw-tests` is part of development and validation whenever
@@ -122,12 +123,13 @@ daemon-visible behavior changes.
   - `.tmp/commit_msg.txt`
   - final commit
 
-### Optional Evaluator Stage
+### Stage 7. Evaluate
 - Skill: `.agent/skills/evaluating-outcomes/SKILL.md`
 - Output:
   - reports under `.dev/07-evaluator/`
 
-Planning may insert the evaluator stage for high-risk or ambiguous work.
+The final evaluator stage is mandatory. Planning may also insert additional
+mid-pipeline evaluator checkpoints for high-risk or ambiguous work.
 
 ## Supervisor Gate Rules
 
@@ -140,6 +142,7 @@ The supervisor validates each stage transition before work advances:
 - build/deploy -> scripted path executed
 - test/review -> executed evidence recorded
 - commit -> diff scope and commit format are correct
+- evaluate -> final assessment is recorded with an explicit verdict
 
 If a gate fails:
 
