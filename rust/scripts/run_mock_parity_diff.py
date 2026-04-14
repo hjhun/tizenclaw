@@ -83,7 +83,15 @@ def runtime_module_map(root: Path) -> list[str]:
 
 def runtime_source_modules(root: Path) -> list[str]:
     src_dir = root / "rust" / "crates" / "tclaw-runtime" / "src"
-    return sorted(path.stem for path in src_dir.glob("*.rs") if path.stem != "lib")
+    modules = {
+        path.stem for path in src_dir.glob("*.rs") if path.stem != "lib"
+    }
+    modules.update(
+        path.name
+        for path in src_dir.iterdir()
+        if path.is_dir() and (path / "mod.rs").exists()
+    )
+    return sorted(modules)
 
 
 def rust_surface_names(root: Path) -> list[str]:

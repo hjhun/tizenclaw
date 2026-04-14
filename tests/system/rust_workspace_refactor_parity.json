@@ -1,0 +1,94 @@
+{
+  "name": "rust-workspace-refactor-parity",
+  "steps": [
+    {
+      "name": "runtime-commands-remain-discoverable",
+      "method": "command_registry",
+      "params": {
+        "command": "resume"
+      },
+      "assertions": [
+        {
+          "path": "command.metadata.resume_behavior",
+          "equals": "resume_only"
+        }
+      ]
+    },
+    {
+      "name": "plugin-commands-remain-distinguishable",
+      "method": "command_registry",
+      "params": {
+        "source": "plugin"
+      },
+      "assertions": [
+        {
+          "path": "commands.0.source.plugin_name",
+          "exists": true
+        }
+      ]
+    },
+    {
+      "name": "runtime-topology-remains-observable",
+      "method": "get_session_runtime",
+      "params": {
+        "session_id": "rust-workspace-refactor-parity"
+      },
+      "assertions": [
+        {
+          "path": "status",
+          "equals": "ok"
+        },
+        {
+          "path": "runtime_topology.loop_state_dir",
+          "exists": true
+        },
+        {
+          "path": "runtime_topology.memory_dir",
+          "exists": true
+        },
+        {
+          "path": "skills.total_count",
+          "exists": true
+        }
+      ]
+    },
+    {
+      "name": "registered-paths-remain-visible",
+      "method": "list_registered_paths",
+      "params": {},
+      "assertions": [
+        {
+          "path": "status",
+          "equals": "ok"
+        },
+        {
+          "path": "registrations.tool_paths",
+          "exists": true
+        },
+        {
+          "path": "registrations.skill_paths",
+          "exists": true
+        }
+      ]
+    },
+    {
+      "name": "tool-audit-stays-readable",
+      "method": "get_tool_audit",
+      "params": {},
+      "assertions": [
+        {
+          "path": "status",
+          "equals": "ok"
+        },
+        {
+          "path": "tools.total_count",
+          "exists": true
+        },
+        {
+          "path": "tools.runtime_wrapper_count",
+          "exists": true
+        }
+      ]
+    }
+  ]
+}
