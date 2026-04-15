@@ -8,10 +8,14 @@ License:    Apache-2.0
 Source0:    %{name}-%{version}.tar.gz
 Source1001: %{name}.manifest
 
+%ifarch aarch64
+%global cargo_target_triple aarch64-unknown-linux-gnu
+%else
 %ifarch armv7hl armv7l armv7el
 %global cargo_target_triple arm-unknown-linux-gnueabi
 %else
 %global cargo_target_triple x86_64-unknown-linux-gnu
+%endif
 %endif
 
 # Rust build
@@ -92,8 +96,10 @@ mkdir -p /home/owner/.tizenclaw/outbound
 mkdir -p /home/owner/.tizenclaw/telegram_sessions
 cp -rn /opt/usr/share/tizenclaw/config/. /home/owner/.tizenclaw/config/ 2>/dev/null || true
 chown -R owner:users /home/owner/.tizenclaw 2>/dev/null || true
+/usr/libexec/tizenclaw/sanitize-packaged-assets.sh
 systemctl daemon-reload >/dev/null 2>&1 || true
 systemctl enable tizenclaw.service >/dev/null 2>&1 || true
+systemctl enable tizenclaw-tool-executor.socket >/dev/null 2>&1 || true
 
 %files
 %defattr(-,root,root,-)
@@ -103,9 +109,14 @@ systemctl enable tizenclaw.service >/dev/null 2>&1 || true
 %{_bindir}/tizenclaw-tool-executor
 %{_bindir}/tizenclaw-web-dashboard
 %{_unitdir}/tizenclaw.service
+%{_unitdir}/tizenclaw-tool-executor.service
+%{_unitdir}/tizenclaw-tool-executor.socket
+%{_libexecdir}/tizenclaw/sanitize-packaged-assets.sh
 %dir /opt/usr/share/tizenclaw/
+/opt/usr/share/tizenclaw/.packaged-assets.manifest
 /opt/usr/share/tizenclaw/config/
 /opt/usr/share/tizenclaw/docs/
 /opt/usr/share/tizenclaw/embedded/
+/opt/usr/share/tizenclaw/img/rootfs.tar.gz
 /opt/usr/share/tizenclaw/plugins/libtizenclaw_plugin.so
 /opt/usr/share/tizenclaw/web/

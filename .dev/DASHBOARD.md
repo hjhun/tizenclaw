@@ -2,76 +2,119 @@
 
 ## Actual Progress
 
-- Goal: <!-- dormammu:goal_source=/home/hjhun/.dormammu/goals/tizenclaw_dir.md -->
-- Prompt-driven scope: Standardize the TizenClaw runtime layout to the
-  OpenClaw-style contract and capture the validated 2026-04-15 runtime-layout
-  slice in a scope-limited commit.
-- Active roadmap focus: Commit only the validated runtime-layout files and
-  keep the `.dev` state aligned with the accepted review and evaluation
-  evidence for this slice.
-- Current workflow phase: commit
-- Last completed workflow phase: test/review
-- Supervisor verdict: `accepted_with_residual_risk`
-- Escalation status: `none`
-- Resume point: Stage only the validated runtime-layout scope and create the
-  requested commit.
+- Goal: close the runtime-layout task with a fresh live Tizen validation after
+  the packaged-asset remediation and reviewer follow-up
+- Active scope: fix the remaining `deploy.sh --test` ownership blind spot, run
+  a real deploy to `emulator-26101`, and record fresh target-side evidence
+- Current workflow phase: evaluate
+- Last completed workflow phase: evaluate
+- Supervisor verdict: `completed`
+- Escalation status: `not_needed`
+- Shell context: direct Linux `bash` per `.agent/rules/shell-detection.md`
 
-## Workflow Phases
+## Stage Status
 
-```mermaid
-flowchart LR
-    refine([Refine]) --> plan([Plan])
-    plan --> design([Design])
-    design --> develop([Develop])
-    develop --> build([Build/Deploy])
-    build --> review([Test/Review])
-    review -->|approved| commit([Commit])
-    review -->|needs work| develop
-    commit --> evaluate([Evaluate])
-```
+- Refine: complete
+- Plan: complete
+- Design: complete
+- Develop: complete
+- Build/Deploy: complete
+- Test/Review: complete
+- Evaluate: complete
 
-## In Progress
+## Current Design Decisions
 
-- Commit preparation is in progress for the validated runtime-layout slice.
-
-## Progress Notes
-
-- Direct `bash` execution matches the repository environment rule from
-  `.agent/rules/shell-detection.md`.
-- `./deploy_host.sh --test` was rerun on 2026-04-15 for the accepted
-  validation pass.
-  Result:
-  - the script completed in the foreground as required
-  - the shared `framework::paths` runtime-layout tests passed, including
-    host, Tizen, compatibility, and directory-provisioning coverage
-  - the canonical Rust workspace tests, reconstruction parity harness, and
-    documentation-driven architecture verification passed
-  - the broader `tizenclaw` crate still reports the same five unrelated test
-    failures already tracked in this task:
-    `completed_file_management_targets_accept_prediction_market_briefing_after_rate_limited_search`,
-    `completed_file_management_targets_accept_prediction_market_decimal_odds`,
-    `output_lacks_numeric_market_fact_accepts_real_price_and_iso_date`,
-    `project_email_summary_shortcut_records_transcript_and_completes`,
-    and `summarize_recent_news_result_prefers_reputable_recent_sources`
-- `./deploy.sh --dry-run` was rerun on 2026-04-15 and showed
-  provisioning of `/home/owner/.tizenclaw` with `owner:users`.
-- The validated scope includes the runtime-root and packaged-root separation
-  across the shared path layer, deployment and packaging scripts, service
-  environment defaults, the standard container flow, and CLI/documentation
-  references.
-- The accepted evaluation for the latest validation pass is recorded in
-  `.dev/07-evaluator/20260415_20260415_tizenclaw_dir_resume_validation.md`
-  with `DECISION: ACCEPTED_WITH_RESIDUAL_RISK`.
-- The commit phase for this slice was explicitly requested after validation,
-  so the next action is a scope-limited staging pass and `git commit -F
-  .tmp/commit_msg.txt`.
+- Use `emulator-26101` as the authoritative target because it is reachable via
+  `sdb devices`.
+- Gate the live rerun with `./deploy.sh --test` after correcting the scripted
+  ownership assertion to `root:root`.
+- Use target-side `systemctl`, `ps`, `find`, `stat`, and controlled write-probe
+  commands to gather final runtime-layout evidence.
+- Treat packaged assets as read-only in practice when the deployed
+  `owner:users` service cannot mutate `/opt/usr/share/tizenclaw` and the
+  packaged tree is restored to `root:root` with fixed modes.
 
 ## Risks And Watchpoints
 
-- `./deploy_host.sh --test` still surfaces five non-layout `tizenclaw` test
-  failures, so the host script does not provide a globally clean suite even
-  though the runtime-layout slice passed.
-- Tizen validation is still packaging-level for this slice; there was no live
-  device or emulator execution after install.
-- The repository worktree remains dirty outside this layout slice, so any
-  commit must stay narrowly scoped.
+- The worktree is dirty across many unrelated files, including files touched in
+  this cycle, so edits must remain narrow and additive.
+- The SDB client/server version mismatch may add noisy warnings during deploy
+  and inspection.
+- The live deploy built the current dirty worktree, so the installed package
+  includes unrelated local changes outside the runtime-layout slice.
+- `/opt` is mounted read-write on the emulator; the packaged-asset contract is
+  enforced by ownership and mode, not by a read-only mount.
+
+## Execution Evidence
+
+- Environment confirmation:
+  - shell: `/bin/bash`
+  - host: WSL Ubuntu Linux via `uname -a`
+- Target discovery:
+  - `sdb devices` lists `emulator-26101` as an attached device target
+- Baseline target status:
+  - `sdb -s emulator-26101 shell 'id && uname -a && systemctl is-active tizenclaw || true'`
+    showed a reachable Tizen shell and an active `tizenclaw` service before the
+    fresh rerun
+- Scripted gate:
+  - command: `./deploy.sh --test`
+  - result: passed
+  - key evidence:
+    - the manifest still matches the full non-sample `data/config/*` payload
+    - the isolated sanitizer check now proves restoration of packaged
+      ownership and modes
+- Live deploy:
+  - command: `./deploy.sh -d emulator-26101`
+  - date: `2026-04-15`
+  - result: passed
+  - install evidence:
+    - `gbs build -A x86_64 --include-all` succeeded
+    - `pkgcmd -i -q -t rpm` returned `Operation not allowed [-4]`
+    - the script fell back to `rpm -Uvh --replacepkgs --replacefiles --force`
+      and then verified the installed package as
+      `tizenclaw-1.0.0-3.x86_64` with install time `1776254628`
+- Identity evidence:
+  - `systemctl show tizenclaw -p User -p Group -p Environment -p MainPID -p ActiveEnterTimestamp --value`
+    returned:
+    - `User=owner`
+    - `Group=users`
+    - `TIZENCLAW_HOME=/home/owner/.tizenclaw`
+    - `TIZENCLAW_PACKAGED_DIR=/opt/usr/share/tizenclaw`
+    - `MainPID=61318`
+    - `ActiveEnterTimestamp=Wed 2026-04-15 21:03:51 KST`
+  - `ps -o user,group,pid,args -p 61318` showed
+    `owner users 61318 /usr/bin/tizenclaw`
+- Mutable-state evidence:
+  - fresh runtime files under `/home/owner/.tizenclaw` were updated during the
+    post-restart window:
+    - `memory/memory.md` at `2026-04-15 21:03:51.3900000000`
+    - `logs/tizenclaw.log` at `2026-04-15 21:03:51.4200000000`
+    - `state/loop/scheduler_health.json` at `2026-04-15 21:04:01.4200000000`
+  - all sampled runtime files were owned by `owner:users`
+- Packaged-asset evidence:
+  - `stat -c "%U:%G %a %n"` showed:
+    - `root:root 755 /opt/usr/share/tizenclaw`
+    - `root:root 755 /opt/usr/share/tizenclaw/config`
+    - `root:root 644 /opt/usr/share/tizenclaw/config/agent_roles.json`
+    - `root:root 755 /opt/usr/share/tizenclaw/plugins/libtizenclaw_plugin.so`
+  - `mount` showed `/dev/vda2 on /opt type ext4 (rw,relatime,data=ordered)`
+  - `find /opt/usr/share/tizenclaw -mindepth 1 \( ! -user root -o ! -group root \)`
+    returned no non-root-owned packaged entries
+  - `su owner -c "touch /opt/usr/share/tizenclaw/.owner_write_probe_20260415_2103"`
+    failed with `Permission denied`
+  - no `.owner_write_probe*` residue remained under the packaged tree after the
+    rerun
+
+## Outcome
+
+- The mandatory `refine -> plan` stage outputs were synchronized and carried
+  through the full live rerun cycle.
+- `deploy.sh --test` now protects the intended packaged ownership contract.
+- The authoritative non-dry-run emulator deployment completed and all three
+  runtime-layout checks passed on fresh target-side evidence.
+- The runtime-layout task is ready to be treated as closed in the evaluator
+  report for this cycle.
+
+## Next Action
+
+- No additional execution is required for this validation cycle.

@@ -1,68 +1,136 @@
 # WORKFLOWS
 
-## Task
-Standardize TizenClaw's runtime directory structure to the OpenClaw-style
-layout, using `~/.tizenclaw` on host systems and `/home/owner/.tizenclaw` on
-Tizen, while strengthening compatibility handling, packaging behavior, and
-test coverage.
+## Task Classification
 
-[x] Phase 0. Refine the runtime-layout scope and acceptance criteria -
-    `refining-requirements`
-[x] Phase 1. Plan the adaptive stage sequence, validation path, and supervisor
-    gates - `planning-project`
-[x] Phase 2. Design the canonical runtime topology, packaged-asset boundary,
-    and legacy compatibility strategy - `designing-architecture`
-[x] Phase 3. Develop the unified path resolution, packaging changes, and test
-    updates required by the new layout - `developing-code` plus
-    `testing-with-tizenclaw-tests` when daemon-visible behavior changes
-[x] Phase 4. Run the scripted host and explicit Tizen build/deploy paths to
-    verify provisioning behavior - `building-deploying`
-[x] Phase 5. Review the executed evidence, confirm acceptance criteria, and
-    record residual risks - `reviewing-code` plus
-    `testing-with-tizenclaw-tests` when applicable
-[x] Phase 6. Commit the validated change set with the repository commit policy
-    if commit execution is requested for this cycle - `managing-versions`
-[x] Phase 7. Record the final evaluator verdict and follow-up actions -
-    `evaluating-outcomes`
+- Cycle type: runtime-layout live Tizen rerun and closure attempt
+- Primary source: `.dev/REQUIREMENTS.md`
+- Default shell assumption: direct Linux `bash`
+- Active scope: close the remaining reviewer gap in `deploy.sh --test`, rerun
+  a real non-dry-run Tizen deployment, inspect live runtime-layout behavior,
+  and record the final verdict
+- `testing-with-tizenclaw-tests`: not required beyond the scripted
+  `./deploy.sh --test` validation for this deployment-focused cycle
 
-## Supervisor Gates
+## Active Stage Sequence
 
-- Refine -> `.dev/REQUIREMENTS.md` explicitly captures the OpenClaw alignment
-  goal, the host and Tizen mutable roots, the packaged-read-only boundary, the
-  compatibility expectation, and the required validation paths.
-- Plan -> `.dev/WORKFLOWS.md`, `.dev/PLAN.md`, and `.dev/DASHBOARD.md`
-  consistently describe the same runtime-layout scope, active phase, next
-  action, and risks.
-- Design -> the canonical directory contract, packaged-vs-mutable split, and
-  migration or compatibility policy are explicit enough that implementation
-  files do not need to invent structure.
-- Develop -> the intended path-bearing code, scripts, packaging files, and
-  tests reflect one coherent layout model and the dashboard is synchronized
-  with the real file state.
-- Build/Deploy -> `./deploy_host.sh` completes in the foreground for host
-  validation, and `./deploy.sh` is executed for the explicit Tizen packaging or
-  deployment requirement.
-- Test/Review -> executed evidence covers host defaults, Tizen defaults, at
-  least one legacy compatibility or migration scenario, and any daemon-visible
-  behavior updates.
-- Commit -> `.tmp/commit_msg.txt` exists, the commit message follows the
-  repository format, and the diff scope matches the validated runtime-layout
-  change.
-- Evaluate -> a final report exists under `.dev/07-evaluator/` with an
-  explicit verdict, residual risks, and any follow-up recommendations.
+```text
+refine -> plan -> design -> develop -> build/deploy -> test/review -> evaluate
+```
 
-## Notes
+## Completion Status
 
-- Execution class: `explicit-tizen`
-- Shell path: direct `bash`
-- Host-first rule: use `./deploy_host.sh` by default, with `./deploy.sh`
-  required later because the user explicitly asked for Tizen installation
-  behavior.
-- `testing-with-tizenclaw-tests` is expected during development and
-  test/review if daemon-visible skill or workspace behavior changes.
-- Final evaluator stage is mandatory for this cycle.
-- Current design target:
-  - host runtime root: `~/.tizenclaw`
-  - Tizen runtime root: `/home/owner/.tizenclaw`
-  - packaged read-only root: `/opt/usr/share/tizenclaw`
-  - canonical skills path: `<runtime_root>/workspace/skills/<skill>/SKILL.md`
+[O] Stage 0. Refine completed through `.dev/REQUIREMENTS.md`
+[O] Stage 1. Plan completed and synchronized across `.dev/WORKFLOWS.md`,
+  `.dev/PLAN.md`, and `.dev/DASHBOARD.md`
+[O] Stage 2. Design completed
+[O] Stage 3. Develop completed
+[O] Stage 4. Build/Deploy completed
+[O] Stage 5. Test/Review completed
+[O] Stage 6. Evaluate completed
+
+## Locked Planning Decisions
+
+### Validation Target Policy
+
+- Use direct `bash` and the reachable emulator target `emulator-26101`.
+- Use the real non-dry-run `./deploy.sh -d emulator-26101` path for the
+  authoritative Tizen rerun.
+- Avoid destructive full-target reset unless the evidence remains ambiguous
+  after the scripted sanitizer and fresh deploy pass.
+
+### Scripted Validation Policy
+
+- Fix the `./deploy.sh --test` sanitizer check so it asserts packaged owner and
+  group normalization against the intended deployed defaults of `root:root`.
+- Keep `./deploy.sh --test` as the required scripted gate before the live
+  deployment rerun.
+
+### Evidence Policy
+
+- Identity evidence must come from target-side service metadata and the running
+  process table.
+- Mutable-state evidence must include fresh timestamps or freshly touched files
+  under `/home/owner/.tizenclaw` after the deployment window.
+- Packaged-asset evidence must include file ownership/mode plus an actual write
+  probe or equivalent target-side proof for `/opt/usr/share/tizenclaw`.
+
+### Verdict Policy
+
+- The runtime-layout verdict can upgrade only if identity, mutable-state, and
+  packaged-asset immutability all pass on fresh target-side evidence.
+- If packaged assets are still writable in practice, the verdict remains
+  blocked even when the scripted review gate passes.
+
+## Stage Plan
+
+### Stage 0. Refine
+Status:
+- Complete
+
+Output:
+- `.dev/REQUIREMENTS.md`
+
+### Stage 1. Plan
+Status:
+- Complete
+
+Outputs:
+- `.dev/WORKFLOWS.md`
+- `.dev/PLAN.md`
+- `.dev/DASHBOARD.md`
+
+### Stage 2. Design
+Status:
+- Complete
+
+Recorded outcome:
+- define the exact deploy and inspection command set for the live rerun, with
+  enough freshness checks to distinguish new behavior from historical residue
+- use `systemctl show`, `ps`, `find`, `stat`, and an `owner` write probe on
+  the target as the authoritative evidence set
+
+### Stage 3. Develop
+Status:
+- Complete
+
+Recorded outcome:
+- `deploy.sh --test` asserts the intended packaged ownership normalization in
+  addition to the existing mode checks
+- the ownership assertion runs under `fakeroot` so the scripted gate remains
+  non-interactive on the host
+
+### Stage 4. Build/Deploy
+Status:
+- Complete
+
+Recorded outcome:
+- run `./deploy.sh --test`
+- run the real non-dry-run `./deploy.sh -d emulator-26101`
+- `./deploy.sh --test` passed
+- `./deploy.sh -d emulator-26101` completed successfully after `pkgcmd`
+  returned `Operation not allowed [-4]` and the script correctly fell back to
+  `rpm -Uvh`
+
+### Stage 5. Test/Review
+Status:
+- Complete
+
+Recorded outcome:
+- capture target-side identity, mutable-state, and packaged-asset evidence
+- determine whether the live runtime-layout contract is now fully satisfied
+- identity passed: `systemctl show` and `ps` both proved `owner:users`
+- mutable state passed: fresh files under `/home/owner/.tizenclaw` were created
+  at `2026-04-15 21:03:51` through `21:04:01` KST after the service restart
+- packaged assets passed in practice: `/opt/usr/share/tizenclaw` is
+  `root:root`, the expected modes are restored, no non-root ownership remained,
+  and an `owner` write probe failed with `Permission denied`
+
+### Stage 6. Evaluate
+Status:
+- Complete
+
+Recorded outcome:
+- `.dev/DASHBOARD.md` and a new evaluator report record the final rerun result
+  and state whether the runtime-layout verdict upgrades or remains blocked
+- the runtime-layout verdict upgrades because all three live target checks now
+  pass on the rerun
