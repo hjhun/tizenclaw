@@ -91,6 +91,47 @@ def configure_logging() -> logging.Logger:
     return logging.getLogger("pinchbench_oauth")
 
 
+def cleanup_benchmark_artifacts(
+    scratch_root: Path,
+    output_dir: Path,
+    logger: logging.Logger,
+) -> dict[str, Any]:
+    removed_paths: list[str] = []
+
+    if scratch_root.exists():
+        for child in sorted(scratch_root.iterdir()):
+            if child == output_dir:
+                continue
+            if child.is_dir():
+                shutil.rmtree(child)
+                removed_paths.append(str(child))
+            elif child.is_file() and child.suffix in {".json", ".log"}:
+                child.unlink()
+                removed_paths.append(str(child))
+
+    if output_dir.exists():
+        for child in sorted(output_dir.iterdir()):
+            if child.is_file() and child.suffix == ".json":
+                child.unlink()
+                removed_paths.append(str(child))
+
+    logger.info(
+        "Cleanup removed %d stale PinchBench artifact(s) from %s and %s",
+        len(removed_paths),
+        scratch_root,
+        output_dir,
+    )
+    for path in removed_paths:
+        logger.info("Cleanup removed: %s", path)
+
+    return {
+        "scratch_root": str(scratch_root),
+        "output_dir": str(output_dir),
+        "removed_paths": removed_paths,
+        "removed_count": len(removed_paths),
+    }
+
+
 def load_pinchbench_modules(skill_root: Path):
     scripts_dir = skill_root / "scripts"
     if not scripts_dir.exists():
@@ -622,6 +663,7 @@ def main() -> int:
 
     scratch_root = args.scratch_root.resolve()
     output_dir = args.output_dir.resolve()
+    cleanup_summary = cleanup_benchmark_artifacts(scratch_root, output_dir, logger)
     run_id = next_run_id(output_dir)
     agent_id = "bench-tizenclaw-active-oauth"
     runs_per_task = max(1, args.runs)
@@ -729,6 +771,7 @@ def main() -> int:
             "judge_mode": "active_config",
             "config_unchanged": config_unchanged,
         },
+        "cleanup": cleanup_summary,
         "tasks": task_entries,
         "efficiency": efficiency,
         "summary": {

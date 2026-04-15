@@ -2,71 +2,40 @@
 
 ## Actual Progress
 
-- Goal: `improve-agent-loop`
-- Execution class: `host-default`
-- Active workflow phase: `complete`
-- Last completed workflow phase: `evaluate`
+- Goal: close the remaining review findings from the PinchBench remediation
+  cycle without regressing the recorded host OAuth result
+- Pre-run score check: `.dev/SCORE.md` read first; current recorded score is
+  `95.0%` (`MET`) from the latest host OAuth full-suite run
+- Environment assumption: direct `bash` execution on host Linux per the shell
+  detection rule
+- Current workflow phase: evaluate
+- Last completed workflow phase: test/review
 - Supervisor verdict: `approved`
-- Next action: none; workflow complete
+- Escalation status: `not_needed`
+- Resume point: workflow complete for this review-fix slice
 
-## In Progress
+## Progress Notes
 
-- Workflow complete; `.dev` records are synchronized with the validated scope
-
-## Planned Validation
-
-- `./deploy_host.sh`
-- Deterministic `tizenclaw-tests` runs for the affected `tests/system/`
-  runtime-contract scenarios
-
-## Evidence Log
-
-- Environment check: direct `bash` host workflow confirmed from
-  `.agent/rules/shell-detection.md` and
-  `.agent/skills/managing-environment/SKILL.md`
-- Refine stage: `.dev/REQUIREMENTS.md` already matched the active
-  `improve-agent-loop` scope closely enough to proceed without clarification
-- Plan stage: `.dev/WORKFLOWS.md`, `.dev/PLAN.md`, and `.dev/DASHBOARD.md`
-  regenerated for the refactor cycle
-- Design stage: `.dev/docs/improve-agent-loop-design.md` records the module
-  split and validation seam for this iteration
-- Develop stage: extracted prompt-contract injection into
-  `process_prompt_contracts.rs` and pre-loop planning/compaction into
-  `process_prompt_loop.rs`, then rewired `process_prompt.rs` to delegate to
-  those helpers
-- Multilingual handling review: remaining Korean literals in production
-  agent-loop code are limited to documented prompt parsing and keyword
-  matching for supported fixtures
-- System test update:
-  `tests/system/file_grounded_recall_runtime_contract.json` now asserts the
-  exact numbered secret-phrase answer contract
-- Build/deploy evidence: `./deploy_host.sh` succeeded on 2026-04-14 and
-  rebuilt, installed, and started the host daemon successfully
-- Scenario evidence:
-  `tizenclaw-tests scenario --file tests/system/file_grounded_recall_runtime_contract.json`
-  passed on 2026-04-14 with all 3 steps green
-- Implementation commit: `01f4d3ff`
-  (`Refactor agent prompt orchestration`) captured the validated code changes
-  for this scope
-- Evaluation stage:
-  `.dev/07-evaluator/20260414-improve-agent-loop.md` records
-  `VERDICT: goal_achieved`
-- Repository state sync: `.dev` workflow artifacts now match the completed
-  commit and evaluator stages
-
-## Review Outcome
-
-- Findings: none discovered in the validated slice after the host deploy and
-  targeted daemon scenario run
-- Residual risk: `process_prompt.rs` is smaller and cleaner, but the main
-  runtime loop is still large; a deeper extraction of the loop body remains a
-  follow-up opportunity if this area changes again
+- The incoming reviewer verdict was `NEEDS_WORK`.
+- Review finding 1 was resolved by replacing the contradictory unit test
+  expectation. The test now asserts that a pre-existing file plus assistant
+  text alone does not count as completion.
+- Review finding 2 was resolved by narrowing result-directory cleanup to JSON
+  files only, preserving non-JSON evidence and nested directories.
+- `./deploy_host.sh` completed successfully on 2026-04-15 after the fixes.
+- A direct Python probe of `cleanup_benchmark_artifacts()` confirmed that
+  scratch directories and stale JSON/log files are removed, while
+  `output_dir/notes.txt` and `output_dir/keep_dir/` remain intact.
+- The worktree is already dirty in many unrelated files, so this slice must
+  avoid incidental edits; this run stayed within the reviewed files plus `.dev`
+  records.
+- Commit preparation for this slice is staging only the intended `.dev`
+  records plus scope-specific hunks in `tests.rs` and
+  `run_pinchbench_oauth.py`.
 
 ## Risks And Watchpoints
 
-- `process_prompt.rs`, `foundation.rs`, and `news_and_grounding.rs` are large
-  and may have tight internal coupling that resists clean extraction
-- Some Korean-language literals may be intentional multilingual handling rather
-  than accidental implementation leakage
-- Refactoring common-path heuristics without coverage can regress shortcut,
-  file-grounding, or research flows
+- Do not disturb unrelated modified files.
+- Keep cleanup bounded so future non-JSON benchmark evidence survives.
+- The scripted host deploy path was executed, but no raw unit-test invocation
+  was added because the repository rules prefer the scripted validation path.

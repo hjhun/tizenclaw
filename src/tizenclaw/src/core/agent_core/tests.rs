@@ -3919,6 +3919,31 @@ startxref
     }
 
     #[test]
+    fn completed_file_management_targets_rejects_saved_output_without_file_write_tool() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("alpha_summary.md"),
+            "# Project Alpha Summary\n\n## 1. Project Overview\nProject Alpha is on track.\n",
+        )
+        .unwrap();
+
+        let messages = vec![LlmMessage {
+            role: "assistant".into(),
+            text: "Saved the requested summary.".into(),
+            ..Default::default()
+        }];
+
+        let completed = completed_file_management_targets(
+            "Search the emails and save the result to alpha_summary.md.",
+            dir.path(),
+            &messages,
+            false,
+        );
+
+        assert!(completed.is_empty());
+    }
+
+    #[test]
     fn completion_message_for_small_markdown_targets_includes_full_content() {
         let dir = tempdir().unwrap();
         let body = "# Polymarket Briefing — 2026-04-13\n\n## 1. Will the Fed cut rates?\n**Current odds:** Yes 49% / No 51%\n**Related news:** Reuters reported softer inflation data on April 12, 2026.\n\n## 2. Will Bitcoin reach $150,000 in April?\n**Current odds:** Yes 47% / No 53%\n**Related news:** Bloomberg said ETF inflows stayed strong on April 13, 2026.\n\n## 3. Will the Iranian regime fall by April 30?\n**Current odds:** Yes 3% / No 97%\n**Related news:** AP reported new protests and succession concerns on April 12, 2026.\n";
