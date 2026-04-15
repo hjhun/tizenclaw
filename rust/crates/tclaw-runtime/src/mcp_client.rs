@@ -142,7 +142,10 @@ impl McpClient {
         Ok(())
     }
 
-    pub fn list_tools(&mut self, timeout_ms: u64) -> Result<Vec<McpToolDefinition>, McpClientError> {
+    pub fn list_tools(
+        &mut self,
+        timeout_ms: u64,
+    ) -> Result<Vec<McpToolDefinition>, McpClientError> {
         let request = JsonRpcRequest::new(self.next_id(), "tools/list", json!({}));
         let response = self
             .transport

@@ -8,9 +8,14 @@ use crate::types::ProviderKind;
 #[derive(Debug)]
 pub enum ApiError {
     Http(HttpClientError),
-    Status { status: u16, body: String },
+    Status {
+        status: u16,
+        body: String,
+    },
     Serialize(String),
-    InvalidResponse { message: String },
+    InvalidResponse {
+        message: String,
+    },
     Decode {
         source: serde_json::Error,
         body: String,
@@ -20,7 +25,9 @@ pub enum ApiError {
         provider: ProviderKind,
         message: String,
     },
-    UnsupportedStream { provider: ProviderKind },
+    UnsupportedStream {
+        provider: ProviderKind,
+    },
 }
 
 impl ApiError {

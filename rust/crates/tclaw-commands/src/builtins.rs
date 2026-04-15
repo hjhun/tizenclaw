@@ -2,12 +2,16 @@ use crate::{CommandManifestEntry, CommandSource, ResumeBehavior, SlashCommandArg
 
 pub fn built_in_command_manifests() -> Vec<CommandManifestEntry> {
     vec![
-        CommandManifestEntry::new("help", CommandSource::BuiltIn, "List available slash commands")
-            .with_aliases(["h"])
-            .with_argument_hints([SlashCommandArgHint::optional(
-                "command",
-                "Optional command name to inspect",
-            )]),
+        CommandManifestEntry::new(
+            "help",
+            CommandSource::BuiltIn,
+            "List available slash commands",
+        )
+        .with_aliases(["h"])
+        .with_argument_hints([SlashCommandArgHint::optional(
+            "command",
+            "Optional command name to inspect",
+        )]),
         CommandManifestEntry::new(
             "plugins",
             CommandSource::BuiltIn,

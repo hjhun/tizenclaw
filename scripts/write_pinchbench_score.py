@@ -5,11 +5,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
 
 TARGET_PASS_RATE = 95.0
+STAGE_ORDER = [
+    ("Planning", "1. Planning"),
+    ("Design", "2. Design"),
+    ("Development", "3. Development"),
+    ("Build/Deploy", "4. Build/Deploy"),
+    ("Test/Review", "5. Test/Review"),
+    ("Commit", "6. Commit"),
+]
 
 
 def parse_args() -> argparse.Namespace:
@@ -19,6 +28,12 @@ def parse_args() -> argparse.Namespace:
         "--output",
         type=Path,
         default=Path(".dev/SCORE.md"),
+    )
+    parser.add_argument(
+        "--dashboard",
+        type=Path,
+        default=Path(".dev/DASHBOARD.md"),
+        help="Dashboard Markdown file that carries stage verdict evidence.",
     )
     parser.add_argument(
         "--commit-sha",
@@ -41,7 +56,44 @@ def task_score(task: dict) -> float:
     return 0.0
 
 
-def build_ledger(result_path: Path, payload: dict, commit_sha: str) -> str:
+def parse_stage_verdicts(dashboard_path: Path, commit_sha: str) -> list[tuple[str, str]]:
+    verdicts = {name: "NOT RECORDED" for name, _ in STAGE_ORDER}
+    commit_default = "PASS" if commit_sha else "NOT STARTED"
+    verdicts["Commit"] = commit_default
+
+    if not dashboard_path.exists():
+        return [(numbered_name, verdicts[name]) for name, numbered_name in STAGE_ORDER]
+
+    text = dashboard_path.read_text(encoding="utf-8")
+    match = re.search(
+        r"^## Stage Verdicts\s*$\n(?P<body>.*?)(?=^## |\Z)",
+        text,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    if not match:
+        return [(numbered_name, verdicts[name]) for name, numbered_name in STAGE_ORDER]
+
+    for raw_line in match.group("body").splitlines():
+        line = raw_line.strip()
+        if not line.startswith("- "):
+            continue
+        label, separator, verdict = line[2:].partition(":")
+        if not separator:
+            continue
+        stage_name = label.strip()
+        if stage_name not in verdicts:
+            continue
+        parsed_verdict = verdict.strip()
+        if parsed_verdict:
+            verdicts[stage_name] = parsed_verdict
+
+    if commit_sha:
+        verdicts["Commit"] = "PASS"
+
+    return [(numbered_name, verdicts[name]) for name, numbered_name in STAGE_ORDER]
+
+
+def build_ledger(result_path: Path, payload: dict, commit_sha: str, dashboard_path: Path) -> str:
     tasks = payload.get("tasks") or []
     summary = payload.get("summary") or {}
     total_score = float(summary.get("total_score") or sum(task_score(task) for task in tasks))
@@ -76,16 +128,7 @@ def build_ledger(result_path: Path, payload: dict, commit_sha: str) -> str:
     model = payload.get("model", "unknown")
     suite = payload.get("suite", "unknown")
     execution_mode = payload.get("execution_mode") or {}
-    stage_results = [
-        ("1. Planning", "PASS"),
-        ("2. Design", "PASS"),
-        ("3. Development", "PASS"),
-        ("4. Build/Deploy", "PASS"),
-        ("5. Test/Review", "PASS"),
-        ("6. Commit", "PASS" if commit_sha else "NOT STARTED"),
-    ]
-    if status != "MET":
-        stage_results[4] = ("5. Test/Review", "FAIL")
+    stage_results = parse_stage_verdicts(dashboard_path, commit_sha)
 
     lines = [
         "# SCORE",
@@ -152,7 +195,7 @@ def main() -> int:
     payload = json.loads(args.result_json.read_text(encoding="utf-8"))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
-        build_ledger(args.result_json, payload, args.commit_sha),
+        build_ledger(args.result_json, payload, args.commit_sha, args.dashboard),
         encoding="utf-8",
     )
     print(args.output)

@@ -294,7 +294,10 @@ mod tests {
         let mut enforcer = PermissionEnforcer::new();
 
         let decision = enforcer
-            .decide(&config(PermissionMode::AllowAll), request(PermissionScope::Read))
+            .decide(
+                &config(PermissionMode::AllowAll),
+                request(PermissionScope::Read),
+            )
             .expect("allow-all decision");
 
         assert!(decision.allowed);
@@ -307,7 +310,10 @@ mod tests {
         let mut enforcer = PermissionEnforcer::new();
 
         let decision = enforcer
-            .decide(&config(PermissionMode::DenyAll), request(PermissionScope::Read))
+            .decide(
+                &config(PermissionMode::DenyAll),
+                request(PermissionScope::Read),
+            )
             .expect("deny-all decision");
 
         assert!(!decision.allowed);
@@ -366,12 +372,11 @@ mod tests {
     #[test]
     fn prompting_records_prompt_and_result() {
         let mut config = config(PermissionMode::Ask);
-        config.permission_policy.tool_minimum_levels.insert(
-            "write_file".to_string(),
-            PermissionLevel::Sensitive,
-        );
-        let prompter =
-            RecordingPrompter::with_decisions(vec![PermissionPromptDecision::AllowOnce]);
+        config
+            .permission_policy
+            .tool_minimum_levels
+            .insert("write_file".to_string(), PermissionLevel::Sensitive);
+        let prompter = RecordingPrompter::with_decisions(vec![PermissionPromptDecision::AllowOnce]);
         let mut enforcer = PermissionEnforcer::with_prompter(prompter);
 
         let decision = enforcer

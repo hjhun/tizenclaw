@@ -1902,7 +1902,9 @@ fn output_lacks_numeric_market_fact(prompt: &str, content: &str) -> bool {
     ]
     .iter()
     .any(|needle| content_lower.contains(needle));
-    let has_numeric_price = regex::Regex::new(r"(?i)(\\$ ?\\d+(?:\\.\\d+)?|\\b\\d+\\.\\d{1,2}\\b)")
+    let has_numeric_price = regex::Regex::new(
+        r"(?i)(\$ ?\d+(?:\.\d+)?|\b\d+\.\d{1,2}\b(?!\s*%)|\b\d+(?:\.\d+)?\s*(?:usd|dollars?)\b)",
+    )
         .map(|re| re.is_match(content))
         .unwrap_or(false);
     let has_grader_visible_date = numeric_market_fact_has_grader_visible_date(content);

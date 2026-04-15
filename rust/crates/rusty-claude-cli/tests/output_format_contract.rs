@@ -10,7 +10,9 @@ fn run_cli(
     let mut input = Cursor::new(stdin.as_bytes().to_vec());
     let mut output = Vec::new();
     let outcome = run_with_stdio(
-        args.iter().map(|arg| (*arg).to_string()).collect::<Vec<_>>(),
+        args.iter()
+            .map(|arg| (*arg).to_string())
+            .collect::<Vec<_>>(),
         &mut input,
         stdin_is_terminal,
         &mut output,

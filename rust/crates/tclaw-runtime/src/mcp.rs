@@ -251,8 +251,12 @@ pub struct McpToolCallParams {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum McpContentBlock {
-    Text { text: String },
-    Json { data: Value },
+    Text {
+        text: String,
+    },
+    Json {
+        data: Value,
+    },
     Resource {
         uri: String,
         #[serde(rename = "mimeType", default, skip_serializing_if = "Option::is_none")]
@@ -347,8 +351,7 @@ mod tests {
         let request = JsonRpcRequest::new(7, "tools/list", json!({"cursor": null}));
 
         let encoded = serde_json::to_string(&request).expect("serialize request");
-        let decoded: JsonRpcRequest =
-            serde_json::from_str(&encoded).expect("deserialize request");
+        let decoded: JsonRpcRequest = serde_json::from_str(&encoded).expect("deserialize request");
 
         assert_eq!(decoded.id, JsonRpcId::Number(7));
         assert_eq!(decoded.method, "tools/list");

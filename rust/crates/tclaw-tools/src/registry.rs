@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
-use thiserror::Error;
 use tclaw_runtime::{ToolCallRequest, ToolExecutionOutput, ToolRuntimeError};
+use thiserror::Error;
 
 use crate::manifest::ToolManifestEntry;
 
@@ -32,10 +32,7 @@ pub struct ToolRegistration<C> {
 }
 
 impl<C> ToolRegistration<C> {
-    pub fn new(
-        manifest: ToolManifestEntry,
-        handler: impl ToolHandler<C> + 'static,
-    ) -> Self {
+    pub fn new(manifest: ToolManifestEntry, handler: impl ToolHandler<C> + 'static) -> Self {
         Self {
             manifest,
             handler: Box::new(handler),
@@ -167,13 +164,13 @@ impl<C> ToolRegistry<C> {
                 message: "tool is not registered".to_string(),
             })?
             .to_string();
-        let handler = self
-            .handlers
-            .get_mut(&resolved_name)
-            .ok_or_else(|| ToolRuntimeError::Execution {
-                tool_name: resolved_name.clone(),
-                message: "tool handler is missing".to_string(),
-            })?;
+        let handler =
+            self.handlers
+                .get_mut(&resolved_name)
+                .ok_or_else(|| ToolRuntimeError::Execution {
+                    tool_name: resolved_name.clone(),
+                    message: "tool handler is missing".to_string(),
+                })?;
 
         let mut canonical_call = call.clone();
         canonical_call.name = resolved_name;

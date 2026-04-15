@@ -98,10 +98,12 @@ mod tests {
                     requirement: TrustRequirement::at_least(TrustLevel::Trusted),
                     actual_level: TrustLevel::Restricted,
                     decision: TrustDecision::Denied,
-                    failure: Some(crate::trust_resolver::TrustFailureReason::InsufficientLevel {
-                        required: TrustLevel::Trusted,
-                        actual: TrustLevel::Restricted,
-                    }),
+                    failure: Some(
+                        crate::trust_resolver::TrustFailureReason::InsufficientLevel {
+                            required: TrustLevel::Trusted,
+                            actual: TrustLevel::Restricted,
+                        },
+                    ),
                     reason: "worker trust gate blocked start".to_string(),
                 },
             },

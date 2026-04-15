@@ -1,6 +1,31 @@
-Standardize runtime layout under .tizenclaw roots
+Improve PinchBench harness and research extraction
 
-Move mutable host and Tizen runtime state to the canonical .tizenclaw
-roots while keeping packaged assets under /opt/usr/share/tizenclaw.
-Align services, deploy scripts, container helpers, path resolution, and
-CLI documentation with the new contract.
+PinchBench harness enhancements:
+- Add transient retry support (limit=3, delay=2s) in
+  run_pinchbench_oauth.py to recover from transient failures
+- Track per-case token usage and cost with add_usage/read_usage_delta
+- Parse stage verdicts from DASHBOARD.md in write_pinchbench_score.py;
+  add --dashboard argument and STAGE_ORDER constants
+
+Research and agent loop improvements:
+- Add extract_markdown_section_body / extract_markdown_section_value
+  helpers in research.rs to handle markdown-structured profile data
+  when extracting grounded answers (language, date, project fields)
+- Move completed_research_targets check before context-limit check in
+  process_prompt.rs to prioritize goal detection in the agent loop
+- Add project_email_summary_shortcut test covering end-to-end email
+  file target completion
+
+Secure container non-root execution:
+- Resolve owner UID/GID from system (owner:users) with fallback
+  defaults (5000:5000) in tizenclaw_secure_container.sh
+- Set HOME, USER, LOGNAME, XDG_RUNTIME_DIR inside the container
+
+CMakeLists.txt asset manifest support:
+- Derive TIZENCLAW_ROOTFS_ARCH from CARGO_TARGET
+- Add tizenclaw_manifest_append and tizenclaw_manifest_append_tree
+  helper functions for packaged-asset manifest generation
+
+Rust formatting: normalize multi-line struct variant style in
+worker_boot.rs and reformat long chained expressions in tclaw-tools
+and tclaw-api crates; update .dev workflow state documents.

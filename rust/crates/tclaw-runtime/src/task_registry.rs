@@ -219,13 +219,11 @@ impl TaskRegistry {
             ensure_transition(&task, TaskStatus::Assigned)?;
 
             let lane_id = task_lane_id(&task)?;
-            let assignment = task
-                .assignment
-                .get_or_insert_with(|| TaskAssignment {
-                    lane_id: lane_id.clone(),
-                    worker_id: None,
-                    session_id: None,
-                });
+            let assignment = task.assignment.get_or_insert_with(|| TaskAssignment {
+                lane_id: lane_id.clone(),
+                worker_id: None,
+                session_id: None,
+            });
             assignment.worker_id = Some(worker_id.clone());
             assignment.session_id = session_id;
             task.status = TaskStatus::Assigned;
@@ -376,13 +374,7 @@ impl TaskRegistry {
             .expect("task registry lane event lock");
         let sequence = state.next_sequence;
         state.events.push(LaneEvent::new(
-            sequence,
-            lane_id,
-            task_id,
-            worker_id,
-            kind,
-            detail,
-            payload,
+            sequence, lane_id, task_id, worker_id, kind, detail, payload,
         ));
         state.next_sequence += 1;
     }

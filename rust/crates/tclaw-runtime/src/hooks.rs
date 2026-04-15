@@ -1,4 +1,4 @@
 pub use tclaw_plugins::{
-    execute_plugin_hooks, HookExecutionReport, HookExecutionResult, HookExecutionStatus,
-    HookPhase, HookSpec,
+    execute_plugin_hooks, HookExecutionReport, HookExecutionResult, HookExecutionStatus, HookPhase,
+    HookSpec,
 };

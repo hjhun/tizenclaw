@@ -100,7 +100,10 @@ fn stream_emits_typed_deltas_and_usage_events() {
         .collect::<Result<Vec<_>, _>>()
         .expect("events");
 
-    assert!(matches!(events.first(), Some(StreamEvent::MessageStart { .. })));
+    assert!(matches!(
+        events.first(),
+        Some(StreamEvent::MessageStart { .. })
+    ));
     assert!(events.iter().any(|event| matches!(
         event,
         StreamEvent::ContentBlockDelta {
@@ -115,7 +118,9 @@ fn stream_emits_typed_deltas_and_usage_events() {
             ..
         }
     )));
-    assert!(events.iter().any(|event| matches!(event, StreamEvent::Usage { .. })));
+    assert!(events
+        .iter()
+        .any(|event| matches!(event, StreamEvent::Usage { .. })));
     assert!(events.iter().any(|event| matches!(
         event,
         StreamEvent::MessageStop { finish_reason } if finish_reason.0 == "tool_calls"

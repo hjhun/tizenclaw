@@ -1,3 +1,1 @@
-pub use tclaw_plugins::{
-    PluginLifecycleDefinition, PluginLifecyclePhase, PluginLifecycleState,
-};
+pub use tclaw_plugins::{PluginLifecycleDefinition, PluginLifecyclePhase, PluginLifecycleState};

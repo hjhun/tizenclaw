@@ -39,46 +39,25 @@ pub struct WorkerTaskBinding {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum WorkerFailureReason {
-    TrustDenied {
-        reason: String,
-    },
-    BootFailed {
-        reason: String,
-    },
-    TaskFailed {
-        task_id: String,
-        reason: String,
-    },
-    Stopped {
-        reason: String,
-    },
+    TrustDenied { reason: String },
+    BootFailed { reason: String },
+    TaskFailed { task_id: String, reason: String },
+    Stopped { reason: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum WorkerEventPayload {
     Registered,
     TrustCheckRequested,
-    TrustResolved {
-        resolution: TrustResolution,
-    },
+    TrustResolved { resolution: TrustResolution },
     BootStarted,
     Ready,
-    TaskAssigned {
-        binding: WorkerTaskBinding,
-    },
-    TaskReleased {
-        task_id: String,
-    },
-    Paused {
-        reason: String,
-    },
+    TaskAssigned { binding: WorkerTaskBinding },
+    TaskReleased { task_id: String },
+    Paused { reason: String },
     Resumed,
-    Stopped {
-        reason: String,
-    },
-    Failed {
-        reason: WorkerFailureReason,
-    },
+    Stopped { reason: String },
+    Failed { reason: WorkerFailureReason },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -203,7 +182,10 @@ impl WorkerRegistry {
         }
     }
 
-    pub fn request_trust_check(&self, worker_id: &str) -> Result<WorkerRecord, WorkerRegistryError> {
+    pub fn request_trust_check(
+        &self,
+        worker_id: &str,
+    ) -> Result<WorkerRecord, WorkerRegistryError> {
         self.transition(worker_id, WorkerBootState::TrustPending, |record| {
             record.last_failure = None;
             WorkerEventPayload::TrustCheckRequested
@@ -237,7 +219,9 @@ impl WorkerRegistry {
     }
 
     pub fn mark_boot_started(&self, worker_id: &str) -> Result<WorkerRecord, WorkerRegistryError> {
-        self.transition(worker_id, WorkerBootState::Booting, |_| WorkerEventPayload::BootStarted)
+        self.transition(worker_id, WorkerBootState::Booting, |_| {
+            WorkerEventPayload::BootStarted
+        })
     }
 
     pub fn mark_ready(&self, worker_id: &str) -> Result<WorkerRecord, WorkerRegistryError> {
@@ -288,7 +272,9 @@ impl WorkerRegistry {
     }
 
     pub fn resume(&self, worker_id: &str) -> Result<WorkerRecord, WorkerRegistryError> {
-        self.transition(worker_id, WorkerBootState::Ready, |_| WorkerEventPayload::Resumed)
+        self.transition(worker_id, WorkerBootState::Ready, |_| {
+            WorkerEventPayload::Resumed
+        })
     }
 
     pub fn fail(
@@ -329,11 +315,13 @@ impl WorkerRegistry {
         F: FnOnce(&mut WorkerRecord) -> WorkerEventPayload,
     {
         let mut state = self.inner.write().expect("worker registry write lock");
-        let record = state.workers.get_mut(worker_id).ok_or_else(|| {
-            WorkerRegistryError::UnknownWorker {
-                worker_id: worker_id.to_string(),
-            }
-        })?;
+        let record =
+            state
+                .workers
+                .get_mut(worker_id)
+                .ok_or_else(|| WorkerRegistryError::UnknownWorker {
+                    worker_id: worker_id.to_string(),
+                })?;
 
         if !is_valid_transition(&record.spec.state, &next_state) {
             return Err(WorkerRegistryError::InvalidTransition {
@@ -344,7 +332,12 @@ impl WorkerRegistry {
         }
 
         let payload = update(record);
-        let event = push_event(&mut state, worker_id.to_string(), next_state.clone(), payload);
+        let event = push_event(
+            &mut state,
+            worker_id.to_string(),
+            next_state.clone(),
+            payload,
+        );
         let record = state
             .workers
             .get_mut(worker_id)
@@ -450,7 +443,9 @@ mod tests {
     #[test]
     fn worker_registry_records_lifecycle_events_in_order() {
         let registry = WorkerRegistry::new();
-        registry.register(worker_spec("worker-1")).expect("register worker");
+        registry
+            .register(worker_spec("worker-1"))
+            .expect("register worker");
         registry
             .request_trust_check("worker-1")
             .expect("request trust check");
@@ -502,7 +497,9 @@ mod tests {
     #[test]
     fn worker_registry_tracks_trust_failures_explicitly() {
         let registry = WorkerRegistry::new();
-        registry.register(worker_spec("worker-2")).expect("register worker");
+        registry
+            .register(worker_spec("worker-2"))
+            .expect("register worker");
         registry
             .request_trust_check("worker-2")
             .expect("request trust check");
@@ -529,9 +526,13 @@ mod tests {
     #[test]
     fn worker_registry_rejects_invalid_transitions() {
         let registry = WorkerRegistry::new();
-        registry.register(worker_spec("worker-3")).expect("register worker");
+        registry
+            .register(worker_spec("worker-3"))
+            .expect("register worker");
 
-        let error = registry.mark_ready("worker-3").expect_err("ready should fail");
+        let error = registry
+            .mark_ready("worker-3")
+            .expect_err("ready should fail");
         assert_eq!(
             error,
             WorkerRegistryError::InvalidTransition {
@@ -545,7 +546,9 @@ mod tests {
     #[test]
     fn worker_registry_can_record_runtime_failures() {
         let registry = WorkerRegistry::new();
-        registry.register(worker_spec("worker-4")).expect("register worker");
+        registry
+            .register(worker_spec("worker-4"))
+            .expect("register worker");
         registry
             .mark_boot_started("worker-4")
             .expect("boot starts directly");

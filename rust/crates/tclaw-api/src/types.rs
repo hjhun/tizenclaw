@@ -37,10 +37,21 @@ pub enum MessageRole {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentBlock {
-    Text { text: String },
-    ToolCall { id: String, name: String, input: Value },
-    ToolResult { tool_call_id: String, output: Value },
-    Json { value: Value },
+    Text {
+        text: String,
+    },
+    ToolCall {
+        id: String,
+        name: String,
+        input: Value,
+    },
+    ToolResult {
+        tool_call_id: String,
+        output: Value,
+    },
+    Json {
+        value: Value,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -178,12 +189,26 @@ pub enum ContentDelta {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum StreamEvent {
-    MessageStart { metadata: ResponseMetadata },
-    ContentBlockStart { index: usize, block: ContentBlock },
-    ContentBlockDelta { index: usize, delta: ContentDelta },
-    ContentBlockStop { index: usize },
-    Usage { usage: Usage },
-    MessageStop { finish_reason: FinishReason },
+    MessageStart {
+        metadata: ResponseMetadata,
+    },
+    ContentBlockStart {
+        index: usize,
+        block: ContentBlock,
+    },
+    ContentBlockDelta {
+        index: usize,
+        delta: ContentDelta,
+    },
+    ContentBlockStop {
+        index: usize,
+    },
+    Usage {
+        usage: Usage,
+    },
+    MessageStop {
+        finish_reason: FinishReason,
+    },
     RawProviderEvent {
         provider: ProviderKind,
         #[serde(default, skip_serializing_if = "Option::is_none")]

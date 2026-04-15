@@ -14,8 +14,8 @@ use tclaw_commands::{
 use thiserror::Error;
 
 pub use hooks::{
-    execute_plugin_hooks, HookExecutionReport, HookExecutionResult, HookExecutionStatus,
-    HookPhase, HookSpec,
+    execute_plugin_hooks, HookExecutionReport, HookExecutionResult, HookExecutionStatus, HookPhase,
+    HookSpec,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -95,11 +95,8 @@ impl PluginPermission {
         {
             return Err(PluginManifestError::InvalidPermission {
                 plugin_name: context.to_string(),
-                message: format!(
-                    "{:?} permissions require an explicit reason",
-                    self.scope
-                )
-                .to_ascii_lowercase(),
+                message: format!("{:?} permissions require an explicit reason", self.scope)
+                    .to_ascii_lowercase(),
             });
         }
 
@@ -269,7 +266,8 @@ impl PluginManifest {
                 });
             }
 
-            tool.permissions.validate(&format!("{}::{}", self.name, tool.name))?;
+            tool.permissions
+                .validate(&format!("{}::{}", self.name, tool.name))?;
         }
 
         Ok(())
@@ -315,7 +313,10 @@ pub enum PluginManifestError {
         message: String,
     },
     #[error("invalid permission for plugin `{plugin_name}`: {message}")]
-    InvalidPermission { plugin_name: String, message: String },
+    InvalidPermission {
+        plugin_name: String,
+        message: String,
+    },
     #[error("invalid command for plugin `{plugin_name}`: {source}")]
     InvalidCommand {
         plugin_name: String,
@@ -356,20 +357,23 @@ pub fn parse_plugin_manifest(contents: &str) -> Result<PluginManifest, PluginMan
 }
 
 pub fn load_plugin_manifest(path: &Path) -> Result<PluginManifest, PluginManifestError> {
-    let contents = fs::read_to_string(path).map_err(|source| PluginManifestError::ReadManifest {
-        path: path.to_path_buf(),
-        source,
-    })?;
+    let contents =
+        fs::read_to_string(path).map_err(|source| PluginManifestError::ReadManifest {
+            path: path.to_path_buf(),
+            source,
+        })?;
     let manifest: PluginManifest =
         serde_json::from_str(&contents).map_err(|source| PluginManifestError::ParseManifest {
             path: path.to_path_buf(),
             source,
         })?;
     manifest.validate().map_err(|err| match err {
-        PluginManifestError::InvalidManifest { message, .. } => PluginManifestError::InvalidManifest {
-            path: Some(path.to_path_buf()),
-            message,
-        },
+        PluginManifestError::InvalidManifest { message, .. } => {
+            PluginManifestError::InvalidManifest {
+                path: Some(path.to_path_buf()),
+                message,
+            }
+        }
         other => other,
     })?;
     Ok(manifest)

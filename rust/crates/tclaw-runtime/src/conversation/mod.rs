@@ -11,17 +11,13 @@ pub use engine::{
     ConversationEngine, ConversationEngineOptions, ConversationRuntimeError, ModelError,
     ModelTransport, PermissionResolver,
 };
-pub use events::{
-    AssistantEvent, ConversationEvent, ConversationTurnResult, ModelResponseEvent,
-};
+pub use events::{AssistantEvent, ConversationEvent, ConversationTurnResult, ModelResponseEvent};
 pub use hooks::{HookContext, HookOutcome, HookRunner, HookRuntimeError};
 pub use tool_exec::{
     ToolCallRequest, ToolDefinition, ToolExecutionOutput, ToolExecutor, ToolFailure,
     ToolRuntimeError,
 };
-pub use turn::{
-    ConversationLog, ConversationTurn, MessageRole, TurnSummary, TurnUsageReport,
-};
+pub use turn::{ConversationLog, ConversationTurn, MessageRole, TurnSummary, TurnUsageReport};
 
 #[cfg(test)]
 mod tests;

@@ -52,7 +52,10 @@ pub enum McpTransportError {
     #[error("transport I/O failed: {message}")]
     Io { message: String },
     #[error("transport timed out waiting for response to {request_id:?} after {timeout_ms}ms")]
-    Timeout { request_id: JsonRpcId, timeout_ms: u64 },
+    Timeout {
+        request_id: JsonRpcId,
+        timeout_ms: u64,
+    },
     #[error("transport protocol error: {message}")]
     Protocol { message: String },
     #[error("transport process exited: {message}")]
@@ -133,14 +136,20 @@ impl StdioMcpTransport {
             server: spec.server_name.clone(),
             message: "child stdin unavailable".to_string(),
         })?;
-        let stdout = child.stdout.take().ok_or_else(|| McpTransportError::Spawn {
-            server: spec.server_name.clone(),
-            message: "child stdout unavailable".to_string(),
-        })?;
-        let stderr = child.stderr.take().ok_or_else(|| McpTransportError::Spawn {
-            server: spec.server_name.clone(),
-            message: "child stderr unavailable".to_string(),
-        })?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| McpTransportError::Spawn {
+                server: spec.server_name.clone(),
+                message: "child stdout unavailable".to_string(),
+            })?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| McpTransportError::Spawn {
+                server: spec.server_name.clone(),
+                message: "child stderr unavailable".to_string(),
+            })?;
 
         let (sender, receiver) = mpsc::channel();
         let stdout_join = thread::spawn(move || {
@@ -244,7 +253,8 @@ impl StdioMcpTransport {
                     if &response.id == request_id {
                         return Ok(response);
                     }
-                    self.buffered_responses.insert(response.id.clone(), response);
+                    self.buffered_responses
+                        .insert(response.id.clone(), response);
                 }
                 Ok(TransportEvent::ReaderError(message)) => {
                     return Err(McpTransportError::Protocol { message });
@@ -276,7 +286,10 @@ impl StdioMcpTransport {
                 if stderr.is_empty() {
                     format!("{} exited with {}", self.spec.server_name, status)
                 } else {
-                    format!("{} exited with {} ({})", self.spec.server_name, status, stderr)
+                    format!(
+                        "{} exited with {} ({})",
+                        self.spec.server_name, status, stderr
+                    )
                 }
             }
             Ok(None) => format!("{} closed its stdio pipe", self.spec.server_name),

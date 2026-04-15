@@ -254,16 +254,20 @@ fn normalized_disabled_skills(raw: &[String]) -> Vec<String> {
 
 fn collect_skill_roots(paths: &PlatformPaths, registrations: &RegisteredPaths) -> Vec<SkillRoot> {
     let mut roots = Vec::new();
-    roots.push(SkillRoot {
-        path: paths.skills_dir.to_string_lossy().to_string(),
-        kind: "user".to_string(),
-        external: false,
-    });
-    roots.push(SkillRoot {
-        path: paths.skill_hubs_dir.to_string_lossy().to_string(),
-        kind: "system".to_string(),
-        external: false,
-    });
+    for root in paths.skill_root_dirs() {
+        roots.push(SkillRoot {
+            path: root.to_string_lossy().to_string(),
+            kind: "user".to_string(),
+            external: false,
+        });
+    }
+    for root in paths.skill_hub_root_dirs() {
+        roots.push(SkillRoot {
+            path: root.to_string_lossy().to_string(),
+            kind: "system".to_string(),
+            external: false,
+        });
+    }
     for root in paths.discover_skill_hub_roots() {
         roots.push(SkillRoot {
             path: root.to_string_lossy().to_string(),

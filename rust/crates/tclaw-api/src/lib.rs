@@ -15,9 +15,9 @@ pub use prompt_cache::{PromptCacheConfig, PromptCacheMode, PromptCacheUsage};
 pub use providers::{AnthropicClient, OpenAiCompatClient, ProviderConfig};
 pub use sse::{SseEvent, SseParser};
 pub use types::{
-    ChatMessage, ChatRequest, ChatResponse, ContentBlock, ContentDelta, FinishReason,
-    MessageRole, ProviderKind, ResponseFormat, ResponseMetadata, StreamEvent, SurfaceDescriptor,
-    ToolCallDelta, ToolDefinition, Usage,
+    ChatMessage, ChatRequest, ChatResponse, ContentBlock, ContentDelta, FinishReason, MessageRole,
+    ProviderKind, ResponseFormat, ResponseMetadata, StreamEvent, SurfaceDescriptor, ToolCallDelta,
+    ToolDefinition, Usage,
 };
 
 pub fn canonical_surfaces() -> Vec<SurfaceDescriptor> {

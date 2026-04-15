@@ -10,8 +10,8 @@ use crate::prompt_cache::{PromptCacheMode, PromptCacheUsage};
 use crate::providers::ProviderConfig;
 use crate::sse::SseParser;
 use crate::types::{
-    ChatMessage, ChatRequest, ChatResponse, ContentBlock, ContentDelta, FinishReason,
-    MessageRole, ProviderKind, ResponseMetadata, StreamEvent, Usage,
+    ChatMessage, ChatRequest, ChatResponse, ContentBlock, ContentDelta, FinishReason, MessageRole,
+    ProviderKind, ResponseMetadata, StreamEvent, Usage,
 };
 
 #[derive(Clone)]
@@ -73,7 +73,12 @@ impl AnthropicClient {
 
         let mut http_request =
             HttpRequest::json(HttpMethod::Post, self.endpoint(), body).map_err(ApiError::Http)?;
-        add_headers(&mut http_request, &self.config, "anthropic-version", "2023-06-01");
+        add_headers(
+            &mut http_request,
+            &self.config,
+            "anthropic-version",
+            "2023-06-01",
+        );
         Ok(http_request)
     }
 
@@ -97,7 +102,9 @@ impl AnthropicClient {
                 .into_iter()
                 .filter_map(anthropic_block_to_content)
                 .collect(),
-            finish_reason: FinishReason::new(body.stop_reason.unwrap_or_else(|| "stop".to_string())),
+            finish_reason: FinishReason::new(
+                body.stop_reason.unwrap_or_else(|| "stop".to_string()),
+            ),
             usage: body.usage.map(anthropic_usage_to_usage),
             stop_sequence: body.stop_sequence,
             raw: None,
@@ -134,25 +141,24 @@ impl ProviderClient for AnthropicClient {
                 continue;
             }
 
-            let payload: Value = serde_json::from_str(&event.data).map_err(|source| ApiError::Decode {
-                source,
-                body: event.data.clone(),
-            })?;
+            let payload: Value =
+                serde_json::from_str(&event.data).map_err(|source| ApiError::Decode {
+                    source,
+                    body: event.data.clone(),
+                })?;
 
             match payload.get("type").and_then(Value::as_str) {
                 Some("message_start") => {
-                    let message = payload
-                        .get("message")
-                        .cloned()
-                        .ok_or_else(|| ApiError::InvalidResponse {
+                    let message = payload.get("message").cloned().ok_or_else(|| {
+                        ApiError::InvalidResponse {
                             message: "missing message_start.message".to_string(),
-                        })?;
-                    let response: AnthropicMessageStart = serde_json::from_value(message).map_err(|source| {
-                        ApiError::Decode {
-                            source,
-                            body: payload.to_string(),
                         }
                     })?;
+                    let response: AnthropicMessageStart =
+                        serde_json::from_value(message).map_err(|source| ApiError::Decode {
+                            source,
+                            body: payload.to_string(),
+                        })?;
                     events_out.push(Ok(StreamEvent::MessageStart {
                         metadata: ResponseMetadata {
                             provider: ProviderKind::Anthropic,
@@ -163,20 +169,21 @@ impl ProviderClient for AnthropicClient {
                 }
                 Some("content_block_start") => {
                     let index = payload.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
-                    let block = payload
-                        .get("content_block")
-                        .cloned()
-                        .ok_or_else(|| ApiError::InvalidResponse {
+                    let block = payload.get("content_block").cloned().ok_or_else(|| {
+                        ApiError::InvalidResponse {
                             message: "missing content_block_start.content_block".to_string(),
-                        })?;
-                    let content: AnthropicContentBlock = serde_json::from_value(block).map_err(|source| {
-                        ApiError::Decode {
-                            source,
-                            body: payload.to_string(),
                         }
                     })?;
+                    let content: AnthropicContentBlock =
+                        serde_json::from_value(block).map_err(|source| ApiError::Decode {
+                            source,
+                            body: payload.to_string(),
+                        })?;
                     if let Some(mapped) = anthropic_block_to_content(content) {
-                        events_out.push(Ok(StreamEvent::ContentBlockStart { index, block: mapped }));
+                        events_out.push(Ok(StreamEvent::ContentBlockStart {
+                            index,
+                            block: mapped,
+                        }));
                     }
                 }
                 Some("content_block_delta") => {
@@ -202,8 +209,9 @@ impl ProviderClient for AnthropicClient {
                             }
                         }
                         "input_json_delta" => {
-                            if let Some(partial_json) =
-                                payload.get("delta").and_then(|delta| delta.get("partial_json"))
+                            if let Some(partial_json) = payload
+                                .get("delta")
+                                .and_then(|delta| delta.get("partial_json"))
                             {
                                 events_out.push(Ok(StreamEvent::ContentBlockDelta {
                                     index,
@@ -227,20 +235,23 @@ impl ProviderClient for AnthropicClient {
                     events_out.push(Ok(StreamEvent::ContentBlockStop { index }));
                 }
                 Some("message_delta") => {
-                    if let Some(stop_reason) =
-                        payload.get("delta").and_then(|delta| delta.get("stop_reason")).and_then(Value::as_str)
+                    if let Some(stop_reason) = payload
+                        .get("delta")
+                        .and_then(|delta| delta.get("stop_reason"))
+                        .and_then(Value::as_str)
                     {
                         events_out.push(Ok(StreamEvent::MessageStop {
                             finish_reason: FinishReason::new(stop_reason),
                         }));
                     }
                     if let Some(usage) = payload.get("usage") {
-                        let usage: AnthropicUsage = serde_json::from_value(usage.clone()).map_err(|source| {
-                            ApiError::Decode {
-                                source,
-                                body: payload.to_string(),
-                            }
-                        })?;
+                        let usage: AnthropicUsage =
+                            serde_json::from_value(usage.clone()).map_err(|source| {
+                                ApiError::Decode {
+                                    source,
+                                    body: payload.to_string(),
+                                }
+                            })?;
                         events_out.push(Ok(StreamEvent::Usage {
                             usage: anthropic_usage_to_usage(usage),
                         }));
@@ -265,10 +276,18 @@ impl ProviderClient for AnthropicClient {
     }
 }
 
-fn add_headers(request: &mut HttpRequest, config: &ProviderConfig, header_name: &str, header_value: &str) {
-    request
-        .headers
-        .extend(config.default_headers.iter().map(|(k, v)| (k.clone(), v.clone())));
+fn add_headers(
+    request: &mut HttpRequest,
+    config: &ProviderConfig,
+    header_name: &str,
+    header_value: &str,
+) {
+    request.headers.extend(
+        config
+            .default_headers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone())),
+    );
     request
         .headers
         .insert(header_name.to_string(), header_value.to_string());
@@ -297,7 +316,10 @@ fn content_to_anthropic(block: &ContentBlock) -> Value {
         ContentBlock::ToolCall { id, name, input } => {
             json!({ "type": "tool_use", "id": id, "name": name, "input": input })
         }
-        ContentBlock::ToolResult { tool_call_id, output } => {
+        ContentBlock::ToolResult {
+            tool_call_id,
+            output,
+        } => {
             json!({ "type": "tool_result", "tool_use_id": tool_call_id, "content": output })
         }
         ContentBlock::Json { value } => json!({ "type": "json", "value": value }),

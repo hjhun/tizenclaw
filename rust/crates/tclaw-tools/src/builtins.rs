@@ -450,7 +450,10 @@ fn required_string(call: &ToolCallRequest, field: &str) -> Result<String, ToolRu
         })
 }
 
-fn optional_string(call: &ToolCallRequest, field: &str) -> Result<Option<String>, ToolRuntimeError> {
+fn optional_string(
+    call: &ToolCallRequest,
+    field: &str,
+) -> Result<Option<String>, ToolRuntimeError> {
     match call.input.get(field) {
         None => Ok(None),
         Some(Value::String(value)) => Ok(Some(value.clone())),

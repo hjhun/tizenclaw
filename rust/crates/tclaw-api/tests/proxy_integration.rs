@@ -49,7 +49,10 @@ fn provider_config_headers_and_auth_are_forwarded_to_the_http_layer() {
 
     let request = http.take_requests().pop().expect("request");
     assert_eq!(request.method, HttpMethod::Post);
-    assert_eq!(request.url, "https://proxy.invalid/base/v1/chat/completions");
+    assert_eq!(
+        request.url,
+        "https://proxy.invalid/base/v1/chat/completions"
+    );
     assert_eq!(
         request.headers.get("authorization").map(String::as_str),
         Some("Bearer secret-token")

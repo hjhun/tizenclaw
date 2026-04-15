@@ -59,7 +59,8 @@ impl McpToolBridge {
     }
 
     pub fn register_server(&mut self, server: ManagedMcpServer) {
-        self.servers.insert(server.server_name().to_string(), server);
+        self.servers
+            .insert(server.server_name().to_string(), server);
         self.rebuild_index();
     }
 
@@ -216,9 +217,11 @@ mod tests {
             _request: &JsonRpcRequest,
             _timeout: Duration,
         ) -> Result<JsonRpcResponse, McpTransportError> {
-            self.responses.pop_front().ok_or(McpTransportError::ProcessExited {
-                message: "script exhausted".to_string(),
-            })
+            self.responses
+                .pop_front()
+                .ok_or(McpTransportError::ProcessExited {
+                    message: "script exhausted".to_string(),
+                })
         }
 
         fn send_notification(

@@ -2,11 +2,23 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SessionControlCommand {
-    Resume { session_id: String },
-    Pause { session_id: String },
-    Stop { session_id: String },
-    AttachWorker { session_id: String, worker_id: String },
-    DetachWorker { session_id: String, worker_id: String },
+    Resume {
+        session_id: String,
+    },
+    Pause {
+        session_id: String,
+    },
+    Stop {
+        session_id: String,
+    },
+    AttachWorker {
+        session_id: String,
+        worker_id: String,
+    },
+    DetachWorker {
+        session_id: String,
+        worker_id: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -1,20 +1,6 @@
-# Committer Log — 20260415_tizenclaw_dir
+# Committer — 20260415_tizenclaw_dir
 
-## Scope
-
-Create the scope-limited follow-up commit for the runtime-layout rerun closure
-work recorded on 2026-04-15.
-
-## Active Files
-
-- `.dev/DASHBOARD.md`
-- `.dev/PLAN.md`
-- `.dev/WORKFLOWS.md`
-- `.dev/06-committer/20260415_20260415_tizenclaw_dir.md`
-- `deploy.sh`
-- `packaging/tizenclaw.spec`
-
-## Commit Message
+Created commit `46295abe` with message:
 
 ```text
 Close runtime-layout rerun validation gaps
@@ -23,16 +9,12 @@ Record the final emulator rerun evidence and tighten deploy.sh review
 validation for packaged ownership and install verification.
 ```
 
-## Procedure
+I staged only the active scope files for `20260415_tizenclaw_dir`:
+`.dev/DASHBOARD.md`, `.dev/PLAN.md`, `.dev/WORKFLOWS.md`,
+`.dev/06-committer/20260415_20260415_tizenclaw_dir.md`,
+[20260415_committer_20260415_tizenclaw_dir.md](/home/hjhun/samba/github/tizenclaw/.dev/logs/20260415_committer_20260415_tizenclaw_dir.md:1),
+`deploy.sh`, and `packaging/tizenclaw.spec`.
 
-1. Read the current `.dev` control files and confirm the pipeline state.
-2. Inspect the dirty worktree and isolate the runtime-layout rerun slice.
-3. Stage only the intended files for this scope.
-4. Create the commit with `git commit -F .tmp/commit_msg.txt`.
-5. Verify the resulting commit with `git show --format=fuller --no-patch HEAD`.
-
-## Notes
-
-- The worktree contains many unrelated modifications that must remain
-  uncommitted.
-- This log is the requested committer artifact for the current scope.
+Verification: `git show --format=fuller --no-patch HEAD` confirms `HEAD` is
+`46295abebc70fb43228d4a22d89f93e7d06043f5`. The worktree is still dirty outside
+this scope, and `.tmp/commit_msg.txt` remains unstaged.

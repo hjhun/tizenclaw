@@ -1,8 +1,12 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{session::ConversationMessage, session::SessionCompactionMetadata, usage::UsageSnapshot};
+use crate::{
+    session::ConversationMessage, session::SessionCompactionMetadata, usage::UsageSnapshot,
+};
 
-use super::{ApiRequest, HookOutcome, ToolCallRequest, ToolExecutionOutput, ToolFailure, TurnSummary};
+use super::{
+    ApiRequest, HookOutcome, ToolCallRequest, ToolExecutionOutput, ToolFailure, TurnSummary,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]

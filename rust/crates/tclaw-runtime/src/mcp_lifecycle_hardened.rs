@@ -119,9 +119,12 @@ impl ManagedMcpServer {
     }
 
     pub fn refresh_catalog(&mut self) -> Result<(), McpClientError> {
-        let client = self.client.as_mut().ok_or_else(|| McpClientError::Protocol {
-            message: "client unavailable".to_string(),
-        })?;
+        let client = self
+            .client
+            .as_mut()
+            .ok_or_else(|| McpClientError::Protocol {
+                message: "client unavailable".to_string(),
+            })?;
 
         let tools = client.list_tools(self.policy.request_timeout_ms)?;
         let resources = match client.list_resources(self.policy.request_timeout_ms) {
@@ -176,10 +179,11 @@ impl ManagedMcpServer {
         arguments: Value,
     ) -> Result<McpToolCallResult, McpClientError> {
         self.ensure_available()?;
-        self.client
-            .as_mut()
-            .expect("available client")
-            .call_tool(tool_name, arguments, self.policy.request_timeout_ms)
+        self.client.as_mut().expect("available client").call_tool(
+            tool_name,
+            arguments,
+            self.policy.request_timeout_ms,
+        )
     }
 
     pub fn read_resource(&mut self, uri: &str) -> Result<McpReadResourceResult, McpClientError> {

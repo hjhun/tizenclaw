@@ -15,6 +15,7 @@ use serde_json::{json, Value};
 
 const DEFAULT_SOCKET_NAME: &str = "tizenclaw.sock";
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
+const DEFAULT_PROMPT_TIMEOUT_MS: u64 = 600_000;
 const MAX_IPC_MESSAGE_SIZE: usize = 10 * 1024 * 1024;
 const IPC_RETRY_SLEEP_MS: u64 = 25;
 
@@ -402,13 +403,14 @@ impl TizenClaw {
         stream: bool,
         on_chunk: Option<&mut dyn FnMut(&str)>,
     ) -> Result<PromptResponse, String> {
-        let envelope = self.send_jsonrpc(
+        let envelope = self.send_jsonrpc_with_timeout(
             "prompt",
             json!({
                 "session_id": session_id,
                 "text": prompt,
                 "stream": bool_to_json(stream)
             }),
+            Duration::from_millis(DEFAULT_PROMPT_TIMEOUT_MS.max(self.timeout_ms)),
             on_chunk,
         )?;
         let result = Self::extract_result(&envelope.payload)?;
@@ -505,8 +507,22 @@ impl TizenClaw {
         params: Value,
         mut on_chunk: Option<&mut dyn FnMut(&str)>,
     ) -> Result<RpcEnvelope, String> {
+        self.send_jsonrpc_with_timeout(
+            method,
+            params,
+            Duration::from_millis(self.timeout_ms),
+            on_chunk,
+        )
+    }
+
+    fn send_jsonrpc_with_timeout(
+        &self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+        mut on_chunk: Option<&mut dyn FnMut(&str)>,
+    ) -> Result<RpcEnvelope, String> {
         let mut stream = Self::connect_socket(&Self::resolved_socket_name(self.socket_path.as_deref()))?;
-        let timeout = Duration::from_millis(self.timeout_ms);
         stream
             .set_read_timeout(Some(timeout))
             .map_err(|e| format!("Failed to set IPC read timeout: {}", e))?;

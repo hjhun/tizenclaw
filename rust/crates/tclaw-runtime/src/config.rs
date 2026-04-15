@@ -1,11 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    mcp_lifecycle_hardened::McpLifecyclePolicy,
-    mcp_stdio::McpStdioServerSpec,
-    permissions::PermissionMode,
-    policy_engine::PolicyEngineState,
-    sandbox::SandboxPolicy,
+    mcp_lifecycle_hardened::McpLifecyclePolicy, mcp_stdio::McpStdioServerSpec,
+    permissions::PermissionMode, policy_engine::PolicyEngineState, sandbox::SandboxPolicy,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

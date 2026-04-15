@@ -20,7 +20,11 @@ pub struct HttpRequest {
 }
 
 impl HttpRequest {
-    pub fn json(method: HttpMethod, url: impl Into<String>, body: Value) -> Result<Self, HttpClientError> {
+    pub fn json(
+        method: HttpMethod,
+        url: impl Into<String>,
+        body: Value,
+    ) -> Result<Self, HttpClientError> {
         let mut headers = BTreeMap::new();
         headers.insert("content-type".to_string(), "application/json".to_string());
         Ok(Self {

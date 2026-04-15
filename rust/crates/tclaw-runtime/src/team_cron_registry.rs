@@ -24,7 +24,8 @@ pub struct TeamCronRegistry {
 impl TeamCronRegistry {
     pub fn register(&mut self, entry: TeamCronEntry) {
         self.entries.push(entry);
-        self.entries.sort_by(|left, right| left.entry_id.cmp(&right.entry_id));
+        self.entries
+            .sort_by(|left, right| left.entry_id.cmp(&right.entry_id));
     }
 
     pub fn enabled_entries(&self) -> Vec<TeamCronEntry> {
@@ -58,11 +59,11 @@ impl TeamCronRegistry {
         entry_id: &str,
         task_registry: &TaskRegistry,
     ) -> Result<TaskPacket, TaskRegistryError> {
-        let packet = self
-            .emit_task_packet(entry_id)
-            .ok_or_else(|| TaskRegistryError::UnknownTask {
-                task_id: entry_id.to_string(),
-            })?;
+        let packet =
+            self.emit_task_packet(entry_id)
+                .ok_or_else(|| TaskRegistryError::UnknownTask {
+                    task_id: entry_id.to_string(),
+                })?;
         task_registry.register(packet)
     }
 }
@@ -100,8 +101,14 @@ mod tests {
             .emit_task_packet("entry-a")
             .expect("emit enabled task");
         assert_eq!(packet.task_id, "cron:entry-a");
-        assert_eq!(packet.assignment.as_ref().map(|a| a.lane_id.as_str()), Some("maintenance"));
-        assert_eq!(packet.labels, vec!["cron".to_string(), "metadata".to_string()]);
+        assert_eq!(
+            packet.assignment.as_ref().map(|a| a.lane_id.as_str()),
+            Some("maintenance")
+        );
+        assert_eq!(
+            packet.labels,
+            vec!["cron".to_string(), "metadata".to_string()]
+        );
     }
 
     #[test]

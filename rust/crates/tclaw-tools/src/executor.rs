@@ -51,7 +51,12 @@ impl<C, P> PermissionAwareToolExecutor<C, P>
 where
     P: PermissionResolver,
 {
-    pub fn new(registry: ToolRegistry<C>, context: C, config: RuntimeConfig, permissions: P) -> Self {
+    pub fn new(
+        registry: ToolRegistry<C>,
+        context: C,
+        config: RuntimeConfig,
+        permissions: P,
+    ) -> Self {
         Self {
             registry,
             context,
@@ -101,14 +106,14 @@ where
     }
 
     fn execute(&mut self, call: &ToolCallRequest) -> Result<ToolExecutionOutput, ToolRuntimeError> {
-        let manifest = self
-            .registry
-            .get(&call.name)
-            .cloned()
-            .ok_or_else(|| ToolRuntimeError::Execution {
-                tool_name: call.name.clone(),
-                message: "tool is not registered".to_string(),
-            })?;
+        let manifest =
+            self.registry
+                .get(&call.name)
+                .cloned()
+                .ok_or_else(|| ToolRuntimeError::Execution {
+                    tool_name: call.name.clone(),
+                    message: "tool is not registered".to_string(),
+                })?;
 
         let decision = self
             .permissions

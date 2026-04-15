@@ -8,7 +8,9 @@ fn run_cli(args: &[&str]) -> rusty_claude_cli::init::CliOutcome {
     let mut input = Cursor::new(Vec::<u8>::new());
     let mut output = Vec::new();
     run_with_stdio(
-        args.iter().map(|arg| (*arg).to_string()).collect::<Vec<_>>(),
+        args.iter()
+            .map(|arg| (*arg).to_string())
+            .collect::<Vec<_>>(),
         &mut input,
         true,
         &mut output,

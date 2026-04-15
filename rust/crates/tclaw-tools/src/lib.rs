@@ -10,7 +10,9 @@ use tclaw_api::SurfaceDescriptor;
 use tclaw_plugins::{
     PluginPermission, PluginPermissionLevel, PluginPermissionScope, PluginToolManifest,
 };
-use tclaw_runtime::{McpToolBridge, PermissionLevel, PermissionScope, ToolCallRequest, ToolRuntimeError};
+use tclaw_runtime::{
+    McpToolBridge, PermissionLevel, PermissionScope, ToolCallRequest, ToolRuntimeError,
+};
 
 pub use builtins::{
     built_in_tool_registry, FetchToolBackend, FileToolBackend, GlobalToolContext,
@@ -67,16 +69,18 @@ pub fn plugin_tool_registration(
     )
     .with_aliases(manifest.aliases)
     .with_permissions(permissions)
-    .with_tags(manifest.tags.into_iter().chain(std::iter::once(plugin_name.clone())));
+    .with_tags(
+        manifest
+            .tags
+            .into_iter()
+            .chain(std::iter::once(plugin_name.clone())),
+    );
 
     for (key, value) in manifest.metadata {
         entry = entry.with_metadata(key, value);
     }
 
-    ToolRegistration::new(
-        entry,
-        handler,
-    )
+    ToolRegistration::new(entry, handler)
 }
 
 fn tool_permission_spec_from_plugin_permission(
@@ -97,8 +101,18 @@ fn tool_permission_spec_from_plugin_permission(
             PluginPermissionLevel::Sensitive => PermissionLevel::Sensitive,
         },
     )
-    .with_target(permission.target.clone().unwrap_or_else(|| fallback_target.to_string()))
-    .with_reason(permission.reason.clone().unwrap_or_else(|| fallback_reason.to_string()))
+    .with_target(
+        permission
+            .target
+            .clone()
+            .unwrap_or_else(|| fallback_target.to_string()),
+    )
+    .with_reason(
+        permission
+            .reason
+            .clone()
+            .unwrap_or_else(|| fallback_reason.to_string()),
+    )
 }
 
 pub fn plugin_manifest_entries(plugin_name: impl Into<String>) -> Vec<ToolManifestEntry> {
@@ -122,7 +136,12 @@ pub fn plugin_manifest_entries(plugin_name: impl Into<String>) -> Vec<ToolManife
                 &fallback_target,
                 &fallback_reason,
             ))
-            .with_tags(manifest.tags.into_iter().chain(std::iter::once(plugin_name.clone())));
+            .with_tags(
+                manifest
+                    .tags
+                    .into_iter()
+                    .chain(std::iter::once(plugin_name.clone())),
+            );
 
             for (key, value) in manifest.metadata {
                 entry = entry.with_metadata(key, value);
@@ -203,15 +222,15 @@ mod tests {
 
     use serde_json::json;
     use tclaw_runtime::{
-        config::RuntimeConfig, mcp::JsonRpcNotification, mcp::JsonRpcRequest,
-        mcp::JsonRpcResponse, mcp::McpContentBlock, mcp::McpInitializeResult,
-        mcp::McpListResourcesResult, mcp::McpListToolsResult, mcp::McpPeerCapabilities,
-        mcp::McpServerInfo, mcp::McpToolCallResult, mcp::McpToolDefinition,
-        mcp_client::McpClient, mcp_client::McpClientSpec,
-        mcp_lifecycle_hardened::ManagedMcpServer, mcp_lifecycle_hardened::McpLifecyclePolicy,
-        mcp_stdio::McpStdioServerSpec, mcp_stdio::McpTransport, mcp_stdio::McpTransportError,
-        PermissionEnforcer, PermissionMode, RecordingPrompter, RuntimeProfile, ToolExecutionOutput,
-        ToolExecutor, WorkerBootSpec, WorkerBootState, WorkerIdentity, WorkerKind,
+        config::RuntimeConfig, mcp::JsonRpcNotification, mcp::JsonRpcRequest, mcp::JsonRpcResponse,
+        mcp::McpContentBlock, mcp::McpInitializeResult, mcp::McpListResourcesResult,
+        mcp::McpListToolsResult, mcp::McpPeerCapabilities, mcp::McpServerInfo,
+        mcp::McpToolCallResult, mcp::McpToolDefinition, mcp_client::McpClient,
+        mcp_client::McpClientSpec, mcp_lifecycle_hardened::ManagedMcpServer,
+        mcp_lifecycle_hardened::McpLifecyclePolicy, mcp_stdio::McpStdioServerSpec,
+        mcp_stdio::McpTransport, mcp_stdio::McpTransportError, PermissionEnforcer, PermissionMode,
+        RecordingPrompter, RuntimeProfile, ToolExecutionOutput, ToolExecutor, WorkerBootSpec,
+        WorkerBootState, WorkerIdentity, WorkerKind,
     };
 
     use super::*;
@@ -226,9 +245,11 @@ mod tests {
             _request: &JsonRpcRequest,
             _timeout: Duration,
         ) -> Result<JsonRpcResponse, McpTransportError> {
-            self.responses.pop_front().ok_or(McpTransportError::ProcessExited {
-                message: "script exhausted".to_string(),
-            })
+            self.responses
+                .pop_front()
+                .ok_or(McpTransportError::ProcessExited {
+                    message: "script exhausted".to_string(),
+                })
         }
 
         fn send_notification(
@@ -256,7 +277,7 @@ mod tests {
             "src/lib.rs",
             "pub fn registry() {}\n// registry helper\npub fn tool() {}\n",
         )
-            .expect("seed file");
+        .expect("seed file");
 
         GlobalToolContext {
             file_backend: Box::new(files),
@@ -418,14 +439,12 @@ mod tests {
     #[test]
     fn permission_wrapper_allows_fetch_tool_and_records_decision() {
         let registry = built_in_tool_registry().expect("registry");
-        let permissions = PermissionEnforcer::with_prompter(
-            RecordingPrompter::with_decisions(vec![tclaw_runtime::PermissionPromptDecision::AllowOnce]),
-        );
-        let mut executor = registry.into_permissioned_executor(
-            test_context(),
-            allow_all_config(),
-            permissions,
-        );
+        let permissions =
+            PermissionEnforcer::with_prompter(RecordingPrompter::with_decisions(vec![
+                tclaw_runtime::PermissionPromptDecision::AllowOnce,
+            ]));
+        let mut executor =
+            registry.into_permissioned_executor(test_context(), allow_all_config(), permissions);
 
         let result = executor
             .execute(&ToolCallRequest {
@@ -436,13 +455,15 @@ mod tests {
             .expect("fetch tool");
 
         assert_eq!(result.output["document"]["tools"][1], "b");
-        assert!(executor
-            .permissions()
-            .state()
-            .last_decision
-            .as_ref()
-            .expect("decision")
-            .allowed);
+        assert!(
+            executor
+                .permissions()
+                .state()
+                .last_decision
+                .as_ref()
+                .expect("decision")
+                .allowed
+        );
     }
 
     #[test]
@@ -551,9 +572,7 @@ mod tests {
         assert!(manifests.iter().any(|tool| tool.name == "fs.read_text"));
         assert!(manifests.iter().any(|tool| tool.name == "runtime.echo"));
         assert!(manifests.iter().any(|tool| tool.name == "metadata.sync"));
-        assert!(manifests
-            .iter()
-            .any(|tool| tool.name == "mcp__fake__echo"));
+        assert!(manifests.iter().any(|tool| tool.name == "mcp__fake__echo"));
 
         let search = registry.search("metadata");
         assert!(search.iter().any(|tool| tool.name == "metadata.sync"));

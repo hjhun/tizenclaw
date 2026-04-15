@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import shutil
 import statistics
 import subprocess
@@ -20,6 +21,8 @@ DEFAULT_PINCHBENCH_SKILL_ROOT = Path("/home/hjhun/samba/github/pinchbench/skill"
 DEFAULT_SCRATCH_ROOT = REPO_ROOT / ".tmp" / "pinchbench_oauth"
 DEFAULT_RESULTS_DIR = DEFAULT_SCRATCH_ROOT / "results"
 TARGET_PASS_RATE = 95.0
+TRANSIENT_RETRY_LIMIT = 3
+TRANSIENT_RETRY_DELAY_SECONDS = 2.0
 
 
 def parse_args() -> argparse.Namespace:
@@ -132,6 +135,260 @@ def cleanup_benchmark_artifacts(
     }
 
 
+def transcript_blob(transcript: list[dict[str, Any]]) -> str:
+    try:
+        return json.dumps(transcript, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return ""
+
+
+def empty_usage() -> dict[str, Any]:
+    return {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "total_tokens": 0,
+        "cost_usd": 0.0,
+        "request_count": 0,
+    }
+
+
+def add_usage(total: dict[str, Any], delta: dict[str, Any] | None) -> dict[str, Any]:
+    if delta is None:
+        return total
+
+    for key in ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"):
+        total[key] += int(delta.get(key, 0) or 0)
+
+    total["total_tokens"] += int(delta.get("total_tokens", 0) or 0)
+    total["cost_usd"] += float(delta.get("cost_usd", 0.0) or 0.0)
+    total["request_count"] += int(delta.get("request_count", 0) or 0)
+    return total
+
+
+def read_usage_delta(
+    lib_agent: Any,
+    session_id: str,
+    baseline: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if baseline is None:
+        return {
+            "usage": empty_usage(),
+            "accounting_complete": False,
+            "warnings": ["usage_baseline_missing"],
+        }
+    try:
+        return {
+            "usage": lib_agent._read_tizenclaw_usage(session_id, baseline),
+            "accounting_complete": True,
+            "warnings": [],
+        }
+    except (FileNotFoundError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
+        return {
+            "usage": empty_usage(),
+            "accounting_complete": False,
+            "warnings": [f"usage_read_failed:{type(exc).__name__}"],
+        }
+
+
+def usage_has_data(usage: dict[str, Any] | None) -> bool:
+    if not usage:
+        return False
+    return any(
+        float(usage.get(key, 0) or 0) > 0
+        for key in (
+            "input_tokens",
+            "output_tokens",
+            "cache_read_tokens",
+            "cache_write_tokens",
+            "total_tokens",
+            "cost_usd",
+            "request_count",
+        )
+    )
+
+
+def excerpt_text(value: Any, *, limit: int = 400) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3] + "..."
+
+
+def build_attempt_record(
+    *,
+    attempt_kind: str,
+    attempt_index: int,
+    transient_failure: bool,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "attempt_kind": attempt_kind,
+        "attempt_index": attempt_index,
+        "status": result.get("status", "error"),
+        "transient_failure": transient_failure,
+        "usage": dict(result.get("usage") or empty_usage()),
+        "workspace": result.get("workspace", ""),
+        "exit_code": result.get("exit_code"),
+        "timed_out": bool(result.get("timed_out", False)),
+        "execution_time": round(float(result.get("execution_time", 0.0) or 0.0), 2),
+        "transcript_length": len(result.get("transcript", [])),
+        "usage_accounting_complete": not bool(result.get("usage_accounting_warnings")),
+        "usage_accounting_warnings": list(result.get("usage_accounting_warnings", [])),
+        "stdout_excerpt": excerpt_text(result.get("stdout", "")),
+        "stderr_excerpt": excerpt_text(result.get("stderr", "")),
+    }
+
+
+def aggregate_attempt_usage(attempts: list[dict[str, Any]]) -> dict[str, Any]:
+    usage = empty_usage()
+    for attempt in attempts:
+        add_usage(usage, attempt.get("usage"))
+    usage["cost_usd"] = round(float(usage["cost_usd"]), 6)
+    return usage
+
+
+def aggregate_attempt_execution_time(attempts: list[dict[str, Any]]) -> float:
+    return round(
+        sum(float(attempt.get("execution_time", 0.0) or 0.0) for attempt in attempts),
+        2,
+    )
+
+
+def build_usage_accounting_summary(attempts: list[dict[str, Any]]) -> dict[str, Any]:
+    incomplete_attempts = [
+        attempt for attempt in attempts if not attempt.get("usage_accounting_complete", True)
+    ]
+    warning_codes = sorted(
+        {
+            warning
+            for attempt in incomplete_attempts
+            for warning in attempt.get("usage_accounting_warnings", [])
+        }
+    )
+    return {
+        "complete": len(incomplete_attempts) == 0,
+        "incomplete_attempt_count": len(incomplete_attempts),
+        "warning_codes": warning_codes,
+    }
+
+
+def build_retry_summary(
+    execution_attempts: list[dict[str, Any]],
+    judge_attempts: list[dict[str, Any]],
+) -> dict[str, int]:
+    all_attempts = execution_attempts + judge_attempts
+    return {
+        "execution_attempt_count": len(execution_attempts),
+        "judge_attempt_count": len(judge_attempts),
+        "failed_attempt_count": sum(1 for attempt in all_attempts if attempt.get("status") != "success"),
+        "transient_retry_count": sum(1 for attempt in all_attempts if attempt.get("transient_failure")),
+        "usage_accounting_incomplete_attempt_count": sum(
+            1 for attempt in all_attempts if not attempt.get("usage_accounting_complete", True)
+        ),
+    }
+
+
+def build_run_record(
+    *,
+    run_index: int,
+    terminal_result: dict[str, Any],
+    execution_attempts: list[dict[str, Any]],
+    judge_attempts: list[dict[str, Any]],
+    grade: Any,
+) -> dict[str, Any]:
+    all_attempts = execution_attempts + judge_attempts
+    return {
+        "run_index": run_index,
+        "terminal_execution_status": terminal_result.get("status", "error"),
+        "timed_out": bool(terminal_result.get("timed_out", False)),
+        "workspace": terminal_result.get("workspace", ""),
+        "transcript_length": len(terminal_result.get("transcript", [])),
+        "aggregate_usage": aggregate_attempt_usage(all_attempts),
+        "execution_time": aggregate_attempt_execution_time(all_attempts),
+        "execution_attempts": execution_attempts,
+        "judge_attempts": judge_attempts,
+        "retry_summary": build_retry_summary(execution_attempts, judge_attempts),
+        "usage_accounting": build_usage_accounting_summary(all_attempts),
+        "grade": grade.to_dict(),
+    }
+
+
+def build_task_entry(
+    *,
+    task: Any,
+    grades_summary: dict[str, Any],
+    run_records: list[dict[str, Any]],
+) -> dict[str, Any]:
+    total_usage = empty_usage()
+    total_execution_time = 0.0
+    retry_summary = {
+        "execution_attempt_count": 0,
+        "judge_attempt_count": 0,
+        "failed_attempt_count": 0,
+        "transient_retry_count": 0,
+        "usage_accounting_incomplete_attempt_count": 0,
+    }
+    task_warning_codes: set[str] = set()
+
+    for run_record in run_records:
+        add_usage(total_usage, run_record.get("aggregate_usage"))
+        total_execution_time += float(run_record.get("execution_time", 0.0) or 0.0)
+        run_retry_summary = run_record.get("retry_summary", {})
+        for key in retry_summary:
+            retry_summary[key] += int(run_retry_summary.get(key, 0) or 0)
+        task_warning_codes.update(run_record.get("usage_accounting", {}).get("warning_codes", []))
+
+    total_usage["cost_usd"] = round(float(total_usage["cost_usd"]), 6)
+    latest_run = run_records[-1] if run_records else {}
+    return {
+        "task_id": task.task_id,
+        "status": latest_run.get("terminal_execution_status", "error"),
+        "timed_out": any(bool(run_record.get("timed_out", False)) for run_record in run_records),
+        "execution_time": round(total_execution_time, 2),
+        "transcript_length": latest_run.get("transcript_length", 0),
+        "usage": total_usage,
+        "workspace": latest_run.get("workspace", ""),
+        "grading": grades_summary,
+        "frontmatter": task.frontmatter,
+        "runs": run_records,
+        "retry_summary": retry_summary,
+        "usage_accounting": {
+            "complete": retry_summary["usage_accounting_incomplete_attempt_count"] == 0,
+            "incomplete_attempt_count": retry_summary["usage_accounting_incomplete_attempt_count"],
+            "warning_codes": sorted(task_warning_codes),
+        },
+    }
+
+
+def has_transient_backend_error(*texts: str) -> bool:
+    corpus = "\n".join(text for text in texts if text).lower()
+    if not corpus:
+        return False
+    transient_markers = [
+        "http 429",
+        "http 500",
+        "http 502",
+        "http 503",
+        "http 504",
+        "all llm backends failed",
+        "server had an error processing your request",
+        "rate limit",
+        "temporarily unavailable",
+        "overloaded",
+    ]
+    return any(marker in corpus for marker in transient_markers)
+
+
+def execution_result_has_transient_backend_error(result: dict[str, Any]) -> bool:
+    return has_transient_backend_error(
+        str(result.get("stdout", "")),
+        str(result.get("stderr", "")),
+        transcript_blob(result.get("transcript", [])),
+    )
+
+
 def load_pinchbench_modules(skill_root: Path):
     scripts_dir = skill_root / "scripts"
     if not scripts_dir.exists():
@@ -142,6 +399,11 @@ def load_pinchbench_modules(skill_root: Path):
     from lib_tasks import Task, TaskLoader  # type: ignore
 
     return lib_agent, lib_grading, Task, TaskLoader
+
+
+def tizenclaw_cli_command(*args: str) -> list[str]:
+    cli_binary = os.environ.get("TIZENCLAW_CLI", "tizenclaw-cli")
+    return [cli_binary, *args]
 
 
 def run_json_command(cmd: list[str]) -> dict[str, Any]:
@@ -163,7 +425,7 @@ def run_json_command(cmd: list[str]) -> dict[str, Any]:
 
 
 def read_config_value(path: str) -> Any:
-    payload = run_json_command(["tizenclaw-cli", "config", "get", path])
+    payload = run_json_command(tizenclaw_cli_command("config", "get", path))
     if payload.get("status") != "ok":
         raise RuntimeError(f"Failed to read config path {path}: {payload}")
     return payload.get("value")
@@ -180,7 +442,7 @@ def read_active_runtime_snapshot() -> dict[str, Any]:
 
     model_name = read_config_value(f"backends.{active_backend}.model")
     fallback_backends = read_config_value("fallback_backends")
-    auth_status = run_json_command(["tizenclaw-cli", "auth", "openai-codex", "status", "--json"])
+    auth_status = run_json_command(tizenclaw_cli_command("auth", "openai-codex", "status", "--json"))
     if auth_status.get("status") != "ok" or not auth_status.get("linked"):
         raise RuntimeError(
             "OpenAI Codex OAuth is not linked; run `tizenclaw-cli auth openai-codex login` first"
@@ -313,15 +575,8 @@ def execute_tizenclaw_task_active_config(
     exit_code = -1
     timed_out = False
     transcript: list[dict[str, Any]] = []
-    usage = {
-        "input_tokens": 0,
-        "output_tokens": 0,
-        "cache_read_tokens": 0,
-        "cache_write_tokens": 0,
-        "total_tokens": 0,
-        "cost_usd": 0.0,
-        "request_count": 0,
-    }
+    usage = empty_usage()
+    usage_accounting_warnings: list[str] = []
 
     sessions = task.frontmatter.get("sessions", [])
     session_entries = sessions if sessions else [task.prompt]
@@ -377,6 +632,7 @@ def execute_tizenclaw_task_active_config(
 
         assert current_session_id is not None
         assert current_workspace is not None
+        baseline: dict[str, Any] | None = None
 
         try:
             baseline = lib_agent._read_tizenclaw_usage(current_session_id)
@@ -399,9 +655,9 @@ def execute_tizenclaw_task_active_config(
                     transcript_start_index,
                 )
             )
-            delta_usage = lib_agent._read_tizenclaw_usage(current_session_id, baseline)
-            for key in usage:
-                usage[key] += delta_usage.get(key, 0)
+            usage_delta = read_usage_delta(lib_agent, current_session_id, baseline)
+            add_usage(usage, usage_delta.get("usage"))
+            usage_accounting_warnings.extend(usage_delta.get("warnings", []))
 
             if result.returncode != 0:
                 break
@@ -413,6 +669,10 @@ def execute_tizenclaw_task_active_config(
                 stream_runtime_io(stdout_chunk, stderr_chunk)
             stdout += stdout_chunk
             stderr += stderr_chunk
+            usage_delta = read_usage_delta(lib_agent, current_session_id, baseline)
+            add_usage(usage, usage_delta.get("usage"))
+            usage_accounting_warnings.extend(usage_delta.get("warnings", []))
+            transcript = lib_agent._load_tizenclaw_transcript(current_session_id)
             break
         except (FileNotFoundError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
             stderr += f"tizenclaw runtime error: {exc}"
@@ -441,6 +701,7 @@ def execute_tizenclaw_task_active_config(
         "exit_code": exit_code,
         "timed_out": timed_out,
         "execution_time": execution_time,
+        "usage_accounting_warnings": usage_accounting_warnings,
         "stdout": stdout,
         "stderr": stderr,
     }
@@ -472,8 +733,12 @@ def run_tizenclaw_judge_active_config(
     stderr = ""
     exit_code = -1
     timed_out = False
+    usage = empty_usage()
+    baseline: dict[str, Any] | None = None
+    usage_accounting_warnings: list[str] = []
 
     try:
+        baseline = lib_agent._read_tizenclaw_usage(session_id)
         transcript_start_index = len(lib_agent._load_tizenclaw_transcript(session_id))
         result = lib_agent._run_tizenclaw_message(
             session_id=session_id,
@@ -490,6 +755,9 @@ def run_tizenclaw_judge_active_config(
             session_id,
             transcript_start_index,
         )
+        usage_delta = read_usage_delta(lib_agent, session_id, baseline)
+        add_usage(usage, usage_delta.get("usage"))
+        usage_accounting_warnings.extend(usage_delta.get("warnings", []))
     except subprocess.TimeoutExpired as exc:
         timed_out = True
         stdout = lib_agent._coerce_subprocess_output(exc.stdout)
@@ -497,6 +765,9 @@ def run_tizenclaw_judge_active_config(
         if stream_io:
             stream_runtime_io(stdout, stderr)
         transcript = lib_agent._load_tizenclaw_transcript(session_id)
+        usage_delta = read_usage_delta(lib_agent, session_id, baseline)
+        add_usage(usage, usage_delta.get("usage"))
+        usage_accounting_warnings.extend(usage_delta.get("warnings", []))
     except (FileNotFoundError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
         stderr = f"tizenclaw runtime error: {exc}"
         transcript = lib_agent._load_tizenclaw_transcript(session_id)
@@ -520,6 +791,8 @@ def run_tizenclaw_judge_active_config(
         "exit_code": exit_code,
         "timed_out": timed_out,
         "execution_time": execution_time,
+        "usage": usage,
+        "usage_accounting_warnings": usage_accounting_warnings,
         "stdout": stdout,
         "stderr": stderr,
     }
@@ -535,43 +808,76 @@ def grade_task_active_config(
     scratch_root: Path,
     stream_io: bool,
     verbose: bool,
-) -> Any:
+    logger: logging.Logger,
+) -> tuple[Any, list[dict[str, Any]]]:
     if task.grading_type == "automated":
-        return lib_grading._grade_automated(task, execution_result, verbose=verbose)
+        return lib_grading._grade_automated(task, execution_result, verbose=verbose), []
 
-    def llm_grade() -> Any:
+    def llm_grade() -> tuple[Any, list[dict[str, Any]]]:
         transcript_summary = lib_grading._summarize_transcript(execution_result.get("transcript", []))
         rubric = task.llm_judge_rubric or lib_grading._format_grading_criteria(task)
         prompt = lib_grading._build_judge_prompt(task, transcript_summary, rubric)
         judge_workspace = scratch_root / "judge" / task.task_id
         judge_workspace.mkdir(parents=True, exist_ok=True)
-        judge_result = run_tizenclaw_judge_active_config(
-            lib_agent=lib_agent,
-            prompt=prompt,
-            workspace=judge_workspace,
-            timeout_seconds=judge_timeout_seconds,
-            stream_io=stream_io,
-        )
-        raw_parsed = lib_grading._parse_judge_response(judge_result.get("transcript", []))
-        parsed = lib_grading._normalize_judge_response(raw_parsed)
-        breakdown = parsed.get("scores", {})
-        total = parsed.get("total")
-        notes = parsed.get("notes", "")
-        return lib_grading.GradeResult(
-            task_id=task.task_id,
-            score=float(total) if total is not None else 0.0,
-            max_score=1.0,
-            grading_type="llm_judge",
-            breakdown=lib_grading._normalize_score_dict(breakdown),
-            notes=str(notes) if notes is not None else "",
-        )
+        judge_attempts: list[dict[str, Any]] = []
+
+        for attempt in range(1, TRANSIENT_RETRY_LIMIT + 1):
+            judge_result = run_tizenclaw_judge_active_config(
+                lib_agent=lib_agent,
+                prompt=prompt,
+                workspace=judge_workspace,
+                timeout_seconds=judge_timeout_seconds,
+                stream_io=stream_io,
+            )
+            raw_parsed = lib_grading._parse_judge_response(judge_result.get("transcript", []))
+            parsed = lib_grading._normalize_judge_response(raw_parsed)
+            breakdown = parsed.get("scores", {})
+            total = parsed.get("total")
+            notes = parsed.get("notes", "")
+            transient_failure = (
+                total is None
+                and judge_result.get("status") != "success"
+                and has_transient_backend_error(
+                    str(judge_result.get("stdout", "")),
+                    str(judge_result.get("stderr", "")),
+                    transcript_blob(judge_result.get("transcript", [])),
+                )
+            )
+            judge_attempts.append(
+                build_attempt_record(
+                    attempt_kind="judge",
+                    attempt_index=attempt,
+                    transient_failure=transient_failure,
+                    result=judge_result,
+                )
+            )
+            if not transient_failure or attempt >= TRANSIENT_RETRY_LIMIT:
+                return (
+                    lib_grading.GradeResult(
+                        task_id=task.task_id,
+                        score=float(total) if total is not None else 0.0,
+                        max_score=1.0,
+                        grading_type="llm_judge",
+                        breakdown=lib_grading._normalize_score_dict(breakdown),
+                        notes=str(notes) if notes is not None else "",
+                    ),
+                    judge_attempts,
+                )
+
+            logger.warning(
+                "Transient judge backend error for %s; retrying judge attempt %d/%d",
+                task.task_id,
+                attempt + 1,
+                TRANSIENT_RETRY_LIMIT,
+            )
+            time.sleep(TRANSIENT_RETRY_DELAY_SECONDS)
 
     if task.grading_type == "llm_judge":
         return llm_grade()
 
     auto_result = lib_grading._grade_automated(task, execution_result, verbose=verbose)
-    llm_result = llm_grade()
-    return lib_grading._combine_grades(task, auto_result, llm_result)
+    llm_result, judge_attempts = llm_grade()
+    return lib_grading._combine_grades(task, auto_result, llm_result), judge_attempts
 
 
 def compute_efficiency_summary(task_entries: list[dict[str, Any]], grades_by_task_id: dict[str, Any]) -> dict[str, Any]:
@@ -582,6 +888,9 @@ def compute_efficiency_summary(task_entries: list[dict[str, Any]], grades_by_tas
     total_requests = 0
     total_execution_time = 0.0
     tasks_with_usage = 0
+    usage_accounting_incomplete_tasks = 0
+    usage_accounting_incomplete_attempts = 0
+    warning_codes: set[str] = set()
     per_task_efficiency: list[dict[str, Any]] = []
 
     for entry in task_entries:
@@ -598,10 +907,19 @@ def compute_efficiency_summary(task_entries: list[dict[str, Any]], grades_by_tas
         total_input_tokens += input_tokens
         total_output_tokens += output_tokens
         total_tokens += total
+        total_cost_usd += float(usage.get("cost_usd", 0.0) or 0.0)
         total_requests += requests
         total_execution_time += exec_time
-        if total > 0:
+        retry_summary = entry.get("retry_summary", {})
+        usage_accounting = entry.get("usage_accounting", {})
+        if usage_has_data(usage) or exec_time > 0:
             tasks_with_usage += 1
+        if not usage_accounting.get("complete", True):
+            usage_accounting_incomplete_tasks += 1
+        usage_accounting_incomplete_attempts += int(
+            usage_accounting.get("incomplete_attempt_count", 0) or 0
+        )
+        warning_codes.update(usage_accounting.get("warning_codes", []))
 
         per_task_efficiency.append(
             {
@@ -610,6 +928,15 @@ def compute_efficiency_summary(task_entries: list[dict[str, Any]], grades_by_tas
                 "total_tokens": total,
                 "cost_usd": round(float(usage.get("cost_usd", 0.0) or 0.0), 6),
                 "tokens_per_score_point": round(total / score, 1) if score > 0 else None,
+                "total_requests": requests,
+                "execution_attempt_count": int(retry_summary.get("execution_attempt_count", 0) or 0),
+                "judge_attempt_count": int(retry_summary.get("judge_attempt_count", 0) or 0),
+                "failed_attempt_count": int(retry_summary.get("failed_attempt_count", 0) or 0),
+                "usage_accounting_incomplete_attempt_count": int(
+                    retry_summary.get("usage_accounting_incomplete_attempt_count", 0) or 0
+                ),
+                "usage_accounting_complete": bool(usage_accounting.get("complete", True)),
+                "usage_accounting_warning_codes": list(usage_accounting.get("warning_codes", [])),
             }
         )
 
@@ -624,6 +951,10 @@ def compute_efficiency_summary(task_entries: list[dict[str, Any]], grades_by_tas
         "total_requests": total_requests,
         "total_execution_time_seconds": round(total_execution_time, 2),
         "tasks_with_usage_data": tasks_with_usage,
+        "usage_accounting_complete": usage_accounting_incomplete_attempts == 0,
+        "usage_accounting_incomplete_task_count": usage_accounting_incomplete_tasks,
+        "usage_accounting_incomplete_attempt_count": usage_accounting_incomplete_attempts,
+        "usage_accounting_warning_codes": sorted(warning_codes),
         "tokens_per_task": round(total_tokens / num_tasks, 1) if num_tasks > 0 else 0,
         "score_per_1k_tokens": (
             round(total_score / (total_tokens / 1000), 6) if total_tokens > 0 else None
@@ -659,7 +990,6 @@ def main() -> int:
     tasks = task_loader.load_all_tasks()
     selected_ids = select_task_ids(tasks, args.suite)
     tasks_to_run = tasks if selected_ids is None else [task for task in tasks if task.task_id in selected_ids]
-    task_map = {task.task_id: task for task in tasks_to_run}
 
     scratch_root = args.scratch_root.resolve()
     output_dir = args.output_dir.resolve()
@@ -668,14 +998,14 @@ def main() -> int:
     agent_id = "bench-tizenclaw-active-oauth"
     runs_per_task = max(1, args.runs)
 
-    task_results: list[dict[str, Any]] = []
+    task_entries: list[dict[str, Any]] = []
     grades_by_task_id: dict[str, Any] = {}
 
     logger.info("Loaded %d task(s) for suite=%s", len(tasks_to_run), args.suite)
 
     for index, task in enumerate(tasks_to_run, 1):
         grades = []
-        run_results = []
+        run_records: list[dict[str, Any]] = []
         for run_index in range(runs_per_task):
             logger.info("%s", "=" * 80)
             logger.info(
@@ -688,19 +1018,43 @@ def main() -> int:
             )
             logger.info("%s", "=" * 80)
 
-            result = execute_tizenclaw_task_active_config(
-                lib_agent=lib_agent,
-                task=task,
-                agent_id=agent_id,
-                run_id=f"{run_id}-{run_index + 1}",
-                timeout_multiplier=args.timeout_multiplier,
-                skill_root=skill_root,
-                scratch_root=scratch_root,
-                verbose=args.verbose,
-                stream_io=args.stream_runtime_io,
-                logger=logger,
-            )
-            grade = grade_task_active_config(
+            execution_attempts: list[dict[str, Any]] = []
+            for execution_attempt in range(1, TRANSIENT_RETRY_LIMIT + 1):
+                result = execute_tizenclaw_task_active_config(
+                    lib_agent=lib_agent,
+                    task=task,
+                    agent_id=agent_id,
+                    run_id=f"{run_id}-{run_index + 1}",
+                    timeout_multiplier=args.timeout_multiplier,
+                    skill_root=skill_root,
+                    scratch_root=scratch_root,
+                    verbose=args.verbose,
+                    stream_io=args.stream_runtime_io,
+                    logger=logger,
+                )
+                transient_execution_failure = (
+                    result.get("status") != "success"
+                    and execution_result_has_transient_backend_error(result)
+                )
+                execution_attempts.append(
+                    build_attempt_record(
+                        attempt_kind="execution",
+                        attempt_index=execution_attempt,
+                        transient_failure=transient_execution_failure,
+                        result=result,
+                    )
+                )
+                if not transient_execution_failure or execution_attempt >= TRANSIENT_RETRY_LIMIT:
+                    break
+
+                logger.warning(
+                    "Transient runtime backend error for %s; retrying task attempt %d/%d",
+                    task.task_id,
+                    execution_attempt + 1,
+                    TRANSIENT_RETRY_LIMIT,
+                )
+                time.sleep(TRANSIENT_RETRY_DELAY_SECONDS)
+            grade, judge_attempts = grade_task_active_config(
                 lib_grading=lib_grading,
                 lib_agent=lib_agent,
                 task=task,
@@ -709,11 +1063,19 @@ def main() -> int:
                 scratch_root=scratch_root,
                 stream_io=args.stream_runtime_io,
                 verbose=args.verbose,
+                logger=logger,
             )
 
             grades.append(grade)
-            run_results.append(result)
-            task_results.append(result)
+            run_records.append(
+                build_run_record(
+                    run_index=run_index + 1,
+                    terminal_result=result,
+                    execution_attempts=execution_attempts,
+                    judge_attempts=judge_attempts,
+                    grade=grade,
+                )
+            )
 
             score_pct = grade.score / grade.max_score * 100 if grade.max_score > 0 else 0.0
             logger.info(
@@ -734,21 +1096,13 @@ def main() -> int:
             "min": min(scores),
             "max": max(scores),
         }
-
-    task_entries = [
-        {
-            "task_id": result["task_id"],
-            "status": result["status"],
-            "timed_out": result["timed_out"],
-            "execution_time": result["execution_time"],
-            "transcript_length": len(result["transcript"]),
-            "usage": result.get("usage", {}),
-            "workspace": result["workspace"],
-            "grading": grades_by_task_id[result["task_id"]],
-            "frontmatter": task_map[result["task_id"]].frontmatter,
-        }
-        for result in task_results
-    ]
+        task_entries.append(
+            build_task_entry(
+                task=task,
+                grades_summary=grades_by_task_id[task.task_id],
+                run_records=run_records,
+            )
+        )
 
     runtime_snapshot_after = read_active_runtime_snapshot()
     config_unchanged = runtime_snapshot_before == runtime_snapshot_after

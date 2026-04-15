@@ -59,9 +59,18 @@ fn parses_plugin_manifest_with_permissions_and_commands() {
 
     assert_eq!(manifest.name, "metadata");
     assert_eq!(manifest.kind, PluginKind::Metadata);
-    assert_eq!(manifest.lifecycle.default_phase, Some(PluginLifecyclePhase::Discovered));
-    assert_eq!(manifest.command_manifests()[0].canonical_name, "metadata.sync");
-    assert_eq!(manifest.tools[0].permissions.scope, PluginPermissionScope::Read);
+    assert_eq!(
+        manifest.lifecycle.default_phase,
+        Some(PluginLifecyclePhase::Discovered)
+    );
+    assert_eq!(
+        manifest.command_manifests()[0].canonical_name,
+        "metadata.sync"
+    );
+    assert_eq!(
+        manifest.tools[0].permissions.scope,
+        PluginPermissionScope::Read
+    );
 }
 
 #[test]
@@ -145,10 +154,9 @@ fn bundled_examples_are_discoverable_and_expose_tools() {
 fn plugin_commands_are_tagged_with_plugin_source() {
     let commands = plugin_command_manifests();
 
-    assert!(commands.iter().all(|command| matches!(
-        &command.source,
-        CommandSource::Plugin { .. }
-    )));
+    assert!(commands
+        .iter()
+        .all(|command| matches!(&command.source, CommandSource::Plugin { .. })));
     assert!(commands
         .iter()
         .any(|command| command.canonical_name == "metadata.resume"));

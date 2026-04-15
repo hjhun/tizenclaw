@@ -131,7 +131,10 @@ pub fn dispatch_cli(
         CliMode::Help { topic } => Some(build_help(topic.as_deref(), &registry, &plugins)),
         _ => match slash_command.as_ref() {
             Some(command) if command.canonical_name == "help" => {
-                let topic = command.arguments.first().map(|argument| argument.value.as_str());
+                let topic = command
+                    .arguments
+                    .first()
+                    .map(|argument| argument.value.as_str());
                 Some(build_help(topic, &registry, &plugins))
             }
             _ => None,
@@ -147,7 +150,10 @@ pub fn dispatch_cli(
                     .first()
                     .map(|argument| argument.value.as_str())
                     .unwrap_or_default();
-                let note = command.arguments.get(1).map(|argument| argument.value.as_str());
+                let note = command
+                    .arguments
+                    .get(1)
+                    .map(|argument| argument.value.as_str());
                 Some(resume_result(session_id, note))
             }
             _ => None,
@@ -172,7 +178,8 @@ pub fn dispatch_cli(
     }
     .to_string();
 
-    let help = if matches!(parsed.mode, CliMode::Auto) && merged_prompt.is_none() && help.is_none() {
+    let help = if matches!(parsed.mode, CliMode::Auto) && merged_prompt.is_none() && help.is_none()
+    {
         Some(build_help(None, &registry, &plugins))
     } else {
         help
@@ -305,7 +312,11 @@ fn build_help(
                 if !command.metadata.argument_hints.is_empty() {
                     lines.push("arguments:".to_string());
                     lines.extend(command.metadata.argument_hints.iter().map(|hint| {
-                        let qualifier = if hint.required { "required" } else { "optional" };
+                        let qualifier = if hint.required {
+                            "required"
+                        } else {
+                            "optional"
+                        };
                         format!("{} ({qualifier}) - {}", hint.name, hint.summary)
                     }));
                 }
@@ -350,8 +361,8 @@ mod tests {
 
     #[test]
     fn dispatches_slash_help_locally() {
-        let outcome = dispatch_cli(ParsedCli::default(), Some("/help resume".to_string()))
-            .expect("dispatch");
+        let outcome =
+            dispatch_cli(ParsedCli::default(), Some("/help resume".to_string())).expect("dispatch");
         assert_eq!(outcome.mode, "help");
         assert_eq!(
             outcome.help.as_ref().expect("help").topic,

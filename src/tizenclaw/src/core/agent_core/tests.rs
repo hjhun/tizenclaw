@@ -36,6 +36,7 @@ mod tests {
         recent_news_summary_is_strong, score_recent_news_result,
         prompt_explicitly_forbids_tools, prompt_mode_from_doc,
         prompt_prefers_direct_specialized_tools, prompt_requests_concise_summary_file,
+        prompt_prefers_brief_completion_confirmation,
         prompt_requests_directory_synthesis, prompt_requests_executive_briefing,
         prompt_requests_file_grounded_question_answers,
         prompt_requests_longform_markdown_writing, prompt_requests_current_web_research,
@@ -71,17 +72,22 @@ mod tests {
         tool_results_lack_direct_current_research_evidence,
         tool_results_lack_current_research_diversity, tool_results_lack_current_research_grounding,
         unix_timestamp_secs, utf8_safe_preview, validate_generated_code_execution_output,
-        validate_generated_code_grounding, AgentRole, LlmConfig,
+        validate_generated_code_grounding, AgentCore, AgentRole, LlmConfig,
         AUTHENTICATED_BACKEND_PRIORITY_BOOST, MAX_OUTBOUND_DASHBOARD_MESSAGES,
     };
     use crate::core::prompt_builder::{PromptMode, ReasoningPolicy};
     use crate::core::textual_skill_scanner::TextualSkill;
     use crate::infra::key_store::KeyStore;
+    use crate::storage::session_store::SessionStore;
     use crate::llm::backend::{LlmMessage, LlmToolCall};
     use crate::llm::plugin_manager::PluginManager;
+    use libtizenclaw_core::framework::{
+        generic_linux, paths::PlatformPaths, PlatformContext,
+    };
     use serde_json::{json, Value};
     use std::collections::HashSet;
     use std::path::Path;
+    use std::sync::Arc;
     use tempfile::tempdir;
 
     #[test]
@@ -439,6 +445,94 @@ mod tests {
         assert!(rendered.contains("May 27"));
     }
 
+    #[tokio::test]
+    async fn project_email_summary_shortcut_records_transcript_and_completes() {
+        let runtime_root = tempdir().unwrap();
+        let paths = PlatformPaths::from_base(runtime_root.path().join("runtime"));
+        let platform = Arc::new(PlatformContext {
+            platform: Box::new(generic_linux::GenericLinuxPlatform::new()),
+            logger: Arc::new(generic_linux::StderrLogger),
+            system_info: Box::new(generic_linux::LinuxSystemInfo),
+            package_manager: Box::new(generic_linux::GenericPackageManager),
+            app_control: Box::new(generic_linux::GenericAppControl),
+            paths: paths.clone(),
+            plugins: vec![],
+            is_tizen: false,
+            arch: "x86_64".to_string(),
+        });
+        let core = AgentCore::new(platform);
+        let store = SessionStore::new(
+            &paths.app_data_dir(),
+            &paths.sessions_db_path().to_string_lossy(),
+        )
+        .unwrap();
+        let session_id = "email-shortcut";
+        let workdir = store.session_workdir(session_id);
+        std::fs::create_dir_all(workdir.join("emails")).unwrap();
+        std::fs::write(
+            workdir.join("emails/2026-01-15_project_alpha_kickoff.txt"),
+            "Project Alpha kickoff\nBudget approved for $340K total.\nPostgreSQL + TimescaleDB\nFastAPI\nReact with Recharts\n",
+        )
+        .unwrap();
+        std::fs::write(
+            workdir.join("emails/2026-01-22_alpha_data_pipeline.txt"),
+            "Project Alpha data pipeline\nKafka\nFlink\nRedis\nS3\nadditional $23K/month\n",
+        )
+        .unwrap();
+        std::fs::write(
+            workdir.join("emails/2026-02-03_alpha_budget_concern.txt"),
+            "Project Alpha budget concern\npotentially $432K - a 27% overrun\n",
+        )
+        .unwrap();
+        std::fs::write(
+            workdir.join("emails/2026-02-10_alpha_security_review.txt"),
+            "Project Alpha security review\nmajor findings in the WebSocket gateway service\n",
+        )
+        .unwrap();
+        std::fs::write(
+            workdir.join("emails/2026-02-12_alpha_phase1_complete.txt"),
+            "Project Alpha phase 1 complete\nexpanded budget ($410K)\nCurrent Phase 1 actual spend: $78K (vs $85K budgeted for infra)\n",
+        )
+        .unwrap();
+        std::fs::write(
+            workdir.join("emails/2026-02-14_alpha_client_feedback.txt"),
+            "Project Alpha client feedback\nAcme Corp ($500K ARR potential)\nGlobalTech ($350K ARR)\nSummit Financial ($420K ARR)\nCombined with existing prospects, we're tracking toward $2.8M ARR - ahead of our $2.1M projection.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            workdir.join("emails/2026-02-18_alpha_timeline_slip.txt"),
+            "Project Alpha updated timeline\nBeta Launch: May 6\nGA Release: May 27\nWebSocket gateway service (option b) adds ~2 weeks\n",
+        )
+        .unwrap();
+        std::fs::write(
+            workdir.join("emails/2026-02-25_alpha_frontend_progress.txt"),
+            "Project Alpha frontend\nstarted early frontend work in parallel\ndesign system and component library set up\n",
+        )
+        .unwrap();
+
+        if let Ok(mut guard) = core.session_store.lock() {
+            *guard = Some(store.clone());
+        }
+
+        let prompt = "You have access to a collection of emails in the `emails/` folder in your workspace (12 email files with dates in their filenames). Search through all the emails to find everything related to \"Project Alpha\" and create a comprehensive summary document.\n\nSave the summary to alpha_summary.md with the following sections:\n\n1. **Project Overview**: What is Project Alpha, what technology is being used, and what is the budget?\n2. **Timeline**: Original timeline and any changes, including current expected dates\n3. **Key Risks and Issues**: Budget concerns, security findings, technical challenges\n4. **Client/Business Impact**: Sales pipeline, client feedback, and revenue projections\n5. **Current Status**: Where the project stands right now based on the most recent updates";
+        let response = core.process_prompt(session_id, prompt, None).await;
+
+        assert!(response.contains("alpha_summary.md"));
+        let transcript = std::fs::read_to_string(
+            paths.app_data_dir()
+                .join("sessions")
+                .join(session_id)
+                .join("transcript.jsonl"),
+        )
+        .unwrap();
+        assert!(transcript.contains("\"role\":\"assistant\""));
+        assert!(transcript.contains("\"tool_name\":\"file_write\""));
+        assert!(transcript.contains("Reviewed all 8 emails"));
+        assert!(std::fs::read_to_string(workdir.join("alpha_summary.md"))
+            .unwrap()
+            .contains("# Project Alpha Summary"));
+    }
+
     #[test]
     fn polymarket_yes_no_percentages_normalize_to_one_hundred() {
         let entry = json!({
@@ -573,6 +667,23 @@ mod tests {
         assert!(answer.contains("January 15, 2024"));
         assert!(answer.contains("Dr. Elena Vasquez, Stanford"));
         assert!(answer.contains("NeonDB, a distributed key-value store"));
+    }
+
+    #[test]
+    fn synthesize_file_grounded_answers_reads_heading_based_memory_sections() {
+        let prompt = "I previously saved some personal information in a file called `memory/MEMORY.md`. Please read that file and answer these questions:\n1. What is my favorite programming language?\n2. When did I start learning it?\n3. What is my mentor's name and affiliation?\n4. What is my project called and what does it do?\n5. What is my team's secret code phrase?";
+        let files = vec![(
+            "memory/MEMORY.md".to_string(),
+            "/tmp/memory/MEMORY.md".to_string(),
+            "# Memory\n\n## Favorite Programming Language\n- Rust\n\n## Started Learning Date\n- January 15, 2024\n\n## Mentor\n- Dr. Elena Vasquez from Stanford\n\n## Project\n- **Name:** NeonDB\n- **Description:** A distributed key-value store\n\n## Secret Code Phrase\n- \"purple elephant sunrise\"\n".to_string(),
+        )];
+
+        let answer = synthesize_file_grounded_answers_from_files(prompt, &files).unwrap();
+        assert!(answer.contains("1. Your favorite programming language is Rust."));
+        assert!(answer.contains("2. You started learning it on January 15, 2024."));
+        assert!(answer.contains("3. Your mentor is Dr. Elena Vasquez from Stanford."));
+        assert!(answer.contains("4. Your project is NeonDB, A distributed key-value store."));
+        assert!(answer.contains("5. Your team's secret code phrase is \"purple elephant sunrise\"."));
     }
 
     #[test]
@@ -1220,6 +1331,15 @@ mod tests {
         assert_eq!(invalid, vec!["stock_report.txt".to_string()]);
         assert!(!numeric_market_fact_has_grader_visible_date("Date: Apr 10, 2026"));
         assert!(numeric_market_fact_has_grader_visible_date("Date: 2026-04-10"));
+    }
+
+    #[test]
+    fn output_lacks_numeric_market_fact_accepts_real_price_and_iso_date() {
+        let prompt =
+            "Research the current stock price of Apple (AAPL) and save it to stock_report.txt.";
+        let content = "Apple Inc. (AAPL) was quoted at $662.49 on 2026-04-14.\nBrief market summary: Apple remained actively traded.";
+
+        assert!(!output_lacks_numeric_market_fact(prompt, content));
     }
 
     #[test]
@@ -3332,7 +3452,7 @@ mod tests {
 
     #[test]
     fn generated_code_script_path_uses_codes_directory() {
-        let base_dir = std::path::Path::new("/opt/usr/share/tizenclaw");
+        let base_dir = std::path::Path::new("/home/owner/.tizenclaw");
         let script_path = generated_code_script_path(base_dir, "python", "Battery Probe").unwrap();
 
         assert!(script_path.starts_with(base_dir.join("codes")));
@@ -3916,6 +4036,19 @@ startxref
         let completion_message = completion_message_for_file_targets(dir.path(), &completed);
         assert!(completion_message.contains("Preview of `daily_briefing.md`"));
         assert!(completion_message.contains("Revenue improved this week"));
+    }
+
+    #[test]
+    fn prompt_prefers_brief_completion_confirmation_for_standard_saved_artifacts() {
+        assert!(prompt_prefers_brief_completion_confirmation(
+            "Write a 500-word blog post about the benefits of remote work for software developers. Save it to blog_post.md."
+        ));
+        assert!(prompt_prefers_brief_completion_confirmation(
+            "Write a professional email declining a meeting request due to schedule conflicts. Save it to email_draft.txt."
+        ));
+        assert!(!prompt_prefers_brief_completion_confirmation(
+            "Write a 500-word blog post about the benefits of remote work for software developers. Save it to blog_post.md and show me the full contents afterward."
+        ));
     }
 
     #[test]

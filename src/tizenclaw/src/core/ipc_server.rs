@@ -569,8 +569,12 @@ impl IpcServer {
                 .and_then(|mut guard| Self::write_payload(&mut guard, response.as_bytes()));
             if let Err(err) = write_result {
                 log::warn!("IPC connection {} write failed: {}", connection_id, err);
-                break;
+            } else {
+                // All current IPC consumers issue exactly one request per connection.
+                // Close promptly after the response so completed CLI/API calls do not
+                // hold a client slot while the server waits for a never-sent second frame.
             }
+            break;
         }
 
         log::debug!("IPC connection {} closed", connection_id);

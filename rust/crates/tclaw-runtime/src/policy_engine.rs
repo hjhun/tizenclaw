@@ -3,7 +3,9 @@ use std::{collections::BTreeMap, path::Path};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    permissions::{PermissionLevel, PermissionMode, PermissionOutcome, PermissionRequest, PermissionScope},
+    permissions::{
+        PermissionLevel, PermissionMode, PermissionOutcome, PermissionRequest, PermissionScope,
+    },
     sandbox::SandboxPolicy,
 };
 
@@ -63,7 +65,11 @@ impl PolicyRule {
             let matches_program = request
                 .bash_plan
                 .as_ref()
-                .map(|plan| plan.commands.iter().any(|command| command.program == *command_program))
+                .map(|plan| {
+                    plan.commands
+                        .iter()
+                        .any(|command| command.program == *command_program)
+                })
                 .unwrap_or(false);
             if !matches_program {
                 return false;
@@ -313,7 +319,8 @@ mod tests {
             ..PolicyEngineState::default()
         };
 
-        let evaluation = PolicyEngine::evaluate(&policy, &request(), &context(PermissionMode::AllowAll));
+        let evaluation =
+            PolicyEngine::evaluate(&policy, &request(), &context(PermissionMode::AllowAll));
 
         assert_eq!(evaluation.outcome, PermissionOutcome::Denied);
         assert_eq!(evaluation.matched_rule.as_deref(), Some("deny-shell"));

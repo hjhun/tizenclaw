@@ -8,9 +8,16 @@ use tclaw_runtime::{PermissionLevel, PermissionScope, ToolDefinition};
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ToolSource {
     BuiltIn,
-    Runtime { provider: String },
-    Plugin { plugin_name: String },
-    Mcp { server_name: String, original_name: String },
+    Runtime {
+        provider: String,
+    },
+    Plugin {
+        plugin_name: String,
+    },
+    Mcp {
+        server_name: String,
+        original_name: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -102,11 +109,7 @@ impl ToolManifestEntry {
         self
     }
 
-    pub fn with_metadata(
-        mut self,
-        key: impl Into<String>,
-        value: impl Into<String>,
-    ) -> Self {
+    pub fn with_metadata(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.metadata.insert(key.into(), value.into());
         self
     }

@@ -10,9 +10,8 @@ use crate::prompt_cache::{PromptCacheMode, PromptCacheUsage};
 use crate::providers::ProviderConfig;
 use crate::sse::SseParser;
 use crate::types::{
-    ChatMessage, ChatRequest, ChatResponse, ContentBlock, ContentDelta, FinishReason,
-    MessageRole, ProviderKind, ResponseFormat, ResponseMetadata, StreamEvent, ToolCallDelta,
-    Usage,
+    ChatMessage, ChatRequest, ChatResponse, ContentBlock, ContentDelta, FinishReason, MessageRole,
+    ProviderKind, ResponseFormat, ResponseMetadata, StreamEvent, ToolCallDelta, Usage,
 };
 
 #[derive(Clone)]
@@ -96,14 +95,16 @@ impl OpenAiCompatClient {
 
         let mut http_request =
             HttpRequest::json(HttpMethod::Post, self.endpoint(), body).map_err(ApiError::Http)?;
-        http_request
-            .headers
-            .extend(self.config.default_headers.iter().map(|(k, v)| (k.clone(), v.clone())));
+        http_request.headers.extend(
+            self.config
+                .default_headers
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone())),
+        );
         if let Some(api_key) = &self.config.api_key {
-            http_request.headers.insert(
-                "authorization".to_string(),
-                format!("Bearer {}", api_key),
-            );
+            http_request
+                .headers
+                .insert("authorization".to_string(), format!("Bearer {}", api_key));
         }
         Ok(http_request)
     }
@@ -131,7 +132,9 @@ impl OpenAiCompatClient {
                 id: Some(body.id),
             },
             content: openai_message_to_content(choice.message),
-            finish_reason: FinishReason::new(choice.finish_reason.unwrap_or_else(|| "stop".to_string())),
+            finish_reason: FinishReason::new(
+                choice.finish_reason.unwrap_or_else(|| "stop".to_string()),
+            ),
             usage: body.usage.map(openai_usage_to_usage),
             stop_sequence: None,
             raw: None,
@@ -170,10 +173,11 @@ impl ProviderClient for OpenAiCompatClient {
                 continue;
             }
 
-            let payload: OpenAiStreamChunk = serde_json::from_str(&event.data).map_err(|source| ApiError::Decode {
-                source,
-                body: event.data.clone(),
-            })?;
+            let payload: OpenAiStreamChunk =
+                serde_json::from_str(&event.data).map_err(|source| ApiError::Decode {
+                    source,
+                    body: event.data.clone(),
+                })?;
 
             if !started {
                 events_out.push(Ok(StreamEvent::MessageStart {
@@ -298,7 +302,11 @@ fn message_to_openai(message: &ChatMessage) -> Value {
 
 fn first_tool_result(content: &[ContentBlock]) -> (Option<String>, Option<Value>) {
     for block in content {
-        if let ContentBlock::ToolResult { tool_call_id, output } = block {
+        if let ContentBlock::ToolResult {
+            tool_call_id,
+            output,
+        } = block
+        {
             return (Some(tool_call_id.clone()), Some(output.clone()));
         }
     }
@@ -532,7 +540,9 @@ mod tests {
                 delta: ContentDelta::Text { text }
             } if text == "lo"
         ));
-        assert!(events.iter().any(|event| matches!(event, StreamEvent::Usage { .. })));
+        assert!(events
+            .iter()
+            .any(|event| matches!(event, StreamEvent::Usage { .. })));
     }
 
     #[test]
@@ -555,6 +565,9 @@ mod tests {
         };
 
         let err = client.send(&request).expect_err("send should fail");
-        assert!(matches!(err, ApiError::Decode { .. } | ApiError::InvalidResponse { .. }));
+        assert!(matches!(
+            err,
+            ApiError::Decode { .. } | ApiError::InvalidResponse { .. }
+        ));
     }
 }

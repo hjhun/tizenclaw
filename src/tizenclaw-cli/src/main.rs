@@ -26,7 +26,7 @@ static RPC_REQUEST_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 const DEFAULT_SOCKET_NAME: &str = "tizenclaw.sock";
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
-const DEFAULT_PROMPT_TIMEOUT_MS: u64 = 180_000;
+const DEFAULT_PROMPT_TIMEOUT_MS: u64 = 600_000;
 const LONG_PROMPT_STREAM_THRESHOLD_CHARS: usize = 6_000;
 const MAX_IPC_MESSAGE_SIZE: usize = 10 * 1024 * 1024;
 const CONNECTION_ERROR_MESSAGE: &str = "Cannot connect to tizenclaw daemon. Is it running?";
@@ -2895,14 +2895,14 @@ mod tests {
     #[test]
     fn process_prompt_preserves_explicitly_longer_timeout() {
         let options = CliOptions {
-            timeout_ms: 240_000,
+            timeout_ms: 900_000,
             ..CliOptions::default()
         };
         let client = IpcClient::from_options(&options);
         let prompt_client =
             client.with_timeout_floor(Duration::from_millis(DEFAULT_PROMPT_TIMEOUT_MS));
 
-        assert_eq!(prompt_client.timeout, Duration::from_millis(240_000));
+        assert_eq!(prompt_client.timeout, Duration::from_millis(900_000));
     }
 
     #[test]

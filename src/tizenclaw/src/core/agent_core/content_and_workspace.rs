@@ -1423,7 +1423,7 @@ fn current_research_output_requires_targeted_search(
     if current_research_output_needs_additional_evidence(prompt, messages) {
         return true;
     }
-    if collect_successful_file_management_actions(messages) < 2 {
+    if !has_file_completion_candidate_activity(messages) {
         return false;
     }
 
@@ -1446,7 +1446,7 @@ fn should_force_current_research_synthesis(
         return false;
     }
 
-    if collect_successful_file_management_actions(messages) > 0 {
+    if has_file_completion_candidate_activity(messages) {
         if !missing_file_management_targets(prompt, session_workdir, messages).is_empty() {
             return false;
         }
@@ -1480,7 +1480,7 @@ fn completed_current_research_file_targets(
         return Vec::new();
     }
 
-    if collect_successful_file_management_actions(messages) == 0 {
+    if !has_file_completion_candidate_activity(messages) {
         return Vec::new();
     }
 
@@ -1513,7 +1513,7 @@ fn completed_file_management_targets(
         return Vec::new();
     }
 
-    if collect_successful_file_management_actions(messages) == 0 {
+    if !has_file_completion_candidate_activity(messages) {
         return Vec::new();
     }
 
@@ -1754,11 +1754,35 @@ fn record_completed_file_preview_interactions(
 }
 
 fn prompt_prefers_brief_completion_confirmation(prompt: &str) -> bool {
+    let prompt_lower = normalize_prompt_intent_text(prompt).to_ascii_lowercase();
+    let explicitly_requests_preview = [
+        "preview",
+        "show me",
+        "show the",
+        "display",
+        "print the",
+        "paste the",
+        "quote the",
+        "include the contents",
+        "read it back",
+        "read back",
+        "review the file",
+    ]
+    .iter()
+    .any(|needle| prompt_lower.contains(needle));
+
     prompt_requests_memory_file_capture(prompt)
         || prompt_requests_executive_briefing(prompt)
         || prompt_requests_email_corpus_review(prompt)
         || prompt_requests_humanization(prompt)
         || prompt_requests_prediction_market_briefing(prompt)
+        || (!explicitly_requests_preview
+            && prompt_requests_file_output(prompt)
+            && expected_file_management_targets(prompt).len() == 1
+            && !prompt_requests_current_web_research(prompt)
+            && !prompt_requests_document_extraction(prompt)
+            && !prompt_requests_tabular_inspection(prompt)
+            && !prompt_requests_file_grounded_question_answers(prompt))
 }
 
 fn maybe_record_completed_file_preview_interactions(
@@ -1837,7 +1861,7 @@ fn pending_current_research_rewrite_details(
         return Vec::new();
     }
 
-    if collect_successful_file_management_actions(messages) == 0 {
+    if !has_file_completion_candidate_activity(messages) {
         return Vec::new();
     }
 
@@ -1970,8 +1994,7 @@ fn invalid_file_management_targets(
         .filter_map(|group| {
             let invalid = group.iter().find_map(|candidate| {
                 let absolute = session_workdir.join(candidate);
-                let was_targeted = absolute.exists()
-                    || created_paths.contains(absolute.to_string_lossy().as_ref())
+                let was_targeted = created_paths.contains(absolute.to_string_lossy().as_ref())
                     || created_paths.contains(candidate.as_str());
                 if !was_targeted || !absolute.exists() {
                     return None;

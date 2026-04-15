@@ -2092,6 +2092,38 @@ impl AgentCore {
                     log_conversation("Assistant", &text);
                     return text;
                 }
+                let completed_research_targets = completed_current_research_file_targets(
+                    prompt,
+                    &session_workdir,
+                    &messages,
+                    literal_json_output,
+                );
+                if !completed_research_targets.is_empty() {
+                    loop_state.transition(AgentPhase::Evaluating);
+                    loop_state.last_eval_verdict = EvalVerdict::GoalAchieved;
+                    loop_state.mark_terminal(
+                        LoopTransitionReason::GoalAchieved,
+                        "current research file outputs are complete and validated",
+                    );
+
+                    let skill_notice = completion_notice_for_auto_prepared_skill(
+                        prompt,
+                        auto_prepared_skill_name.as_deref(),
+                    );
+                    return self
+                        .finalize_prompt_file_targets_with_memory(
+                            session_id,
+                            prompt,
+                            &session_workdir,
+                            &completed_research_targets,
+                            skill_notice.as_deref(),
+                            &messages,
+                            skip_memory_extraction,
+                            &mut loop_state,
+                        )
+                        .await;
+                }
+
                 if let Err(err) =
                     self.check_context_message_limit(session_id, &messages, &mut loop_state)
                 {
@@ -2186,38 +2218,6 @@ impl AgentCore {
                     ));
                     loop_state.transition(AgentPhase::RePlanning);
                     continue;
-                }
-
-                let completed_research_targets = completed_current_research_file_targets(
-                    prompt,
-                    &session_workdir,
-                    &messages,
-                    literal_json_output,
-                );
-                if !completed_research_targets.is_empty() {
-                    loop_state.transition(AgentPhase::Evaluating);
-                    loop_state.last_eval_verdict = EvalVerdict::GoalAchieved;
-                    loop_state.mark_terminal(
-                        LoopTransitionReason::GoalAchieved,
-                        "current research file outputs are complete and validated",
-                    );
-
-                    let skill_notice = completion_notice_for_auto_prepared_skill(
-                        prompt,
-                        auto_prepared_skill_name.as_deref(),
-                    );
-                    return self
-                        .finalize_prompt_file_targets_with_memory(
-                            session_id,
-                            prompt,
-                            &session_workdir,
-                            &completed_research_targets,
-                            skill_notice.as_deref(),
-                            &messages,
-                            skip_memory_extraction,
-                            &mut loop_state,
-                        )
-                        .await;
                 }
 
                 let completed_file_targets = completed_file_management_targets(
@@ -2321,7 +2321,7 @@ impl AgentCore {
             } else {
                 if !literal_json_output
                     && has_expected_file_targets
-                    && collect_successful_file_management_actions(&messages) == 0
+                    && !has_file_completion_candidate_activity(&messages)
                 {
                     loop_state.mark_follow_up(
                         LoopTransitionReason::FileActionRequired,

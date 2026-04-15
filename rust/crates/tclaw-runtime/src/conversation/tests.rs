@@ -149,9 +149,7 @@ fn event_names(events: &[ConversationEvent]) -> Vec<String> {
             ConversationEvent::ToolExecutionFinished { .. } => {
                 "tool_execution_finished".to_string()
             }
-            ConversationEvent::ToolExecutionFailed { .. } => {
-                "tool_execution_failed".to_string()
-            }
+            ConversationEvent::ToolExecutionFailed { .. } => "tool_execution_failed".to_string(),
             ConversationEvent::CompactionApplied { .. } => "compaction_applied".to_string(),
             ConversationEvent::SummaryUpdated { .. } => "summary_updated".to_string(),
             ConversationEvent::TurnCompleted { .. } => "turn_completed".to_string(),
@@ -168,8 +166,7 @@ fn conversation_round_trip_serializes_cleanly() {
     log.push(ConversationTurn::new(MessageRole::User, "hello"));
 
     let json = serde_json::to_string(&log).expect("serialize conversation");
-    let restored: ConversationLog =
-        serde_json::from_str(&json).expect("deserialize conversation");
+    let restored: ConversationLog = serde_json::from_str(&json).expect("deserialize conversation");
 
     assert_eq!(restored.turns.len(), 1);
     assert_eq!(restored.turns[0].role, MessageRole::User);

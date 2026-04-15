@@ -11,14 +11,14 @@ use crate::{
     session::{SessionRecord, SessionState},
 };
 
-use super::{
-    ApiRequest, AssistantEvent, ConversationEvent, ConversationTurnResult, HookContext,
-    HookOutcome, HookRunner, HookRuntimeError, ModelResponseEvent, ToolCallRequest,
-    ToolExecutor, ToolFailure, TurnSummary, TurnUsageReport,
-};
 use super::helpers::{
     apply_compaction, assistant_message, build_summary_text, emit, normalize_summary_text,
     tool_error_message, tool_permission_level, tool_permission_scope, tool_success_message,
+};
+use super::{
+    ApiRequest, AssistantEvent, ConversationEvent, ConversationTurnResult, HookContext,
+    HookOutcome, HookRunner, HookRuntimeError, ModelResponseEvent, ToolCallRequest, ToolExecutor,
+    ToolFailure, TurnSummary, TurnUsageReport,
 };
 
 #[derive(Debug, Error, Clone, Serialize, Deserialize, PartialEq, Eq)]

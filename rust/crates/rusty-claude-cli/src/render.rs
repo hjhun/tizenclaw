@@ -32,7 +32,10 @@ fn render_human(outcome: &CliOutcome) -> String {
     }
 
     if let Some(resume) = &outcome.resume {
-        lines.push(format!("resume: {} ({})", resume.session_id, resume.message));
+        lines.push(format!(
+            "resume: {} ({})",
+            resume.session_id, resume.message
+        ));
     }
 
     if let Some(command) = &outcome.slash_command {
@@ -81,7 +84,10 @@ fn render_compact(outcome: &CliOutcome) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::init::{CliOutcome, CommandSummary, HelpSummary, InputSummary, PluginSummary, RuntimeSummary, ToolSummary};
+    use crate::init::{
+        CliOutcome, CommandSummary, HelpSummary, InputSummary, PluginSummary, RuntimeSummary,
+        ToolSummary,
+    };
     use tclaw_runtime::{PermissionMode, RuntimeConfig, RuntimePaths, RuntimeProfile};
 
     fn sample_outcome(format: OutputFormat) -> CliOutcome {

@@ -14,7 +14,9 @@ pub enum OutputFormat {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CliMode {
     Auto,
-    Help { topic: Option<String> },
+    Help {
+        topic: Option<String>,
+    },
     ListCommands,
     ListPlugins,
     ListTools,
@@ -177,7 +179,10 @@ pub fn read_piped_stdin<R: Read>(
 }
 
 pub fn merge_prompt_and_stdin(prompt: Option<&str>, stdin: Option<&str>) -> Option<String> {
-    match (prompt.map(str::trim).filter(|value| !value.is_empty()), stdin) {
+    match (
+        prompt.map(str::trim).filter(|value| !value.is_empty()),
+        stdin,
+    ) {
         (Some(prompt), Some(stdin)) => Some(format!("{prompt}\n\n{stdin}")),
         (Some(prompt), None) => Some(prompt.to_string()),
         (None, Some(stdin)) => Some(stdin.to_string()),
@@ -208,7 +213,10 @@ fn parse_permission_mode(value: &str) -> Result<PermissionMode, CliInputError> {
     }
 }
 
-fn required_value<'a, I>(flag: &str, items: &mut std::iter::Peekable<I>) -> Result<String, CliInputError>
+fn required_value<'a, I>(
+    flag: &str,
+    items: &mut std::iter::Peekable<I>,
+) -> Result<String, CliInputError>
 where
     I: Iterator<Item = &'a String>,
 {

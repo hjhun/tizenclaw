@@ -36,7 +36,9 @@ fn reports_unterminated_quotes() {
 #[test]
 fn resolves_aliases_through_the_registry() {
     let registry = test_registry();
-    let outcome = registry.parse("/continue session-42").expect("registry parse");
+    let outcome = registry
+        .parse("/continue session-42")
+        .expect("registry parse");
 
     assert_eq!(
         outcome,
@@ -57,7 +59,9 @@ fn resolves_aliases_through_the_registry() {
 #[test]
 fn reports_missing_required_arguments() {
     let registry = test_registry();
-    let error = registry.parse("/resume").expect_err("validation should fail");
+    let error = registry
+        .parse("/resume")
+        .expect_err("validation should fail");
     assert_eq!(
         error,
         RegistryParseError::MissingRequiredArgument {

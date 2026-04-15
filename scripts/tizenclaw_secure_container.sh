@@ -8,6 +8,10 @@ ROOTFS_TAR="${APP_PACKAGED_DIR}/img/rootfs.tar.gz"
 CONTAINER_ID="tizenclaw_code_sandbox"
 MERGED_USR="${BUNDLE_DIR}/merged_usr"
 PACKAGES_DIR="${APP_RUNTIME_DIR}/sandbox/packages"
+OWNER_USER="${OWNER_USER:-owner}"
+OWNER_GROUP="${OWNER_GROUP:-users}"
+OWNER_UID_DEFAULT="${OWNER_UID_DEFAULT:-5000}"
+OWNER_GID_DEFAULT="${OWNER_GID_DEFAULT:-5000}"
 
 detect_runtime() {
   if [ -x /usr/libexec/tizenclaw/crun ]; then
@@ -26,6 +30,18 @@ detect_runtime() {
 }
 
 RUNTIME_BIN="$(detect_runtime)"
+
+resolve_owner_uid() {
+  id -u "${OWNER_USER}" 2>/dev/null || printf '%s\n' "${OWNER_UID_DEFAULT}"
+}
+
+resolve_owner_gid() {
+  getent group "${OWNER_GROUP}" 2>/dev/null | cut -d: -f3 | head -n1 \
+    || printf '%s\n' "${OWNER_GID_DEFAULT}"
+}
+
+OWNER_UID="$(resolve_owner_uid)"
+OWNER_GID="$(resolve_owner_gid)"
 
 write_config() {
   # Build optional mount entries based on host filesystem
@@ -55,15 +71,19 @@ write_config() {
   "ociVersion": "1.0.2",
   "process": {
     "terminal": false,
-    "user": {"uid": 0, "gid": 0},
+    "user": {"uid": ${OWNER_UID}, "gid": ${OWNER_GID}},
     "args": ["/usr/bin/python3", "/sandbox/tizenclaw_code_executor.py"],
     "env": [
       "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      "HOME=/home/owner",
+      "USER=${OWNER_USER}",
+      "LOGNAME=${OWNER_USER}",
       "LD_LIBRARY_PATH=/lib64:/host_lib:/usr/lib64:/usr/lib:/host_usr_lib:/host_usr_lib64",
       "PYTHONPATH=/packages/pip",
       "PIP_TARGET=/packages/pip",
       "NPM_CONFIG_PREFIX=/packages/npm",
-      "NODE_PATH=/packages/npm/lib/node_modules"
+      "NODE_PATH=/packages/npm/lib/node_modules",
+      "XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/${OWNER_UID}}"
     ],
     "cwd": "/",
     "noNewPrivileges": true,
@@ -152,10 +172,10 @@ write_config() {
       "options": ["rbind", "rw"]
     },
     {
-      "destination": "/opt/usr",
+      "destination": "/opt/usr/share/tizenclaw",
       "type": "bind",
-      "source": "/opt/usr",
-      "options": ["rbind", "rw"]
+      "source": "/opt/usr/share/tizenclaw",
+      "options": ["rbind", "ro"]
     },
     {
       "destination": "/home/owner/.tizenclaw/tools/cli",
@@ -274,7 +294,7 @@ run_without_container() {
   mkdir -p "$R/skills" "$R/proc" "$R/dev" "$R/tmp" \
            "$R/usr" "$R/etc" "$R/opt/etc" \
            "$R/host_lib" "$R/host_usr_lib" "$R/host_usr_lib64" \
-           "$R/run" "$R/data" "$R/opt/usr" \
+           "$R/run" "$R/data" "$R/opt/usr/share/tizenclaw" \
            "${APP_RUNTIME_DIR}/data"
 
   # Build the mount + chroot command as a single string for unshare
@@ -312,8 +332,9 @@ run_without_container() {
 
   CMD="$CMD; mount --rbind /run \"$R/run\" || true"
 
-  # /opt/usr — full app data directory for daemon IPC, config, tools
-  CMD="$CMD; mount --rbind /opt/usr \"$R/opt/usr\" || true"
+  # Keep packaged assets visible but read-only inside the sandbox.
+  CMD="$CMD; mount --rbind /opt/usr/share/tizenclaw \"$R/opt/usr/share/tizenclaw\" || true"
+  CMD="$CMD; mount -o remount,bind,ro \"$R/opt/usr/share/tizenclaw\" || true"
 
   # Crash dump directory for crash-worker
   mkdir -p "$R/opt/usr/share/crash/dump"
@@ -328,7 +349,7 @@ run_without_container() {
   CMD="$CMD; mount --rbind \"/home/owner/.tizenclaw/tools/cli\" \"$R/home/owner/.tizenclaw/tools/cli\" || true"
   CMD="$CMD; mount -o remount,bind,ro \"$R/home/owner/.tizenclaw/tools/cli\" || true"
 
-  CMD="$CMD; exec chroot \"$R\" /usr/bin/sh -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export PYTHONPATH=/packages/pip; export PIP_TARGET=/packages/pip; export NPM_CONFIG_PREFIX=/packages/npm; export NODE_PATH=/packages/npm/lib/node_modules; LD_LIBRARY_PATH=/lib64:/host_lib:/usr/lib64:/usr/lib:/host_usr_lib:/host_usr_lib64 exec /usr/bin/python3 /sandbox/tizenclaw_code_executor.py'"
+  CMD="$CMD; exec chroot --userspec=${OWNER_UID}:${OWNER_GID} \"$R\" /usr/bin/sh -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/home/owner; export USER=${OWNER_USER}; export LOGNAME=${OWNER_USER}; export PYTHONPATH=/packages/pip; export PIP_TARGET=/packages/pip; export NPM_CONFIG_PREFIX=/packages/npm; export NODE_PATH=/packages/npm/lib/node_modules; export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/${OWNER_UID}}; LD_LIBRARY_PATH=/lib64:/host_lib:/usr/lib64:/usr/lib:/host_usr_lib:/host_usr_lib64 exec /usr/bin/python3 /sandbox/tizenclaw_code_executor.py'"
 
   exec unshare -m --propagation unchanged /usr/bin/sh -c "$CMD"
 }

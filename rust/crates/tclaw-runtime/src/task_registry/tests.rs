@@ -3,19 +3,19 @@ use std::thread;
 
 use crate::task_packet::{TaskPacket, TaskPriority};
 use crate::trust_resolver::{
-    TrustFailureReason, TrustLevel, TrustRequirement, TrustResolver, TrustSubject,
-    TrustSubjectKind,
+    TrustFailureReason, TrustLevel, TrustRequirement, TrustResolver, TrustSubject, TrustSubjectKind,
 };
 
 fn queued_task(task_id: &str) -> TaskPacket {
-    TaskPacket::queued(task_id, "review worker output", TaskPriority::High)
-        .with_lane("lane-a")
+    TaskPacket::queued(task_id, "review worker output", TaskPriority::High).with_lane("lane-a")
 }
 
 #[test]
 fn registry_records_lane_events_for_happy_path() {
     let registry = TaskRegistry::new();
-    registry.register(queued_task("task-1")).expect("register task");
+    registry
+        .register(queued_task("task-1"))
+        .expect("register task");
     registry
         .assign_worker("task-1", "worker-1", Some("session-1".to_string()))
         .expect("assign worker");
@@ -58,7 +58,10 @@ fn registry_blocks_tasks_when_trust_resolution_denies_execution() {
 
     assert_eq!(task.status, TaskStatus::BlockedByTrust);
     assert_eq!(
-        registry.lane_events().last().map(|event| event.kind.clone()),
+        registry
+            .lane_events()
+            .last()
+            .map(|event| event.kind.clone()),
         Some(LaneEventKind::TrustBlocked)
     );
 }
@@ -66,7 +69,9 @@ fn registry_blocks_tasks_when_trust_resolution_denies_execution() {
 #[test]
 fn registry_records_failure_paths() {
     let registry = TaskRegistry::new();
-    registry.register(queued_task("task-3")).expect("register task");
+    registry
+        .register(queued_task("task-3"))
+        .expect("register task");
     registry
         .assign_worker("task-3", "worker-3", None)
         .expect("assign");
@@ -88,7 +93,9 @@ fn registry_records_failure_paths() {
 #[test]
 fn registry_rejects_invalid_status_transition() {
     let registry = TaskRegistry::new();
-    registry.register(queued_task("task-4")).expect("register task");
+    registry
+        .register(queued_task("task-4"))
+        .expect("register task");
 
     let error = registry
         .complete_task("task-4")
@@ -124,13 +131,11 @@ fn registry_supports_concurrent_registration() {
     let snapshot = registry.snapshot();
     assert_eq!(snapshot.active_tasks.len(), 16);
     assert_eq!(snapshot.lane_events.len(), 16);
-    assert!(
-        snapshot
-            .lane_events
-            .iter()
-            .enumerate()
-            .all(|(index, event)| event.sequence == index as u64)
-    );
+    assert!(snapshot
+        .lane_events
+        .iter()
+        .enumerate()
+        .all(|(index, event)| event.sequence == index as u64));
 }
 
 #[test]
@@ -151,7 +156,9 @@ fn registry_supports_concurrent_task_completion() {
                 registry
                     .assign_worker(&task_id, worker_id.clone(), None)
                     .expect("assign concurrent task");
-                registry.start_task(&task_id).expect("start concurrent task");
+                registry
+                    .start_task(&task_id)
+                    .expect("start concurrent task");
                 registry
                     .complete_task(&task_id)
                     .expect("complete concurrent task");
@@ -167,11 +174,9 @@ fn registry_supports_concurrent_task_completion() {
     assert!(snapshot.active_tasks.is_empty());
     assert_eq!(snapshot.completed_tasks.len(), 8);
     assert_eq!(snapshot.lane_events.len(), 32);
-    assert!(
-        snapshot
-            .lane_events
-            .iter()
-            .enumerate()
-            .all(|(index, event)| event.sequence == index as u64)
-    );
+    assert!(snapshot
+        .lane_events
+        .iter()
+        .enumerate()
+        .all(|(index, event)| event.sequence == index as u64));
 }

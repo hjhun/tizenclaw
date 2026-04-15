@@ -249,8 +249,11 @@ mod tests {
         let root = temp_dir("tclaw-plugin-hook-exec");
         let hooks_dir = root.join("hooks");
         fs::create_dir_all(&hooks_dir).expect("create hooks dir");
-        fs::write(hooks_dir.join("pre.sh"), "#!/bin/sh\necho pre:$TCLAW_PLUGIN_NAME\n")
-            .expect("write pre hook");
+        fs::write(
+            hooks_dir.join("pre.sh"),
+            "#!/bin/sh\necho pre:$TCLAW_PLUGIN_NAME\n",
+        )
+        .expect("write pre hook");
         fs::write(
             hooks_dir.join("post.sh"),
             "#!/bin/sh\necho boom >&2\nexit 7\n",

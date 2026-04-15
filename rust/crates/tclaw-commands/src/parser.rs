@@ -35,7 +35,9 @@ pub struct ParsedCommandArgument {
 }
 
 /// Parses a slash command string into its raw invocation representation.
-pub fn parse_slash_command(input: &str) -> Result<SlashCommandParseOutcome, SlashCommandParseError> {
+pub fn parse_slash_command(
+    input: &str,
+) -> Result<SlashCommandParseOutcome, SlashCommandParseError> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
         return Ok(SlashCommandParseOutcome::Empty);

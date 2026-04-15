@@ -15,8 +15,11 @@ use super::{
     TurnSummary,
 };
 
-pub(super) fn emit<F>(events: &mut Vec<ConversationEvent>, observer: &mut F, event: ConversationEvent)
-where
+pub(super) fn emit<F>(
+    events: &mut Vec<ConversationEvent>,
+    observer: &mut F,
+    event: ConversationEvent,
+) where
     F: FnMut(&ConversationEvent),
 {
     observer(&event);

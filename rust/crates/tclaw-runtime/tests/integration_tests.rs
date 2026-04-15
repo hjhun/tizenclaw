@@ -8,10 +8,22 @@ fn runtime_bootstrap_exposes_documented_surfaces_and_modules() {
     let bootstrap = RuntimeBootstrap::new();
 
     assert_eq!(bootstrap.canonical_runtime, "rust");
-    assert!(bootstrap.surfaces.iter().any(|surface| surface.name == "runtime"));
-    assert!(bootstrap.surfaces.iter().any(|surface| surface.name == "api"));
-    assert!(bootstrap.modules.modules.contains(&"conversation".to_string()));
-    assert!(bootstrap.modules.modules.contains(&"worker_boot".to_string()));
+    assert!(bootstrap
+        .surfaces
+        .iter()
+        .any(|surface| surface.name == "runtime"));
+    assert!(bootstrap
+        .surfaces
+        .iter()
+        .any(|surface| surface.name == "api"));
+    assert!(bootstrap
+        .modules
+        .modules
+        .contains(&"conversation".to_string()));
+    assert!(bootstrap
+        .modules
+        .modules
+        .contains(&"worker_boot".to_string()));
 }
 
 #[test]

@@ -2364,6 +2364,10 @@ fn collect_successful_file_management_actions(messages: &[LlmMessage]) -> usize 
         .count()
 }
 
+fn has_file_completion_candidate_activity(messages: &[LlmMessage]) -> bool {
+    collect_successful_file_management_actions(messages) > 0
+}
+
 fn collect_successful_file_management_paths(messages: &[LlmMessage]) -> HashSet<String> {
     messages
         .iter()
@@ -2432,8 +2436,7 @@ fn missing_file_management_targets(
         .filter_map(|group| {
             let satisfied = group.iter().any(|candidate| {
                 let absolute = session_workdir.join(candidate);
-                absolute.exists()
-                    || created_paths.contains(absolute.to_string_lossy().as_ref())
+                created_paths.contains(absolute.to_string_lossy().as_ref())
                     || created_paths.contains(candidate.as_str())
             });
             if satisfied {

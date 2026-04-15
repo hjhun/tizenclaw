@@ -477,22 +477,19 @@ impl AgentCore {
                             || lower.contains("alpha ")
                     })
                     .count();
+                let count_notice = email_corpus_count_notice(prompt, source_files.len(), "emails");
+                let coverage_notice =
+                    email_corpus_coverage_notice(source_files.len(), "emails", relevant_count);
                 let target_path = session_workdir.join(&target);
                 if std::fs::write(&target_path, rendered.as_bytes()).is_ok() {
+                    if let Some(notice) = count_notice.as_deref() {
+                        self.store_assistant_text_message(session_id, notice);
+                    }
+                    if let Some(notice) = coverage_notice.as_deref() {
+                        self.store_assistant_text_message(session_id, notice);
+                    }
                     if let Ok(ss) = self.session_store.lock() {
                         if let Some(store) = ss.as_ref() {
-                            if let Some(notice) =
-                                email_corpus_count_notice(prompt, source_files.len(), "emails")
-                            {
-                                self.store_assistant_text_message(session_id, &notice);
-                            }
-                            if let Some(notice) = email_corpus_coverage_notice(
-                                source_files.len(),
-                                "emails",
-                                relevant_count,
-                            ) {
-                                self.store_assistant_text_message(session_id, &notice);
-                            }
                             record_synthetic_tool_interaction(
                                 store,
                                 session_id,

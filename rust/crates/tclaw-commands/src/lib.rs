@@ -338,10 +338,7 @@ impl CommandRegistryBuilder {
         self
     }
 
-    pub fn add_commands(
-        mut self,
-        entries: impl IntoIterator<Item = CommandManifestEntry>,
-    ) -> Self {
+    pub fn add_commands(mut self, entries: impl IntoIterator<Item = CommandManifestEntry>) -> Self {
         self.entries.extend(entries);
         self
     }
@@ -454,11 +451,11 @@ impl CommandRegistry {
                 Ok(RegistryParseOutcome::NotSlashCommand { input })
             }
             SlashCommandParseOutcome::Invocation(raw) => {
-                let entry = self
-                    .resolve(&raw.invoked_name)
-                    .ok_or_else(|| RegistryParseError::UnknownCommand {
+                let entry = self.resolve(&raw.invoked_name).ok_or_else(|| {
+                    RegistryParseError::UnknownCommand {
                         name: raw.invoked_name.clone(),
-                    })?;
+                    }
+                })?;
                 let arguments = bind_arguments(entry, &raw.arguments)?;
                 Ok(RegistryParseOutcome::Matched(ResolvedSlashCommand {
                     requested_name: raw.invoked_name,

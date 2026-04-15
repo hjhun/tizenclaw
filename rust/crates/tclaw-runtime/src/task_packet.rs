@@ -110,17 +110,22 @@ mod tests {
             .with_trust_requirement(TrustRequirement::at_least(TrustLevel::Trusted));
 
         assert_eq!(packet.status, TaskStatus::Queued);
-        assert_eq!(packet.assignment.as_ref().map(|a| a.lane_id.as_str()), Some("lane-a"));
         assert_eq!(
-            packet.trust.as_ref().map(|gate| gate.requirement.minimum_level.clone()),
+            packet.assignment.as_ref().map(|a| a.lane_id.as_str()),
+            Some("lane-a")
+        );
+        assert_eq!(
+            packet
+                .trust
+                .as_ref()
+                .map(|gate| gate.requirement.minimum_level.clone()),
             Some(TrustLevel::Trusted)
         );
     }
 
     #[test]
     fn task_packet_serializes_nested_trust_gate() {
-        let mut packet =
-            TaskPacket::queued("task-2", "run delegated check", TaskPriority::Normal);
+        let mut packet = TaskPacket::queued("task-2", "run delegated check", TaskPriority::Normal);
         packet.trust = Some(TaskTrustGate {
             requirement: TrustRequirement::at_least(TrustLevel::Restricted),
             resolution: Some(TrustResolution {
@@ -137,7 +142,10 @@ mod tests {
         let restored: TaskPacket = serde_json::from_str(&json).expect("deserialize packet");
 
         assert_eq!(
-            restored.trust.and_then(|gate| gate.resolution).map(|resolution| resolution.reason),
+            restored
+                .trust
+                .and_then(|gate| gate.resolution)
+                .map(|resolution| resolution.reason),
             Some("pre-approved".to_string())
         );
     }

@@ -2,8 +2,8 @@ pub mod bash;
 pub mod bash_validation;
 pub mod bootstrap;
 pub mod branch_lock;
-pub mod compact;
 pub mod commands;
+pub mod compact;
 pub mod config;
 pub mod config_validate;
 pub mod conversation;
@@ -45,9 +45,11 @@ pub use bash::{BashCommand, BashExecutionPlan};
 pub use bash_validation::{BashValidationResult, BashValidationViolation};
 pub use bootstrap::{RuntimeBootstrap, RuntimeModuleMap};
 pub use branch_lock::BranchLockState;
-pub use compact::CompactionPlan;
 pub use commands::{runtime_command_manifests, runtime_command_registry};
-pub use config::{McpRuntimeConfig, RuntimeConfig, RuntimeConfigPatch, RuntimePaths, RuntimeProfile};
+pub use compact::CompactionPlan;
+pub use config::{
+    McpRuntimeConfig, RuntimeConfig, RuntimeConfigPatch, RuntimePaths, RuntimeProfile,
+};
 pub use config_validate::{ConfigValidationIssue, ConfigValidationReport};
 pub use conversation::{
     ApiRequest, AssistantEvent, ConversationEngine, ConversationEngineOptions, ConversationEvent,
@@ -65,11 +67,11 @@ pub use lane_events::{LaneEvent, LaneEventKind, LaneEventPayload};
 pub use lsp_client::LspClientSpec;
 pub use mcp::{
     bridged_tool_name, JsonRpcError, JsonRpcId, JsonRpcNotification, JsonRpcRequest,
-    JsonRpcResponse, McpClientMetadata, McpContentBlock, McpInitializeParams,
-    McpInitializeResult, McpListResourcesResult, McpListToolsResult, McpPeerCapabilities,
-    McpReadResourceParams, McpReadResourceResult, McpResourceCapabilities,
-    McpResourceContents, McpResourceDefinition, McpRuntimeState, McpServerInfo,
-    McpToolCallParams, McpToolCallResult, McpToolCapabilities, McpToolDefinition,
+    JsonRpcResponse, McpClientMetadata, McpContentBlock, McpInitializeParams, McpInitializeResult,
+    McpListResourcesResult, McpListToolsResult, McpPeerCapabilities, McpReadResourceParams,
+    McpReadResourceResult, McpResourceCapabilities, McpResourceContents, McpResourceDefinition,
+    McpRuntimeState, McpServerInfo, McpToolCallParams, McpToolCallResult, McpToolCapabilities,
+    McpToolDefinition,
 };
 pub use mcp_client::McpClientSpec;
 pub use mcp_lifecycle_hardened::{ManagedMcpServer, McpLifecyclePolicy, McpServerHealth};
@@ -85,8 +87,8 @@ pub use permission_enforcer::{
 };
 pub use permissions::{
     PermissionDecision, PermissionDecisionSource, PermissionLevel, PermissionMode,
-    PermissionOutcome, PermissionPromptDecision, PermissionPromptRecord,
-    PermissionPromptRequest, PermissionRequest, PermissionScope,
+    PermissionOutcome, PermissionPromptDecision, PermissionPromptRecord, PermissionPromptRequest,
+    PermissionRequest, PermissionScope,
 };
 pub use plugin_lifecycle::{PluginLifecyclePhase, PluginLifecycleState};
 pub use policy_engine::{
@@ -140,10 +142,7 @@ mod tests {
         let bootstrap = RuntimeBootstrap::new();
 
         assert_eq!(bootstrap.canonical_runtime, "rust");
-        assert!(bootstrap
-            .modules
-            .modules
-            .contains(&"commands".to_string()));
+        assert!(bootstrap.modules.modules.contains(&"commands".to_string()));
         assert!(bootstrap.modules.modules.contains(&"config".to_string()));
         assert!(bootstrap
             .surfaces

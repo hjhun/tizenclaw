@@ -90,7 +90,8 @@ mod tests {
 
     #[test]
     fn parses_multiline_sse_frames() {
-        let input = "event: message\nid: 1\ndata: hello\ndata: world\n\n:data-only\n\ndata: tail\n\n";
+        let input =
+            "event: message\nid: 1\ndata: hello\ndata: world\n\n:data-only\n\ndata: tail\n\n";
         let events = SseParser::parse(input).expect("sse parsing should succeed");
         assert_eq!(
             events,

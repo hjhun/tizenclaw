@@ -1534,6 +1534,29 @@ fn normalize_grounded_answer_segment(segment: &str) -> String {
         .to_string()
 }
 
+fn extract_markdown_section_body(content: &str, heading_pattern: &str) -> Option<String> {
+    regex::Regex::new(&format!(
+        r"(?is)##\s*(?:{heading_pattern})\b(?P<section>.*?)(?:\n##|\z)"
+    ))
+    .ok()
+    .and_then(|re| re.captures(content))
+    .and_then(|caps| caps.name("section").map(|value| value.as_str().to_string()))
+}
+
+fn extract_markdown_section_value(content: &str, heading_pattern: &str) -> Option<String> {
+    let section = extract_markdown_section_body(content, heading_pattern)?;
+    let first_value = section
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(|line| {
+            line.trim_start_matches(|ch: char| matches!(ch, '-' | '*' | '#' | ' '))
+                .trim()
+        })
+        .filter(|value| !value.is_empty())?;
+    Some(clean_grounded_answer_text(first_value))
+}
+
 fn clean_grounded_answer_text(answer: &str) -> String {
     let mut cleaned = answer.trim().trim_matches('`').to_string();
     cleaned = cleaned.replace("**", "");
@@ -1626,9 +1649,20 @@ fn extract_grounded_answer_by_pattern(question: &str, content: &str) -> Option<S
 
     if normalized_question.contains("programming language") || normalized_question.contains("language")
     {
+        if let Some(value) = extract_markdown_section_value(
+            content,
+            r"Favorite\s+Programming\s+Language|Programming\s+Language",
+        ) {
+            return Some(value);
+        }
         return extract(r"(?i)(?:favorite programming language is|favorite language:)\s*([^.\n]+)");
     }
     if normalized_question.contains("when") || normalized_question.contains("start learning") {
+        if let Some(value) =
+            extract_markdown_section_value(content, r"Started\s+Learning(?:\s+Date)?|Start\s+Date")
+        {
+            return Some(value);
+        }
         return extract(
             r"(?i)(?:started learning(?:\s+[A-Za-z0-9#+-]+)?(?:\s+on)?|start date:)\s*([A-Za-z]+\s+\d{1,2},\s+\d{4})",
         );
@@ -1668,6 +1702,32 @@ fn extract_grounded_answer_by_pattern(question: &str, content: &str) -> Option<S
         });
     }
     if normalized_question.contains("project") {
+        if let Some(section) = extract_markdown_section_body(content, r"Project|Current\s+Project") {
+            let section_name =
+                regex::Regex::new(r"(?im)^\s*-\s*(?:\*\*)?(?:Project\s+)?Name(?:\*\*)?:\s*([^\n]+)")
+                    .ok()
+                    .and_then(|re| re.captures(&section))
+                    .and_then(|caps| caps.get(1).map(|value| clean_grounded_answer_text(value.as_str())));
+            let section_description = regex::Regex::new(
+                r"(?im)^\s*-\s*(?:\*\*)?(?:Project\s+)?Description(?:\*\*)?:\s*([^\n]+)",
+            )
+            .ok()
+            .and_then(|re| re.captures(&section))
+            .and_then(|caps| caps.get(1).map(|value| clean_grounded_answer_text(value.as_str())));
+            if let Some(name) = section_name {
+                return Some(match section_description {
+                    Some(description) => format!(
+                        "{}, {}",
+                        name.trim_end_matches('.'),
+                        description.trim_end_matches('.')
+                    ),
+                    None => name.trim_end_matches('.').to_string(),
+                });
+            }
+            if let Some(value) = extract_markdown_section_value(content, r"Project|Current\s+Project") {
+                return Some(value);
+            }
+        }
         if let Some(section) = regex::Regex::new(
             r"(?is)##\s*Current Project\b(?P<section>.*?)(?:\n##|\z)",
         )
@@ -1717,6 +1777,11 @@ fn extract_grounded_answer_by_pattern(question: &str, content: &str) -> Option<S
         return extract(r"(?i)project:\s*([^.\n]+)");
     }
     if normalized_question.contains("secret") || normalized_question.contains("phrase") {
+        if let Some(value) =
+            extract_markdown_section_value(content, r"Secret\s+Code\s+Phrase|Secret(?:\s+Phrase)?")
+        {
+            return Some(value);
+        }
         return extract(
             r#"(?i)(?:secret code phrase(?: for our team)? is|secret phrase:)\s*"?([^"\n.]+)"?"#,
         );
