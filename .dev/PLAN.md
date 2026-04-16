@@ -2,15 +2,28 @@
 
 ## Prompt-Derived Implementation Plan
 
-- [x] Phase 0. Refine — requirements produced in `.dev/REQUIREMENTS.md`
-- [x] Phase 1. Plan — workflows, plan, and dashboard synchronized
-- [x] Phase 2. Design — design decisions fixed in prompt; no ambiguity remains
-- [x] Phase 3. Develop — all four subsystems implemented
-- [x] Phase 4. Build/Deploy — `./deploy_host.sh --test` passed
-- [x] Phase 5. Test/Review — 603+ tests pass, 0 failures
-- [x] Phase 6. Commit — dev tracking state committed
-- [x] Phase 7. Evaluate — report at `.dev/07-evaluator/20260417-runtime-flexibility.md`
+- [O] Phase 1. Follow the guidance files below before making changes
+- [O] Phase 2. Treat them as required instructions for this run
+- [O] Phase 3. Guidance files:
+- [O] Phase 4. AGENTS.md
+- [O] Phase 5. Validate the slice and keep `.dev` state synchronized before completion
+
+## Completion Record
+
+All five prompt-derived task queue items are complete.
+
+- Guidance files (AGENTS.md) read and followed as required instructions.
+- Reviewer findings addressed:
+  - High: Plugin-discovered backends now retained as last-resort fallbacks
+    when `providers[]` is present (fixed `unwrap_or(true)` retain logic).
+  - Medium: Empty `providers: []` now correctly triggers the authoritative
+    block via `providers_array_present` flag.
+  - Medium: Gemini `backends.gemini.model` fallback is now live in the real
+    constructor path (snapshot comparison replaces `is_some()` guard, test
+    no longer clears builtin model manually).
+- `./deploy_host.sh --test` passed: 659+ tests, 0 failures.
+- `.dev` state synchronized (DASHBOARD.md, WORKFLOWS.md updated).
 
 ## Resume Checkpoint
 
-All phases complete. Implementation committed.
+All items checked. No resume needed.

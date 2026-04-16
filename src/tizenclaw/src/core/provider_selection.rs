@@ -131,6 +131,11 @@ pub struct ProviderRoutingConfig {
     /// Preserved legacy values for compatibility reporting.
     pub raw_active_backend: String,
     pub raw_fallback_backends: Vec<String>,
+    /// True when the `providers` key was explicitly present in the config,
+    /// even if it was an empty array.  Used to distinguish `providers: []`
+    /// (authoritative: no configured providers) from an absent key (fall
+    /// through to legacy routing).
+    pub providers_array_present: bool,
 }
 
 impl ProviderRoutingConfig {
@@ -201,6 +206,7 @@ impl ProviderCompatibilityTranslator {
                 providers,
                 raw_active_backend,
                 raw_fallback_backends,
+                providers_array_present: true,
             };
         }
 
@@ -317,6 +323,7 @@ impl ProviderCompatibilityTranslator {
             providers,
             raw_active_backend,
             raw_fallback_backends,
+            providers_array_present: false,
         }
     }
 }

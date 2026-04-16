@@ -1087,9 +1087,6 @@ mod tests {
         .unwrap();
 
         let mut cli_backends = default_registry();
-        if let Some(definition) = cli_backends.definitions.get_mut(&backend("gemini")) {
-            definition.model = None;
-        }
         TelegramClient::read_backend_models_from_llm_config(&temp_root, &mut cli_backends);
 
         assert_eq!(

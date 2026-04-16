@@ -183,25 +183,38 @@ impl TelegramClient {
             return;
         };
 
+        // Snapshot models before applying the telegram section so we can later
+        // detect whether an explicit operator override already exists.  Builtin
+        // defaults present in the snapshot should not block the per-backend
+        // llm_config fallback below.
+        let pre_telegram_models: std::collections::HashMap<TelegramCliBackend, Option<String>> =
+            ["gemini", "codex", "claude"]
+                .iter()
+                .map(|&n| {
+                    let b = TelegramCliBackend::new(n);
+                    let m = cli_backends.get(&b).and_then(|d| d.model.clone());
+                    (b, m)
+                })
+                .collect();
+
         // Merge telegram-scoped cli_backends overrides (model_choices etc.)
         // from the optional `telegram.cli_backends` key in llm_config.json.
         if let Some(telegram_section) = json.get("telegram") {
             cli_backends.merge_config_value(telegram_section.get("cli_backends"));
         }
 
-        // Per-backend model fallback: if no model was set for a Telegram
-        // backend (neither in telegram_config.json nor via the telegram section
-        // above), try the top-level `backends.<name>.model` key for backwards
-        // compatibility.  Apply this to each Telegram-capable backend so that
-        // operators who configure model choices at the LLM layer automatically
-        // see them in the Telegram CLI without duplication.
+        // Per-backend model fallback: apply `backends.<name>.model` from
+        // llm_config.json when the telegram section above did not set an
+        // explicit model.  Built-in defaults do not block this fallback;
+        // only an operator-provided telegram-section value takes priority.
         for backend_name in &["gemini", "codex", "claude"] {
             let backend = TelegramCliBackend::new(*backend_name);
-            let model_already_set = cli_backends
+            let current_model = cli_backends.get(&backend).and_then(|d| d.model.clone());
+            let pre_merge_model = pre_telegram_models
                 .get(&backend)
-                .and_then(|definition| definition.model.as_deref())
-                .is_some();
-            if model_already_set {
+                .and_then(|m| m.clone());
+            // The telegram section explicitly set a model (changed from snapshot).
+            if current_model != pre_merge_model {
                 continue;
             }
             if let Some(model) = json

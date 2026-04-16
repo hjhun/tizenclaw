@@ -1,31 +1,26 @@
-Improve PinchBench harness and research extraction
+Fix reviewer findings from rework pass 11
 
-PinchBench harness enhancements:
-- Add transient retry support (limit=3, delay=2s) in
-  run_pinchbench_oauth.py to recover from transient failures
-- Track per-case token usage and cost with add_usage/read_usage_delta
-- Parse stage verdicts from DASHBOARD.md in write_pinchbench_score.py;
-  add --dashboard argument and STAGE_ORDER constants
+Address three issues found during Phase 5 review of the runtime
+flexibility improvements:
 
-Research and agent loop improvements:
-- Add extract_markdown_section_body / extract_markdown_section_value
-  helpers in research.rs to handle markdown-structured profile data
-  when extracting grounded answers (language, date, project fields)
-- Move completed_research_targets check before context-limit check in
-  process_prompt.rs to prioritize goal detection in the agent loop
-- Add project_email_summary_shortcut test covering end-to-end email
-  file target completion
+1. Plugin-discovered backends were incorrectly dropped when `providers[]`
+   was present. The old retain predicate removed any backend not listed in
+   the enabled set; the fix uses `unwrap_or(true)` so plugin-discovered
+   backends absent from `providers[]` remain as last-resort fallbacks.
+   Applied to both startup and reload paths in runtime_core_impl.rs.
 
-Secure container non-root execution:
-- Resolve owner UID/GID from system (owner:users) with fallback
-  defaults (5000:5000) in tizenclaw_secure_container.sh
-- Set HOME, USER, LOGNAME, XDG_RUNTIME_DIR inside the container
+2. An explicit empty `providers: []` was not treated as authoritative
+   because the sort/retain block was guarded by `!ordered_names.is_empty()`,
+   skipping the block for an empty providers array. Added
+   `providers_array_present` to `ProviderRoutingConfig` and changed the
+   guard to also enter the block when the key is explicitly present.
 
-CMakeLists.txt asset manifest support:
-- Derive TIZENCLAW_ROOTFS_ARCH from CARGO_TARGET
-- Add tizenclaw_manifest_append and tizenclaw_manifest_append_tree
-  helper functions for packaged-asset manifest generation
+3. The `backends.<name>.model` fallback in
+   `read_backend_models_from_llm_config` was dead in practice for Gemini
+   because the builtin default model caused `is_some()` to skip the
+   fallback. Replaced the guard with a before/after snapshot comparison
+   so the fallback only skips when the telegram section explicitly changed
+   the model. Updated the test to remove the manual model-clearing
+   workaround.
 
-Rust formatting: normalize multi-line struct variant style in
-worker_boot.rs and reformat long chained expressions in tclaw-tools
-and tclaw-api crates; update .dev workflow state documents.
+./deploy_host.sh --test: PASS (659+ tests, 0 failures).

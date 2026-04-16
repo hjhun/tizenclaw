@@ -1094,24 +1094,25 @@ impl AgentCore {
         // ProviderSelector iterates in the operator-specified order, not the
         // initialization candidate order which may differ (e.g. plugin priority).
         let ordered_names = routing.ordered_names();
-        if !ordered_names.is_empty() {
+        if routing.providers_array_present || !ordered_names.is_empty() {
             instances.sort_by_key(|inst| {
                 ordered_names
                     .iter()
                     .position(|name| *name == inst.name.as_str())
                     .unwrap_or(usize::MAX)
             });
-            // When the `providers` array is present it is authoritative: drop
-            // any initialized instance that is not in the enabled set so that
-            // a provider marked `enabled: false` cannot be used as a fallback.
-            let providers_authoritative =
-                routing.providers.iter().any(|p| {
-                    p.source
-                        == crate::core::provider_selection::ProviderConfigSource::Providers
-                });
-            if providers_authoritative {
+            // When the `providers` array key is present it is authoritative.
+            // Drop only instances that are explicitly listed and disabled.
+            // Plugin-discovered backends absent from `providers[]` are kept
+            // at the end of the list as last-resort fallbacks.
+            if routing.providers_array_present {
                 instances.retain(|inst| {
-                    ordered_names.iter().any(|n| *n == inst.name.as_str())
+                    routing
+                        .providers
+                        .iter()
+                        .find(|p| p.name == inst.name)
+                        .map(|p| p.enabled)
+                        .unwrap_or(true)
                 });
                 log::debug!(
                     "Init: providers[] authoritative — retained {} enabled instance(s)",
@@ -1290,24 +1291,24 @@ impl AgentCore {
 
         // Re-order to match configured routing preference.
         let ordered_names = routing.ordered_names();
-        if !ordered_names.is_empty() {
+        if routing.providers_array_present || !ordered_names.is_empty() {
             instances.sort_by_key(|inst| {
                 ordered_names
                     .iter()
                     .position(|name| *name == inst.name.as_str())
                     .unwrap_or(usize::MAX)
             });
-            // When the `providers` array is present it is authoritative: drop
-            // any initialized instance that is not in the enabled set so that
-            // a provider marked `enabled: false` cannot be used as a fallback.
-            let providers_authoritative =
-                routing.providers.iter().any(|p| {
-                    p.source
-                        == crate::core::provider_selection::ProviderConfigSource::Providers
-                });
-            if providers_authoritative {
+            // When the `providers` array key is present it is authoritative.
+            // Drop only instances explicitly listed and disabled; plugin-
+            // discovered backends absent from `providers[]` stay as fallbacks.
+            if routing.providers_array_present {
                 instances.retain(|inst| {
-                    ordered_names.iter().any(|n| *n == inst.name.as_str())
+                    routing
+                        .providers
+                        .iter()
+                        .find(|p| p.name == inst.name)
+                        .map(|p| p.enabled)
+                        .unwrap_or(true)
                 });
                 log::debug!(
                     "Reload: providers[] authoritative — retained {} enabled instance(s)",

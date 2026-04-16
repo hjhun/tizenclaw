@@ -14,7 +14,7 @@
 
 ### Phase 0. Refine
 
-- Outcome: requirements, scope boundaries, constraints, and acceptance
+- [O] Outcome: requirements, scope boundaries, constraints, and acceptance
   criteria are explicit.
 - Inputs: task prompt, roadmap goal, repository rules.
 - Outputs: `.dev/REQUIREMENTS.md`
@@ -23,7 +23,7 @@
 
 ### Phase 1. Plan
 
-- Outcome: downstream execution order and validation gates are fixed for this
+- [O] Outcome: downstream execution order and validation gates are fixed for this
   roadmap slice.
 - Inputs: `.dev/REQUIREMENTS.md`, `AGENTS.md`, `.dev/workflow_state.json`,
   current `.dev` state.
@@ -35,7 +35,7 @@
 
 ### Phase 2. Design
 
-- Outcome: implementation-critical design choices are fixed for provider
+- [O] Outcome: implementation-critical design choices are fixed for provider
   routing, Telegram config precedence, ClawHub update semantics, and snapshot
   cache ownership and invalidation.
 - Inputs: `.dev/REQUIREMENTS.md`, runtime configuration and admin surface
@@ -48,7 +48,7 @@
 
 ### Phase 3. Develop
 
-- Outcome: the selected design is implemented across runtime, config,
+- [O] Outcome: the selected design is implemented across runtime, config,
   ClawHub, cache, and CLI surfaces.
 - Inputs: approved design decisions and prompt-derived task queue.
 - Outputs: scoped code changes, required `tests/system/` updates,
@@ -61,7 +61,7 @@
 
 ### Phase 4. Build/Deploy
 
-- Outcome: host build and deploy sanity is validated through the scripted
+- [O] Outcome: host build and deploy sanity is validated through the scripted
   repository path.
 - Inputs: completed implementation state.
 - Outputs: host build or deploy evidence from `./deploy_host.sh`
@@ -70,7 +70,7 @@
 
 ### Phase 5. Test/Review
 
-- Outcome: routing, Telegram config, ClawHub update, and snapshot cache
+- [O] Outcome: routing, Telegram config, ClawHub update, and snapshot cache
   behavior are validated and reviewed for regressions.
 - Inputs: buildable implementation and new or updated tests.
 - Outputs: executed validation evidence, review findings, refreshed
@@ -83,7 +83,7 @@
 
 ### Phase 6. Commit
 
-- Outcome: the change set is packaged for version control without pushing.
+- [O] Outcome: the change set is packaged for version control without pushing.
 - Inputs: validated implementation and recorded residual risks.
 - Outputs: `.tmp/commit_msg.txt`, final commit when requested
 - Completion signal: diff scope matches the approved plan and commit message
@@ -92,8 +92,8 @@
 
 ### Phase 7. Evaluate
 
-- Outcome: the final assessment records verdict, coverage, and residual risk.
-- Inputs: post-validation repository state.
+- [O] Outcome: the final assessment records verdict, coverage, and residual risk.
+- Inputs: post-validated repository state.
 - Outputs: evaluator report under `.dev/07-evaluator/`
 - Completion signal: an evaluator report records an explicit final verdict.
 - Status: complete
