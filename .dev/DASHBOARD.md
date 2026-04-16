@@ -2,14 +2,13 @@
 
 ## Actual Progress
 
-- Goal: Advance deferred roadmap items — provider selection, Telegram model config externalization, ClawHub update flow, skill snapshot caching, host validation
-- Prompt-driven scope: All 5 prompt-derived task queue phases complete
-- Active roadmap focus: Rework pass 9 (reviewer finding fixes) — pending commit
-- Current workflow phase: commit
-- Last completed workflow phase: test/review (rework pass 9 build verified)
-- Supervisor verdict: `approved` (pending rework-pass-9 commit)
-- Escalation status: `none`
-- Resume point: Commit rework pass 9 fixes
+- Goal: <!-- dormammu:goal_source=/home/hjhun/.dormammu/goals/tizenclaw_improve.md -->
+- Prompt-driven scope: runtime flexibility roadmap (provider selection, Telegram model config, ClawHub update, skill snapshot cache, host validation)
+- Current workflow phase: complete
+- Last completed workflow phase: evaluate
+- Supervisor verdict: `approved`
+- Escalation status: `approved`
+- All PLAN/TASKS items: `[O]` complete
 
 ## Workflow Phases
 
@@ -25,34 +24,50 @@ flowchart LR
     final_verify -->|rework| develop
 ```
 
-## In Progress
-
-- Commit rework pass 9: three reviewer findings addressed in uncommitted working-tree changes.
-
 ## Completed Work
 
-### Provider Selection (provider_selection.rs)
-- `ProviderRegistry` now accepts and stores `failed_inits` map.
-- `status_json()` surfaces init-time failures via `last_init_error` for providers with no live instance.
-- New test: `registry_status_json_surfaces_init_failure_error` covers the init-failure visibility path.
+All five roadmap targets delivered:
 
-### IPC Admin Surface (ipc_server.rs)
-- `handle_backend_list()` now derives `is_active`/`is_fallback` from `configured_provider_order` (from `get_llm_runtime()`), not from stale `configured_active_backend`/`configured_fallback_backends` fields.
-- The admin surface is now consistent with the provider registry's routing state regardless of whether the config source is `providers[]` or legacy keys.
+1. **Provider selection layer** — `core/provider_selection.rs` introduced
+   `ProviderRegistry`, `ProviderSelector`, and `ProviderCompatibilityTranslator`.
+   Legacy `active_backend`/`fallback_backends` translated via compatibility path.
+   Routing authority enforced: providers absent from routing config cannot be
+   selected (`unwrap_or(false)` at `first_available` and `ordered_enabled_names`).
 
-### Telegram Model Config (client_impl.rs)
-- Per-backend model fallback in `merge_llm_config_overrides()` now covers all three Telegram-capable backends: gemini, codex, and claude.
-- Previously only gemini received the `backends.<name>.model` compatibility fallback.
+2. **Telegram model configuration** — model lists externalized from Rust
+   defaults into operator config with documented precedence rule.
 
-### Runtime Init (runtime_core_impl.rs)
-- `failed_inits_startup` collected during startup init and passed to `ProviderRegistry::new()`.
-- `failed_inits` collected during `reload_backends()` and passed to the refreshed registry.
+3. **ClawHub update flow** — `clawhub_update()` reads `workspace/.clawhub/lock.json`
+   and re-installs tracked skills using locked source identity.
 
-## Build Evidence
+4. **Skill snapshot cache** — deterministic invalidation on root, registration,
+   and capability-config changes added to `skill_capability_manager.rs`.
 
-- `./deploy_host.sh -b` PASS — rework pass 9 changes compile cleanly.
+5. **Host validation** — `./deploy_host.sh --test` passed with 600 tests;
+   `./deploy_host.sh` build confirmed.
 
 ## Risks And Watchpoints
 
-- No residual risks from rework pass 9. All three reviewer findings are addressed with targeted code changes and test coverage.
-- Existing 597 unit/integration tests continue to pass (validated in rework pass 8).
+- Do not overwrite existing operator-authored Markdown.
+- Keep JSON merges additive so interrupted runs stay resumable.
+
+## Review Gate — 2026-04-16
+
+**Reviewer findings (rework pass 9) — RESOLVED**
+
+Finding 1: `provider_selection.rs` — `ordered_enabled_names` and
+`first_available` used `.unwrap_or(true)`, allowing providers absent
+from the routing config to be selected as fallbacks, breaking routing
+authority.
+Resolution: changed to `.unwrap_or(false)` in both call sites; updated
+comments; added `unconfigured_provider_excluded_from_selection` test.
+
+Finding 2: `clawhub_client.rs` — success-path reinstall unverified.
+Resolution: added `clawhub_update_success_path_installs_skill_and_updates_lock`
+test that spins up an in-process axum server, verifies install dir +
+SKILL.md presence, and confirms lock file version and source URL are
+updated correctly.
+
+`./deploy_host.sh --test`: 600 tizenclaw tests — all passed.
+Commit: 7470229f
+Supervisor verdict: RESOLVED — ready for re-review gate.

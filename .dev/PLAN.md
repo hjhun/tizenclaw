@@ -10,4 +10,4 @@
 
 ## Resume Checkpoint
 
-All phases complete. See DASHBOARD.md and WORKFLOWS.md for final state.
+Resume from the first unchecked PLAN item unless validation requires a return to earlier planning work.
