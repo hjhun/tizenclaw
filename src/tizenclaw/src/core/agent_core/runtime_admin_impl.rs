@@ -227,7 +227,7 @@ impl AgentCore {
         // that may already hold a registry read lock.  Falls back to reading
         // the stored `llm_config` for basic compatibility fields.
         if let Ok(rg) = self.provider_registry.try_read() {
-            return rg.status_json();
+            return rg.status_json(|name| self.is_backend_available(name));
         }
         // Fallback path: registry is write-locked (reload in progress).
         // Derive the routing config from the stored raw document so that the

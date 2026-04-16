@@ -3,46 +3,76 @@
 ## Actual Progress
 
 - Goal: Advance runtime flexibility and operator maintainability (tizenclaw_improve)
-- Active roadmap focus: all five roadmap items completed + four rework passes complete
+- Active roadmap focus: all five roadmap items completed + five rework passes complete
 - Current workflow phase: evaluate (complete)
 - Last completed workflow phase: evaluate
 - Supervisor verdict: `approved`
 - Escalation status: `none`
 
-## Fourth Rework Pass — Reviewer Finding Fixed
+## Fifth Rework Pass — Reviewer Findings Fixed
 
-Finding (Medium): write-locked runtime status dropped `providers[]`.
+### Finding 1 (High): legacy `backends.*.priority` ignored in compatibility translation
 
-**Root cause**: `get_llm_runtime()` falls back to a synthetic JSON payload when
-`provider_registry` is write-locked during reload. The fallback reconstructed
-`configured_provider_order` from `raw_doc` but hard-coded `"providers": []` and
-`current_selection: null`. The normal path via `ProviderRegistry::status_json()`
-returns a populated `providers[]` array with per-provider `priority`, `enabled`,
-`availability`, `last_init_error`, and `source`.
+**Root cause**: `ProviderCompatibilityTranslator::translate()` synthesized
+provider order from only `active_backend` and `fallback_backends`, ignoring
+any explicit `backends.<name>.priority` values in the config document.
+`build_backend_candidates()` in `tool_runtime.rs` reads those priorities and
+uses them to sort candidates (higher number = selected first), but the routing
+config produced by the translator did not reflect them.  A legacy config that
+preferred a provider through `backends.<name>.priority` could therefore
+initialize the right backend but still route prompts in the wrong order.
 
-**Fix** (commit `f69aa1c3`): Build the `providers` array from `routing.providers`
-in the fallback path. Each entry carries `name`, `priority`, `enabled`, `source`,
-and `"availability": "unknown"` (live instance state is inaccessible while the
-registry is write-locked). `current_selection` remains `null` on this path.
+**Fix**: Rewrote the legacy synthesis path in `translate()`.  For each
+provider name derived from `active_backend` / `fallback_backends`, the
+translator now reads `backends.<name>.priority` from the config document when
+present.  Candidates are sorted descending by this raw priority (matching
+`sort_backend_candidates` semantics).  When no explicit priority is set, the
+existing positional tie-break scores are used (active=1000,
+fallback[0]=900, …) so existing configs that rely on `active_backend` order
+are unaffected.  The resulting `providers` vector is ordered so
+`ordered_names()` returns the correct selection order.
 
-**Test coverage added**: Two new unit tests in `provider_selection::tests` replicate
-the fallback JSON construction for both legacy config and `providers[]`-based config,
-asserting the resulting array is non-empty with the expected per-entry shape.
+### Finding 2 (Medium): `status_json()` reported `"ready"` regardless of circuit-breaker state
 
-**Validation**: `./deploy_host.sh --test` — 594 passed, 0 failed.
+**Root cause**: `ProviderRegistry::status_json()` marked any initialized
+provider as `"availability": "ready"` based only on whether an instance
+existed, without consulting the circuit-breaker state that `is_backend_available()`
+checks at request time.  This left the operator-facing status claiming a
+provider was ready even when routing would skip it due to an open circuit.
+
+**Fix**: Added an `is_available: impl Fn(&str) -> bool` predicate parameter
+to `status_json()`.  The caller in `runtime_admin_impl.rs` passes
+`|name| self.is_backend_available(name)`.  Initialized providers now report:
+- `"open_circuit"` when `is_available` returns false
+- `"ready"` when `is_available` returns true
+- `"unavailable"` when the backend failed to initialize (unchanged)
+
+**Test coverage added**: Three new unit tests:
+- `legacy_backend_priority_overrides_active_backend_position`: verifies
+  `backends.openai.priority=2000` routes openai ahead of active_backend gemini
+  (default 1000).
+- `legacy_fallback_priority_ordering_respected`: verifies two fallbacks with
+  explicit priorities sort in priority order.
+- `status_json_reflects_circuit_breaker_state`: verifies `"open_circuit"` when
+  the predicate returns false and `"ready"` when it returns true, using a stub
+  `LlmBackend`.
+
+**Validation**: `./deploy_host.sh --test` — 597 passed, 0 failed.
 
 ## Completed Work
 
 All five roadmap targets have been implemented, tested, and committed.
-Four rework passes have addressed all reviewer findings.
+Five rework passes have addressed all reviewer findings.
 
 1. **Provider-selection layer** — `src/tizenclaw/src/core/provider_selection.rs`
    - `ProviderRegistry` owns initialized backends with preference-ordered routing
    - `ProviderSelector` selects the first available provider at request time
-   - Compatibility translation maps legacy `active_backend`/`fallback_backends` config
+   - Compatibility translation now respects `backends.<name>.priority` from
+     legacy config, mirroring `build_backend_candidates` sort semantics (rework 5)
    - Admin/runtime status exposes `configured_provider_order`, `providers[]`, and
-     `current_selection` on both normal and fallback (write-locked) paths
-   - Fallback path now builds a populated `providers[]` from routing config (rework 4)
+     `current_selection`; availability field reflects circuit-breaker state (rework 5)
+   - Fallback path (write-locked registry) populates `providers[]` from routing
+     config with `"availability": "unknown"` (rework 4)
 
 2. **Telegram model configuration externalized**
    - All three builtin backends (codex, gemini, claude) have `model_choices: vec![]`
@@ -60,7 +90,7 @@ Four rework passes have addressed all reviewer findings.
    - `invalidate_snapshot_cache` called on all clawhub install/update paths
 
 5. **Host validation** — all tests passed via `./deploy_host.sh --test`
-   (594 passed, 0 failed after fourth rework pass)
+   (597 passed, 0 failed after fifth rework pass)
 
 ## Workflow Phases
 
@@ -79,10 +109,10 @@ flowchart LR
 - [O] Stage 0. Refine — DONE
 - [O] Stage 1. Plan — DONE
 - [O] Stage 2. Design — DONE
-- [O] Stage 3. Develop — DONE (rework pass 4: write-locked fallback now populates providers[])
+- [O] Stage 3. Develop — DONE (rework pass 5: priority ordering + circuit-breaker status)
 - [O] Stage 4. Build/Deploy — DONE (`./deploy_host.sh -b` PASS)
-- [O] Stage 5. Test/Review — DONE (`./deploy_host.sh --test` PASS: 594; 0 failed)
-- [O] Stage 6. Commit — DONE (f69aa1c3)
+- [O] Stage 5. Test/Review — DONE (`./deploy_host.sh --test` PASS: 597; 0 failed)
+- [O] Stage 6. Commit — DONE
 - [O] Stage 7. Evaluate — DONE
 
 ## Risks And Watchpoints
@@ -93,9 +123,8 @@ flowchart LR
   are covered by explicit `invalidate_snapshot_cache` calls on all clawhub
   operation handlers.
 - Telegram model choices are empty in builtins; operators must supply them via config.
-- The startup-path `providers_authoritative` filter gap was closed in rework pass 1.
-- `chat_with_fallback` routes through `ProviderSelector::ordered_enabled_names`;
-  disabled providers cannot slip into the fallback loop.
-- `get_llm_runtime()` write-lock fallback now populates `providers[]` from routing
-  config; availability is reported as `"unknown"` since instances are inaccessible
-  during reload (fixed in rework pass 4).
+- Legacy config compatibility: `backends.<name>.priority` is now respected in
+  the routing layer; existing configs using only `active_backend` /
+  `fallback_backends` are unaffected (positional defaults preserved).
+- `status_json()` now requires an `is_available` predicate; callers must pass
+  the circuit-breaker check function to get accurate availability reporting.

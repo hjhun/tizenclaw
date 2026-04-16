@@ -201,38 +201,85 @@ impl ProviderCompatibilityTranslator {
         }
 
         // Synthesize from legacy keys.
-        let mut providers = Vec::new();
-        let mut priority: i64 = 100;
-
-        // Active backend gets highest priority.
-        if !raw_active_backend.trim().is_empty() {
-            providers.push(ProviderPreference {
-                name: raw_active_backend.trim().to_string(),
-                priority,
-                enabled: true,
-                source: ProviderConfigSource::CompatibilityActive,
-            });
-            priority -= 10;
+        //
+        // Also respect `backends.<name>.priority` when present, mirroring the
+        // ordering applied by `build_backend_candidates` / `sort_backend_candidates`.
+        // If an explicit priority is set it takes precedence over the
+        // active_backend / fallback_backends positional order.
+        //
+        // Candidate sorting: higher raw_priority value = selected first
+        // (same semantics as BackendCandidate in tool_runtime.rs).
+        struct LegacyCandidate {
+            name: String,
+            raw_priority: i64,
+            source: ProviderConfigSource,
         }
 
-        // Fallback backends follow in declared order.
-        for name in &raw_fallback_backends {
-            let trimmed = name.trim();
-            if trimmed.is_empty() {
-                continue;
+        let mut seen = std::collections::HashSet::new();
+        let mut candidates: Vec<LegacyCandidate> = Vec::new();
+
+        // Collect names from active_backend then fallback_backends.
+        let all_legacy: Vec<(String, ProviderConfigSource)> =
+            std::iter::once((
+                raw_active_backend.trim().to_string(),
+                ProviderConfigSource::CompatibilityActive,
+            ))
+            .chain(raw_fallback_backends.iter().map(|fb| {
+                (
+                    fb.trim().to_string(),
+                    ProviderConfigSource::CompatibilityFallback,
+                )
+            }))
+            .filter(|(name, _)| !name.is_empty())
+            .collect();
+
+        for (name, source) in all_legacy {
+            if !seen.insert(name.clone()) {
+                continue; // deduplicate
             }
-            // Skip if already added as active.
-            if providers.iter().any(|p| p.name == trimmed) {
-                continue;
-            }
-            providers.push(ProviderPreference {
-                name: trimmed.to_string(),
-                priority,
-                enabled: true,
-                source: ProviderConfigSource::CompatibilityFallback,
+            // Use backends.<name>.priority when explicitly set, otherwise fall
+            // back to a positional score that preserves active > fallback[0] >
+            // fallback[1] > … ordering (mirrors sort_backend_candidates
+            // tie-breaker logic).
+            let raw_priority = doc
+                .get("backends")
+                .and_then(|b| b.get(&name))
+                .and_then(|be| be.get("priority"))
+                .and_then(Value::as_i64)
+                .unwrap_or_else(|| {
+                    if source == ProviderConfigSource::CompatibilityActive {
+                        1000
+                    } else {
+                        raw_fallback_backends
+                            .iter()
+                            .position(|fb| fb.trim() == name)
+                            .map(|idx| 900i64 - idx as i64)
+                            .unwrap_or(0)
+                    }
+                });
+            candidates.push(LegacyCandidate {
+                name,
+                raw_priority,
+                source,
             });
-            priority -= 10;
         }
+
+        // Sort descending: highest raw_priority is routed first.
+        candidates.sort_by(|a, b| b.raw_priority.cmp(&a.raw_priority));
+
+        // Convert to ProviderPreference with ascending priority values so that
+        // ProviderRoutingConfig::ordered_names() returns them in the correct
+        // selection order (position 0 = highest preference).
+        let providers: Vec<ProviderPreference> = candidates
+            .into_iter()
+            .enumerate()
+            .map(|(i, cand)| ProviderPreference {
+                name: cand.name,
+                priority: i as i64,
+                enabled: true,
+                source: cand.source,
+            })
+            .collect();
 
         ProviderRoutingConfig {
             providers,
@@ -308,7 +355,12 @@ impl ProviderRegistry {
         }
     }
 
-    pub fn status_json(&self) -> Value {
+    /// Return a status JSON snapshot.
+    ///
+    /// `is_available` is called for each initialized provider to determine
+    /// whether it is currently usable (circuit breaker open = false).
+    /// Providers that failed to initialize are always reported as "unavailable".
+    pub fn status_json(&self, is_available: impl Fn(&str) -> bool) -> Value {
         let ordered_names = self.routing.ordered_names();
         let provider_list: Vec<Value> = self
             .routing
@@ -316,10 +368,12 @@ impl ProviderRegistry {
             .iter()
             .map(|pref| {
                 let inst = self.instances.iter().find(|inst| inst.name == pref.name);
-                let availability = if inst.is_some() {
-                    ProviderAvailability::Ready.as_str()
-                } else {
-                    ProviderAvailability::Unavailable.as_str()
+                let availability = match inst {
+                    None => ProviderAvailability::Unavailable.as_str(),
+                    Some(_) if !is_available(&pref.name) => {
+                        ProviderAvailability::OpenCircuit.as_str()
+                    }
+                    Some(_) => ProviderAvailability::Ready.as_str(),
                 };
                 let last_init_error = inst
                     .and_then(|inst| inst.last_init_error.as_deref())
@@ -492,7 +546,7 @@ mod tests {
             "fallback_backends": ["openai"],
         }));
         let registry = ProviderRegistry::new(config, vec![]);
-        let status = registry.status_json();
+        let status = registry.status_json(|_| true);
         let providers = status["providers"].as_array().unwrap();
         // Both configured providers appear even if no backend is initialized.
         assert_eq!(providers.len(), 2);
@@ -573,5 +627,95 @@ mod tests {
         assert_eq!(providers[0]["source"], "providers");
         assert_eq!(providers[1]["name"], "openai");
         assert_eq!(providers[1]["enabled"], false);
+    }
+
+    /// backends.<name>.priority in legacy config overrides the default
+    /// active_backend / fallback_backends positional ordering.
+    ///
+    /// Config: active_backend=gemini (no explicit priority), openai has
+    /// backends.openai.priority=2000 which is higher than gemini's default
+    /// 1000 tie-break score, so openai should sort first.
+    #[test]
+    fn legacy_backend_priority_overrides_active_backend_position() {
+        let doc = json!({
+            "active_backend": "gemini",
+            "fallback_backends": ["openai"],
+            "backends": {
+                "openai": { "priority": 2000 },
+            },
+        });
+        let config = ProviderCompatibilityTranslator::translate(&doc);
+        let names: Vec<&str> = config.ordered_names();
+        // openai has explicit priority 2000 > gemini's default 1000, so it
+        // routes first even though active_backend is gemini.
+        assert_eq!(names, vec!["openai", "gemini"]);
+        // openai should keep CompatibilityFallback source (where it came from).
+        assert_eq!(config.providers[0].source, ProviderConfigSource::CompatibilityFallback);
+        assert_eq!(config.providers[1].source, ProviderConfigSource::CompatibilityActive);
+    }
+
+    /// When two fallbacks have explicit priorities, higher priority routes first.
+    #[test]
+    fn legacy_fallback_priority_ordering_respected() {
+        let doc = json!({
+            "active_backend": "gemini",
+            "fallback_backends": ["openai", "ollama"],
+            "backends": {
+                "ollama": { "priority": 500 },
+                "openai": { "priority": 100 },
+            },
+        });
+        let config = ProviderCompatibilityTranslator::translate(&doc);
+        let names: Vec<&str> = config.ordered_names();
+        // gemini default=1000, ollama=500, openai=100 → gemini, ollama, openai.
+        assert_eq!(names, vec!["gemini", "ollama", "openai"]);
+    }
+
+    /// status_json() reports open_circuit when is_available returns false for
+    /// an initialized provider, and ready when it returns true.
+    ///
+    /// Uses a minimal fake ProviderInstance constructed directly (bypassing the
+    /// LlmBackend trait) to avoid async_trait boilerplate in a sync unit test.
+    #[test]
+    fn status_json_reflects_circuit_breaker_state() {
+        use crate::llm::backend::{LlmBackend, LlmMessage, LlmResponse, LlmToolDecl};
+
+        struct StubBackend;
+        #[async_trait::async_trait]
+        impl LlmBackend for StubBackend {
+            fn initialize(&mut self, _config: &serde_json::Value) -> bool { true }
+            fn get_name(&self) -> &str { "gemini" }
+            async fn chat(
+                &self,
+                _messages: &[LlmMessage],
+                _tools: &[LlmToolDecl],
+                _on_chunk: Option<&(dyn Fn(&str) + Send + Sync)>,
+                _system_prompt: &str,
+                _max_tokens: Option<u32>,
+            ) -> LlmResponse {
+                LlmResponse::default()
+            }
+        }
+
+        let config = ProviderCompatibilityTranslator::translate(&json!({
+            "active_backend": "gemini",
+            "fallback_backends": [],
+        }));
+        let instance = ProviderInstance {
+            name: "gemini".to_string(),
+            backend: Box::new(StubBackend),
+            last_init_error: None,
+        };
+        let registry = ProviderRegistry::new(config, vec![instance]);
+
+        // Circuit breaker open → availability should be open_circuit.
+        let status_open = registry.status_json(|_name| false);
+        let providers_open = status_open["providers"].as_array().unwrap();
+        assert_eq!(providers_open[0]["availability"], "open_circuit");
+
+        // Circuit breaker closed → availability should be ready.
+        let status_ready = registry.status_json(|_name| true);
+        let providers_ready = status_ready["providers"].as_array().unwrap();
+        assert_eq!(providers_ready[0]["availability"], "ready");
     }
 }
