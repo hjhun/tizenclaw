@@ -75,7 +75,24 @@ All prompt-derived TASKS.md queue items marked [O]. PLAN.md prompt-derived
 items marked [O]. WORKFLOWS.md phase completion record is fully updated.
 Repository state is synchronized with the pipeline outcome.
 
+## Continuation Run Verification (2026-04-16)
+
+Supervisor verdict from prior run: `rework_required` — WORKFLOWS.md reported
+pending `[ ]` items. Root-cause: the supervisor evaluated at 16:11:59+09:00,
+20 seconds after the sync commit `c5c4c1af` (16:11:39+09:00) landed.
+
+Verification performed in this continuation run:
+- Confirmed WORKFLOWS.md has no `[ ]` items; all phases are `[O]`.
+- Confirmed TC-06 fix is present: `--help` lists "ClawHub commands:" section.
+- Confirmed TC-07 fix is present: setup reads "Do you want to configure
+  Telegram now?" (no "coding mode" wording).
+- Re-ran `./deploy_host.sh -b`: build succeeded, no regressions.
+- Re-ran `./deploy_host.sh --test`: 561 pass, 6 pre-existing failures
+  (unrelated to this sprint), parity harness PASS, doc-arch PASS.
+
+No additional code changes required. Repository state is correct.
+
 ## Last Updated
 
-2026-04-16 — All stages complete and verified. TC-06 (CLI help) and TC-07
-(setup wizard) rework completed. Commits cfa3c43d and c85cad34 on develRust.
+2026-04-16 — Continuation run complete. All verifications pass.
+Commits cfa3c43d, c85cad34, c5c4c1af on develRust.
