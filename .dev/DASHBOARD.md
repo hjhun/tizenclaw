@@ -3,11 +3,23 @@
 ## Actual Progress
 
 - Goal: Advance runtime flexibility and operator maintainability (tizenclaw_improve)
-- Active roadmap focus: all five roadmap items completed + five rework passes complete
+- Active roadmap focus: all five roadmap items completed + six rework passes complete
 - Current workflow phase: evaluate (complete)
 - Last completed workflow phase: evaluate
 - Supervisor verdict: `approved`
 - Escalation status: `none`
+
+## Sixth Rework Pass — PLAN.md Tracking Fixed
+
+**Root cause**: PLAN.md prompt-derived items were left unchecked (`[ ]`) after
+prior implementation work was completed and committed. The supervisor detected
+0 of 5 items marked done.
+
+**Fix**: Marked all 5 PLAN.md items as `[O]`. Updated WORKFLOWS.md Stage 3/5/6
+entries to reflect rework pass 5 outcomes (priority ordering fix, 597 tests
+passed, commit `ce70f4b4`).
+
+**Validation**: `./deploy_host.sh --test` — 597 passed, 0 failed.
 
 ## Fifth Rework Pass — Reviewer Findings Fixed
 
@@ -109,7 +121,7 @@ flowchart LR
 - [O] Stage 0. Refine — DONE
 - [O] Stage 1. Plan — DONE
 - [O] Stage 2. Design — DONE
-- [O] Stage 3. Develop — DONE (rework pass 5: priority ordering + circuit-breaker status)
+- [O] Stage 3. Develop — DONE (rework pass 5+6: priority, circuit-breaker, PLAN tracking)
 - [O] Stage 4. Build/Deploy — DONE (`./deploy_host.sh -b` PASS)
 - [O] Stage 5. Test/Review — DONE (`./deploy_host.sh --test` PASS: 597; 0 failed)
 - [O] Stage 6. Commit — DONE

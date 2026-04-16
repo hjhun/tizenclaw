@@ -18,10 +18,10 @@ refine -> plan -> design -> develop -> build/deploy -> test/review
 - [O] Stage 0. Refine — DONE
 - [O] Stage 1. Plan — DONE
 - [O] Stage 2. Design — DONE
-- [O] Stage 3. Develop — DONE (rework pass 4: write-locked fallback now populates providers[])
+- [O] Stage 3. Develop — DONE (rework pass 5: priority ordering + circuit-breaker status fixed)
 - [O] Stage 4. Build/Deploy — DONE (`./deploy_host.sh -b` PASS)
-- [O] Stage 5. Test/Review — DONE (`./deploy_host.sh --test` PASS: 594; 0 failed)
-- [O] Stage 6. Commit — DONE (f69aa1c3)
+- [O] Stage 5. Test/Review — DONE (`./deploy_host.sh --test` PASS: 597; 0 failed)
+- [O] Stage 6. Commit — DONE (ce70f4b4)
 - [O] Stage 7. Evaluate — DONE (see .dev/07-evaluator/20260416-tizenclaw-improve.md)
 
 ## Stage Contracts
