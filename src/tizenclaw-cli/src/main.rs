@@ -1781,21 +1781,21 @@ fn configure_telegram(doc: &mut Value) -> Result<bool, String> {
                 .to_string()
         });
     let cli_workdir = prompt_with_default(
-        "Default project directory for Telegram coding mode",
+        "Default project directory for Telegram",
         Some(&current_workdir),
     )?;
     doc["cli_workdir"] = Value::String(cli_workdir);
 
     let detected = detected_cli_backends();
     if !detected.is_empty() {
-        println!("\nDetected coding-agent CLIs:");
+        println!("\nDetected CLI backends:");
         for (name, value) in &detected {
             if let Some(path) = value.as_str() {
                 println!("  - {}: {}", name, path);
             }
         }
     } else {
-        println!("\nNo coding-agent CLI binaries were auto-detected in PATH.");
+        println!("\nNo CLI backend binaries were auto-detected in PATH.");
     }
 
     let default_backend = telegram_cli_default_backend(doc);
@@ -1896,7 +1896,7 @@ fn cmd_setup() {
     write_pretty_json(&llm_path, &llm_doc).unwrap_or_else(|err| print_error_and_exit(&err));
 
     let telegram_choice = prompt_choice(
-        "Do you want to configure Telegram coding mode now?",
+        "Do you want to configure Telegram now?",
         &[
             "Yes, configure Telegram now",
             "No, I will set up Telegram later",
@@ -2279,6 +2279,10 @@ fn print_usage() {
     eprintln!("Inspection commands:");
     eprintln!("  tizenclaw-cli tools status");
     eprintln!("  tizenclaw-cli skills status\n");
+    eprintln!("ClawHub commands:");
+    eprintln!("  tizenclaw-cli skill-hub list");
+    eprintln!("  tizenclaw-cli skill-hub search <query>");
+    eprintln!("  tizenclaw-cli skill-hub install <slug>\n");
     eprintln!("If no prompt given, starts interactive mode.");
 }
 
