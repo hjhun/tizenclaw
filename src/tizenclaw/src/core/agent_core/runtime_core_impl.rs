@@ -1261,6 +1261,23 @@ impl AgentCore {
                     .position(|name| *name == inst.name.as_str())
                     .unwrap_or(usize::MAX)
             });
+            // When the `providers` array is present it is authoritative: drop
+            // any initialized instance that is not in the enabled set so that
+            // a provider marked `enabled: false` cannot be used as a fallback.
+            let providers_authoritative =
+                routing.providers.iter().any(|p| {
+                    p.source
+                        == crate::core::provider_selection::ProviderConfigSource::Providers
+                });
+            if providers_authoritative {
+                instances.retain(|inst| {
+                    ordered_names.iter().any(|n| *n == inst.name.as_str())
+                });
+                log::debug!(
+                    "Reload: providers[] authoritative — retained {} enabled instance(s)",
+                    instances.len()
+                );
+            }
         }
 
         if instances.is_empty() {

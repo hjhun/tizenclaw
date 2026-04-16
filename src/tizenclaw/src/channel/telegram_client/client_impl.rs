@@ -105,6 +105,10 @@ impl TelegramClient {
         cli_backends.merge_config_value(config.settings.get("cli_backends"));
 
         let config_dir = crate::core::runtime_paths::default_data_dir().join("config");
+        // Merge llm_config.json model overrides before telegram_config.json so
+        // that telegram_config.json has higher precedence (later merge wins).
+        Self::read_backend_models_from_llm_config(&config_dir, &mut cli_backends);
+
         let telegram_config = config_dir.join("telegram_config.json");
         if let Ok(content) = std::fs::read_to_string(&telegram_config) {
             if let Ok(json) = serde_json::from_str::<Value>(&content) {
@@ -139,8 +143,6 @@ impl TelegramClient {
                 cli_backends.merge_config_value(json.get("cli_backends"));
             }
         }
-
-        Self::read_backend_models_from_llm_config(&config_dir, &mut cli_backends);
 
         let cli_backend_paths = Arc::new(Self::resolve_cli_backend_paths(&cli_backends));
         let cli_backends = Arc::new(cli_backends);

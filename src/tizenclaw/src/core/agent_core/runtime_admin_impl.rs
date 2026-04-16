@@ -17,7 +17,10 @@ impl AgentCore {
     fn llm_config_path_affects_backends(path: &str) -> bool {
         matches!(
             path.split('.').next(),
-            Some("active_backend") | Some("fallback_backends") | Some("backends")
+            Some("active_backend")
+                | Some("fallback_backends")
+                | Some("backends")
+                | Some("providers")
         )
     }
 
