@@ -447,14 +447,17 @@ impl ProviderSelector {
         is_available: impl Fn(&str) -> bool,
     ) -> Option<usize> {
         for (idx, inst) in registry.instances.iter().enumerate() {
-            // Check whether this provider is enabled in routing config.
+            // Only providers explicitly listed in the routing config are
+            // eligible.  Providers that are not present in the config (e.g.,
+            // initialized from a plugin scan but not configured by the
+            // operator) are excluded so that routing stays authoritative.
             let enabled = registry
                 .routing
                 .providers
                 .iter()
                 .find(|p| p.name == inst.name)
                 .map(|p| p.enabled)
-                .unwrap_or(true); // unknown providers default to enabled
+                .unwrap_or(false);
             if !enabled {
                 continue;
             }
@@ -467,8 +470,10 @@ impl ProviderSelector {
 
     /// Return the names of all enabled providers in preference order.
     ///
-    /// Only providers that are enabled in the routing config appear in the
-    /// result.  Unknown providers (no routing config entry) default to enabled.
+    /// Only providers that appear in the routing config and are marked enabled
+    /// are included.  Providers initialized but absent from the routing config
+    /// (e.g., discovered via plugin scan) are excluded so that the operator's
+    /// configured preference order is authoritative.
     /// This is the authoritative source for the ordered provider list that
     /// `chat_with_fallback` iterates so selection policy stays centralized here.
     pub fn ordered_enabled_names(registry: &ProviderRegistry) -> Vec<String> {
@@ -482,7 +487,7 @@ impl ProviderSelector {
                     .iter()
                     .find(|p| p.name == inst.name)
                     .map(|p| p.enabled)
-                    .unwrap_or(true)
+                    .unwrap_or(false)
             })
             .map(|inst| inst.name.clone())
             .collect()
@@ -774,6 +779,78 @@ mod tests {
         assert!(
             openai["last_init_error"].is_null(),
             "last_init_error should be null when no init error was recorded"
+        );
+    }
+
+    /// Providers initialized but absent from the routing config must not
+    /// appear in `ordered_enabled_names` or be selected by `first_available`.
+    ///
+    /// Scenario: routing config lists only "gemini".  The registry also
+    /// contains a "plugin-backend" instance that arrived via plugin scan.
+    /// The plugin backend must be excluded from routing in both call sites.
+    #[test]
+    fn unconfigured_provider_excluded_from_selection() {
+        use crate::llm::backend::{LlmBackend, LlmMessage, LlmResponse, LlmToolDecl};
+
+        struct StubBackend {
+            name: &'static str,
+        }
+        #[async_trait::async_trait]
+        impl LlmBackend for StubBackend {
+            fn initialize(&mut self, _config: &serde_json::Value) -> bool { true }
+            fn get_name(&self) -> &str { self.name }
+            async fn chat(
+                &self,
+                _messages: &[LlmMessage],
+                _tools: &[LlmToolDecl],
+                _on_chunk: Option<&(dyn Fn(&str) + Send + Sync)>,
+                _system_prompt: &str,
+                _max_tokens: Option<u32>,
+            ) -> LlmResponse {
+                LlmResponse::default()
+            }
+        }
+
+        // Routing config names only "gemini".
+        let config = ProviderCompatibilityTranslator::translate(&json!({
+            "active_backend": "gemini",
+            "fallback_backends": [],
+        }));
+
+        // Registry holds two initialized instances: "gemini" (configured) and
+        // "plugin-backend" (absent from routing config, came from plugin scan).
+        let instances = vec![
+            ProviderInstance {
+                name: "gemini".to_string(),
+                backend: Box::new(StubBackend { name: "gemini" }),
+                last_init_error: None,
+            },
+            ProviderInstance {
+                name: "plugin-backend".to_string(),
+                backend: Box::new(StubBackend { name: "plugin-backend" }),
+                last_init_error: None,
+            },
+        ];
+        let registry = ProviderRegistry::new(
+            config,
+            instances,
+            std::collections::HashMap::new(),
+        );
+
+        // ordered_enabled_names must list only "gemini".
+        let names = ProviderSelector::ordered_enabled_names(&registry);
+        assert_eq!(
+            names,
+            vec!["gemini".to_string()],
+            "only configured providers must appear in ordered_enabled_names"
+        );
+
+        // first_available must not pick "plugin-backend" even when it is the
+        // only instance that would pass the availability predicate.
+        let idx = ProviderSelector::first_available(&registry, |name| name == "plugin-backend");
+        assert!(
+            idx.is_none(),
+            "first_available must not select an unconfigured provider as a fallback"
         );
     }
 }

@@ -1067,4 +1067,106 @@ mod tests {
         );
         assert!(result["updated"].as_array().unwrap().is_empty());
     }
+
+    /// Success path: a lock entry with a valid source URL is fetched, extracted,
+    /// atomically installed to the skill directory, and the lock file is updated
+    /// with the latest version reported by the registry.
+    ///
+    /// A minimal in-process axum server serves both the metadata and download
+    /// endpoints so no real network access is required.
+    #[tokio::test]
+    async fn clawhub_update_success_path_installs_skill_and_updates_lock() {
+        use axum::{extract::Path as AxumPath, routing::get, Router};
+        use std::sync::Arc;
+
+        // Build a minimal skill archive that passes validate_extracted_skill.
+        let archive: Arc<Vec<u8>> = Arc::new(build_zip(&[("SKILL.md", b"# Updated skill")]));
+        let archive_for_handler = Arc::clone(&archive);
+
+        let app = Router::new()
+            .route(
+                "/api/v1/skills/:slug",
+                get(|_: AxumPath<String>| async {
+                    axum::Json(serde_json::json!({
+                        "skill": {"displayName": "Test Skill"},
+                        "latestVersion": {"version": "1.1.0"}
+                    }))
+                }),
+            )
+            .route(
+                "/api/v1/download",
+                get(move || {
+                    let bytes = Arc::clone(&archive_for_handler);
+                    async move {
+                        (
+                            [(
+                                axum::http::header::CONTENT_TYPE,
+                                "application/zip",
+                            )],
+                            (*bytes).clone(),
+                        )
+                    }
+                }),
+            );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let dir = tempdir().unwrap();
+        let workspace_dir = dir.path().join("workspace");
+        let skill_hubs_dir = workspace_dir.join("skill-hubs");
+        std::fs::create_dir_all(&skill_hubs_dir).unwrap();
+
+        let base_url = format!("http://127.0.0.1:{}", port);
+        write_lock_with_entries(workspace_dir.as_path(), &[
+            ("test-skill", "Test Skill", &base_url),
+        ]);
+
+        let result = super::clawhub_update(&skill_hubs_dir).await.unwrap();
+
+        // One skill must be reported as updated, none failed.
+        let updated = result["updated"].as_array().unwrap();
+        assert_eq!(updated.len(), 1, "expected one updated skill; result={}", result);
+        assert_eq!(updated[0]["slug"].as_str().unwrap(), "test-skill");
+        assert_eq!(
+            updated[0]["current_version"].as_str().unwrap(),
+            "1.1.0",
+            "current_version must reflect the version served by the registry"
+        );
+        assert!(result["failed"].as_array().unwrap().is_empty());
+
+        // The skill directory must exist and contain SKILL.md.
+        let install_dir = skill_hubs_dir.join("clawhub/test-skill");
+        assert!(
+            install_dir.exists(),
+            "install dir must exist after a successful update"
+        );
+        assert!(
+            install_dir.join("SKILL.md").exists(),
+            "SKILL.md must be present in the installed skill dir"
+        );
+
+        // The lock file must record the updated version and preserve source URL.
+        let lock_path = workspace_dir.join(".clawhub/lock.json");
+        let lock_text = std::fs::read_to_string(&lock_path).unwrap();
+        let lock: serde_json::Value = serde_json::from_str(&lock_text).unwrap();
+        let skills = lock["skills"].as_array().unwrap();
+        let entry = skills
+            .iter()
+            .find(|s| s["slug"] == "test-skill")
+            .expect("test-skill must remain in lock file after update");
+        assert_eq!(
+            entry["version"].as_str().unwrap(),
+            "1.1.0",
+            "lock file version must be updated to the new registry version"
+        );
+        assert!(
+            entry["source_base_url"]
+                .as_str()
+                .map(|u| u.contains(&format!("127.0.0.1:{}", port)))
+                .unwrap_or(false),
+            "lock file must preserve the original source_base_url"
+        );
+    }
 }
