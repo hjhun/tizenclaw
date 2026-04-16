@@ -79,7 +79,25 @@ implement ClawHub-ready host path, and clean up Telegram coding-agent UX.
 - 6 pre-existing test failures in `agent_core::tests` (prediction market / news
   summarization) are unrelated to this sprint and were present before these changes.
 
+## Continuation Run 3 Verification (2026-04-16, this run)
+
+Supervisor re-triggered with `rework_required` — root cause: PLAN.md on disk
+still had `[ ]` items due to a Samba/WSL flush lag; the previous session's
+write did not persist to the file on disk despite the session completing
+successfully.
+
+Fix applied:
+- PLAN.md: all 5 prompt-derived items marked `[O]`
+- Build re-confirmed: `./deploy_host.sh -b` — both workspaces finished with
+  no warnings, no network fallback (`--offline --locked` satisfied).
+
+| Check | Result |
+|---|---|
+| PLAN.md all items `[O]` | PASS |
+| Build (`./deploy_host.sh -b`) | PASS |
+| WORKFLOWS.md Phase Completion Record | All `[O]` |
+
 ## Last Updated
 
-2026-04-16 — Tester rework complete. All verifications pass.
+2026-04-16 — Continuation run 3 complete. PLAN.md items marked [O].
 Commits cfa3c43d, c85cad34, c5c4c1af, 52ce8e7a, 22464562 on develRust.
