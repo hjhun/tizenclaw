@@ -1466,17 +1466,31 @@ impl AgentCore {
             return resp;
         }
 
-        let error_message = if failure_summaries.is_empty() {
-            "All LLM backends failed".to_string()
+        // Record the all-failure state so admin/runtime status reflects the
+        // most recent attempt rather than keeping the last successful selection.
+        let failure_reason = if failure_summaries.is_empty() {
+            "all providers skipped (no eligible provider available)".to_string()
         } else {
             format!(
-                "All LLM backends failed. Last attempts: {}",
+                "all providers failed: {}",
                 failure_summaries.join(" | ")
             )
         };
+        let failure_record = ProviderSelectionRecord {
+            selected_provider: String::new(),
+            attempted_providers: attempted,
+            reason: failure_reason.clone(),
+            selected_at_unix_secs: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        };
+        if let Ok(mut rg_write) = self.provider_registry.try_write() {
+            rg_write.set_active_selection(failure_record);
+        }
 
         LlmResponse {
-            error_message,
+            error_message: failure_reason,
             ..Default::default()
         }
     }

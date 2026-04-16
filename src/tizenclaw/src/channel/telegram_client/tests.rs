@@ -150,17 +150,36 @@ mod tests {
     }
 
     #[test]
-    fn model_keyboard_exposes_curated_choices_and_reset() {
+    fn model_keyboard_exposes_operator_choices_and_reset() {
+        // model_choices are no longer baked into the Rust defaults — they must
+        // be supplied via telegram_config.json. This test verifies that choices
+        // loaded through merge_config_value appear correctly in the keyboard.
+        let mut registry = default_registry();
+        registry.merge_config_value(Some(&serde_json::json!({
+            "backends": {
+                "gemini": {
+                    "model_choices_source_label": "operator-configured gemini choices",
+                    "model_choices": [
+                        {"value": "gemini-2.5-flash", "label": "Flash", "description": "Fast balanced tier"},
+                        {"value": "auto", "label": "Auto", "description": "Gemini CLI default routing"},
+                        {"value": "gemini-2.5-pro", "label": "Pro", "description": "Stronger reasoning tier"},
+                        {"value": "gemini-2.5-flash-lite", "label": "Flash Lite", "description": "Lightest tier"}
+                    ]
+                }
+            }
+        })));
+
         let state = TelegramChatState::default();
         let backend = backend("gemini");
         let (choices, source) =
-            TelegramClient::available_model_choices(&state, &backend, &default_registry());
+            TelegramClient::available_model_choices(&state, &backend, &registry);
         let keyboard = TelegramClient::model_keyboard(&choices);
 
-        assert_eq!(source, "Gemini CLI aliases and documented model names");
+        assert_eq!(source, "operator-configured gemini choices");
         assert_eq!(keyboard["keyboard"][0][0], "/model gemini-2.5-flash");
         assert_eq!(keyboard["keyboard"][0][1], "/model auto");
-        assert_eq!(keyboard["keyboard"][4][0], "/model reset");
+        // 4 choices → 2 rows of 2, then reset on row 2
+        assert_eq!(keyboard["keyboard"][2][0], "/model reset");
     }
 
     #[test]
@@ -440,7 +459,7 @@ mod tests {
         assert!(show_reply.text.contains("Model: [claude-sonnet-4-6]"));
         assert!(show_reply
             .text
-            .contains("Catalog: [curated Codex-compatible model choices]"));
+            .contains("Catalog: [configure via telegram_config.json"));
         assert!(show_reply.text.contains("Choices: [claude-sonnet-4-6"));
         assert_eq!(
             show_reply.reply_markup.as_ref().unwrap()["keyboard"][0][0],
@@ -469,6 +488,22 @@ mod tests {
 
     #[test]
     fn model_menu_resolves_numeric_selection_including_reset() {
+        // model_choices are operator-configured. Build a codex registry that
+        // mirrors the sample telegram_config.json entries for this test.
+        let mut registry = default_registry();
+        registry.merge_config_value(Some(&serde_json::json!({
+            "backends": {
+                "codex": {
+                    "model_choices": [
+                        {"value": "gpt-5.4"},
+                        {"value": "gpt-5.3-codex"},
+                        {"value": "gpt-5-codex"},
+                        {"value": "codex-mini-latest"}
+                    ]
+                }
+            }
+        })));
+
         let chat_states = Arc::new(Mutex::new(HashMap::new()));
         let state_path = std::env::temp_dir().join(format!(
             "telegram_model_numeric_{}_{}.json",
@@ -482,7 +517,7 @@ mod tests {
             None,
             &chat_states,
             &state_path,
-            &default_registry(),
+            &registry,
             &HashMap::new(),
             std::path::Path::new("/tmp"),
             0,
@@ -491,15 +526,15 @@ mod tests {
 
         let state = TelegramClient::load_chat_state_snapshot(&chat_states, 77);
         assert_eq!(
-            TelegramClient::pending_menu_command(&state, "1", &default_registry()).as_deref(),
+            TelegramClient::pending_menu_command(&state, "1", &registry).as_deref(),
             Some("/model gpt-5.4")
         );
         assert_eq!(
-            TelegramClient::pending_menu_command(&state, "2", &default_registry()).as_deref(),
+            TelegramClient::pending_menu_command(&state, "2", &registry).as_deref(),
             Some("/model gpt-5.3-codex")
         );
         assert_eq!(
-            TelegramClient::pending_menu_command(&state, "5", &default_registry()).as_deref(),
+            TelegramClient::pending_menu_command(&state, "5", &registry).as_deref(),
             Some("/model reset")
         );
     }

@@ -212,29 +212,9 @@ impl Default for TelegramCliBackendRegistry {
                         .to_string(),
                 ),
                 model_choices_source_label:
-                    "curated Codex-compatible model choices".to_string(),
-                model_choices: vec![
-                    TelegramCliModelChoice::detailed(
-                        "gpt-5.4",
-                        "gpt-5.4",
-                        "Balanced default for strong coding quality",
-                    ),
-                    TelegramCliModelChoice::detailed(
-                        "gpt-5.3-codex",
-                        "gpt-5.3-codex",
-                        "Dedicated Codex-family coding model",
-                    ),
-                    TelegramCliModelChoice::detailed(
-                        "gpt-5-codex",
-                        "gpt-5-codex",
-                        "Stable Codex-family override",
-                    ),
-                    TelegramCliModelChoice::detailed(
-                        "codex-mini-latest",
-                        "codex-mini-latest",
-                        "Lower-cost Codex-family option",
-                    ),
-                ],
+                    "configure via telegram_config.json cli_backends.backends.codex.model_choices"
+                        .to_string(),
+                model_choices: vec![],
                 usage_source_label: "turn.completed.usage".to_string(),
                 usage_refresh_hint: Some(
                     "updates after the next successful Codex run".to_string(),
@@ -299,33 +279,9 @@ impl Default for TelegramCliBackendRegistry {
                         .to_string(),
                 ),
                 model_choices_source_label:
-                    "Gemini CLI aliases and documented model names".to_string(),
-                model_choices: vec![
-                    TelegramCliModelChoice::detailed(
-                        "auto",
-                        "auto",
-                        "Gemini CLI default routing alias",
-                    ),
-                    TelegramCliModelChoice::detailed(
-                        "pro",
-                        "pro",
-                        "Alias for the stronger reasoning tier",
-                    ),
-                    TelegramCliModelChoice::detailed(
-                        "flash",
-                        "flash",
-                        "Alias for the fast balanced tier",
-                    ),
-                    TelegramCliModelChoice::detailed(
-                        "flash-lite",
-                        "flash-lite",
-                        "Alias for the lightest Gemini tier",
-                    ),
-                    TelegramCliModelChoice::simple("gemini-2.5-pro"),
-                    TelegramCliModelChoice::simple("gemini-2.5-flash"),
-                    TelegramCliModelChoice::simple("gemini-2.5-flash-lite"),
-                    TelegramCliModelChoice::simple("gemini-3-pro-preview"),
-                ],
+                    "configure via telegram_config.json cli_backends.backends.gemini.model_choices"
+                        .to_string(),
+                model_choices: vec![],
                 usage_source_label: "stats.models.<model>.tokens".to_string(),
                 usage_refresh_hint: Some(
                     "updates after the next successful Gemini run".to_string(),
@@ -432,27 +388,9 @@ impl Default for TelegramCliBackendRegistry {
                         .to_string(),
                 ),
                 model_choices_source_label:
-                    "Claude Code aliases and common concrete model names"
+                    "configure via telegram_config.json cli_backends.backends.claude.model_choices"
                         .to_string(),
-                model_choices: vec![
-                    TelegramCliModelChoice::detailed(
-                        "sonnet",
-                        "sonnet",
-                        "Claude Code alias for the latest Sonnet line",
-                    ),
-                    TelegramCliModelChoice::detailed(
-                        "opus",
-                        "opus",
-                        "Claude Code alias for the latest Opus line",
-                    ),
-                    TelegramCliModelChoice::detailed(
-                        "haiku",
-                        "haiku",
-                        "Claude Code alias for the lightweight tier",
-                    ),
-                    TelegramCliModelChoice::simple("claude-sonnet-4-6"),
-                    TelegramCliModelChoice::simple("claude-opus-4-1"),
-                ],
+                model_choices: vec![],
                 usage_source_label: "usage + modelUsage".to_string(),
                 usage_refresh_hint: Some(
                     "updates after the next successful Claude run".to_string(),

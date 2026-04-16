@@ -6,14 +6,37 @@
         "default_backend": "codex",
         "backends": {
             "codex": {
-                "binary_path": "$HOME/.npm-global/bin/codex"
+                "binary_path": "$HOME/.npm-global/bin/codex",
+                "model_choices": [
+                    {"value": "gpt-5.4", "label": "GPT-5.4", "description": "Balanced default for strong coding quality"},
+                    {"value": "gpt-5.3-codex", "label": "GPT-5.3-Codex", "description": "Dedicated Codex-family coding model"},
+                    {"value": "gpt-5-codex", "label": "GPT-5-Codex", "description": "Stable Codex-family override"},
+                    {"value": "codex-mini-latest", "label": "Codex Mini", "description": "Lower-cost Codex-family option"}
+                ]
             },
             "gemini": {
                 "binary_path": "/snap/bin/gemini",
-                "model": "gemini-2.5-flash"
+                "model": "gemini-2.5-flash",
+                "model_choices": [
+                    {"value": "auto", "label": "Auto", "description": "Gemini CLI default routing alias"},
+                    {"value": "pro", "label": "Pro", "description": "Alias for the stronger reasoning tier"},
+                    {"value": "flash", "label": "Flash", "description": "Alias for the fast balanced tier"},
+                    {"value": "flash-lite", "label": "Flash Lite", "description": "Alias for the lightest Gemini tier"},
+                    {"value": "gemini-2.5-pro", "label": "Gemini 2.5 Pro"},
+                    {"value": "gemini-2.5-flash", "label": "Gemini 2.5 Flash"},
+                    {"value": "gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash Lite"},
+                    {"value": "gemini-3-pro-preview", "label": "Gemini 3 Pro Preview"}
+                ]
             },
             "claude": {
-                "binary_path": "$HOME/.local/bin/claude"
+                "binary_path": "$HOME/.local/bin/claude",
+                "model_choices": [
+                    {"value": "sonnet", "label": "Sonnet", "description": "Claude Code alias for the latest Sonnet line"},
+                    {"value": "opus", "label": "Opus", "description": "Claude Code alias for the latest Opus line"},
+                    {"value": "haiku", "label": "Haiku", "description": "Claude Code alias for the lightweight tier"},
+                    {"value": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6"},
+                    {"value": "claude-opus-4-1", "label": "Claude Opus 4.1"}
+                ]
             },
             "custom_agent": {
                 "display_name": "Custom Agent",

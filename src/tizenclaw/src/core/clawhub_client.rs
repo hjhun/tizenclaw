@@ -187,6 +187,7 @@ pub async fn clawhub_install(skill_hubs_dir: &Path, source: &str) -> Result<Valu
         &display_name,
         version.as_deref(),
         &install_dir,
+        None,
     )?;
 
     Ok(json!({
@@ -362,7 +363,8 @@ async fn update_one_skill(
     })?;
     atomic_replace_dir(&staging_dir, &install_dir, &backup_dir)?;
 
-    // Update lock entry with new version and source.
+    // Update lock entry, preserving the recorded source URL so a routine
+    // update does not silently migrate the skill to a different registry.
     let workspace_dir = skill_hubs_dir.parent().unwrap_or(skill_hubs_dir);
     update_lock_file(
         workspace_dir,
@@ -370,6 +372,7 @@ async fn update_one_skill(
         &display_name,
         new_version.as_deref(),
         &install_dir,
+        Some(base_url),
     )?;
 
     Ok(json!({
@@ -598,12 +601,20 @@ fn load_lock_file(path: &Path) -> ClawHubLock {
         .unwrap_or_default()
 }
 
+/// Write or upsert a skill entry in the lock file.
+///
+/// `source_base_url_override` controls which registry URL is recorded:
+/// - `Some(url)` preserves the caller-supplied URL verbatim (used by the
+///   update path so the original install source is not silently migrated).
+/// - `None` calls `resolve_base_url()` to derive the URL from the current
+///   environment (used by the install path for new entries).
 fn update_lock_file(
     workspace_dir: &Path,
     slug: &str,
     display_name: &str,
     version: Option<&str>,
     install_dir: &Path,
+    source_base_url_override: Option<&str>,
 ) -> Result<(), String> {
     let lock_path = workspace_dir.join(LOCK_SUBPATH);
     if let Some(parent) = lock_path.parent() {
@@ -618,13 +629,14 @@ fn update_lock_file(
         .unwrap_or_default()
         .as_secs();
 
-    let base_url = resolve_base_url();
+    let base_url = source_base_url_override
+        .map(ToString::to_string)
+        .unwrap_or_else(resolve_base_url);
     if let Some(entry) = lock.skills.iter_mut().find(|entry| entry.slug == slug) {
         entry.display_name = display_name.to_string();
         entry.version = version.map(ToString::to_string);
         entry.install_path = install_dir.to_string_lossy().to_string();
         entry.installed_at_secs = now_secs;
-        // Persist source fields on every write so existing entries get updated.
         entry.source_kind = Some("clawhub".to_string());
         entry.source_base_url = Some(base_url.clone());
     } else {
@@ -710,6 +722,7 @@ mod tests {
             "Test Skill",
             Some("1.0.0"),
             &dir.path().join("skill-hubs/clawhub/test-skill"),
+            None,
         )
         .unwrap();
 
@@ -724,9 +737,9 @@ mod tests {
         let dir = tempdir().unwrap();
         let install_dir = dir.path().join("skill-hubs/clawhub/test-skill");
 
-        update_lock_file(dir.path(), "test-skill", "Test Skill", Some("1.0.0"), &install_dir)
+        update_lock_file(dir.path(), "test-skill", "Test Skill", Some("1.0.0"), &install_dir, None)
             .unwrap();
-        update_lock_file(dir.path(), "test-skill", "Test Skill", Some("1.1.0"), &install_dir)
+        update_lock_file(dir.path(), "test-skill", "Test Skill", Some("1.1.0"), &install_dir, None)
             .unwrap();
 
         let lock = load_lock_file(&dir.path().join(".clawhub/lock.json"));
@@ -912,7 +925,7 @@ mod tests {
     fn update_lock_file_writes_source_fields() {
         let dir = tempdir().unwrap();
         let install_dir = dir.path().join("skill-hubs/clawhub/my-skill");
-        update_lock_file(dir.path(), "my-skill", "My Skill", Some("1.0.0"), &install_dir).unwrap();
+        update_lock_file(dir.path(), "my-skill", "My Skill", Some("1.0.0"), &install_dir, None).unwrap();
         let lock = load_lock_file(&dir.path().join(".clawhub/lock.json"));
         assert_eq!(lock.skills.len(), 1);
         let entry = &lock.skills[0];
