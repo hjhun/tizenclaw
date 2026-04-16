@@ -10,5 +10,5 @@
 
 ## Resume Checkpoint
 
-All PLAN items are complete. Two rework passes addressed all reviewer findings.
+All PLAN items are complete. Three rework passes addressed all reviewer findings.
 See DASHBOARD.md for the full completion record.

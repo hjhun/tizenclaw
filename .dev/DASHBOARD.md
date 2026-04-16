@@ -3,70 +3,37 @@
 ## Actual Progress
 
 - Goal: Advance runtime flexibility and operator maintainability (tizenclaw_improve)
-- Active roadmap focus: all five roadmap items completed + two rework passes complete
+- Active roadmap focus: all five roadmap items completed + three rework passes complete
 - Current workflow phase: evaluate (complete)
 - Last completed workflow phase: evaluate
 - Supervisor verdict: `approved`
 - Escalation status: `none`
 
-## Second Rework Pass — Reviewer Findings
+## Third Rework Pass — Reviewer Finding
 
-Four correctness gaps identified in the second review. All four are now addressed
-in commit 8ab1a6ef.
+One correctness gap identified in the third review. Addressed in commit cb3c1153.
 
-### Finding 1 (High): snapshot cache not invalidated after clawhub install/update
+### Finding (Medium): fallback status misreports provider order for providers[] configs
 
-**Root cause**: `clawhub_install` and `clawhub_update` in `runtime_admin_impl.rs`
-(lines 599 and 617) did not call `invalidate_snapshot_cache` on success. A skill
-install or update that completed within the same clock second as the last snapshot
-would leave the cache stale until the mtime rolled over, violating the acceptance
-criterion that callers receive correct results immediately after installs or updates.
+**Root cause**: The write-lock fallback branch in `get_llm_runtime()`
+(`runtime_admin_impl.rs` line 233) reconstructed `configured_provider_order`
+from `self.llm_config.active_backend` and `fallback_backends` only. `LlmConfig`
+did not store the raw document, so the authoritative `providers[]` array could
+not be represented in the fallback status. Operators querying runtime status
+during a reload would see the legacy-derived order even when they had configured
+`providers[]` as authoritative.
 
-**Fix**: Added explicit `invalidate_snapshot_cache(ClawHubInstall)` and
-`invalidate_snapshot_cache(ClawHubUpdate)` calls after each successful operation.
-The update handler invalidates unconditionally because even a partial success
-writes skill directories.
-
-### Finding 2 (Medium): get_llm_runtime() fallback path reported wrong order
-
-**Root cause**: The write-lock fallback branch in `runtime_admin_impl.rs` (line 250)
-set `configured_provider_order` to `configured_fallback_backends` only, dropping
-the active backend from the list. This made the status surface misleading to
-operators inspecting routing state during a reload.
-
-**Fix**: Rebuilt the full ordered list (active backend first, then deduplicated
-fallbacks) to match `ProviderRegistry::status_json()`.
-
-### Finding 3 (Medium): chat_with_fallback did not route through ProviderSelector
-
-**Root cause**: `chat_with_fallback` in `runtime_core_impl.rs` (line 1416) iterated
-`rg.instances()` directly, which does not filter disabled providers. `ProviderSelector`
-existed but was not the authority for the production request path, so future routing
-policy changes in `ProviderSelector` would not have taken effect without a manual
-duplicate.
-
-**Fix**: Added `ProviderSelector::ordered_enabled_names(registry)` to
-`provider_selection.rs` and replaced the direct `instances()` iteration with it.
-Disabled providers are now excluded from the fallback loop via the centralized
-selection layer.
-
-### Finding 4 (Medium): ClawHub update tests covered only the empty-lock case
-
-**Root cause**: The only update test was `clawhub_update_returns_skipped_for_empty_lock`.
-The partial-failure accumulation loop and source-identity reuse branches in
-`clawhub_update` had no test coverage despite writing installs and lock state.
-
-**Fix**: Added two tests to `clawhub_client.rs`:
-- `clawhub_update_uses_source_base_url_from_lock_entry` — verifies source identity
-  is read from the lock entry by checking the error message references the custom
-  URL (not the default clawhub.ai address).
-- `clawhub_update_accumulates_failures_for_multiple_entries` — verifies the loop
-  does not abort on first failure; both entries must appear in `failed`.
+**Fix**: Added `raw_doc: Value` field to `LlmConfig` (populated in
+`from_document()`). The fallback path now calls
+`ProviderCompatibilityTranslator::translate(&raw_doc)` to derive
+`configured_provider_order`, which correctly handles both legacy and
+`providers[]`-based configs and now matches `ProviderRegistry::status_json()`
+on both normal and write-locked paths.
 
 ## Completed Work
 
 All five roadmap targets have been implemented, tested, and committed.
-Two rework passes have addressed all reviewer findings.
+Three rework passes have addressed all reviewer findings.
 
 1. **Provider-selection layer** — `src/tizenclaw/src/core/provider_selection.rs`
    - `ProviderRegistry` owns initialized backends with preference-ordered routing
@@ -76,6 +43,8 @@ Two rework passes have addressed all reviewer findings.
    - Compatibility translation maps legacy `active_backend`/`fallback_backends` config
    - Admin/runtime status exposes `configured_provider_order`, `providers[]`, and
      `current_selection` on both normal and fallback (write-locked) paths
+   - Fallback path now uses `ProviderCompatibilityTranslator::translate()` on
+     the stored raw doc, correctly representing `providers[]`-based configs
 
 2. **Telegram model configuration externalized**
    - All three builtin backends (codex, gemini, claude) have `model_choices: vec![]`
@@ -91,10 +60,11 @@ Two rework passes have addressed all reviewer findings.
 4. **Skill snapshot caching** — `src/tizenclaw/src/core/skill_capability_manager.rs`
    - `SkillSnapshotCache` with `SkillSnapshotFingerprint` tracks root mtimes,
      registration, and capability-config changes
-   - `invalidate_snapshot_cache` is now called on all paths that change the
+   - `invalidate_snapshot_cache` is called on all paths that change the
      skill filesystem: clawhub install, clawhub update
 
 5. **Host validation** — all tests passed via `./deploy_host.sh --test`
+   (592 passed, 0 failed across three rework passes)
 
 ## Workflow Phases
 
@@ -113,10 +83,10 @@ flowchart LR
 - [O] Stage 0. Refine — DONE
 - [O] Stage 1. Plan — DONE
 - [O] Stage 2. Design — DONE
-- [O] Stage 3. Develop — DONE (rework pass 2: all four findings addressed)
+- [O] Stage 3. Develop — DONE (rework pass 3: fallback provider order fixed)
 - [O] Stage 4. Build/Deploy — DONE (`./deploy_host.sh -b` PASS)
 - [O] Stage 5. Test/Review — DONE (`./deploy_host.sh --test` PASS: 592+others; 0 failed)
-- [O] Stage 6. Commit — DONE (8ab1a6ef); PLAN.md sync commit pending
+- [O] Stage 6. Commit — DONE (cb3c1153)
 - [O] Stage 7. Evaluate — DONE
 
 ## Risks And Watchpoints
@@ -124,10 +94,11 @@ flowchart LR
 - Provider init-time failures degrade gracefully to next available provider.
 - ClawHub update failure for one entry does not abort the full batch.
 - Snapshot cache fingerprint uses 1-second mtime resolution; same-second writes
-  are now covered by explicit `invalidate_snapshot_cache` calls on all clawhub
+  are covered by explicit `invalidate_snapshot_cache` calls on all clawhub
   operation handlers.
 - Telegram model choices are empty in builtins; operators must supply them via config.
 - The startup-path `providers_authoritative` filter gap was closed in rework pass 1.
-- `chat_with_fallback` now routes through `ProviderSelector::ordered_enabled_names`;
-  disabled providers can no longer slip into the fallback loop.
-- The `get_llm_runtime()` write-lock fallback now reports the full provider order.
+- `chat_with_fallback` routes through `ProviderSelector::ordered_enabled_names`;
+  disabled providers cannot slip into the fallback loop.
+- `get_llm_runtime()` write-lock fallback now reports the correct provider order
+  for both legacy and `providers[]`-based configs (fixed in rework pass 3).
