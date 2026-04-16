@@ -10,5 +10,4 @@
 
 ## Resume Checkpoint
 
-All PLAN items are complete. Eight rework passes addressed all reviewer findings.
-See DASHBOARD.md for the full completion record.
+All phases complete. See DASHBOARD.md and WORKFLOWS.md for final state.

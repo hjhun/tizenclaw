@@ -305,6 +305,10 @@ pub struct ProviderRegistry {
     instances: Vec<ProviderInstance>,
     /// Last request-time routing decision.
     active_selection: Option<ProviderSelectionRecord>,
+    /// Error messages for providers that failed to initialize.
+    /// Keyed by provider name; used to surface `last_init_error` in status
+    /// output even though no live instance was created for these providers.
+    failed_inits: std::collections::HashMap<String, String>,
 }
 
 impl Default for ProviderRegistry {
@@ -313,16 +317,22 @@ impl Default for ProviderRegistry {
             routing: ProviderRoutingConfig::default(),
             instances: Vec::new(),
             active_selection: None,
+            failed_inits: std::collections::HashMap::new(),
         }
     }
 }
 
 impl ProviderRegistry {
-    pub fn new(routing: ProviderRoutingConfig, instances: Vec<ProviderInstance>) -> Self {
+    pub fn new(
+        routing: ProviderRoutingConfig,
+        instances: Vec<ProviderInstance>,
+        failed_inits: std::collections::HashMap<String, String>,
+    ) -> Self {
         Self {
             routing,
             instances,
             active_selection: None,
+            failed_inits,
         }
     }
 
@@ -375,8 +385,18 @@ impl ProviderRegistry {
                     }
                     Some(_) => ProviderAvailability::Ready.as_str(),
                 };
-                let last_init_error = inst
+                // Surface an init error when no instance was created.
+                // Priority: instance-level error (post-init degradation) >
+                // failed_inits entry (init-time failure) > empty.
+                let last_init_error: &str = inst
                     .and_then(|inst| inst.last_init_error.as_deref())
+                    .or_else(|| {
+                        if inst.is_none() {
+                            self.failed_inits.get(&pref.name).map(String::as_str)
+                        } else {
+                            None
+                        }
+                    })
                     .unwrap_or_default();
                 json!({
                     "name": pref.name,
@@ -545,7 +565,7 @@ mod tests {
             "active_backend": "gemini",
             "fallback_backends": ["openai"],
         }));
-        let registry = ProviderRegistry::new(config, vec![]);
+        let registry = ProviderRegistry::new(config, vec![], std::collections::HashMap::new());
         let status = registry.status_json(|_| true);
         let providers = status["providers"].as_array().unwrap();
         // Both configured providers appear even if no backend is initialized.
@@ -706,7 +726,7 @@ mod tests {
             backend: Box::new(StubBackend),
             last_init_error: None,
         };
-        let registry = ProviderRegistry::new(config, vec![instance]);
+        let registry = ProviderRegistry::new(config, vec![instance], std::collections::HashMap::new());
 
         // Circuit breaker open → availability should be open_circuit.
         let status_open = registry.status_json(|_name| false);
@@ -717,5 +737,43 @@ mod tests {
         let status_ready = registry.status_json(|_name| true);
         let providers_ready = status_ready["providers"].as_array().unwrap();
         assert_eq!(providers_ready[0]["availability"], "ready");
+    }
+
+    #[test]
+    fn registry_status_json_surfaces_init_failure_error() {
+        // A configured provider that failed to initialize should appear in
+        // status output with `availability: "unavailable"` and a non-null
+        // `last_init_error` drawn from `failed_inits`.
+        let config = ProviderCompatibilityTranslator::translate(&json!({
+            "active_backend": "gemini",
+            "fallback_backends": ["openai"],
+        }));
+        let mut failed = std::collections::HashMap::new();
+        failed.insert(
+            "gemini".to_string(),
+            "not configured or initialization failed".to_string(),
+        );
+        // No live instances — both providers failed or were skipped.
+        let registry = ProviderRegistry::new(config, vec![], failed);
+        let status = registry.status_json(|_| true);
+        let providers = status["providers"].as_array().unwrap();
+
+        // gemini: failed init → unavailable + non-null error
+        let gemini = &providers[0];
+        assert_eq!(gemini["name"], "gemini");
+        assert_eq!(gemini["availability"], "unavailable");
+        assert!(
+            !gemini["last_init_error"].is_null(),
+            "last_init_error should be non-null for a failed init"
+        );
+
+        // openai: no entry in failed_inits → unavailable but null error
+        let openai = &providers[1];
+        assert_eq!(openai["name"], "openai");
+        assert_eq!(openai["availability"], "unavailable");
+        assert!(
+            openai["last_init_error"].is_null(),
+            "last_init_error should be null when no init error was recorded"
+        );
     }
 }

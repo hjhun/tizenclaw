@@ -189,24 +189,30 @@ impl TelegramClient {
             cli_backends.merge_config_value(telegram_section.get("cli_backends"));
         }
 
-        // Gemini model fallback: if the operator has not set a model for the
-        // gemini backend (neither in telegram_config.json nor above), try the
-        // top-level `backends.gemini.model` key for backwards compatibility.
-        let gemini_backend = TelegramCliBackend::new("gemini");
-        let gemini_model_set = cli_backends
-            .get(&gemini_backend)
-            .and_then(|definition| definition.model.as_deref())
-            .is_some();
-        if !gemini_model_set {
+        // Per-backend model fallback: if no model was set for a Telegram
+        // backend (neither in telegram_config.json nor via the telegram section
+        // above), try the top-level `backends.<name>.model` key for backwards
+        // compatibility.  Apply this to each Telegram-capable backend so that
+        // operators who configure model choices at the LLM layer automatically
+        // see them in the Telegram CLI without duplication.
+        for backend_name in &["gemini", "codex", "claude"] {
+            let backend = TelegramCliBackend::new(*backend_name);
+            let model_already_set = cli_backends
+                .get(&backend)
+                .and_then(|definition| definition.model.as_deref())
+                .is_some();
+            if model_already_set {
+                continue;
+            }
             if let Some(model) = json
                 .get("backends")
-                .and_then(|v| v.get("gemini"))
+                .and_then(|v| v.get(backend_name))
                 .and_then(|v| v.get("model"))
                 .and_then(Value::as_str)
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
             {
-                if let Some(definition) = cli_backends.definitions.get_mut(&gemini_backend) {
+                if let Some(definition) = cli_backends.definitions.get_mut(&backend) {
                     definition.model = Some(model.to_string());
                 }
             }

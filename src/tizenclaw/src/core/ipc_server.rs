@@ -969,14 +969,20 @@ impl IpcServer {
     fn handle_backend_list(agent: &Arc<AgentCore>) -> Result<Value, String> {
         let config = agent.get_llm_config(None)?;
         let runtime = agent.get_llm_runtime();
-        let active_backend = runtime
-            .get("configured_active_backend")
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        let fallback_backends = runtime
-            .get("configured_fallback_backends")
+
+        // Derive active/fallback roles from the authoritative provider order.
+        // `configured_provider_order` reflects the resolved routing order
+        // whether the source is the new `providers[]` array or the legacy
+        // `active_backend` / `fallback_backends` keys.  Position 0 = active
+        // (highest priority), positions 1+ = fallback.
+        let provider_order: Vec<String> = runtime
+            .get("configured_provider_order")
             .and_then(Value::as_array)
-            .cloned()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
 
         let backends = config
@@ -986,11 +992,13 @@ impl IpcServer {
                 items
                     .iter()
                     .map(|(name, value)| {
-                        let is_fallback = fallback_backends.iter().any(|entry| entry == name);
+                        let position = provider_order.iter().position(|n| n == name);
+                        let is_active = position == Some(0);
+                        let is_fallback = position.map(|p| p > 0).unwrap_or(false);
                         json!({
                             "name": name,
                             "configured": value,
-                            "is_active": name == active_backend,
+                            "is_active": is_active,
                             "is_fallback": is_fallback,
                         })
                     })

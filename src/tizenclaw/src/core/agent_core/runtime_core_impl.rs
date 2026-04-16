@@ -1055,6 +1055,8 @@ impl AgentCore {
 
         // Initialize backends; build the provider registry in configured preference order.
         let mut instances: Vec<crate::core::provider_selection::ProviderInstance> = Vec::new();
+        let mut failed_inits_startup: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
 
         // Iterate candidate list in priority order and initialize each backend.
         for cand in &candidates {
@@ -1081,6 +1083,10 @@ impl AgentCore {
                 });
             } else {
                 log::warn!("Backend '{}' failed to initialize", cand.name);
+                failed_inits_startup.insert(
+                    cand.name.clone(),
+                    "not configured or initialization failed".to_string(),
+                );
             }
         }
 
@@ -1118,7 +1124,11 @@ impl AgentCore {
             log::error!("Failed to initialize ANY backend from candidates list!");
         }
 
-        let registry = crate::core::provider_selection::ProviderRegistry::new(routing, instances);
+        let registry = crate::core::provider_selection::ProviderRegistry::new(
+            routing,
+            instances,
+            failed_inits_startup,
+        );
         *self.provider_registry.write().await = registry;
 
         // Store config for later use
@@ -1243,6 +1253,8 @@ impl AgentCore {
 
         let candidates = self.get_backend_candidates(&config, &plugin_manager);
         let mut instances: Vec<crate::core::provider_selection::ProviderInstance> = Vec::new();
+        let mut failed_inits: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
 
         for cand in &candidates {
             let merged_cfg = {
@@ -1266,6 +1278,13 @@ impl AgentCore {
                     backend: be,
                     last_init_error: None,
                 });
+            } else {
+                // Record the init failure so it is visible in provider status
+                // output even though no live instance was created.
+                failed_inits.insert(
+                    cand.name.clone(),
+                    "not configured or initialization failed".to_string(),
+                );
             }
         }
 
@@ -1305,7 +1324,7 @@ impl AgentCore {
         {
             let mut rg = self.provider_registry.write().await;
             rg.shutdown_all();
-            *rg = crate::core::provider_selection::ProviderRegistry::new(routing, instances);
+            *rg = crate::core::provider_selection::ProviderRegistry::new(routing, instances, failed_inits);
         }
 
         if let Ok(mut stored_config) = self.llm_config.lock() {
