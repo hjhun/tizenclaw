@@ -382,8 +382,14 @@ run_rust_workspace_build() {
 }
 
 run_rust_workspace_tests() {
-  local cargo_args=("test" "--manifest-path" "${RUST_WORKSPACE_MANIFEST}" "--workspace" "--offline" "--locked" "--" "--test-threads=1")
-  local retry_args=("test" "--manifest-path" "${RUST_WORKSPACE_MANIFEST}" "--workspace" "--" "--test-threads=1")
+  local cargo_args=("test" "--manifest-path" "${RUST_WORKSPACE_MANIFEST}" "--workspace" "--offline" "--locked")
+  local retry_args=("test" "--manifest-path" "${RUST_WORKSPACE_MANIFEST}" "--workspace")
+  if [ "${BUILD_MODE}" = "release" ]; then
+    cargo_args+=("--release")
+    retry_args+=("--release")
+  fi
+  cargo_args+=("--" "--test-threads=1")
+  retry_args+=("--" "--test-threads=1")
 
   if [ ! -f "${RUST_WORKSPACE_MANIFEST}" ]; then
     return 0
@@ -531,18 +537,22 @@ do_test() {
     process_report || true
   fi
 
-  log "Running: cargo test --workspace --offline --locked"
+  local cargo_test_args=(test --workspace --offline --locked)
+  if [ "${BUILD_MODE}" = "release" ]; then
+    cargo_test_args+=(--release)
+  fi
+  log "Running: cargo ${cargo_test_args[*]}"
   cd "${PROJECT_DIR}"
 
   if [ "${DRY_RUN}" = true ]; then
     echo -e "  ${YELLOW}[DRY-RUN]${NC} export CARGO_TARGET_DIR='${CARGO_TARGET_DIR_HOST}'"
-    echo -e "  ${YELLOW}[DRY-RUN]${NC} cargo test --workspace --offline --locked"
+    echo -e "  ${YELLOW}[DRY-RUN]${NC} cargo ${cargo_test_args[*]}"
     return 0
   fi
 
   mkdir -p "${CARGO_TARGET_DIR_HOST}"
 
-  if CARGO_TARGET_DIR="${CARGO_TARGET_DIR_HOST}" cargo test --workspace --offline --locked -- --test-threads=1 2>&1; then
+  if CARGO_TARGET_DIR="${CARGO_TARGET_DIR_HOST}" cargo "${cargo_test_args[@]}" -- --test-threads=1 2>&1; then
     ok "All tests passed"
   else
     fail "Some tests failed (see output above)"

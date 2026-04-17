@@ -82,16 +82,23 @@ _kill_pid_file() {
   fi
   local pid
   pid="$(cat "${pid_file}" 2>/dev/null || true)"
-  if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
-    kill "${pid}" 2>/dev/null || true
+  if [[ -z "${pid}" ]]; then
+    rm -f "${pid_file}"
+    return 0
+  fi
+  if kill -0 "${pid}" 2>/dev/null; then
+    # Kill the entire process group (PGID == PID for setsid-started processes).
+    # This ensures child processes such as tizenclaw-web-dashboard are also
+    # terminated and not left orphaned when the daemon exits.
+    kill -- "-${pid}" 2>/dev/null || kill "${pid}" 2>/dev/null || true
     local waited=0
-    while kill -0 "${pid}" 2>/dev/null && [[ "${waited}" -lt 5 ]]; do
+    while [[ "${waited}" -lt 8 ]] && pgrep -g "${pid}" >/dev/null 2>&1; do
       sleep 0.5
       waited=$((waited + 1))
     done
-    if kill -0 "${pid}" 2>/dev/null; then
-      warn "${label} (pid ${pid}) still alive; sending SIGKILL"
-      kill -9 "${pid}" 2>/dev/null || true
+    if pgrep -g "${pid}" >/dev/null 2>&1; then
+      warn "${label} process group (pgid ${pid}) still alive; sending SIGKILL"
+      kill -9 -- "-${pid}" 2>/dev/null || kill -9 "${pid}" 2>/dev/null || true
     fi
   fi
   rm -f "${pid_file}"
