@@ -50,19 +50,8 @@ impl WebDashboardChannel {
         PathBuf::from("tizenclaw-web-dashboard")
     }
 
-    fn cleanup_stale_processes() {
-        let _ = std::process::Command::new("pkill")
-            .args(["-TERM", "-x", "tizenclaw-web-d"])
-            .status();
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        let _ = std::process::Command::new("pkill")
-            .args(["-KILL", "-x", "tizenclaw-web-d"])
-            .status();
-    }
-
     pub fn start(&mut self, port: u16, web_root: &Path, socket_path: &str) -> Result<(), String> {
         self.stop();
-        Self::cleanup_stale_processes();
 
         self.port = port;
         self.web_root = web_root.to_path_buf();
