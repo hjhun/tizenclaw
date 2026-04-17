@@ -311,6 +311,16 @@ if [[ "${FAILED}" -gt 0 ]]; then
     echo -e "    - ${name}"
   done
   echo ""
+  warn "── Diagnostic logs (last 50 lines each) ─────────────────────────"
+  if [[ -f "${DAEMON_LOG}" ]]; then
+    warn "Daemon log (${DAEMON_LOG}):"
+    tail -50 "${DAEMON_LOG}" 2>/dev/null || true
+  fi
+  if [[ -f "${TOOL_EXECUTOR_LOG}" ]]; then
+    warn "Tool-executor log (${TOOL_EXECUTOR_LOG}):"
+    tail -50 "${TOOL_EXECUTOR_LOG}" 2>/dev/null || true
+  fi
+  echo ""
   err "Offline contract suite: ${FAILED} scenario(s) failed"
   exit 1
 fi
