@@ -183,21 +183,19 @@ main() {
   [[ "${config_count}" -gt 0 ]] \
     || fail "config/ has no files — bundle must seed at least one config"
 
-  log "Verifying data directories contain payload when source is non-empty..."
-  _assert_nonempty_if_src_nonempty() {
-    local label="$1"
-    local src_dir="$2"
-    local installed_dir="$3"
-    if [[ -d "${src_dir}" ]] && [[ -n "$(find "${src_dir}" -mindepth 1 -maxdepth 2 -type f | head -1)" ]]; then
-      local installed_count
-      installed_count="$(find "${installed_dir}" -mindepth 1 -type f 2>/dev/null | wc -l)"
-      [[ "${installed_count}" -gt 0 ]] \
-        || fail "${label} is empty after install but source has content"
+  log "Verifying data directories contain payload when bundle ships them..."
+  # Compare against the bundle archive, not the source checkout, so this check
+  # does not create a back-channel through which repo-path dependencies in the
+  # installed scripts could slip past the "no checkout available" criterion.
+  for _dir_prefix in "web/" "docs/" "embedded/"; do
+    if grep -qF "${_dir_prefix}" <<< "${bundle_listing}"; then
+      local _dir_name="${_dir_prefix%/}"
+      local _installed_count
+      _installed_count="$(find "${install_root}/${_dir_name}" -mindepth 1 -type f 2>/dev/null | wc -l)"
+      [[ "${_installed_count}" -gt 0 ]] \
+        || fail "${_dir_name}/ is empty after install but bundle contained files"
     fi
-  }
-  _assert_nonempty_if_src_nonempty "web/" "${PROJECT_DIR}/data/web" "${install_root}/web"
-  _assert_nonempty_if_src_nonempty "docs/" "${PROJECT_DIR}/data/docs" "${install_root}/docs"
-  _assert_nonempty_if_src_nonempty "embedded/" "${PROJECT_DIR}/tools/embedded" "${install_root}/embedded"
+  done
 
   log "Checking tizenclaw-cli --help is runnable..."
   assert_runnable "${install_root}/bin/tizenclaw-cli" --help

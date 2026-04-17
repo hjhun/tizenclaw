@@ -130,17 +130,50 @@ port_report() {
   ss -ltnp "( sport = :${port} )" 2>/dev/null | sed '1d' || true
 }
 
+# Collect PIDs whose argv[0] is exactly INSTALL_DIR/binary_name (with or
+# without trailing arguments).  Uses pgrep -af to read full cmdlines, then
+# matches in bash to avoid pgrep ERE-suffix portability issues where
+# ([[:space:]]|$) can degrade into a bare prefix on some procps variants.
+_procs_for() {
+  local binary_name="$1"
+  local target="${INSTALL_DIR}/${binary_name}"
+  local current_uid
+  current_uid="$(id -u)"
+  local line pid cmdline
+  while IFS= read -r line; do
+    [[ -n "${line}" ]] || continue
+    pid="${line%% *}"
+    cmdline="${line#* }"
+    if [[ "${cmdline}" == "${target}" ]] \
+       || [[ "${cmdline}" == "${target} "* ]]; then
+      printf '%s\n' "${pid}"
+    fi
+  done < <(pgrep -u "${current_uid}" -af "${INSTALL_DIR}/" 2>/dev/null || true)
+}
+
+is_running_for() {
+  local binary_name="$1"
+  [[ -n "$(_procs_for "${binary_name}")" ]]
+}
+
+kill_for() {
+  local binary_name="$1"
+  local sig="${2:--TERM}"
+  local pid
+  while IFS= read -r pid; do
+    [[ -n "${pid}" ]] || continue
+    kill "${sig}" "${pid}" 2>/dev/null || true
+  done < <(_procs_for "${binary_name}")
+}
+
 wait_for_exit() {
   local binary_name="$1"
   local timeout_secs="${2:-5}"
   local waited=0
-  local current_uid
-  current_uid="$(id -u)"
-  local match_pat="${INSTALL_DIR}/${binary_name}([[:space:]]|\$)"
 
-  while pgrep -u "${current_uid}" -f "${match_pat}" >/dev/null 2>&1; do
+  while is_running_for "${binary_name}"; do
     if [ "${waited}" -ge "${timeout_secs}" ]; then
-      pkill -9 -u "${current_uid}" -f "${match_pat}" >/dev/null 2>&1 || true
+      kill_for "${binary_name}" -9
       return 1
     fi
     sleep 1
@@ -189,13 +222,8 @@ stop_daemon() {
     rm -f "${PID_FILE}"
   fi
 
-  local current_uid
-  current_uid="$(id -u)"
   for name in "${TOOL_EXECUTOR_NAME}" "${WEB_DASHBOARD_NAME}" "${PKG_NAME}" "${CLI_NAME}"; do
-    local pat="${INSTALL_DIR}/${name}([[:space:]]|$)"
-    if pgrep -u "${current_uid}" -f "${pat}" >/dev/null 2>&1; then
-      pkill -u "${current_uid}" -f "${pat}" >/dev/null 2>&1 || true
-    fi
+    kill_for "${name}"
   done
 
   wait_for_exit "${TOOL_EXECUTOR_NAME}" 5 || true
@@ -288,7 +316,7 @@ show_status() {
     warn "${TOOL_EXECUTOR_NAME} is not running (no PID file)"
   fi
 
-  if pgrep -u "$(id -u)" -f "${INSTALL_DIR}/${WEB_DASHBOARD_NAME}([[:space:]]|$)" >/dev/null 2>&1; then
+  if is_running_for "${WEB_DASHBOARD_NAME}"; then
     ok "${WEB_DASHBOARD_NAME} is running"
   else
     warn "${WEB_DASHBOARD_NAME} is not running"
