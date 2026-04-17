@@ -563,6 +563,18 @@ do_test() {
   else
     fail "Documentation-driven verification failed"
   fi
+
+  log "Running offline system contract suite"
+  local bin_dir="${CARGO_TARGET_DIR_HOST}/debug"
+  if [ "${BUILD_MODE}" = "release" ]; then
+    bin_dir="${CARGO_TARGET_DIR_HOST}/release"
+  fi
+  if bash "${PROJECT_DIR}/scripts/run_host_system_contracts.sh" \
+      --bin-dir "${bin_dir}"; then
+    ok "Offline system contract suite passed"
+  else
+    fail "Offline system contract suite failed (see output above)"
+  fi
 }
 
 # ─────────────────────────────────────────────

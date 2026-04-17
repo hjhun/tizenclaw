@@ -1,0 +1,15 @@
+{
+  "suite": "offline-contracts",
+  "description": "Offline-safe daemon IPC contract scenarios run automatically by ./deploy_host.sh --test against an isolated temporary runtime root. Do not add network-dependent or LLM-dependent scenarios here.",
+  "scenarios": [
+    "tests/system/ipc_jsonrpc_contract.json",
+    "tests/system/basic_ipc_smoke.json",
+    "tests/system/command_registry_runtime_contract.json",
+    "tests/system/channel_registry_runtime_contract.json",
+    "tests/system/dashboard_runtime_contract.json",
+    "tests/system/key_management_runtime_contract.json",
+    "tests/system/clawhub_update_runtime_contract.json",
+    "tests/system/rust_workspace_refactor_parity.json",
+    "tests/system/doc_layout_verification.json"
+  ]
+}

@@ -62,10 +62,27 @@ flow.
 
 ## Verification Surfaces
 
-- `./deploy_host.sh --test` runs the repository's host validation path
-- `tests/system/*.json` covers daemon-visible runtime contracts such as
-  IPC, dashboard control, command registry behavior, devel mode, and
-  session/runtime shape
+- `./deploy_host.sh --test` runs the full host validation path:
+  1. Cargo unit and integration tests for all workspace crates
+  2. Canonical Rust workspace tests (`rust/`)
+  3. Reconstruction parity harness (`rust/scripts/run_mock_parity_harness.sh`)
+  4. Documentation architecture verification (`scripts/verify_doc_architecture.py`)
+  5. **Offline system contract suite** — boots a temporary isolated daemon
+     instance and runs the scenarios listed in
+     `tests/system/offline_suite.json` against it. The daemon and all
+     companion processes start against a `mktemp` runtime root so no keys,
+     sessions, or config are written to `~/.tizenclaw`. The isolation
+     environment is always cleaned up, even when a scenario fails.
+- `tests/system/offline_suite.json` is the authoritative list of
+  scenarios that run automatically. It covers JSON-RPC routing, runtime
+  topology, command registry, channel registry, dashboard start/stop,
+  key management, ClawHub update, and Rust workspace parity. All listed
+  scenarios are offline-safe and deterministic.
+- Scenarios in `tests/system/` that are **not** in `offline_suite.json`
+  (e.g. `devel_mode_*`, `openai_oauth_regression`, `process_prompt`
+  flows, internet-backed research scenarios) remain opt-in and must be
+  run manually against a live daemon with `tizenclaw-tests scenario
+  --file <path>`.
 - `tests/test_porting_workspace.py` covers the repository support tools
   used for inventory, manifest, and audit checks
 - `rust/scripts/run_mock_parity_harness.sh` checks the newer Rust
