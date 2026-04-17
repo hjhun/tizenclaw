@@ -373,7 +373,7 @@ main() {
       [[ $# -eq 1 ]] || fail "--restart-only takes no additional arguments"
       stop_daemon
       start_daemon
-      wait_for_ipc_ready || true
+      wait_for_ipc_ready
       ;;
     --release|--debug|-d|--build-only|-b|--no-restart|--test|--remove\
       |--dry-run|--devel|--build-root|--llm-config)

@@ -13,6 +13,7 @@ PKG_NAME="tizenclaw"
 TOOL_EXECUTOR_NAME="tizenclaw-tool-executor"
 CLI_NAME="tizenclaw-cli"
 WEB_DASHBOARD_NAME="tizenclaw-web-dashboard"
+TEST_TOOL_NAME="tizenclaw-tests"
 
 usage() {
   cat <<'EOF'
@@ -211,6 +212,9 @@ main() {
   install_executable_if_present \
     "${build_dir}/${WEB_DASHBOARD_NAME}" \
     "${bundle_root}/bin/${WEB_DASHBOARD_NAME}"
+  install_executable_if_present \
+    "${build_dir}/${TEST_TOOL_NAME}" \
+    "${bundle_root}/bin/${TEST_TOOL_NAME}"
   install_data_if_present \
     "${build_dir}/libtizenclaw.so" \
     "${bundle_root}/lib/libtizenclaw.so"

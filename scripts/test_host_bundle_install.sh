@@ -281,9 +281,43 @@ main() {
     fail "--status did not confirm a running tizenclaw process"
   fi
 
+  log "Probing daemon IPC readiness via tizenclaw-tests ping..."
+  local test_bin="${install_root}/bin/tizenclaw-tests"
+  if [[ -x "${test_bin}" ]]; then
+    local ipc_deadline=$((SECONDS + 10))
+    local ipc_ok=false
+    while [[ "${SECONDS}" -lt "${ipc_deadline}" ]]; do
+      if (
+        cd "${fake_home}"
+        env -i \
+          HOME="${fake_home}" \
+          PATH="${install_root}/bin:/usr/bin:/bin" \
+          TIZENCLAW_INSTALL_ROOT="${install_root}" \
+          "${test_bin}" call --method ping >/dev/null 2>&1
+      ); then
+        ipc_ok=true
+        break
+      fi
+      sleep 0.3
+    done
+    [[ "${ipc_ok}" == true ]] \
+      || fail "Daemon IPC did not respond to ping within 10s — daemon is not operational"
+    log "Daemon IPC is responding."
+  else
+    log "tizenclaw-tests not found in bundle; skipping IPC ping probe"
+  fi
+
+  log "Waiting for daemon to create runtime log file..."
+  local daemon_log="${install_root}/logs/tizenclaw.log"
+  local log_deadline=$((SECONDS + 8))
+  while [[ "${SECONDS}" -lt "${log_deadline}" ]]; do
+    [[ -f "${daemon_log}" ]] && break
+    sleep 0.3
+  done
+  [[ -f "${daemon_log}" ]] \
+    || fail "Daemon did not create ${daemon_log} — runtime logging is not working"
+
   log "Checking tizenclaw-hostctl --log stays alive against the installed log..."
-  mkdir -p "${install_root}/logs"
-  touch "${install_root}/logs/tizenclaw.log"
   local log_check_pid=""
   run_hostctl --log >/dev/null 2>&1 &
   log_check_pid=$!
