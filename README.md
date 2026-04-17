@@ -44,12 +44,40 @@ Use the repository scripts instead of direct `cargo build` or
 
 - Build, install, and restart on the host: `./deploy_host.sh`
 - Run the host validation path: `./deploy_host.sh --test`
-- Check daemon status: `./deploy_host.sh --status`
-- Follow daemon logs: `./deploy_host.sh --log`
+- Check daemon status (source checkout): `./deploy_host.sh --status`
+- Follow daemon logs (source checkout): `./deploy_host.sh --log`
 - Install from the current checkout: `./install.sh --local-checkout`
 
 Host installs live under `~/.tizenclaw/`, including binaries, configs,
 logs, tools, and the bundled web assets.
+
+### Installed bundle management
+
+`./deploy_host.sh` is the **source-checkout** development entrypoint and
+assumes the full repository layout (Cargo workspace, `data/`, `tools/`,
+Git metadata). It must not be used to manage a standalone installed
+bundle.
+
+Installed TizenClaw bundles expose a dedicated control script,
+`tizenclaw-hostctl`, which lives in `~/.tizenclaw/bin/` after running
+`./install.sh` (any mode). It is a lifecycle-only interface and supports
+only the following actions:
+
+- `tizenclaw-hostctl --help`
+- `tizenclaw-hostctl --status`
+- `tizenclaw-hostctl --restart-only`
+- `tizenclaw-hostctl --stop` (or `-s`)
+- `tizenclaw-hostctl --log`
+
+Build, test, install, and remove flags are intentionally **not** part of
+`tizenclaw-hostctl`; they fail fast with a message directing the user
+back to `./deploy_host.sh` in a repository checkout. This keeps the
+installed bundle interface smaller and harder to misuse.
+
+The installer (`install.sh`) and post-install automation drive
+`tizenclaw-hostctl` for restart and stop — the same interface remains
+available for the user under `~/.tizenclaw/bin/tizenclaw-hostctl` after
+setup.
 
 ### Tizen deployment
 

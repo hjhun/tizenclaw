@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 HOST_BASE_DIR="${TIZENCLAW_INSTALL_ROOT:-${HOME}/.tizenclaw}"
 HOST_BIN_DIR="${HOST_BASE_DIR}/bin"
-HOST_MANAGE_SCRIPT="${HOST_BASE_DIR}/manage/deploy_host.sh"
+HOST_MANAGE_SCRIPT="${HOST_BASE_DIR}/manage/tizenclaw-hostctl.sh"
 BASHRC_PATH="${TIZENCLAW_BASHRC_PATH:-${HOME}/.bashrc}"
 PATH_EXPORT='export PATH="$HOME/.tizenclaw/bin:$PATH"'
 
@@ -345,7 +345,6 @@ restart_host_services() {
 
   if [[ -x "${HOST_MANAGE_SCRIPT}" ]]; then
     TIZENCLAW_INSTALL_ROOT="${HOST_BASE_DIR}" \
-    TIZENCLAW_BASHRC_PATH="${BASHRC_PATH}" \
       "${HOST_MANAGE_SCRIPT}" --restart-only
     return
   fi
@@ -386,7 +385,6 @@ stop_host_services_if_present() {
 
   if [[ -x "${HOST_MANAGE_SCRIPT}" ]]; then
     TIZENCLAW_INSTALL_ROOT="${HOST_BASE_DIR}" \
-    TIZENCLAW_BASHRC_PATH="${BASHRC_PATH}" \
       "${HOST_MANAGE_SCRIPT}" --stop || true
   else
     pkill -f "${HOST_BIN_DIR}/tizenclaw-tool-executor" >/dev/null 2>&1 || true
@@ -418,7 +416,7 @@ install_release_bundle() {
   fi
 
   if [[ -x "${HOST_MANAGE_SCRIPT}" ]]; then
-    ln -sf ../manage/deploy_host.sh "${HOST_BIN_DIR}/tizenclaw-hostctl"
+    ln -sf ../manage/tizenclaw-hostctl.sh "${HOST_BIN_DIR}/tizenclaw-hostctl"
   fi
 
   seed_config_from_bundle "${bundle_root}"

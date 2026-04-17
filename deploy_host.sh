@@ -756,6 +756,22 @@ EOF
     ok "Embedded tool descriptors installed"
   fi
 
+  # Install the standalone installed-runtime control script so that
+  # tizenclaw-hostctl works even for local-checkout installs. The source
+  # deploy_host.sh itself is never copied into the managed tree.
+  local hostctl_src="${PROJECT_DIR}/scripts/tizenclaw-hostctl.sh"
+  if [ -f "${hostctl_src}" ]; then
+    run mkdir -p "${HOST_BASE_DIR}/manage"
+    log "Installing bundled host control script → ${HOST_BASE_DIR}/manage/tizenclaw-hostctl.sh"
+    run install -m 755 "${hostctl_src}" "${HOST_BASE_DIR}/manage/tizenclaw-hostctl.sh"
+    if [ "${DRY_RUN}" = false ]; then
+      ln -sf ../manage/tizenclaw-hostctl.sh "${INSTALL_DIR}/tizenclaw-hostctl"
+    else
+      echo -e "  ${YELLOW}[DRY-RUN]${NC} ln -sf ../manage/tizenclaw-hostctl.sh '${INSTALL_DIR}/tizenclaw-hostctl'"
+    fi
+    ok "Installed tizenclaw-hostctl"
+  fi
+
   ensure_shell_path
   cleanup_legacy_host_install
 }

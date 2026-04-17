@@ -42,6 +42,7 @@ jobs:
           bash -n deploy.sh
           bash -n scripts/create_host_release_bundle.sh
           bash -n scripts/test_host_bundle_install.sh
+          bash -n scripts/tizenclaw-hostctl.sh
 
       - name: Enforce owner-only action policy
         run: |
@@ -124,8 +125,11 @@ jobs:
 
           tar -tzf "${archive}" | grep -F 'bin/tizenclaw'
           tar -tzf "${archive}" | grep -F 'bin/tizenclaw-cli'
-          tar -tzf "${archive}" | grep -F 'manage/deploy_host.sh'
+          tar -tzf "${archive}" | grep -F 'manage/tizenclaw-hostctl.sh'
           tar -tzf "${archive}" | grep -F 'bundle-manifest.json'
+          if tar -tzf "${archive}" | grep -Fq 'manage/deploy_host.sh'; then
+            echo "Bundle must not contain manage/deploy_host.sh"; exit 1
+          fi
 
       - name: Run installer smoke test
         run: |

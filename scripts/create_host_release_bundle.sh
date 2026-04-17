@@ -255,9 +255,13 @@ main() {
     "${bundle_root}/web/img/tizenclaw.svg"
   copy_tree_contents "${PROJECT_DIR}/data/docs" "${bundle_root}/docs"
   copy_tree_contents "${PROJECT_DIR}/tools/embedded" "${bundle_root}/embedded"
+  # Bundled releases ship only the installed-runtime control script.
+  # The source-tree ./deploy_host.sh is intentionally NOT packaged — it
+  # assumes a repository checkout (data/, tools/, cargo workspace, git)
+  # and must not be exposed as the installed runtime entrypoint.
   install -m 755 \
-    "${PROJECT_DIR}/deploy_host.sh" \
-    "${bundle_root}/manage/deploy_host.sh"
+    "${PROJECT_DIR}/scripts/tizenclaw-hostctl.sh" \
+    "${bundle_root}/manage/tizenclaw-hostctl.sh"
 
   write_bundle_manifest "${bundle_root}"
 
