@@ -798,14 +798,14 @@ stop_daemon() {
     run pkill -f "${INSTALL_DIR}/${WEB_DASHBOARD_NAME}" || true
   fi
 
-  if pgrep -x "${TOOL_EXECUTOR_NAME}" &>/dev/null; then
-    run pkill -x "${TOOL_EXECUTOR_NAME}" || true
+  if pgrep -f "${INSTALL_DIR}/${TOOL_EXECUTOR_NAME}" &>/dev/null; then
+    run pkill -f "${INSTALL_DIR}/${TOOL_EXECUTOR_NAME}" || true
   fi
-  if pgrep -x "${CLI_NAME}" &>/dev/null; then
-    run pkill -x "${CLI_NAME}" || true
+  if pgrep -f "${INSTALL_DIR}/${CLI_NAME}" &>/dev/null; then
+    run pkill -f "${INSTALL_DIR}/${CLI_NAME}" || true
   fi
-  if pgrep -x "${WEB_DASHBOARD_NAME}" &>/dev/null; then
-    run pkill -x "${WEB_DASHBOARD_NAME}" || true
+  if pgrep -f "${INSTALL_DIR}/${WEB_DASHBOARD_NAME}" &>/dev/null; then
+    run pkill -f "${INSTALL_DIR}/${WEB_DASHBOARD_NAME}" || true
   fi
 
   wait_for_process_name_exit "tizenclaw-tool-executor" "${TOOL_EXECUTOR_NAME}" 5 || true
