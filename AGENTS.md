@@ -19,6 +19,11 @@ This bundle has three layers:
 - reusable local skills under `.agent/skills/`
 - repository rules under `.agent/rules/`
 
+> **Local-only**: `.agent/` is excluded from Git (see `.gitignore`). It is a
+> developer workflow bundle maintained locally in each checkout. Fresh clones
+> must restore it from a personal backup or a shared out-of-band source.
+> It is intentionally not committed to GitHub.
+
 Use `supervising-workflow` whenever the next workflow is not obvious.
 
 ## Language Rule
@@ -44,8 +49,8 @@ Use `supervising-workflow` whenever the next workflow is not obvious.
 ## Environment Entry Rule
 
 Before executing repository commands, follow
-`.agent/rules/shell-detection.md` and use
-`.agent/skills/managing-environment/SKILL.md`.
+`.agent/rules/shell-detection.md` (local-only) and use
+`.agent/skills/managing-environment/SKILL.md` (local-only).
 
 The normal case in this repository is a WSL Ubuntu `bash` shell that should
 run commands directly without a `wsl.exe` wrapper.
@@ -108,6 +113,12 @@ daemon-visible behavior changes.
 - Skill: `.agent/skills/building-deploying/SKILL.md`
 - Output:
   - scripted host or Tizen build/deploy evidence
+- **Exception — documentation/metadata-only tasks**: when a task touches only
+  non-code files (`.gitignore`, docs, workflow metadata) and produces no
+  compiled artifact, the Build/Deploy stage is fulfilled by repository-state
+  verification (`git ls-files`, `git check-ignore`, directory existence checks)
+  in place of `./deploy_host.sh`. Record the substitution and its evidence
+  explicitly in `.dev/WORKFLOWS.md` before marking the stage complete.
 
 ### Stage 5. Test/Review
 - Skills:
@@ -139,7 +150,8 @@ The supervisor validates each stage transition before work advances:
 - plan -> workflow, plan, and dashboard exist
 - design -> implementation no longer needs invented structure
 - develop -> intended files changed and state is synchronized
-- build/deploy -> scripted path executed
+- build/deploy -> scripted path executed, or repository-state verification
+  evidence recorded for documentation/metadata-only tasks
 - test/review -> executed evidence recorded
 - commit -> diff scope and commit format are correct
 - evaluate -> final assessment is recorded with an explicit verdict
