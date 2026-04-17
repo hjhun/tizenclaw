@@ -1059,7 +1059,18 @@ impl AgentCore {
             std::collections::HashMap::new();
 
         // Iterate candidate list in priority order and initialize each backend.
+        // When providers[] is present, skip only candidates explicitly listed
+        // with enabled=false before init; unlisted backends (plugin-discovered)
+        // are allowed through as last-resort fallbacks.
         for cand in &candidates {
+            if !routing.is_candidate_allowed(&cand.name) {
+                log::debug!(
+                    "Init: skipping '{}' — not in providers[] allowlist",
+                    cand.name
+                );
+                continue;
+            }
+
             let merged_cfg = {
                 let ks_guard = self.key_store.lock().unwrap_or_else(|e| e.into_inner());
                 let base = config.backend_config(&cand.name);
@@ -1094,31 +1105,19 @@ impl AgentCore {
         // ProviderSelector iterates in the operator-specified order, not the
         // initialization candidate order which may differ (e.g. plugin priority).
         let ordered_names = routing.ordered_names();
-        if routing.providers_array_present || !ordered_names.is_empty() {
+        if !ordered_names.is_empty() {
             instances.sort_by_key(|inst| {
                 ordered_names
                     .iter()
                     .position(|name| *name == inst.name.as_str())
                     .unwrap_or(usize::MAX)
             });
-            // When the `providers` array key is present it is authoritative.
-            // Drop only instances that are explicitly listed and disabled.
-            // Plugin-discovered backends absent from `providers[]` are kept
-            // at the end of the list as last-resort fallbacks.
-            if routing.providers_array_present {
-                instances.retain(|inst| {
-                    routing
-                        .providers
-                        .iter()
-                        .find(|p| p.name == inst.name)
-                        .map(|p| p.enabled)
-                        .unwrap_or(true)
-                });
-                log::debug!(
-                    "Init: providers[] authoritative — retained {} enabled instance(s)",
-                    instances.len()
-                );
-            }
+        }
+        if routing.providers_array_present {
+            log::debug!(
+                "Init: providers[] present — {} instance(s) initialized",
+                instances.len()
+            );
         }
 
         if instances.is_empty() {
@@ -1257,7 +1256,17 @@ impl AgentCore {
         let mut failed_inits: std::collections::HashMap<String, String> =
             std::collections::HashMap::new();
 
+        // Same pre-init deny-list check as startup: skip only candidates
+        // explicitly disabled in providers[] before any initialization work.
         for cand in &candidates {
+            if !routing.is_candidate_allowed(&cand.name) {
+                log::debug!(
+                    "Reload: skipping '{}' — not in providers[] allowlist",
+                    cand.name
+                );
+                continue;
+            }
+
             let merged_cfg = {
                 let ks_guard = self.key_store.lock().unwrap_or_else(|e| e.into_inner());
                 let base = config.backend_config(&cand.name);
@@ -1291,30 +1300,19 @@ impl AgentCore {
 
         // Re-order to match configured routing preference.
         let ordered_names = routing.ordered_names();
-        if routing.providers_array_present || !ordered_names.is_empty() {
+        if !ordered_names.is_empty() {
             instances.sort_by_key(|inst| {
                 ordered_names
                     .iter()
                     .position(|name| *name == inst.name.as_str())
                     .unwrap_or(usize::MAX)
             });
-            // When the `providers` array key is present it is authoritative.
-            // Drop only instances explicitly listed and disabled; plugin-
-            // discovered backends absent from `providers[]` stay as fallbacks.
-            if routing.providers_array_present {
-                instances.retain(|inst| {
-                    routing
-                        .providers
-                        .iter()
-                        .find(|p| p.name == inst.name)
-                        .map(|p| p.enabled)
-                        .unwrap_or(true)
-                });
-                log::debug!(
-                    "Reload: providers[] authoritative — retained {} enabled instance(s)",
-                    instances.len()
-                );
-            }
+        }
+        if routing.providers_array_present {
+            log::debug!(
+                "Reload: providers[] present — {} instance(s) initialized",
+                instances.len()
+            );
         }
 
         if instances.is_empty() {

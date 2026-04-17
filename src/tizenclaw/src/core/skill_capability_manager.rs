@@ -146,22 +146,24 @@ struct SkillRootSignature {
     path: String,
     /// Directory-entry count (number of immediate children).
     entry_count: usize,
-    /// Latest modification time (Unix seconds) of any immediate child.
-    latest_modified_unix_secs: u64,
+    /// Latest modification time (nanoseconds since Unix epoch) of any
+    /// immediate child.  Nanosecond precision avoids false cache hits when
+    /// multiple edits occur within the same second.
+    latest_modified_unix_nanos: u128,
 }
 
 impl SkillRootSignature {
     fn from_path(path: &str) -> Self {
         let dir = Path::new(path);
         let mut entry_count = 0usize;
-        let mut latest_secs = 0u64;
+        let mut latest_nanos = 0u128;
 
-        fn mtime_secs(path: &Path) -> u64 {
+        fn mtime_nanos(path: &Path) -> u128 {
             std::fs::metadata(path)
                 .ok()
                 .and_then(|m| m.modified().ok())
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_secs())
+                .map(|d| d.as_nanos())
                 .unwrap_or(0)
         }
 
@@ -169,9 +171,9 @@ impl SkillRootSignature {
             for entry in entries.flatten() {
                 entry_count += 1;
                 let child_path = entry.path();
-                let secs = mtime_secs(&child_path);
-                if secs > latest_secs {
-                    latest_secs = secs;
+                let nanos = mtime_nanos(&child_path);
+                if nanos > latest_nanos {
+                    latest_nanos = nanos;
                 }
                 // On Linux, editing a file inside a subdirectory does not update
                 // the subdirectory's mtime.  Skills live at root/name/SKILL.md, so
@@ -179,9 +181,9 @@ impl SkillRootSignature {
                 // edits are detected without an explicit cache invalidation call.
                 if child_path.is_dir() {
                     let skill_md = child_path.join("SKILL.md");
-                    let nested_secs = mtime_secs(&skill_md);
-                    if nested_secs > latest_secs {
-                        latest_secs = nested_secs;
+                    let nested_nanos = mtime_nanos(&skill_md);
+                    if nested_nanos > latest_nanos {
+                        latest_nanos = nested_nanos;
                     }
                 }
             }
@@ -189,7 +191,7 @@ impl SkillRootSignature {
         Self {
             path: path.to_string(),
             entry_count,
-            latest_modified_unix_secs: latest_secs,
+            latest_modified_unix_nanos: latest_nanos,
         }
     }
 }
@@ -764,8 +766,9 @@ mod tests {
 
         // Overwrite SKILL.md — this updates the file's mtime but NOT the
         // parent directory's mtime on Linux.
-        // Sleep 1s so the mtime is strictly greater than the cached value.
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        // A short sleep ensures the mtime is strictly greater than the cached
+        // value; nanosecond fingerprinting makes even a few ms sufficient.
+        std::thread::sleep(std::time::Duration::from_millis(10));
         fs::write(&skill_md, "---\ndescription: Updated\n---\n# Edit\n").unwrap();
 
         // load_snapshot must detect the change via fingerprint comparison.

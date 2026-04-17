@@ -2,93 +2,86 @@
 
 ## Actual Progress
 
-- Goal: Runtime flexibility improvements (provider selection, Telegram config
-  externalization, ClawHub update flow, skill snapshot caching).
-- Active roadmap focus: reviewer rework pass — all three findings addressed.
-- Current workflow phase: complete
+- Goal: <!-- dormammu:goal_source=/home/hjhun/.dormammu/goals/tizenclaw_improve.md -->
+- Prompt-driven scope: All 5 prompt-derived PLAN items complete.
+- Active roadmap focus: complete
+- Current workflow phase: evaluate
 - Last completed workflow phase: evaluate
-- Supervisor verdict: `approved` (pending rework pass verification)
-- Escalation status: none
+- Supervisor verdict: `approved`
+- Escalation status: `approved`
+- Resume point: All PLAN items marked [O]; implementation validated at rework pass 12
 
 ## Workflow Phases
 
 ```mermaid
 flowchart LR
-    refine([Refine]) --> plan([Plan])
-    plan --> design([Design])
+    plan([Plan]) --> design([Design])
     design --> develop([Develop])
-    develop --> build_deploy([Build/Deploy])
-    build_deploy --> test_review([Test/Review])
-    test_review --> commit([Commit])
-    commit --> evaluate([Evaluate])
+    design --> test_author([Test Author])
+    develop --> test_review([Test & Review])
+    test_author --> test_review
+    test_review --> final_verify([Final Verify])
+    final_verify -->|approved| commit([Commit])
+    final_verify -->|rework| develop
 ```
 
-## Completed Work
+## In Progress
 
-### Reviewer Finding 1 — High: Plugin fallback broken when providers[] present
+Nothing — all PLAN items are complete and host validation passed (604 passed, 0 failed).
 
-**Root cause**: The old retain logic used `ordered_names.iter().any(...)` which
-dropped any backend not explicitly listed in `providers[]`, preventing
-plugin-discovered backends from serving as last-resort fallbacks.
+## Progress Notes
 
-**Fix**: Changed retain predicate to `routing.providers.iter().find(...).map(|p|
-p.enabled).unwrap_or(true)` in both startup (`init_backends`) and reload paths.
-Plugin-discovered backends absent from `providers[]` are now kept at the end of
-the instance list as last-resort fallbacks.
+- This file should show the actual progress of the active scope.
+- workflow_state.json remains machine truth.
+- PLAN.md should list prompt-derived development items in phase order.
+- Repository rules to follow: AGENTS.md
+- Relevant repository workflows: .github/workflows/ci.yml, .github/workflows/release-host-bundle.yml
 
-Files: `runtime_core_impl.rs` (startup ~line 1108, reload ~line 1304)
+## Rework Pass 12 — 2026-04-17
 
-### Reviewer Finding 2 — Medium: Empty providers[] not authoritative
+### Reviewer Findings Addressed
 
-**Root cause**: The sort/retain block was guarded by `if !ordered_names.is_empty()`
-which skipped the block entirely when `providers: []` (empty array), letting
-legacy candidate routing run unchanged instead of treating the empty array as
-an authoritative signal.
+**High (fixed)**: `SkillRootSignature` used `as_secs()` (1-second mtime granularity),
+making in-place `SKILL.md` edits within the same second invisible to the
+fingerprint.  Changed to nanosecond precision (`as_nanos(): u128`) throughout
+`SkillRootSignature` and updated the test sleep from 1 s → 10 ms.
 
-**Fix**: Added `providers_array_present: bool` field to `ProviderRoutingConfig`
-and changed the guard to `if routing.providers_array_present ||
-!ordered_names.is_empty()`. An explicit empty `providers: []` now correctly
-enters the authoritative retain block, which (with `unwrap_or(true)`) retains
-only plugin-discovered backends as fallbacks — no explicitly-listed-and-disabled
-backends survive.
+**Medium (fixed)**: `providers: []` (explicit empty array) was not authoritative.
+`is_candidate_allowed` returned `true` for every backend absent from the list
+via `unwrap_or(true)`, so legacy backends were still initialized and routed.
+Fixed by returning `false` for all backends when `providers_array_present &&
+providers.is_empty()`.  Updated the existing `providers_array_explicit_disable_pre_init_gate`
+test and its docstring.  Also moved the `providers_array_present` log statement
+outside the `!ordered_names.is_empty()` guard in both startup and reload paths.
 
-Files: `provider_selection.rs` (struct + translator), `runtime_core_impl.rs`
-(both paths)
+### Validation
 
-### Reviewer Finding 3 — Medium: backends.gemini.model fallback dead in practice
+`./deploy_host.sh --test`: 604 passed; 0 failed.
 
-**Root cause**: The fallback was skipped via `if model_already_set { continue; }`
-which treated the builtin Gemini default model as an operator-set value, so
-`backends.gemini.model` in `llm_config.json` was never applied unless the
-operator first cleared the builtin model. The test masked this by manually
-clearing the builtin model before calling the function.
+### Supervisor Verdict
 
-**Fix**: Replaced `is_some()` guard with a before/after snapshot comparison.
-The function now snapshots `pre_telegram_models` before merging the telegram
-section. The fallback applies if the model did not change during telegram-section
-merge (i.e., the telegram section did not provide an explicit override). The
-builtin Gemini default no longer blocks the `backends.gemini.model` fallback.
-The test no longer clears the builtin model manually.
+PASS — both reviewer findings resolved; host gate green.
 
-Files: `client_impl.rs` (`read_backend_models_from_llm_config`),
-`tests.rs` (removed manual model clear)
+## Reviewer Pass 13 — 2026-04-17
 
-## Validation Evidence
+### Findings
 
-- `./deploy_host.sh --test` — PASS
-  - 659+ unit/integration tests across all crates
-  - 0 failures, 0 ignored failures
-  - Mock parity harness: PASS
-  - Doc architecture verification: PASS
+No further findings. The follow-up patch preserves the intended provider
+routing semantics and fixes the snapshot fingerprint granularity issue.
 
-## Risks and Residual Notes
+### Validation
 
-- The `providers_array_present` flag distinguishes `providers: []` (no
-  configured providers, plugin fallbacks still eligible) from an absent key
-  (legacy routing applies). This is intentional and matches the design doc.
-- Telegram model fallback now correctly applies `backends.<name>.model` when
-  no telegram-section override exists, including when the builtin model is set.
-  Operators using `backends.gemini.model` in `llm_config.json` no longer need
-  to also configure telegram-specific overrides.
-- No Tizen/emulator validation was performed; host-first scope is confirmed
-  by the task prompt.
+`./deploy_host.sh --test`: passed, including the host workspace tests,
+canonical Rust workspace tests, mock parity harness, and documentation-driven
+architecture verification.
+
+### Verdict
+
+APPROVED — no remaining correctness or regression issue found in the modified
+paths.
+
+## Risks And Watchpoints
+
+- Do not overwrite existing operator-authored Markdown.
+- Keep JSON merges additive so interrupted runs stay resumable.
+- Keep session-scoped state isolated when multiple workflows run in parallel.

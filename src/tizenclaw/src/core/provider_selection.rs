@@ -146,6 +146,27 @@ impl ProviderRoutingConfig {
             .map(|p| p.name.as_str())
             .collect()
     }
+
+    /// Returns true if `name` is permitted to be initialized.
+    ///
+    /// When `providers[]` is absent the config is in legacy mode and every
+    /// candidate is allowed.  When `providers[]` is an explicit empty array it
+    /// is authoritative: no backend is allowed.  When `providers[]` is present
+    /// and non-empty, backends listed with `enabled: false` are blocked;
+    /// backends absent from the list are allowed as last-resort fallbacks.
+    pub fn is_candidate_allowed(&self, name: &str) -> bool {
+        if !self.providers_array_present {
+            return true;
+        }
+        if self.providers.is_empty() {
+            return false;
+        }
+        self.providers
+            .iter()
+            .find(|p| p.name == name)
+            .map(|p| p.enabled)
+            .unwrap_or(true)
+    }
 }
 
 // ── Compatibility translator ──────────────────────────────────────────────────
@@ -496,10 +517,10 @@ impl ProviderSelector {
     ///
     /// Iterates the registry in preference order (position 0 = highest priority).
     /// Providers that appear in the routing config with `enabled: false` are
-    /// skipped.  Providers that are not present in the routing config at all
-    /// (e.g., discovered via plugin scan) are treated as enabled and eligible
-    /// as last-resort fallbacks, preserving the pre-routing-layer behavior
-    /// where plugin backends could serve as implicit fallbacks.
+    /// skipped.  When `providers[]` is present the instance list has already been
+    /// filtered to the strict allowlist by the startup/reload path, so any
+    /// instance not found in the routing config here is a legacy-mode plugin
+    /// fallback and is treated as enabled.
     pub fn first_available(
         registry: &ProviderRegistry,
         is_available: impl Fn(&str) -> bool,
@@ -990,5 +1011,68 @@ mod tests {
         assert_eq!(names[0], "anthropic", "highest explicit priority must route first");
         assert!(names.contains(&"gemini"));
         assert!(names.contains(&"openai"));
+    }
+
+    /// `is_candidate_allowed` is the pre-init gate used by both startup and
+    /// reload loops in `runtime_core_impl.rs`.  When it returns false the
+    /// candidate is skipped entirely — never passed to
+    /// `create_and_init_backend_static` — so excluded backends never consume
+    /// credentials, log init errors, or start internal state.
+    ///
+    /// Semantics: an explicit empty `providers: []` blocks all backends
+    /// (authoritative empty allowlist).  When `providers[]` is non-empty,
+    /// backends listed with `enabled: false` are blocked; backends absent from
+    /// the list are allowed as last-resort fallbacks.
+    #[test]
+    fn providers_array_explicit_disable_pre_init_gate() {
+        let routing = ProviderCompatibilityTranslator::translate(&json!({
+            "providers": [
+                { "name": "gemini", "priority": 0, "enabled": true },
+            ],
+            "active_backend": "gemini",
+            "fallback_backends": ["openai"],
+            "backends": { "gemini": {}, "openai": {}, "ollama": {} },
+        }));
+
+        assert!(routing.providers_array_present);
+
+        // Listed+enabled must pass.
+        assert!(routing.is_candidate_allowed("gemini"), "listed+enabled must pass");
+        // Backends absent from providers[] are allowed as last-resort fallbacks.
+        assert!(routing.is_candidate_allowed("openai"), "unlisted legacy fallback must be allowed as fallback");
+        assert!(routing.is_candidate_allowed("ollama"), "unlisted backends-only entry must be allowed as fallback");
+        assert!(routing.is_candidate_allowed("plugin-backend"), "plugin-discovered backend must be allowed as fallback");
+
+        // Explicitly disabled: must be blocked even though it is listed.
+        let routing2 = ProviderCompatibilityTranslator::translate(&json!({
+            "providers": [
+                { "name": "gemini", "priority": 0, "enabled": false },
+            ],
+            "active_backend": "gemini",
+        }));
+        assert!(!routing2.is_candidate_allowed("gemini"), "listed+disabled must be blocked");
+        // Unlisted plugin is still allowed; only explicit disable blocks.
+        assert!(routing2.is_candidate_allowed("plugin-backend"), "unlisted plugin must still be allowed when not explicitly disabled");
+
+        // Explicit empty providers[] is authoritative: no backend is allowed.
+        let routing3 = ProviderCompatibilityTranslator::translate(&json!({
+            "providers": [],
+            "active_backend": "gemini",
+            "fallback_backends": ["openai"],
+        }));
+        assert!(routing3.providers_array_present, "providers key must be recorded as present");
+        assert!(!routing3.is_candidate_allowed("gemini"), "explicit empty providers[] must block all");
+        assert!(!routing3.is_candidate_allowed("openai"), "explicit empty providers[] must block all");
+        assert!(!routing3.is_candidate_allowed("plugin-backend"), "explicit empty providers[] must block plugins too");
+
+        // Legacy mode (no providers key): every candidate is allowed.
+        let routing4 = ProviderCompatibilityTranslator::translate(&json!({
+            "active_backend": "gemini",
+            "fallback_backends": ["openai"],
+        }));
+        assert!(!routing4.providers_array_present);
+        assert!(routing4.is_candidate_allowed("gemini"), "legacy mode must allow all");
+        assert!(routing4.is_candidate_allowed("openai"), "legacy mode must allow all");
+        assert!(routing4.is_candidate_allowed("plugin-backend"), "legacy mode must allow plugin-discovered");
     }
 }
