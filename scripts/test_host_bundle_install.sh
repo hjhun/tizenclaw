@@ -3,7 +3,9 @@ set -euo pipefail
 
 # Non-interactive installer smoke test for the host bundle path.
 # Creates a local bundle (or reuses one passed via --bundle), installs it
-# into an isolated temporary HOME, and verifies the expected runtime tree.
+# into an isolated temporary HOME, verifies the installed tree, and
+# exercises tizenclaw-hostctl lifecycle (restart-only -> status -> stop)
+# against the installed bundle without any repository-checkout access.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -12,7 +14,19 @@ TMP_DIR=""
 
 log()  { printf '[smoke] %s\n' "$*"; }
 fail() { printf '[smoke][fail] %s\n' "$*" >&2; exit 1; }
-cleanup() { [[ -n "${TMP_DIR}" ]] && rm -rf "${TMP_DIR}"; }
+
+cleanup() {
+  if [[ -n "${TMP_DIR}" && -d "${TMP_DIR}" ]]; then
+    # Best-effort: always try to stop stray services before removing the tree.
+    local hostctl="${TMP_DIR}/home/.tizenclaw/bin/tizenclaw-hostctl"
+    if [[ -x "${hostctl}" ]]; then
+      HOME="${TMP_DIR}/home" \
+      TIZENCLAW_INSTALL_ROOT="${TMP_DIR}/home/.tizenclaw" \
+        "${hostctl}" --stop >/dev/null 2>&1 || true
+    fi
+    rm -rf "${TMP_DIR}"
+  fi
+}
 
 usage() {
   cat <<'EOF'
@@ -59,15 +73,26 @@ assert_runnable() {
   fi
 }
 
+any_stray_for_root() {
+  local root="$1"
+  local current_uid
+  current_uid="$(id -u)"
+  for pname in tizenclaw tizenclaw-tool-executor tizenclaw-web-dashboard; do
+    if pgrep -u "${current_uid}" -f "${root}/bin/${pname}" >/dev/null 2>&1; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 main() {
   parse_args "$@"
 
   TMP_DIR="$(mktemp -d)"
   trap 'cleanup' EXIT
-  local tmp_dir="${TMP_DIR}"
 
   if [[ -z "${BUNDLE_ARCHIVE}" ]]; then
-    local dist_dir="${tmp_dir}/dist"
+    local dist_dir="${TMP_DIR}/dist"
     mkdir -p "${dist_dir}"
     log "Building host bundle..."
     bash "${PROJECT_DIR}/scripts/create_host_release_bundle.sh" \
@@ -79,7 +104,16 @@ main() {
   [[ -f "${BUNDLE_ARCHIVE}" ]] \
     || fail "Bundle archive not found: ${BUNDLE_ARCHIVE}"
 
-  local fake_home="${tmp_dir}/home"
+  log "Inspecting bundle archive contents..."
+  local bundle_listing
+  bundle_listing="$(tar -tzf "${BUNDLE_ARCHIVE}")"
+  if grep -Fq 'manage/deploy_host.sh' <<< "${bundle_listing}"; then
+    fail "Bundle still contains manage/deploy_host.sh — the source deploy script must not be packaged"
+  fi
+  grep -Fq 'manage/tizenclaw-hostctl.sh' <<< "${bundle_listing}" \
+    || fail "Bundle is missing manage/tizenclaw-hostctl.sh"
+
+  local fake_home="${TMP_DIR}/home"
   mkdir -p "${fake_home}"
   local install_root="${fake_home}/.tizenclaw"
 
@@ -112,11 +146,16 @@ main() {
   [[ -f "${install_root}/bundle-manifest.json" ]] \
     || fail "Missing bundle-manifest.json at install root"
 
-  log "Verifying manage/deploy_host.sh..."
-  [[ -f "${install_root}/manage/deploy_host.sh" ]] \
-    || fail "Missing manage/deploy_host.sh"
-  [[ -x "${install_root}/manage/deploy_host.sh" ]] \
-    || fail "manage/deploy_host.sh is not executable"
+  log "Verifying manage/tizenclaw-hostctl.sh..."
+  local managed_ctl="${install_root}/manage/tizenclaw-hostctl.sh"
+  [[ -f "${managed_ctl}" ]] \
+    || fail "Missing ${managed_ctl}"
+  [[ -x "${managed_ctl}" ]] \
+    || fail "${managed_ctl} is not executable"
+
+  if [[ -e "${install_root}/manage/deploy_host.sh" ]]; then
+    fail "Installed tree must not contain manage/deploy_host.sh (found $(ls -l "${install_root}/manage/deploy_host.sh"))"
+  fi
 
   log "Verifying lib/ contains runtime libraries..."
   local lib_count
@@ -146,19 +185,125 @@ main() {
   _assert_nonempty_if_src_nonempty "docs/" "${PROJECT_DIR}/data/docs" "${install_root}/docs"
   _assert_nonempty_if_src_nonempty "embedded/" "${PROJECT_DIR}/tools/embedded" "${install_root}/embedded"
 
-  log "Checking entrypoints are runnable..."
+  log "Checking tizenclaw-cli --help is runnable..."
   assert_runnable "${install_root}/bin/tizenclaw-cli" --help
-  assert_runnable "${install_root}/bin/tizenclaw-hostctl" --help
 
-  log "Checking for stray processes from install root..."
-  local stray=0
-  for pname in tizenclaw tizenclaw-tool-executor tizenclaw-web-dashboard; do
-    if pgrep -u "$(id -u)" -f "${install_root}/bin/${pname}" >/dev/null 2>&1; then
-      printf '[smoke][fail] Stray process found: %s\n' "${pname}" >&2
-      stray=1
+  # Build a sanitized environment for hostctl runs. Masking HOME, PATH, and
+  # cwd to the installed tree ensures hostctl cannot accidentally reach any
+  # source checkout (no git, no cargo, no cwd-relative repo paths).
+  local hostctl="${install_root}/bin/tizenclaw-hostctl"
+  run_hostctl() {
+    (
+      cd "${fake_home}"
+      env -i \
+        HOME="${fake_home}" \
+        PATH="${install_root}/bin:/usr/bin:/bin" \
+        TIZENCLAW_INSTALL_ROOT="${install_root}" \
+        "${hostctl}" "$@"
+    )
+  }
+
+  log "Checking tizenclaw-hostctl --help works in the isolated bundle..."
+  run_hostctl --help >/dev/null \
+    || fail "tizenclaw-hostctl --help failed"
+
+  log "Asserting source-only flags fail fast with a clear error..."
+  local source_only_flags=(--release --debug -d --build-only -b --no-restart \
+    --test --remove --dry-run --devel --build-root --llm-config)
+  for flag in "${source_only_flags[@]}"; do
+    local stderr_capture
+    stderr_capture="$(run_hostctl "${flag}" 2>&1 >/dev/null || true)"
+    local rc=0
+    run_hostctl "${flag}" >/dev/null 2>&1 || rc=$?
+    if [[ "${rc}" -eq 0 ]]; then
+      fail "hostctl ${flag} must fail, but exited 0"
+    fi
+    if ! grep -Fq "requires a source checkout" <<< "${stderr_capture}"; then
+      fail "hostctl ${flag} rejection message missing 'requires a source checkout': ${stderr_capture}"
     fi
   done
-  [[ "${stray}" -eq 0 ]] || exit 1
+
+  log "Asserting hostctl does not depend on repo-relative access..."
+  # Scan the script content for obviously forbidden operations. We allow the
+  # rejection messages to mention './deploy_host.sh' for user guidance.
+  if grep -Eq '^[^#]*\bcargo\b' "${managed_ctl}"; then
+    fail "hostctl script contains a cargo invocation"
+  fi
+  if grep -Eq '^[^#]*\bgit\b' "${managed_ctl}"; then
+    fail "hostctl script contains a git invocation"
+  fi
+
+  log "Starting installed daemon via tizenclaw-hostctl --restart-only..."
+  if ! run_hostctl --restart-only; then
+    fail "tizenclaw-hostctl --restart-only failed"
+  fi
+
+  log "Waiting for daemon PID to stabilize..."
+  local pid_file="${install_root}/run/tizenclaw-host.pid"
+  local tool_pid_file="${install_root}/run/tizenclaw-tool-executor-host.pid"
+  local deadline=$((SECONDS + 5))
+  while [[ "${SECONDS}" -lt "${deadline}" ]]; do
+    if [[ -f "${pid_file}" && -f "${tool_pid_file}" ]]; then
+      local pid tool_pid
+      pid="$(cat "${pid_file}" 2>/dev/null || true)"
+      tool_pid="$(cat "${tool_pid_file}" 2>/dev/null || true)"
+      if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null \
+        && [[ -n "${tool_pid}" ]] && kill -0 "${tool_pid}" 2>/dev/null; then
+        break
+      fi
+    fi
+    sleep 0.2
+  done
+  [[ -f "${pid_file}" ]] || fail "Daemon PID file not written at ${pid_file}"
+  local pid
+  pid="$(cat "${pid_file}" 2>/dev/null || true)"
+  [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null \
+    || fail "Daemon process ${pid:-(empty)} is not alive after --restart-only"
+
+  log "Running tizenclaw-hostctl --status against the live daemon..."
+  local status_output
+  status_output="$(run_hostctl --status 2>&1 || true)"
+  if ! grep -Fq "${PKG_NAME:-tizenclaw} is running" <<< "${status_output}" \
+    && ! grep -Fq "tizenclaw is running" <<< "${status_output}"; then
+    printf '%s\n' "${status_output}" >&2
+    fail "--status did not confirm a running tizenclaw process"
+  fi
+
+  log "Checking tizenclaw-hostctl --log stays alive against the installed log..."
+  mkdir -p "${install_root}/logs"
+  touch "${install_root}/logs/tizenclaw.log"
+  local log_check_pid=""
+  run_hostctl --log >/dev/null 2>&1 &
+  log_check_pid=$!
+  sleep 0.5
+  if ! kill -0 "${log_check_pid}" 2>/dev/null; then
+    fail "tizenclaw-hostctl --log exited prematurely — expected tail -f to remain running"
+  fi
+  kill "${log_check_pid}" 2>/dev/null || true
+  wait "${log_check_pid}" 2>/dev/null || true
+
+  log "Stopping installed daemon via tizenclaw-hostctl --stop..."
+  run_hostctl --stop \
+    || fail "tizenclaw-hostctl --stop failed"
+
+  log "Verifying daemon processes have exited..."
+  local wait_deadline=$((SECONDS + 10))
+  while [[ "${SECONDS}" -lt "${wait_deadline}" ]]; do
+    if ! any_stray_for_root "${install_root}"; then
+      break
+    fi
+    sleep 0.2
+  done
+  if any_stray_for_root "${install_root}"; then
+    printf '[smoke][fail] Stray processes remain for %s\n' "${install_root}" >&2
+    pgrep -u "$(id -u)" -af "${install_root}/bin/" >&2 || true
+    exit 1
+  fi
+
+  [[ ! -f "${pid_file}" ]] \
+    || fail "Daemon PID file should be removed after --stop: ${pid_file}"
+  [[ ! -f "${tool_pid_file}" ]] \
+    || fail "Tool-executor PID file should be removed after --stop: ${tool_pid_file}"
 
   log "Installer smoke test PASSED"
 }
