@@ -344,14 +344,18 @@ restart_host_services() {
   fi
 
   if [[ -x "${HOST_MANAGE_SCRIPT}" ]]; then
-    "${HOST_MANAGE_SCRIPT}" --restart-only
+    TIZENCLAW_INSTALL_ROOT="${HOST_BASE_DIR}" \
+    TIZENCLAW_BASHRC_PATH="${BASHRC_PATH}" \
+      "${HOST_MANAGE_SCRIPT}" --restart-only
     return
   fi
 
   if [[ -x "${SOURCE_DIR}/deploy_host.sh" ]]; then
     (
       cd "${SOURCE_DIR}"
-      ./deploy_host.sh --restart-only
+      TIZENCLAW_INSTALL_ROOT="${HOST_BASE_DIR}" \
+      TIZENCLAW_BASHRC_PATH="${BASHRC_PATH}" \
+        ./deploy_host.sh --restart-only
     )
     return
   fi
@@ -381,7 +385,9 @@ stop_host_services_if_present() {
   }
 
   if [[ -x "${HOST_MANAGE_SCRIPT}" ]]; then
-    "${HOST_MANAGE_SCRIPT}" --stop || true
+    TIZENCLAW_INSTALL_ROOT="${HOST_BASE_DIR}" \
+    TIZENCLAW_BASHRC_PATH="${BASHRC_PATH}" \
+      "${HOST_MANAGE_SCRIPT}" --stop || true
   else
     pkill -f "${HOST_BIN_DIR}/tizenclaw-tool-executor" >/dev/null 2>&1 || true
     pkill -f "${HOST_BIN_DIR}/tizenclaw-web-dashboard" >/dev/null 2>&1 || true
