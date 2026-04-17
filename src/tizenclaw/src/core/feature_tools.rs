@@ -34,21 +34,20 @@ def _extract_flate_streams(raw: bytes) -> str:
     texts = []
     for match in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", raw, re.S):
         stream = match.group(1)
-        for candidate in (stream,):
+        try:
+            to_scan = zlib.decompress(stream)
+        except Exception:
+            to_scan = stream
+        for token in re.findall(rb"\((.*?)\)\s*Tj", to_scan, re.S):
             try:
-                decoded = zlib.decompress(candidate)
+                texts.append(token.decode("latin1", errors="ignore"))
             except Exception:
-                continue
-            for token in re.findall(rb"\((.*?)\)\s*Tj", decoded, re.S):
-                try:
-                    texts.append(token.decode("latin1", errors="ignore"))
-                except Exception:
-                    pass
-            for arr in re.findall(rb"\[(.*?)\]\s*TJ", decoded, re.S):
-                parts = re.findall(rb"\((.*?)\)", arr, re.S)
-                joined = "".join(part.decode("latin1", errors="ignore") for part in parts)
-                if joined:
-                    texts.append(joined)
+                pass
+        for arr in re.findall(rb"\[(.*?)\]\s*TJ", to_scan, re.S):
+            parts = re.findall(rb"\((.*?)\)", arr, re.S)
+            joined = "".join(part.decode("latin1", errors="ignore") for part in parts)
+            if joined:
+                texts.append(joined)
     return "\n".join(texts)
 
 def _extract_with_pdftotext(path: Path) -> str:
