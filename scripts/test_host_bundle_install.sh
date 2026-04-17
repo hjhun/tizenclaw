@@ -8,9 +8,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUNDLE_ARCHIVE=""
+TMP_DIR=""
 
 log()  { printf '[smoke] %s\n' "$*"; }
 fail() { printf '[smoke][fail] %s\n' "$*" >&2; exit 1; }
+cleanup() { [[ -n "${TMP_DIR}" ]] && rm -rf "${TMP_DIR}"; }
 
 usage() {
   cat <<'EOF'
@@ -30,7 +32,7 @@ parse_args() {
     case "$1" in
       --bundle)
         [[ $# -lt 2 ]] && { echo "--bundle requires a value" >&2; exit 1; }
-        BUNDLE_ARCHIVE="$2"
+        BUNDLE_ARCHIVE="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
         shift 2
         ;;
       -h|--help)
@@ -60,9 +62,9 @@ assert_runnable() {
 main() {
   parse_args "$@"
 
-  local tmp_dir
-  tmp_dir="$(mktemp -d)"
-  trap 'rm -rf "${tmp_dir}"' EXIT
+  TMP_DIR="$(mktemp -d)"
+  trap 'cleanup' EXIT
+  local tmp_dir="${TMP_DIR}"
 
   if [[ -z "${BUNDLE_ARCHIVE}" ]]; then
     local dist_dir="${tmp_dir}/dist"
