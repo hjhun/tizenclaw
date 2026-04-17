@@ -36,7 +36,7 @@ HOST_DASHBOARD_PORT_DEFAULT=9091
 DEVEL_BRANCH_PREFIX="devel"
 DEVEL_OAUTH_REGRESSION_SCENARIO="tests/system/openai_oauth_regression.json"
 
-HOST_BASE_DIR="${HOME}/.tizenclaw"
+HOST_BASE_DIR="${TIZENCLAW_INSTALL_ROOT:-${HOME}/.tizenclaw}"
 INSTALL_DIR="${HOST_BASE_DIR}/bin"
 LIB_DIR="${HOST_BASE_DIR}/lib"
 INCLUDE_DIR="${HOST_BASE_DIR}/include"
@@ -55,11 +55,11 @@ EMBEDDED_TOOLS_SRC="${PROJECT_DIR}/tools/embedded"
 WEB_SRC="${PROJECT_DIR}/data/web"
 IMG_SRC="${PROJECT_DIR}/data/img"
 BUNDLED_CONFIG_DIR="${PROJECT_DIR}/data/config"
-BASHRC_PATH="${HOME}/.bashrc"
+BASHRC_PATH="${TIZENCLAW_BASHRC_PATH:-${HOME}/.bashrc}"
 PATH_EXPORT='export PATH="$HOME/.tizenclaw/bin:$PATH"'
 
-PID_FILE="/tmp/tizenclaw-host.pid"
-TOOL_EXECUTOR_PID_FILE="/tmp/tizenclaw-tool-executor-host.pid"
+PID_FILE="${HOST_BASE_DIR}/run/tizenclaw-host.pid"
+TOOL_EXECUTOR_PID_FILE="${HOST_BASE_DIR}/run/tizenclaw-tool-executor-host.pid"
 
 # Colors
 RED='\033[0;31m'
@@ -616,7 +616,7 @@ do_install() {
     "${INCLUDE_DIR}/tizenclaw/core" "${PKGCONFIG_DIR}" "${CONFIG_DIR}" "${TOOLS_DIR}/cli" \
     "${WORKSPACE_DIR}/skills" "${TOOLS_DIR}" "${DATA_DIR}/embedded" "${DATA_DIR}/web" \
     "${DATA_DIR}/workflows" "${DATA_DIR}/pipelines" "${DATA_DIR}/codes" \
-    "${DATA_DIR}/memory" "${DATA_DIR}/plugins" "${LOG_DIR}"
+    "${DATA_DIR}/memory" "${DATA_DIR}/plugins" "${LOG_DIR}" "${HOST_BASE_DIR}/run"
 
   if [ -d "${TOOLS_DIR}/skills" ] && [ ! -e "${WORKSPACE_DIR}/skills" ]; then
     log "Migrating legacy skills dir → ${WORKSPACE_DIR}/skills"

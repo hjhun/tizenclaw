@@ -287,6 +287,7 @@ prepare_host_runtime_dirs() {
     "${HOST_BASE_DIR}/config" \
     "${HOST_BASE_DIR}/sample" \
     "${HOST_BASE_DIR}/manage" \
+    "${HOST_BASE_DIR}/run" \
     "${HOST_BASE_DIR}/tools/cli" \
     "${HOST_BASE_DIR}/workspace/skills" \
     "${HOST_BASE_DIR}/logs" \
@@ -406,6 +407,10 @@ install_release_bundle() {
   copy_tree_contents "${bundle_root}/embedded" "${HOST_BASE_DIR}/embedded"
   copy_tree_contents "${bundle_root}/manage" "${HOST_BASE_DIR}/manage"
 
+  if [[ -f "${bundle_root}/bundle-manifest.json" ]]; then
+    install -m 644 "${bundle_root}/bundle-manifest.json" "${HOST_BASE_DIR}/bundle-manifest.json"
+  fi
+
   if [[ -x "${HOST_MANAGE_SCRIPT}" ]]; then
     ln -sf ../manage/deploy_host.sh "${HOST_BIN_DIR}/tizenclaw-hostctl"
   fi
@@ -493,6 +498,9 @@ verify_bundle_checksum() {
   local cs_content
 
   if ! cs_content="$(fetch_checksum_for_url "${asset_url}")"; then
+    if [[ "${asset_url}" == https://* ]]; then
+      fail "Checksum file not retrievable for ${asset_url}; refusing to install an unverified bundle. Ensure the .sha256 asset is published alongside the bundle."
+    fi
     warn "No checksum file found for ${asset_url}; skipping integrity check"
     return 0
   fi

@@ -93,20 +93,6 @@ main() {
       --skip-deps \
       --skip-setup
 
-  log "Verifying installed directory tree..."
-  local required_dirs=(
-    "${install_root}/bin"
-    "${install_root}/lib"
-    "${install_root}/manage"
-    "${install_root}/config"
-    "${install_root}/web"
-    "${install_root}/docs"
-    "${install_root}/embedded"
-  )
-  for d in "${required_dirs[@]}"; do
-    [[ -d "${d}" ]] || fail "Missing directory: ${d}"
-  done
-
   log "Verifying installed binaries..."
   local required_bins=(
     "${install_root}/bin/tizenclaw"
@@ -121,6 +107,44 @@ main() {
 
   [[ -L "${install_root}/bin/tizenclaw-hostctl" || -f "${install_root}/bin/tizenclaw-hostctl" ]] \
     || fail "Missing tizenclaw-hostctl in bin/"
+
+  log "Verifying bundle-manifest.json..."
+  [[ -f "${install_root}/bundle-manifest.json" ]] \
+    || fail "Missing bundle-manifest.json at install root"
+
+  log "Verifying manage/deploy_host.sh..."
+  [[ -f "${install_root}/manage/deploy_host.sh" ]] \
+    || fail "Missing manage/deploy_host.sh"
+  [[ -x "${install_root}/manage/deploy_host.sh" ]] \
+    || fail "manage/deploy_host.sh is not executable"
+
+  log "Verifying lib/ contains runtime libraries..."
+  local lib_count
+  lib_count="$(find "${install_root}/lib" -maxdepth 1 \( -name '*.so' -o -name '*.rlib' \) | wc -l)"
+  [[ "${lib_count}" -gt 0 ]] \
+    || fail "lib/ is empty — expected at least libtizenclaw.so or libtizenclaw.rlib"
+
+  log "Verifying config/ is non-empty..."
+  local config_count
+  config_count="$(find "${install_root}/config" -maxdepth 1 -type f | wc -l)"
+  [[ "${config_count}" -gt 0 ]] \
+    || fail "config/ has no files — bundle must seed at least one config"
+
+  log "Verifying data directories contain payload when source is non-empty..."
+  _assert_nonempty_if_src_nonempty() {
+    local label="$1"
+    local src_dir="$2"
+    local installed_dir="$3"
+    if [[ -d "${src_dir}" ]] && [[ -n "$(find "${src_dir}" -mindepth 1 -maxdepth 2 -type f | head -1)" ]]; then
+      local installed_count
+      installed_count="$(find "${installed_dir}" -mindepth 1 -type f 2>/dev/null | wc -l)"
+      [[ "${installed_count}" -gt 0 ]] \
+        || fail "${label} is empty after install but source has content"
+    fi
+  }
+  _assert_nonempty_if_src_nonempty "web/" "${PROJECT_DIR}/data/web" "${install_root}/web"
+  _assert_nonempty_if_src_nonempty "docs/" "${PROJECT_DIR}/data/docs" "${install_root}/docs"
+  _assert_nonempty_if_src_nonempty "embedded/" "${PROJECT_DIR}/tools/embedded" "${install_root}/embedded"
 
   log "Checking entrypoints are runnable..."
   assert_runnable "${install_root}/bin/tizenclaw-cli" --help
