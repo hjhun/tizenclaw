@@ -7,7 +7,7 @@
       "method": "process_prompt",
       "params": {
         "session_id": "${unique_session_id:json-only-transcript}",
-        "prompt": "You are a validation function. Your ONLY job is to output a single JSON object.\nDo NOT use any tools.\nRespond with ONLY this JSON structure (no markdown, no code fences, no extra text): {\"status\":\"verified\",\"transcript_durable\":true}"
+        "prompt": "You are a validation function. Your ONLY job is to output a single JSON object.\nDo NOT use any tools.\nRespond with ONLY this JSON structure (no markdown, no code fences, no extra text): {\"status\":\"verified\",\"meta\":{\"transcript_durable\":true,\"version\":1}}"
       },
       "assertions": [
         {
@@ -16,7 +16,7 @@
         },
         {
           "path": "text",
-          "equals": "{\"status\":\"verified\",\"transcript_durable\":true}"
+          "equals": "{\"status\":\"verified\",\"meta\":{\"transcript_durable\":true,\"version\":1}}"
         }
       ]
     },

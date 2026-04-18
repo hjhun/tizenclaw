@@ -1706,24 +1706,27 @@ pub(super) fn extract_verbatim_json_template(prompt: &str) -> Option<String> {
     if !prompt_requires_literal_json_output(prompt) {
         return None;
     }
-    let last_brace = prompt.rfind('{')?;
-    let after = &prompt[last_brace..];
-    let mut depth = 0usize;
-    let mut end = None;
-    for (i, ch) in after.char_indices() {
+    // Locate the outermost JSON object by finding the last '}' and walking
+    // backward to its matching '{'.  Using rfind('{') would land inside a
+    // nested object for templates like {"outer":{"inner":0}}, producing a
+    // truncated payload that the transcript then durably records incorrectly.
+    let last_close = prompt.rfind('}')?;
+    let mut depth = 0i32;
+    let mut start = None;
+    for (i, ch) in prompt[..=last_close].char_indices().rev() {
         match ch {
-            '{' => depth += 1,
-            '}' => {
-                depth = depth.saturating_sub(1);
+            '}' => depth += 1,
+            '{' => {
+                depth -= 1;
                 if depth == 0 {
-                    end = Some(i + ch.len_utf8());
+                    start = Some(i);
                     break;
                 }
             }
             _ => {}
         }
     }
-    let candidate = &after[..end?];
+    let candidate = &prompt[start?..=last_close];
     serde_json::from_str::<serde_json::Value>(candidate).ok()?;
     Some(candidate.to_string())
 }
