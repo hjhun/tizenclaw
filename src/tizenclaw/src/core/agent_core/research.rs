@@ -67,6 +67,14 @@ fn render_curated_conference_roundup_markdown(entries: &[ResearchOutputEntry]) -
     Some(format!("{}\n", lines.join("\n")))
 }
 
+fn extract_year_from_prompt(prompt: &str) -> Option<u32> {
+    regex::Regex::new(r"\b(20\d{2})\b")
+        .ok()?
+        .captures(prompt)
+        .and_then(|caps| caps.get(1))
+        .and_then(|m| m.as_str().parse::<u32>().ok())
+}
+
 fn draft_curated_conference_roundup(
     prompt: &str,
 ) -> Option<(String, String, Vec<ResearchOutputEntry>)> {
@@ -83,7 +91,11 @@ fn draft_curated_conference_roundup(
         return None;
     }
 
-    let entries = curated_upcoming_tech_conference_entries(current_utc_year()?);
+    // Use the year explicitly stated in the prompt; fall back to the current
+    // UTC year so offline scenarios that hard-code a specific year (e.g. 2026)
+    // remain deterministic regardless of when the test suite actually runs.
+    let year = extract_year_from_prompt(prompt).or_else(current_utc_year)?;
+    let entries = curated_upcoming_tech_conference_entries(year);
     let rendered = render_curated_conference_roundup_markdown(&entries)?;
     Some((target, rendered, entries))
 }

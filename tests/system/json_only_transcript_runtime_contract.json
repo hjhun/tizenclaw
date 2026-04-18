@@ -16,7 +16,7 @@
         },
         {
           "path": "text",
-          "contains": "transcript_durable"
+          "equals": "{\"status\":\"verified\",\"transcript_durable\":true}"
         }
       ]
     },
