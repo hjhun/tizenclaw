@@ -186,6 +186,20 @@ export TIZENCLAW_SOCKET_PATH="${TEST_SOCKET}"
 # Put the bin dir first so the daemon finds tizenclaw-web-dashboard next to itself.
 export PATH="${BIN_DIR}:${PATH}"
 
+# Redirect HOME to an empty directory inside the test root so that credential
+# files on the real home directory (e.g. ~/.codex/auth.json) are not reachable
+# by the daemon or tool-executor.  Backend discovery in openai.rs and
+# tool_runtime.rs reads HOME at runtime, so this blocks the fallback path
+# structurally rather than relying on the host machine having no credentials.
+export HOME="${TEST_ROOT}/home"
+mkdir -p "${HOME}"
+
+# Blank ambient backend credential env vars.  configured_api_key() in
+# common.rs falls back to these after the config file, so clearing them ensures
+# that no live hosted provider can be reached even if a scenario accidentally
+# exercises the backend selection path.
+unset ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY || true
+
 # ─────────────────────────────────────────────
 # Start companion processes
 # ─────────────────────────────────────────────
@@ -278,6 +292,34 @@ for scenario in "${SCENARIOS[@]}"; do
 
   if [[ ! -f "${scenario_path}" ]]; then
     err "Scenario file not found: ${scenario_path}"
+    FAILED=$((FAILED + 1))
+    FAILED_NAMES+=("${scenario}")
+    continue
+  fi
+
+  # Enforce the offline_safe contract: every scenario in this suite must
+  # declare "offline_safe": true. A missing or false value means the
+  # scenario was added to the offline suite without an explicit offline
+  # safety declaration, which is a configuration error.
+  offline_safe_val="$(python3 - <<PYEOF
+import json, sys
+try:
+    data = json.loads(open("${scenario_path}").read())
+    val = data.get("offline_safe")
+    if val is True:
+        print("true")
+    elif val is False:
+        print("false")
+    else:
+        print("missing")
+except Exception as exc:
+    sys.stderr.write("Failed to parse {}: {}\n".format("${scenario_path}", exc))
+    print("error")
+PYEOF
+)"
+  if [[ "${offline_safe_val}" != "true" ]]; then
+    err "Scenario '${scenario}' cannot run in the offline suite: offline_safe=${offline_safe_val}"
+    err "Add \"offline_safe\": true to the scenario file to declare it backend- and network-free."
     FAILED=$((FAILED + 1))
     FAILED_NAMES+=("${scenario}")
     continue

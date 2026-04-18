@@ -98,19 +98,31 @@ flow.
   5. **Offline system contract suite** — boots a temporary isolated daemon
      instance and runs the scenarios listed in
      `tests/system/offline_suite.json` against it. The daemon and all
-     companion processes start against a `mktemp` runtime root so no keys,
-     sessions, or config are written to `~/.tizenclaw`. The isolation
-     environment is always cleaned up, even when a scenario fails.
+     companion processes run with `TIZENCLAW_DATA_DIR` pointed at a
+     `mktemp` root, `HOME` redirected to an empty directory inside that
+     root (blocking `~/.codex/auth.json` and other home-relative
+     credential files), and `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and
+     `GEMINI_API_KEY` unset — so no ambient credentials or live hosted
+     backends can affect the run regardless of the host machine's state.
+     The isolation environment is always cleaned up, even when a scenario
+     fails.
 - `tests/system/offline_suite.json` is the authoritative list of
   scenarios that run automatically. It covers JSON-RPC routing, runtime
   topology, command registry, channel registry, dashboard start/stop,
-  key management, ClawHub update, and Rust workspace parity. All listed
-  scenarios are offline-safe and deterministic.
+  key management, ClawHub update, Rust workspace parity, file-manager
+  bridge backend selection (`file_manager_bridge.json`), and
+  shortcut-backed prompt flows (`agent_loop_shortcuts_runtime_contract.json`).
+  Every scenario in this suite declares `"offline_safe": true`; the
+  runner enforces this and fails clearly if a scenario is added without
+  the declaration. All shortcut-backed scenarios are fully deterministic
+  offline: they exercise pre-LLM shortcut paths and require no
+  configured backend.
 - Scenarios in `tests/system/` that are **not** in `offline_suite.json`
-  (e.g. `devel_mode_*`, `openai_oauth_regression`, `process_prompt`
-  flows, internet-backed research scenarios) remain opt-in and must be
-  run manually against a live daemon with `tizenclaw-tests scenario
-  --file <path>`.
+  (e.g. `devel_mode_*`, `openai_oauth_regression`,
+  `research_grounding_runtime_contract`, `prediction_market_briefing_runtime_contract`,
+  internet-backed research scenarios) remain opt-in and must be run
+  manually against a live daemon with `tizenclaw-tests scenario
+  --file <path>`. These intentionally lack `"offline_safe": true`.
 - `tests/test_porting_workspace.py` covers the repository support tools
   used for inventory, manifest, and audit checks
 - `rust/scripts/run_mock_parity_harness.sh` checks the newer Rust
