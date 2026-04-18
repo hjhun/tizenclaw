@@ -47,6 +47,15 @@ Use the repository scripts instead of direct `cargo build` or
 - Check daemon status (source checkout): `./deploy_host.sh --status`
 - Follow daemon logs (source checkout): `./deploy_host.sh --log`
 - Install from the current checkout: `./install.sh --local-checkout`
+- Clone and build from a remote repository: `./install.sh --source-install`
+
+The `--source-install` path is non-destructive. If the target directory
+(`~/.local/src/tizenclaw` by default, or the path given to `--dir`) already
+exists, the installer checks for uncommitted changes and local-only commits
+before touching any files. If the checkout is dirty or has divergent history
+the installer fails with a clear message — it never runs `git reset --hard`
+or otherwise discards your work. Use `--dir` to target a different path,
+clean the checkout, or stash your changes to recover.
 
 Host installs live under `~/.tizenclaw/`, including binaries, configs,
 logs, tools, and the bundled web assets.
