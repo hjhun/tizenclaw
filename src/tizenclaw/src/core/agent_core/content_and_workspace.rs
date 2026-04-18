@@ -564,42 +564,25 @@ fn render_directory_executive_briefing(
         return None;
     }
 
-    let body = [
-        "# Daily Briefing",
-        "",
-        "## Executive Summary",
-        "- **Revenue protection needs action today.** MegaCorp ($450K ARR) is evaluating competitors, GlobalRetail ($220K ARR) may downgrade because of budget pressure, and TechStart ($85K ARR) still needs renewal follow-up.",
-        "- **Competition is moving fast.** Nexus launched a lower-priced enterprise AI assistant, DataFlow raised $180M and strengthened Azure positioning, and SwiftCloud's third outage this month created a practical displacement window.",
-        "- **Execution is strong but blocked in two places.** Real-time collaboration shipped, dashboard speed improved 40%, and AI insights is still on track for Feb. 28, but payment integration and enterprise SSO need escalation.",
-        "- **The environment is supportive but compliance-sensitive.** Tech markets were up, enterprise AI spending is still growing, and EU AI Act enforcement starts March 1.",
-        "",
-        "## Immediate Risks and Decisions",
-        "- **Customer exposure:** Put executive owners on MegaCorp, GlobalRetail, and TechStart today. MegaCorp is the highest near-term exposure because the account is large and already comparing alternatives.",
-        "- **Pricing and retention:** Review premium-tier pricing, enterprise packaging, and ML-team retention together. Nexus is 15% cheaper and recently hired three senior engineers from our ML team.",
-        "- **Execution blockers:** Escalate the payment vendor dependency and complete legal review for the enterprise SSO data processing agreement with named owners and dates.",
-        "",
-        "## Market and Customer Signals",
-        "- Markets were constructive: the S&P 500 closed at 5,842.31, the Nasdaq gained 1.8%, technology led sectors at +2.1%, and consumer spending data stayed resilient despite inflation concerns.",
-        "- Company news mattered too: TechCorp beat on revenue, GlobalPharma won FDA approval for a cancer treatment, CloudServices bought DataSecure for $2.3B, and AutoEV's 50,000-vehicle recall is a reminder that execution still shapes sentiment.",
-        "- Support volume was 247 tickets in the last 24 hours, including 12 critical cases, down from 18 yesterday. The biggest pain points remain API rate limiting, dashboard slowness, export failures on large datasets, and a new Android 14 crash.",
-        "- Customer momentum is still healthy. NPS is 72, there are 15 new G2 reviews averaging 4.6 stars, three case studies are ready for marketing use, and the reporting feature is already delivering measurable time savings.",
-        "- Upsell opportunities with FinanceHub and HealthTech remain real, but they should stay behind the churn-risk accounts in today's queue.",
-        "",
-        "## Product, Competitive, and Regulatory Context",
-        "- Product shipped four meaningful items today: real-time collaboration beta, 40% faster dashboard loads, a CSV export encoding fix, and an XSS security patch in comments.",
-        "- Upcoming milestones remain important: AI insights beta on Feb. 18, mobile v3.0 on Feb. 21, the pricing page refresh on Feb. 25, API v2 GA on Feb. 28, and the planned Saturday database migration with 30 minutes of expected downtime.",
-        "- NexusAI is the clearest direct threat because it is enterprise-focused, cheaper, and receiving positive integration feedback. DataFlow's $180M Series D and European expansion raise mid-market pressure. SwiftCloud's repeated outages create a rare chance to win displaced accounts if sales moves quickly.",
-        "- Industry demand remains supportive: Gartner projects enterprise AI spending will hit $280B by 2027, McKinsey says 67% of companies plan to increase SaaS budgets in 2026, and remote-work tooling is still growing 18% annually.",
-        "- Regulatory pressure is rising. EU AI Act enforcement begins March 1, 2026, and California is considering a privacy amendment that could require stricter data-sharing consent. The broader ecosystem also remains active, with AIStartup, WorkflowTool, and SecurityFirst all raising capital while Google and Salesforce deepen AI bets.",
-        "",
-        "## Recommended Actions",
-        "- Put the three named at-risk accounts into today's executive follow-up queue, starting with MegaCorp.",
-        "- Launch a coordinated response to Nexus and SwiftCloud this week across pricing, sales outreach, and customer-success messaging.",
-        "- Escalate payment and SSO blockers with named owners and deadlines rather than status-only updates.",
-        "- Keep support monitoring elevated through Monday so export and Android fixes can be verified against live ticket volume.",
-        "- Confirm customer communications and support staffing for the weekend database migration.",
-    ]
-    .join("\n");
+    let body = format!(
+        "# Daily Briefing\n\
+         \n\
+         ## Executive Summary\n\
+         - Market: {}\n\
+         - Competitors: {}\n\
+         - Customers: {}\n\
+         - Product: {}\n\
+         - Industry: {}\n\
+         \n\
+         ## Recommended Actions\n\
+         - Review market and customer signals and address items flagged for executive attention.\n\
+         - Follow up on competitor movements and product blockers with named owners and deadlines.\n",
+        market.trim(),
+        competitor.trim(),
+        customer.trim(),
+        product.trim(),
+        industry.trim(),
+    );
 
     Some(("daily_briefing.md".to_string(), format!("{}\n", body)))
 }
