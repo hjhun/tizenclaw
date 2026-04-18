@@ -90,7 +90,11 @@ fn handle_call(args: &[String]) -> Result<(), String> {
         ));
     }
 
-    println!("{}", serde_json::to_string(&response.result).unwrap());
+    println!(
+        "{}",
+        serde_json::to_string(&response.result)
+            .unwrap_or_else(|_| response.result.to_string())
+    );
     Ok(())
 }
 

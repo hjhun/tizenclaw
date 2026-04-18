@@ -47,14 +47,100 @@ impl IpcClient {
             let payload: Value = serde_json::from_str(&frame)
                 .map_err(|err| format!("Invalid JSON-RPC response: {}", err))?;
 
-            if payload.get("method").and_then(Value::as_str) == Some("stream_chunk") {
-                continue;
+            let version = payload.get("jsonrpc").and_then(Value::as_str);
+            if version != Some("2.0") {
+                return Err(format!(
+                    "Invalid JSON-RPC response: expected jsonrpc=\"2.0\", got {:?}",
+                    version
+                ));
+            }
+
+            if let Some(method_value) = payload.get("method") {
+                let method_str = method_value.as_str();
+                if method_str == Some("stream_chunk") {
+                    let has_id = payload.get("id").is_some();
+                    let has_result = payload.get("result").is_some();
+                    let has_error = payload.get("error").is_some();
+                    if has_id || has_result || has_error {
+                        return Err(format!(
+                            "Malformed stream_chunk frame: notifications must not carry \
+                             id, result, or error (id={} result={} error={})",
+                            has_id, has_result, has_error
+                        ));
+                    }
+                    continue;
+                }
+                if let Some(name) = method_str {
+                    return Err(format!(
+                        "Unexpected JSON-RPC notification: method=\"{}\"",
+                        name
+                    ));
+                }
+                return Err(format!(
+                    "Invalid JSON-RPC frame: \"method\" field has non-string type: {}",
+                    method_value
+                ));
+            }
+
+            let response_id = payload.get("id").cloned();
+            match &response_id {
+                None => {
+                    return Err("JSON-RPC response missing \"id\" field".to_string());
+                }
+                Some(id) if id != &json!(1) => {
+                    return Err(format!(
+                        "JSON-RPC response id mismatch: expected 1, got {}",
+                        id
+                    ));
+                }
+                _ => {}
+            }
+
+            let has_result = payload.get("result").is_some();
+            let error_val = payload.get("error");
+            let has_error = error_val.is_some();
+            if has_result && has_error {
+                return Err(
+                    "JSON-RPC response must not carry both \"result\" and \"error\" fields"
+                        .to_string(),
+                );
+            }
+            if !has_result && !has_error {
+                return Err(
+                    "JSON-RPC response missing both \"result\" and \"error\" fields".to_string(),
+                );
+            }
+
+            if let Some(ev) = error_val {
+                match ev {
+                    Value::Object(obj) => {
+                        let code_ok = obj.get("code").and_then(Value::as_i64).is_some();
+                        let message_ok = obj.get("message").and_then(Value::as_str).is_some();
+                        if !code_ok || !message_ok {
+                            return Err(format!(
+                                "Malformed JSON-RPC error object: must have integer \"code\" \
+                                 and string \"message\", got: {}",
+                                ev
+                            ));
+                        }
+                    }
+                    _ => {
+                        return Err(format!(
+                            "Malformed JSON-RPC error: expected an error object with \
+                             \"code\" and \"message\", got: {}",
+                            ev
+                        ));
+                    }
+                }
             }
 
             let error = payload.get("error").cloned();
             let result = payload.get("result").cloned().unwrap_or(Value::Null);
-            let id = payload.get("id").cloned();
-            return Ok(IpcResponse { id, result, error });
+            return Ok(IpcResponse {
+                id: response_id,
+                result,
+                error,
+            });
         }
     }
 
@@ -260,6 +346,371 @@ mod tests {
         assert_eq!(response.id, Some(json!(1)));
         assert_eq!(response.result, json!({ "pong": true }));
         assert_eq!(response.error, None);
+        server.join().unwrap();
+    }
+
+    fn spawn_server_with_raw_response(
+        socket_path: &std::path::Path,
+        raw: Vec<u8>,
+    ) -> std::thread::JoinHandle<()> {
+        let listener = UnixListener::bind(socket_path).unwrap();
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut len_buf = [0u8; 4];
+            let _ = stream.read_exact(&mut len_buf);
+            let len = u32::from_be_bytes(len_buf) as usize;
+            let mut _body = vec![0u8; len];
+            let _ = stream.read_exact(&mut _body);
+            stream.write_all(&raw).unwrap();
+        })
+    }
+
+    fn make_framed(payload: &str) -> Vec<u8> {
+        let bytes = payload.as_bytes();
+        let mut frame = (bytes.len() as u32).to_be_bytes().to_vec();
+        frame.extend_from_slice(bytes);
+        frame
+    }
+
+    #[test]
+    fn call_rejects_invalid_json_frame() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("invalid-json.sock");
+        let server = spawn_server_with_raw_response(&socket_path, make_framed("not { valid json"));
+        let client = IpcClient::new(ClientOptions {
+            socket_name: None,
+            socket_path: Some(socket_path.display().to_string()),
+        });
+        let err = client.call("ping", json!({})).unwrap_err();
+        assert!(
+            err.contains("Invalid JSON-RPC response"),
+            "unexpected error: {err}"
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn call_rejects_truncated_frame() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("truncated.sock");
+        let listener = UnixListener::bind(&socket_path).unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut len_buf = [0u8; 4];
+            let _ = stream.read_exact(&mut len_buf);
+            let len = u32::from_be_bytes(len_buf) as usize;
+            let mut _body = vec![0u8; len];
+            let _ = stream.read_exact(&mut _body);
+            // Send a length header claiming 100 bytes but write only 5
+            let fake_len: u32 = 100;
+            stream.write_all(&fake_len.to_be_bytes()).unwrap();
+            stream.write_all(b"hello").unwrap();
+            // Drop stream to cause EOF
+        });
+        let client = IpcClient::new(ClientOptions {
+            socket_name: None,
+            socket_path: Some(socket_path.display().to_string()),
+        });
+        let err = client.call("ping", json!({})).unwrap_err();
+        assert!(
+            err.contains("EOF") || err.contains("read body"),
+            "unexpected error: {err}"
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn call_rejects_non_2_0_jsonrpc_version() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("wrong-version.sock");
+        let server = spawn_server_with_raw_response(
+            &socket_path,
+            make_framed(r#"{"jsonrpc":"1.0","id":1,"result":{}}"#),
+        );
+        let client = IpcClient::new(ClientOptions {
+            socket_name: None,
+            socket_path: Some(socket_path.display().to_string()),
+        });
+        let err = client.call("ping", json!({})).unwrap_err();
+        assert!(
+            err.contains("jsonrpc") && err.contains("2.0"),
+            "unexpected error: {err}"
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn call_rejects_mismatched_response_id() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("mismatched-id.sock");
+        let server = spawn_server_with_raw_response(
+            &socket_path,
+            make_framed(r#"{"jsonrpc":"2.0","id":9999,"result":{}}"#),
+        );
+        let client = IpcClient::new(ClientOptions {
+            socket_name: None,
+            socket_path: Some(socket_path.display().to_string()),
+        });
+        let err = client.call("ping", json!({})).unwrap_err();
+        assert!(
+            err.contains("id mismatch") || err.contains("9999"),
+            "unexpected error: {err}"
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn call_rejects_unexpected_notification() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("unexpected-notif.sock");
+        let server = spawn_server_with_raw_response(
+            &socket_path,
+            make_framed(r#"{"jsonrpc":"2.0","method":"progress","params":{}}"#),
+        );
+        let client = IpcClient::new(ClientOptions {
+            socket_name: None,
+            socket_path: Some(socket_path.display().to_string()),
+        });
+        let err = client.call("ping", json!({})).unwrap_err();
+        assert!(
+            err.contains("notification") && err.contains("progress"),
+            "unexpected error: {err}"
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn call_rejects_response_missing_result_and_error() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("no-result.sock");
+        let server = spawn_server_with_raw_response(
+            &socket_path,
+            make_framed(r#"{"jsonrpc":"2.0","id":1}"#),
+        );
+        let client = IpcClient::new(ClientOptions {
+            socket_name: None,
+            socket_path: Some(socket_path.display().to_string()),
+        });
+        let err = client.call("ping", json!({})).unwrap_err();
+        assert!(
+            err.contains("result") && err.contains("error"),
+            "unexpected error: {err}"
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn call_rejects_malformed_stream_chunk_with_id() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("bad-stream-chunk-id.sock");
+        let server = spawn_server_with_raw_response(
+            &socket_path,
+            make_framed(
+                r#"{"jsonrpc":"2.0","method":"stream_chunk","id":1,"params":{"delta":"x"}}"#,
+            ),
+        );
+        let client = IpcClient::new(ClientOptions {
+            socket_name: None,
+            socket_path: Some(socket_path.display().to_string()),
+        });
+        let err = client.call("ping", json!({})).unwrap_err();
+        assert!(
+            err.contains("stream_chunk") && err.contains("Malformed"),
+            "unexpected error: {err}"
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn call_rejects_malformed_stream_chunk_with_error() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("bad-stream-chunk-err.sock");
+        let server = spawn_server_with_raw_response(
+            &socket_path,
+            make_framed(
+                r#"{"jsonrpc":"2.0","method":"stream_chunk","error":{"code":-1,"message":"x"}}"#,
+            ),
+        );
+        let client = IpcClient::new(ClientOptions {
+            socket_name: None,
+            socket_path: Some(socket_path.display().to_string()),
+        });
+        let err = client.call("ping", json!({})).unwrap_err();
+        assert!(
+            err.contains("stream_chunk") && err.contains("Malformed"),
+            "unexpected error: {err}"
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn call_rejects_stream_chunk_with_null_id() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("stream-chunk-null-id.sock");
+        let server = spawn_server_with_raw_response(
+            &socket_path,
+            make_framed(r#"{"jsonrpc":"2.0","method":"stream_chunk","id":null}"#),
+        );
+        let client = IpcClient::new(ClientOptions {
+            socket_name: None,
+            socket_path: Some(socket_path.display().to_string()),
+        });
+        let err = client.call("ping", json!({})).unwrap_err();
+        assert!(
+            err.contains("stream_chunk") && err.contains("Malformed"),
+            "unexpected error: {err}"
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn call_rejects_non_string_method_field() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("non-string-method.sock");
+        let server = spawn_server_with_raw_response(
+            &socket_path,
+            make_framed(r#"{"jsonrpc":"2.0","method":123,"id":1,"result":{}}"#),
+        );
+        let client = IpcClient::new(ClientOptions {
+            socket_name: None,
+            socket_path: Some(socket_path.display().to_string()),
+        });
+        let err = client.call("ping", json!({})).unwrap_err();
+        assert!(
+            err.contains("non-string") || err.contains("method"),
+            "unexpected error: {err}"
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn call_rejects_null_error_envelope() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("null-error.sock");
+        let server = spawn_server_with_raw_response(
+            &socket_path,
+            make_framed(r#"{"jsonrpc":"2.0","id":1,"error":null}"#),
+        );
+        let client = IpcClient::new(ClientOptions {
+            socket_name: None,
+            socket_path: Some(socket_path.display().to_string()),
+        });
+        let err = client.call("ping", json!({})).unwrap_err();
+        assert!(
+            err.contains("Malformed JSON-RPC error"),
+            "unexpected error: {err}"
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn call_rejects_string_error_envelope() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("string-error.sock");
+        let server = spawn_server_with_raw_response(
+            &socket_path,
+            make_framed(r#"{"jsonrpc":"2.0","id":1,"error":"boom"}"#),
+        );
+        let client = IpcClient::new(ClientOptions {
+            socket_name: None,
+            socket_path: Some(socket_path.display().to_string()),
+        });
+        let err = client.call("ping", json!({})).unwrap_err();
+        assert!(
+            err.contains("Malformed JSON-RPC error"),
+            "unexpected error: {err}"
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn call_rejects_error_object_missing_code() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("error-no-code.sock");
+        let server = spawn_server_with_raw_response(
+            &socket_path,
+            make_framed(r#"{"jsonrpc":"2.0","id":1,"error":{"message":"oops"}}"#),
+        );
+        let client = IpcClient::new(ClientOptions {
+            socket_name: None,
+            socket_path: Some(socket_path.display().to_string()),
+        });
+        let err = client.call("ping", json!({})).unwrap_err();
+        assert!(
+            err.contains("Malformed JSON-RPC error object"),
+            "unexpected error: {err}"
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn call_accepts_well_formed_error_response() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("well-formed-error.sock");
+        let server = spawn_server_with_raw_response(
+            &socket_path,
+            make_framed(r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"Invalid Request"}}"#),
+        );
+        let client = IpcClient::new(ClientOptions {
+            socket_name: None,
+            socket_path: Some(socket_path.display().to_string()),
+        });
+        let response = client.call("ping", json!({})).unwrap();
+        assert!(response.error.is_some());
+        assert_eq!(response.error.unwrap()["code"], json!(-32600));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn call_rejects_response_with_both_result_and_error() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("both-result-error.sock");
+        let server = spawn_server_with_raw_response(
+            &socket_path,
+            make_framed(
+                r#"{"jsonrpc":"2.0","id":1,"result":{},"error":{"code":-1,"message":"x"}}"#,
+            ),
+        );
+        let client = IpcClient::new(ClientOptions {
+            socket_name: None,
+            socket_path: Some(socket_path.display().to_string()),
+        });
+        let err = client.call("ping", json!({})).unwrap_err();
+        assert!(
+            err.contains("both") && err.contains("result") && err.contains("error"),
+            "unexpected error: {err}"
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn call_skips_stream_chunk_notification_and_reads_final_response() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("stream-chunk.sock");
+        let listener = UnixListener::bind(&socket_path).unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut len_buf = [0u8; 4];
+            stream.read_exact(&mut len_buf).unwrap();
+            let len = u32::from_be_bytes(len_buf) as usize;
+            let mut body = vec![0u8; len];
+            stream.read_exact(&mut body).unwrap();
+
+            write_frame(
+                &mut stream,
+                r#"{"jsonrpc":"2.0","method":"stream_chunk","params":{"delta":"hello"}}"#,
+            );
+            write_frame(
+                &mut stream,
+                &json!({"jsonrpc":"2.0","id":1,"result":{"done":true}}).to_string(),
+            );
+        });
+        let client = IpcClient::new(ClientOptions {
+            socket_name: None,
+            socket_path: Some(socket_path.display().to_string()),
+        });
+        let response = client.call("ping", json!({})).unwrap();
+        assert_eq!(response.result, json!({"done": true}));
         server.join().unwrap();
     }
 }

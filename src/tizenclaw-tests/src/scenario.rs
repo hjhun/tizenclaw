@@ -141,8 +141,8 @@ pub fn run_scenario(
         let params = materialize_value(&step.params, &mut placeholders);
         let response = client.call(&step.method, params).map_err(|err| {
             let message = format!(
-                "Scenario '{}', step '{}': request failed: {}",
-                scenario.name, step.name, err
+                "Scenario '{}', step '{}' ({}): request failed: {}",
+                scenario.name, step.name, step.method, err
             );
             println!("FAIL {} - {}", step.name, err);
             message
@@ -151,8 +151,8 @@ pub fn run_scenario(
         if let Some(error) = response.error {
             let details = serde_json::to_string(&error).unwrap_or_else(|_| error.to_string());
             let message = format!(
-                "Scenario '{}', step '{}': JSON-RPC error {}",
-                scenario.name, step.name, details
+                "Scenario '{}', step '{}' ({}): JSON-RPC error {}",
+                scenario.name, step.name, step.method, details
             );
             println!("FAIL {} - {}", step.name, details);
             return Err(message);
@@ -161,7 +161,10 @@ pub fn run_scenario(
         for assertion in &step.assertions {
             if let Err(err) = assert_result(&response.result, assertion) {
                 println!("FAIL {} - {}", step.name, err);
-                return Err(format!("Step '{}': {}", step.name, err));
+                return Err(format!(
+                    "Scenario '{}', step '{}' ({}): {}",
+                    scenario.name, step.name, step.method, err
+                ));
             }
         }
 
@@ -474,6 +477,142 @@ mod tests {
             err,
             "assertion failed: path 'tools': expected exists=true, got null"
         );
+    }
+
+    #[test]
+    fn run_scenario_surfaces_step_context_on_request_failure() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("req-fail.sock");
+        let listener = UnixListener::bind(&socket_path).unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let _req = read_frame(&mut stream);
+            // Send invalid JSON to trigger client.call error
+            write_frame(&mut stream, "not-valid-json");
+        });
+
+        let client = IpcClient::new(ClientOptions {
+            socket_path: Some(socket_path.to_string_lossy().to_string()),
+            socket_name: None,
+        });
+        let scenario = ScenarioFile {
+            name: "req-fail-scenario".into(),
+            steps: vec![ScenarioStep {
+                name: "failing-step".into(),
+                method: "invoke_method".into(),
+                params: json!({}),
+                assertions: vec![],
+            }],
+        };
+
+        let err = run_scenario(&client, &scenario).unwrap_err();
+        assert!(
+            err.contains("req-fail-scenario"),
+            "error missing scenario name: {err}"
+        );
+        assert!(
+            err.contains("failing-step"),
+            "error missing step name: {err}"
+        );
+        assert!(
+            err.contains("invoke_method"),
+            "error missing method name: {err}"
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn run_scenario_surfaces_step_context_on_jsonrpc_error() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("jsonrpc-err.sock");
+        let listener = UnixListener::bind(&socket_path).unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let _req = read_frame(&mut stream);
+            write_frame(
+                &mut stream,
+                &json!({"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found"}}).to_string(),
+            );
+        });
+
+        let client = IpcClient::new(ClientOptions {
+            socket_path: Some(socket_path.to_string_lossy().to_string()),
+            socket_name: None,
+        });
+        let scenario = ScenarioFile {
+            name: "rpc-error-scenario".into(),
+            steps: vec![ScenarioStep {
+                name: "rpc-error-step".into(),
+                method: "unknown_method".into(),
+                params: json!({}),
+                assertions: vec![],
+            }],
+        };
+
+        let err = run_scenario(&client, &scenario).unwrap_err();
+        assert!(
+            err.contains("rpc-error-scenario"),
+            "error missing scenario name: {err}"
+        );
+        assert!(
+            err.contains("rpc-error-step"),
+            "error missing step name: {err}"
+        );
+        assert!(
+            err.contains("unknown_method"),
+            "error missing method name: {err}"
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn run_scenario_surfaces_step_context_on_assertion_failure() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("ctx-fail.sock");
+        let listener = UnixListener::bind(&socket_path).unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let _req = read_frame(&mut stream);
+            write_frame(
+                &mut stream,
+                &json!({"jsonrpc":"2.0","id":1,"result":{"status":"ok"}}).to_string(),
+            );
+        });
+
+        let client = IpcClient::new(ClientOptions {
+            socket_path: Some(socket_path.to_string_lossy().to_string()),
+            socket_name: None,
+        });
+        let scenario = ScenarioFile {
+            name: "ctx-scenario".into(),
+            steps: vec![ScenarioStep {
+                name: "check-tools".into(),
+                method: "list_tools".into(),
+                params: json!({}),
+                assertions: vec![ScenarioAssertion {
+                    path: "tools".into(),
+                    exists: true,
+                    equals: None,
+                    contains: None,
+                    greater_than: None,
+                }],
+            }],
+        };
+
+        let err = run_scenario(&client, &scenario).unwrap_err();
+        assert!(
+            err.contains("ctx-scenario"),
+            "error missing scenario name: {err}"
+        );
+        assert!(
+            err.contains("check-tools"),
+            "error missing step name: {err}"
+        );
+        assert!(
+            err.contains("list_tools"),
+            "error missing method name: {err}"
+        );
+        server.join().unwrap();
     }
 
     #[test]
