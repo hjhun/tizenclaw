@@ -242,7 +242,10 @@ mkdir -p "${HOME}"
 # common.rs falls back to these after the config file, so clearing them ensures
 # that no live hosted provider can be reached even if a scenario accidentally
 # exercises the backend selection path.
-unset ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY || true
+#
+# This list must stay in sync with ENV_MAPPINGS in
+# src/tizenclaw/src/generic/infra/key_store.rs.
+unset ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY GROQ_API_KEY || true
 
 # ─────────────────────────────────────────────
 # Start companion processes
