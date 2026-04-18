@@ -13,6 +13,8 @@ set -euo pipefail
 #      same clean checkout to confirm safe fast-forward update works.
 #   3. Make the checkout dirty; assert the installer fails without altering
 #      the dirty file or resetting the Git working tree.
+#   4. Create a local commit not present on origin; assert the installer
+#      fails and does not discard the local commit.
 #
 # curl is shadowed with a failing stub before the first install run.
 # Any accidental bundle-download attempt causes immediate test failure,
@@ -294,6 +296,58 @@ main() {
     fail "Test 3: git status is clean after dirty-checkout test; installer may have reset the working tree"
   fi
   log "Test 3 PASSED"
+
+  # ── Test 4: Local-only commits must cause install failure ─────────────────
+  log "=== Test 4: Local-only commits must cause install failure ==="
+
+  # Clean the dirty file left by Test 3 so the working tree is pristine,
+  # then create and commit a local-only change that is not on origin.
+  rm -f "${dirty_file}"
+  local local_commit_file="${source_dir}/SMOKE_LOCAL_COMMIT"
+  printf 'local commit added by source-install smoke test\n' > "${local_commit_file}"
+  git -C "${source_dir}" add "${local_commit_file}"
+  git -C "${source_dir}" \
+    -c user.email="smoke@test.local" \
+    -c user.name="Smoke Test" \
+    commit -m "smoke: local-only commit not on origin"
+
+  local err4_output
+  local install4_rc=0
+  err4_output="$(
+    HOME="${fake_home}" \
+    CARGO_HOME="${CARGO_HOME:-${HOME}/.cargo}" \
+    RUSTUP_HOME="${RUSTUP_HOME:-${HOME}/.rustup}" \
+    TIZENCLAW_INSTALL_ROOT="${INSTALL_ROOT}" \
+    TIZENCLAW_BASHRC_PATH="${fake_home}/.bashrc" \
+    TIZENCLAW_SKIP_SERVICES="1" \
+    TIZENCLAW_NO_NETWORK_FALLBACK="1" \
+      bash "${PROJECT_DIR}/install.sh" \
+        --source-install \
+        --repo "${bare_url}" \
+        --ref "${test_ref}" \
+        --dir "${source_dir}" \
+        --skip-deps \
+        --skip-setup \
+        -- --no-restart --build-root "${build_root}" \
+      2>&1 >/dev/null
+  )" || install4_rc=$?
+
+  if [[ "${install4_rc}" -eq 0 ]]; then
+    fail "Test 4: Expected non-zero exit when checkout has local-only commits, got 0"
+  fi
+  log "Test 4: installer exited ${install4_rc} (expected non-zero) — OK"
+
+  if ! grep -Fq "${source_dir}" <<< "${err4_output}"; then
+    fail "Test 4: Error message does not mention the checkout path (${source_dir}): ${err4_output}"
+  fi
+
+  # The local commit must still exist — installer must not have reset HEAD.
+  local head_after
+  head_after="$(git -C "${source_dir}" log --oneline -1 2>/dev/null)"
+  if ! grep -Fq "smoke: local-only commit not on origin" <<< "${head_after}"; then
+    fail "Test 4: Local commit was removed by the installer: ${head_after}"
+  fi
+  log "Test 4 PASSED"
 
   log "Source-install smoke test PASSED"
 }

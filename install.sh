@@ -154,10 +154,17 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1
 }
 
-# Returns success when <path> is inside a valid Git work tree.
+# Returns success when <path> is the root of a valid Git work tree.
 # Works for both normal clones (.git/ directory) and worktrees (.git file).
+# Subdirectories inside a repo are intentionally rejected to prevent
+# prepare_repo() from operating on the parent repo unexpectedly.
 is_git_checkout() {
-  git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1
+  git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+  local toplevel actual
+  toplevel="$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  actual="$(cd "$1" && pwd -P 2>/dev/null)" || return 1
+  toplevel="$(cd "${toplevel}" && pwd -P 2>/dev/null)" || return 1
+  [[ "${toplevel}" == "${actual}" ]]
 }
 
 auto_select_local_checkout() {
@@ -579,17 +586,29 @@ prepare_repo() {
     log "Fetching from origin at ${SOURCE_DIR}"
     git -C "${SOURCE_DIR}" fetch --tags origin
 
-    # If origin/<ref> is known, ensure HEAD has no commits that would be
-    # silently abandoned by any subsequent checkout or reset.  Check HEAD
-    # directly so detached-HEAD states with local commits are also caught,
-    # not just the named-branch case.
+    # If origin/<ref> is known, ensure neither HEAD nor the local branch that
+    # will be checked out has commits that would be silently abandoned.
+    # Checking only HEAD is insufficient: when HEAD is on a different branch,
+    # the local branch named ${REPO_REF} may have local-only commits that the
+    # subsequent checkout + ff-merge would leave in place unnoticed.
     if git -C "${SOURCE_DIR}" rev-parse --verify "origin/${REPO_REF}" >/dev/null 2>&1; then
-      local local_only
-      local_only="$(git -C "${SOURCE_DIR}" rev-list \
+      local head_only
+      head_only="$(git -C "${SOURCE_DIR}" rev-list \
         "origin/${REPO_REF}..HEAD" 2>/dev/null | wc -l)"
-      local_only="${local_only//[[:space:]]/}"
-      if [[ "${local_only}" -gt 0 ]]; then
-        fail "${SOURCE_DIR}: HEAD has ${local_only} commit(s) not present on origin/${REPO_REF}. Push or discard the local commits, or use a different --dir."
+      head_only="${head_only//[[:space:]]/}"
+      if [[ "${head_only}" -gt 0 ]]; then
+        fail "${SOURCE_DIR}: HEAD has ${head_only} commit(s) not present on origin/${REPO_REF}. Push or discard the local commits, or use a different --dir."
+      fi
+
+      # Also guard the named local branch even when HEAD is not on it.
+      if git -C "${SOURCE_DIR}" rev-parse --verify "refs/heads/${REPO_REF}" >/dev/null 2>&1; then
+        local branch_only
+        branch_only="$(git -C "${SOURCE_DIR}" rev-list \
+          "origin/${REPO_REF}..refs/heads/${REPO_REF}" 2>/dev/null | wc -l)"
+        branch_only="${branch_only//[[:space:]]/}"
+        if [[ "${branch_only}" -gt 0 ]]; then
+          fail "${SOURCE_DIR}: ${REPO_REF} has ${branch_only} commit(s) not present on origin/${REPO_REF}. Push or discard the local commits, or use a different --dir."
+        fi
       fi
     fi
 

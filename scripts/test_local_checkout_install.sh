@@ -17,17 +17,33 @@ TMP_DIR=""
 INSTALL_ROOT_EXPLICIT=""
 INSTALL_ROOT_IMPLICIT=""
 INSTALL_ROOT_WORKTREE=""
+HOOK_BACKUP_PATH=""   # set when an existing pre-commit hook is stashed
 
 log()  { printf '[checkout-smoke] %s\n' "$*"; }
 fail() { printf '[checkout-smoke][fail] %s\n' "$*" >&2; exit 1; }
 
 cleanup() {
   if [[ -n "${TMP_DIR}" && -d "${TMP_DIR}" ]]; then
-    # Remove any temporary worktree before wiping TMP_DIR so git bookkeeping
+    # Remove any temporary worktrees before wiping TMP_DIR so git bookkeeping
     # stays consistent even if the test failed mid-flight.
-    local wt_dir="${TMP_DIR}/worktree"
-    if [[ -d "${wt_dir}" ]]; then
-      git -C "${PROJECT_DIR}" worktree remove --force "${wt_dir}" 2>/dev/null || true
+    local wt
+    for wt in "${TMP_DIR}/worktree" "${TMP_DIR}/worktree-hooks"; do
+      if [[ -d "${wt}" ]]; then
+        git -C "${PROJECT_DIR}" worktree remove --force "${wt}" 2>/dev/null || true
+      fi
+    done
+
+    # Restore any pre-commit hook that Test 4 temporarily removed.
+    local common_dir hook_file
+    common_dir="$(git -C "${PROJECT_DIR}" rev-parse --git-common-dir 2>/dev/null || true)"
+    if [[ -n "${common_dir}" ]]; then
+      [[ "${common_dir}" == /* ]] || common_dir="${PROJECT_DIR}/${common_dir}"
+      hook_file="${common_dir}/hooks/pre-commit"
+      # Remove any test-installed hook first so we start clean.
+      rm -f "${hook_file}"
+      if [[ -n "${HOOK_BACKUP_PATH}" && -f "${HOOK_BACKUP_PATH}" ]]; then
+        cp -p "${HOOK_BACKUP_PATH}" "${hook_file}"
+      fi
     fi
 
     local root
@@ -271,6 +287,50 @@ main() {
   git -C "${PROJECT_DIR}" worktree remove --force "${worktree_dir}" \
     || true  # cleanup handles this too; tolerate double-remove
   log "Test 3 PASSED"
+
+  # ── Test 4: hook setup scripts from a worktree ────────────────────────────
+  # Verifies that both scripts/setup-hooks.sh and scripts/setup_hooks.sh
+  # succeed when invoked from a git worktree checkout (.git is a file, not a
+  # directory). Both scripts must use --git-common-dir so the hook lands in
+  # the correct shared hooks directory.
+  log "=== Test 4: hook setup scripts from worktree ==="
+  local hooks_wt_dir="${TMP_DIR}/worktree-hooks"
+  git -C "${PROJECT_DIR}" worktree add --detach "${hooks_wt_dir}" \
+    || fail "git worktree add failed — cannot create worktree for Test 4"
+
+  log "[hooks] .git entry type in hooks worktree: $(stat -c '%F' "${hooks_wt_dir}/.git" 2>/dev/null || echo '(absent)')"
+
+  # Locate the shared hooks directory and stash any pre-existing hook so we
+  # can verify a fresh install and restore the original state on cleanup.
+  local common_dir_hooks hook_file_path
+  common_dir_hooks="$(git -C "${PROJECT_DIR}" rev-parse --git-common-dir)"
+  [[ "${common_dir_hooks}" == /* ]] || common_dir_hooks="${PROJECT_DIR}/${common_dir_hooks}"
+  hook_file_path="${common_dir_hooks}/hooks/pre-commit"
+  if [[ -e "${hook_file_path}" ]]; then
+    HOOK_BACKUP_PATH="${TMP_DIR}/pre-commit.bak"
+    cp -p "${hook_file_path}" "${HOOK_BACKUP_PATH}"
+    rm -f "${hook_file_path}"
+  fi
+
+  log "[hooks] Test 4a: scripts/setup-hooks.sh from worktree"
+  bash "${hooks_wt_dir}/scripts/setup-hooks.sh" \
+    || fail "setup-hooks.sh from worktree exited non-zero"
+  [[ -f "${hook_file_path}" ]] \
+    || fail "[hooks] pre-commit hook not installed by setup-hooks.sh (expected: ${hook_file_path})"
+  log "[hooks] Test 4a PASSED"
+
+  rm -f "${hook_file_path}"
+
+  log "[hooks] Test 4b: scripts/setup_hooks.sh from worktree"
+  bash "${hooks_wt_dir}/scripts/setup_hooks.sh" \
+    || fail "setup_hooks.sh from worktree exited non-zero"
+  [[ -f "${hook_file_path}" ]] \
+    || fail "[hooks] pre-commit hook not installed by setup_hooks.sh (expected: ${hook_file_path})"
+  log "[hooks] Test 4b PASSED"
+
+  git -C "${PROJECT_DIR}" worktree remove --force "${hooks_wt_dir}" \
+    || true
+  log "Test 4 PASSED"
 
   # ── Stray process check ───────────────────────────────────────────────────
   log "Verifying no stray daemon processes remain..."
