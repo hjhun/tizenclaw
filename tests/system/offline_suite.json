@@ -15,6 +15,10 @@
     "tests/system/agent_loop_shortcuts_runtime_contract.json",
     "tests/system/email_triage_runtime_contract.json",
     "tests/system/file_grounded_recall_runtime_contract.json",
-    "tests/system/project_email_summary_runtime_contract.json"
+    "tests/system/project_email_summary_runtime_contract.json",
+    "tests/system/session_transcript_runtime_contract.json",
+    "tests/system/json_only_transcript_runtime_contract.json",
+    "tests/system/structured_writing_runtime_contract.json",
+    "tests/system/file_output_preview_runtime_contract.json"
   ]
 }

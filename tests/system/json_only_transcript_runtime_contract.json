@@ -1,5 +1,6 @@
 {
   "name": "json-only-transcript-runtime-contract",
+  "offline_safe": true,
   "steps": [
     {
       "name": "prompt-persists-json-only-assistant-response",

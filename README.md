@@ -130,8 +130,13 @@ flow.
   shortcut-backed prompt flows: executive briefing generation
   (`agent_loop_shortcuts_runtime_contract.json`), inbox email triage
   (`email_triage_runtime_contract.json`), file-grounded memory recall
-  (`file_grounded_recall_runtime_contract.json`), and project email
-  corpus summarisation (`project_email_summary_runtime_contract.json`).
+  (`file_grounded_recall_runtime_contract.json`), project email
+  corpus summarisation (`project_email_summary_runtime_contract.json`),
+  session transcript durability (`session_transcript_runtime_contract.json`),
+  JSON-only assistant capture (`json_only_transcript_runtime_contract.json`),
+  structured writing session state (`structured_writing_runtime_contract.json`),
+  and file-output preview completion
+  (`file_output_preview_runtime_contract.json`).
   Every scenario in this suite declares `"offline_safe": true`; the
   runner enforces this and fails clearly if a scenario is added without
   the declaration. All shortcut-backed scenarios are fully deterministic

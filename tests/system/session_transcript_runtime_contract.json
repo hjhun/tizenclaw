@@ -1,12 +1,13 @@
 {
   "name": "session-transcript-runtime-contract",
+  "offline_safe": true,
   "steps": [
     {
       "name": "prompt-creates-session-transcript",
       "method": "process_prompt",
       "params": {
         "session_id": "${unique_session_id:session-transcript}",
-        "prompt": "Write a short note to note.txt saying transcript runtime contract verified, then confirm briefly."
+        "prompt": "Save the following to memory/MEMORY.md and confirm briefly: Transcript runtime contract verified. The session persistence mechanism is functioning correctly and storing assistant messages as expected. This note exists only to exercise the durable transcript path without requiring a live LLM backend."
       },
       "assertions": [
         {

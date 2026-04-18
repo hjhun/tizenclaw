@@ -1,5 +1,6 @@
 {
   "name": "file-output-preview-runtime-contract",
+  "offline_safe": true,
   "steps": [
     {
       "name": "writing-prompt-returns-preview-aware-completion",

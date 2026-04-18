@@ -1,5 +1,6 @@
 {
   "name": "structured-writing-runtime-contract",
+  "offline_safe": true,
   "steps": [
     {
       "name": "writing-prompt-produces-session-output",
