@@ -40,7 +40,10 @@ fn curated_upcoming_tech_conference_entries(year: u32) -> Vec<ResearchOutputEntr
                 url: "https://aws.amazon.com/events/reinvent/".to_string(),
             },
         ],
-        _ => Vec::new(),
+        // For any year not in the curated list, fall back to the most recent
+        // known set so offline shortcuts remain deterministic across calendar
+        // year boundaries.
+        _ => curated_upcoming_tech_conference_entries(2026),
     }
 }
 

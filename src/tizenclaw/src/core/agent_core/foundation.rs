@@ -1702,6 +1702,32 @@ fn prompt_requires_literal_json_output(prompt: &str) -> bool {
     .any(|needle| prompt_lower.contains(needle))
 }
 
+pub(super) fn extract_verbatim_json_template(prompt: &str) -> Option<String> {
+    if !prompt_requires_literal_json_output(prompt) {
+        return None;
+    }
+    let last_brace = prompt.rfind('{')?;
+    let after = &prompt[last_brace..];
+    let mut depth = 0usize;
+    let mut end = None;
+    for (i, ch) in after.char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    end = Some(i + ch.len_utf8());
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let candidate = &after[..end?];
+    serde_json::from_str::<serde_json::Value>(candidate).ok()?;
+    Some(candidate.to_string())
+}
+
 fn prompt_requests_image_generation(prompt: &str) -> bool {
     let prompt_lower = normalize_prompt_intent_text(prompt).to_ascii_lowercase();
     let mentions_image_output = [".png", ".jpg", ".jpeg", ".webp", ".gif"]

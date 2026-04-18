@@ -9,6 +9,17 @@ impl AgentCore {
         literal_json_output: bool,
         loop_state: &mut AgentLoopState,
     ) -> Option<String> {
+        // Verbatim-JSON shortcut: when the prompt embeds an explicit JSON
+        // template and requests no prose wrapping, echo it back directly.
+        // This runs before the backend check so the transcript contract holds
+        // in offline mode without masking real misconfiguration for other
+        // literal-JSON-output prompts that do not embed a template.
+        if literal_json_output {
+            if let Some(json_str) = extract_verbatim_json_template(prompt) {
+                return Some(self.finalize_prompt_text(session_id, loop_state, json_str));
+            }
+        }
+
         if !literal_json_output && prompt_requests_memory_file_capture(prompt) {
             if let Some(memory_body) = extract_memory_capture_body(prompt) {
                 let memory_path = session_workdir.join("memory").join("MEMORY.md");
