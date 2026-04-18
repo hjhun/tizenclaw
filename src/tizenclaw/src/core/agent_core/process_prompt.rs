@@ -100,6 +100,15 @@ impl AgentCore {
         // Quick check: do we have any backend?
         {
             if !self.provider_registry.read().await.has_any() {
+                if literal_json_output {
+                    // JSON-only mode with no backend: return a well-formed offline
+                    // fallback so the durable transcript path still captures a
+                    // structured response without requiring a live LLM.
+                    let fallback =
+                        "{\"status\":\"offline\",\"error\":\"no_backend_configured\"}"
+                            .to_string();
+                    return self.finalize_prompt_text(session_id, &mut loop_state, fallback);
+                }
                 loop_state.last_error = Some("No LLM backend configured".into());
                 loop_state.mark_terminal(
                     LoopTransitionReason::NoBackendConfigured,

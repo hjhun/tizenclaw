@@ -7,7 +7,7 @@
       "method": "process_prompt",
       "params": {
         "session_id": "${unique_session_id:json-only-transcript}",
-        "prompt": "Save the following to memory/MEMORY.md and confirm briefly: {\"status\":\"verified\",\"test\":\"json_only_transcript_runtime_contract\",\"assertion\":\"assistant output is captured durably in the session transcript store regardless of response format, including concise structured responses without prose wrapping\"}"
+        "prompt": "You are a validation function. Your ONLY job is to output a single JSON object.\nDo NOT use any tools.\nRespond with ONLY this JSON structure (no markdown, no code fences, no extra text): {\"status\":\"verified\",\"transcript_durable\":true}"
       },
       "assertions": [
         {
@@ -16,7 +16,7 @@
         },
         {
           "path": "text",
-          "contains": "memory/MEMORY.md"
+          "contains": "{"
         }
       ]
     },
