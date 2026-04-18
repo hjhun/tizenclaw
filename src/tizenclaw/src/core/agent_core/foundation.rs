@@ -1706,27 +1706,55 @@ pub(super) fn extract_verbatim_json_template(prompt: &str) -> Option<String> {
     if !prompt_requires_literal_json_output(prompt) {
         return None;
     }
-    // Locate the outermost JSON object by finding the last '}' and walking
-    // backward to its matching '{'.  Using rfind('{') would land inside a
-    // nested object for templates like {"outer":{"inner":0}}, producing a
-    // truncated payload that the transcript then durably records incorrectly.
-    let last_close = prompt.rfind('}')?;
+    // Locate the outermost JSON object.  Walk forward tracking string state so
+    // that braces inside quoted values are not counted as structural delimiters.
+    // rfind/backward counting without string-state awareness would misparse
+    // payloads like {"key":"value with { brace"}.
+    let bytes = prompt.as_bytes();
+    let n = bytes.len();
     let mut depth = 0i32;
-    let mut start = None;
-    for (i, ch) in prompt[..=last_close].char_indices().rev() {
+    let mut in_string = false;
+    let mut escape_next = false;
+    let mut first_open: Option<usize> = None;
+    let mut last_close: Option<usize> = None;
+    let mut i = 0;
+    while i < n {
+        let ch = bytes[i] as char;
+        if escape_next {
+            escape_next = false;
+            i += 1;
+            continue;
+        }
+        if in_string {
+            if ch == '\\' {
+                escape_next = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
         match ch {
-            '}' => depth += 1,
+            '"' => in_string = true,
             '{' => {
+                depth += 1;
+                if depth == 1 {
+                    first_open = Some(i);
+                }
+            }
+            '}' => {
                 depth -= 1;
                 if depth == 0 {
-                    start = Some(i);
-                    break;
+                    last_close = Some(i);
                 }
             }
             _ => {}
         }
+        i += 1;
     }
-    let candidate = &prompt[start?..=last_close];
+    let start = first_open?;
+    let last_close = last_close?;
+    let candidate = &prompt[start..=last_close];
     serde_json::from_str::<serde_json::Value>(candidate).ok()?;
     Some(candidate.to_string())
 }

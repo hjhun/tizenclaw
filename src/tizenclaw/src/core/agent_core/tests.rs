@@ -58,6 +58,7 @@ mod tests {
         top_polymarket_briefing_entries,
         path_is_likely_input_reference,
         prompt_requests_tabular_inspection,
+        extract_verbatim_json_template,
         prompt_requires_literal_json_output,
         reasoning_policy_from_doc, requested_paragraph_count, requested_word_range_bounds,
         requested_word_target,
@@ -4480,5 +4481,25 @@ startxref
 
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].name, "device_monitor");
+    }
+
+    #[test]
+    fn extract_verbatim_json_template_handles_brace_in_quoted_string() {
+        let prompt = "Your ONLY job is to output a single JSON object.\nRespond with ONLY this JSON structure (no markdown, no code fences, no extra text): {\"key\":\"value with { brace\",\"ok\":true}";
+        let result = extract_verbatim_json_template(prompt);
+        assert_eq!(
+            result.as_deref(),
+            Some("{\"key\":\"value with { brace\",\"ok\":true}")
+        );
+    }
+
+    #[test]
+    fn extract_verbatim_json_template_handles_nested_objects() {
+        let prompt = "Your ONLY job is to output a single JSON object.\nRespond with ONLY this JSON structure (no markdown, no code fences, no extra text): {\"status\":\"ok\",\"meta\":{\"v\":1}}";
+        let result = extract_verbatim_json_template(prompt);
+        assert_eq!(
+            result.as_deref(),
+            Some("{\"status\":\"ok\",\"meta\":{\"v\":1}}")
+        );
     }
 }

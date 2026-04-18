@@ -724,10 +724,15 @@ impl SessionStore {
         } else {
             Vec::new()
         };
-        let assistant_message_count = transcript_messages
+        let assistant_messages: Vec<&SessionMessage> = transcript_messages
             .iter()
             .filter(|message| message.role == "assistant" && !message.text.trim().is_empty())
-            .count();
+            .collect();
+        let assistant_message_count = assistant_messages.len();
+        let last_assistant_text = assistant_messages
+            .last()
+            .map(|m| m.text.clone())
+            .unwrap_or_default();
         let tool_result_count = transcript_messages
             .iter()
             .filter(|message| message.role == "tool")
@@ -753,6 +758,7 @@ impl SessionStore {
             "transcript_exists": transcript_exists,
             "transcript_message_count": transcript_messages.len(),
             "assistant_message_count": assistant_message_count,
+            "last_assistant_text": last_assistant_text,
             "tool_result_count": tool_result_count,
             "resume_ready": resume_ready,
         })

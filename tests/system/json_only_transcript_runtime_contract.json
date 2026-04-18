@@ -40,6 +40,10 @@
           "greater_than": 0
         },
         {
+          "path": "session.last_assistant_text",
+          "equals": "{\"status\":\"verified\",\"meta\":{\"transcript_durable\":true,\"version\":1}}"
+        },
+        {
           "path": "session.resume_ready",
           "equals": true
         }
