@@ -77,7 +77,7 @@ fn extract_year_from_prompt(prompt: &str) -> Option<u32> {
 
 fn draft_curated_conference_roundup(
     prompt: &str,
-) -> Option<(String, String, Vec<ResearchOutputEntry>)> {
+) -> Option<(String, String, Vec<ResearchOutputEntry>, u32)> {
     if !prompt_requests_conference_roundup(prompt) {
         return None;
     }
@@ -97,7 +97,7 @@ fn draft_curated_conference_roundup(
     let year = extract_year_from_prompt(prompt).or_else(current_utc_year)?;
     let entries = curated_upcoming_tech_conference_entries(year);
     let rendered = render_curated_conference_roundup_markdown(&entries)?;
-    Some((target, rendered, entries))
+    Some((target, rendered, entries, year))
 }
 
 fn normalize_url_host(url: &str) -> Option<String> {

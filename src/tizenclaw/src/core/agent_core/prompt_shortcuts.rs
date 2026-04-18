@@ -65,7 +65,7 @@ impl AgentCore {
         }
 
         if !literal_json_output {
-            if let Some((target, rendered, entries)) = draft_curated_conference_roundup(prompt) {
+            if let Some((target, rendered, entries, year)) = draft_curated_conference_roundup(prompt) {
                 let target_path = session_workdir.join(&target);
                 if std::fs::write(&target_path, rendered.as_bytes()).is_ok() {
                     if let Ok(ss) = self.session_store.lock() {
@@ -91,7 +91,7 @@ impl AgentCore {
                                 json!({
                                     "query": format!(
                                         "official upcoming tech conferences {} exact dates official websites",
-                                        current_utc_year().unwrap_or_default()
+                                        year
                                     ),
                                     "limit": 5,
                                     "source": "trusted_conference_registry",
