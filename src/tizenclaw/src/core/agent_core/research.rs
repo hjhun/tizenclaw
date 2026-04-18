@@ -1171,11 +1171,17 @@ fn email_corpus_coverage_notice(
 
 fn prompt_requests_memory_file_capture(prompt: &str) -> bool {
     let prompt_lower = normalize_prompt_intent_text(prompt).to_ascii_lowercase();
-    let targets_memory_md = expected_file_management_targets(prompt)
-        .iter()
-        .flatten()
-        .any(|path| path.eq_ignore_ascii_case("memory/MEMORY.md"));
-    if !targets_memory_md {
+    let targets = expected_file_management_targets(prompt);
+    // Only activate when memory/MEMORY.md is the sole output target.  A prompt
+    // that also names other destination files (e.g. "save … and also save a
+    // copy to notes.md") must fall through to the general handler so every
+    // requested file is created; early-returning here would silently skip the
+    // remaining targets.
+    let sole_memory_target = targets.len() == 1
+        && targets[0]
+            .iter()
+            .any(|path| path.eq_ignore_ascii_case("memory/MEMORY.md"));
+    if !sole_memory_target {
         return false;
     }
     prompt_lower.contains("remember this")
