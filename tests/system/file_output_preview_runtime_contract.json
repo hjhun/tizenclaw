@@ -7,7 +7,7 @@
       "method": "process_prompt",
       "params": {
         "session_id": "${unique_session_id:file-output-preview}",
-        "prompt": "Write a 180-word Markdown article about resilient async services. Save it to article.md."
+        "prompt": "List upcoming tech conferences in 2026 and save a roundup to article.md."
       },
       "assertions": [
         {
@@ -16,7 +16,7 @@
         },
         {
           "path": "text",
-          "contains": "Preview of `article.md`"
+          "contains": "Preview of `events.md`"
         }
       ]
     },

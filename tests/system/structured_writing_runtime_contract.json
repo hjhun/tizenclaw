@@ -7,7 +7,7 @@
       "method": "process_prompt",
       "params": {
         "session_id": "${unique_session_id:structured-writing}",
-        "prompt": "Write a 180-word Markdown article about resilient async services. Save it to article.md."
+        "prompt": "List upcoming tech conferences in 2026 and save a roundup to article.md."
       },
       "assertions": [
         {

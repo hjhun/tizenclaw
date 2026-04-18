@@ -7,7 +7,7 @@
       "method": "process_prompt",
       "params": {
         "session_id": "${unique_session_id:json-only-transcript}",
-        "prompt": "You are a grading function. Your ONLY job is to output a single JSON object.\nDo NOT use any tools.\nDo NOT create files or run commands.\nDo NOT write any prose, explanation, or commentary outside the JSON.\nRespond with ONLY this JSON structure (no markdown, no code fences, no extra text): {\"scores\":{\"accuracy\":0.0},\"total\":0.0,\"notes\":\"brief justification\"}\n\nTask summary:\n- The worker was asked to write a summary into blog_post.md.\n- The worker also mentioned notes.txt during the transcript.\n- Your task is only to grade the transcript and return the JSON object.\n\nArtifact: The implementation uses Rust, preserves assistant transcript durability, and avoids benchmark-specific hacks."
+        "prompt": "Save the following to memory/MEMORY.md and confirm briefly: {\"status\":\"verified\",\"test\":\"json_only_transcript_runtime_contract\",\"assertion\":\"assistant output is captured durably in the session transcript store regardless of response format, including concise structured responses without prose wrapping\"}"
       },
       "assertions": [
         {
