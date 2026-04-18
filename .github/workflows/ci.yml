@@ -42,6 +42,7 @@ jobs:
           bash -n deploy.sh
           bash -n scripts/create_host_release_bundle.sh
           bash -n scripts/test_host_bundle_install.sh
+          bash -n scripts/test_local_checkout_install.sh
           bash -n scripts/tizenclaw-hostctl.sh
 
       - name: Enforce owner-only action policy
@@ -137,6 +138,68 @@ jobs:
           cd "${WORKDIR}"
           archive="dist/tizenclaw-host-bundle-ci-${GITHUB_SHA::7}-linux-x86_64.tar.gz"
           bash scripts/test_host_bundle_install.sh --bundle "${archive}"
+
+  local-checkout-smoke:
+    name: Local Checkout Installer Smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Fetch repository source
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          workdir="${RUNNER_TEMP}/tizenclaw"
+          repo_url="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          rm -rf "${workdir}"
+          git init "${workdir}"
+          git -C "${workdir}" remote add origin "${repo_url}"
+          git -C "${workdir}" fetch --depth 1 origin "${GITHUB_SHA}"
+          git -C "${workdir}" checkout --detach FETCH_HEAD
+
+          echo "WORKDIR=${workdir}" >> "${GITHUB_ENV}"
+
+      - name: Install host build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ca-certificates \
+            clang \
+            cmake \
+            curl \
+            git \
+            iproute2 \
+            libssl-dev \
+            make \
+            pkg-config \
+            perl \
+            python3
+
+      - name: Install Rust toolchain
+        run: |
+          set -euo pipefail
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain stable
+          echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
+          "${HOME}/.cargo/bin/rustc" --version
+          "${HOME}/.cargo/bin/cargo" --version
+
+      - name: Run local-checkout installer smoke test
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}"
+          bash scripts/test_local_checkout_install.sh
+
+      - name: Dump diagnostics on failure
+        if: failure()
+        run: |
+          echo "── tmp dirs under RUNNER_TEMP ──────────────────────────────────"
+          ls -la "${RUNNER_TEMP}/" 2>/dev/null || true
+          echo "── Remaining tizenclaw processes ───────────────────────────────"
+          pgrep -u "$(id -u)" -af tizenclaw 2>/dev/null || echo "(none)"
 
   host-validation:
     name: Host Canonical Validation
