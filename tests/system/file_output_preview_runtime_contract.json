@@ -16,7 +16,7 @@
         },
         {
           "path": "text",
-          "contains": "Preview of `events.md`"
+          "contains": "Preview of `article.md`"
         }
       ]
     },

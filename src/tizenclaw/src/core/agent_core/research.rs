@@ -73,6 +73,7 @@ fn draft_curated_conference_roundup(
 
     let target = extract_explicit_file_paths(prompt)
         .into_iter()
+        .chain(extract_relative_file_paths(prompt).into_iter())
         .find(|path| path.to_ascii_lowercase().ends_with(".md"))
         .unwrap_or_else(|| "events.md".to_string());
     if !target.to_ascii_lowercase().ends_with(".md") {

@@ -16,7 +16,7 @@
         },
         {
           "path": "text",
-          "contains": "{"
+          "contains": "memory/MEMORY.md"
         }
       ]
     },
