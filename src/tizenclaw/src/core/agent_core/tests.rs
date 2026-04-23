@@ -99,6 +99,11 @@ mod tests {
         format_unix_timestamp_utc(secs)[..10].to_string()
     }
 
+    fn iso_date_days_from_now(days: u64) -> String {
+        let secs = unix_timestamp_secs() + days * 86400;
+        format_unix_timestamp_utc(secs)[..10].to_string()
+    }
+
     #[test]
     fn utf8_safe_preview_returns_full_short_ascii_text() {
         let text = "battery";
@@ -907,14 +912,16 @@ mod tests {
 
     #[test]
     fn polymarket_market_candidate_score_skips_stale_markets() {
+        let stale_end = iso_date_days_ago(1);
+        let current_end = iso_date_days_from_now(14);
         let stale = json!({
             "question": "Will the next Prime Minister of Hungary be Viktor Orbán?",
-            "endDateIso": "2026-04-12",
+            "endDateIso": stale_end,
             "volume24hr": 9875939.0,
         });
         let current = json!({
             "question": "Will the Fed decrease interest rates by 50+ bps after the April 2026 meeting?",
-            "endDateIso": "2026-04-29",
+            "endDateIso": current_end,
             "volume24hr": 1258325.0,
         });
 
@@ -924,11 +931,13 @@ mod tests {
 
     #[test]
     fn basic_polymarket_briefing_candidates_skip_already_ended_active_markets() {
+        let stale_end = iso_date_days_ago(1);
+        let current_end = iso_date_days_from_now(14);
         let snapshot = serde_json::to_string(&vec![
             json!({
                 "active": true,
                 "question": "Will the next Prime Minister of Hungary be Viktor Orbán?",
-                "endDateIso": "2026-04-12",
+                "endDateIso": stale_end,
                 "volume24hr": 9400973.0,
                 "volumeNum": 23162538.0,
                 "outcomes": "[\"Yes\", \"No\"]",
@@ -937,7 +946,7 @@ mod tests {
             json!({
                 "active": true,
                 "question": "Will the Fed decrease interest rates by 50+ bps after the April 2026 meeting?",
-                "endDateIso": "2026-04-29",
+                "endDateIso": current_end,
                 "volume24hr": 711852.0,
                 "volumeNum": 27448337.0,
                 "outcomes": "[\"Yes\", \"No\"]",
@@ -956,9 +965,11 @@ mod tests {
 
     #[test]
     fn polymarket_market_candidate_score_prefers_balanced_markets_over_longshots() {
+        let longshot_end = iso_date_days_from_now(89);
+        let balanced_end = iso_date_days_from_now(8);
         let longshot = json!({
             "question": "Will France win the 2026 FIFA World Cup?",
-            "endDateIso": "2026-07-20",
+            "endDateIso": longshot_end,
             "volume24hr": 1476852.0,
             "volumeNum": 14383434.0,
             "outcomes": "[\"Yes\", \"No\"]",
@@ -966,7 +977,7 @@ mod tests {
         });
         let balanced = json!({
             "question": "Will Bitcoin reach $150,000 in April?",
-            "endDateIso": "2026-05-01",
+            "endDateIso": balanced_end,
             "volume24hr": 1155362.0,
             "volumeNum": 4240112.0,
             "outcomes": "[\"Yes\", \"No\"]",
@@ -981,9 +992,11 @@ mod tests {
 
     #[test]
     fn polymarket_market_candidate_score_penalizes_single_fixture_sports_markets() {
+        let sports_end = iso_date_days_from_now(2);
+        let event_end = iso_date_days_from_now(7);
         let sports_fixture = json!({
-            "question": "Will Manchester United FC win on 2026-04-13?",
-            "endDateIso": "2026-04-13",
+            "question": format!("Will Manchester United FC win on {}?", sports_end),
+            "endDateIso": sports_end,
             "volume24hr": 2440327.74,
             "volumeNum": 2961279.19,
             "outcomes": "[\"Yes\", \"No\"]",
@@ -992,7 +1005,7 @@ mod tests {
         let event_driven = json!({
             "question": "Strait of Hormuz traffic returns to normal by end of April?",
             "description": "Shipping conditions after a U.S. blockade threat.",
-            "endDateIso": "2026-04-30",
+            "endDateIso": event_end,
             "volume24hr": 925127.52,
             "volumeNum": 2987188.79,
             "outcomes": "[\"Yes\", \"No\"]",
@@ -1007,38 +1020,48 @@ mod tests {
 
     #[test]
     fn top_polymarket_briefing_entries_deprioritize_single_fixture_sports_markets() {
+        let high_certainty_end = iso_date_days_from_now(7);
+        let sports_end = iso_date_days_from_now(2);
+        let diplomacy_end = iso_date_days_from_now(10);
+        let shipping_end = iso_date_days_from_now(7);
+        let action_question =
+            format!("Military action against Iran ends by {}?", high_certainty_end);
+        let sports_question = format!("Will Manchester United FC win on {}?", sports_end);
+        let diplomacy_question =
+            format!("US x Iran permanent peace deal by {}?", diplomacy_end);
+        let shipping_question = "Strait of Hormuz traffic returns to normal by end of April?";
         let snapshot = serde_json::to_string(&json!([
             {
-                "question": "Military action against Iran ends by April 17, 2026?",
+                "question": action_question,
                 "description": "Near-term geopolitical escalation market.",
-                "endDateIso": "2026-04-30",
+                "endDateIso": high_certainty_end,
                 "volume24hr": 6325778.72,
                 "volumeNum": 7901398.22,
                 "outcomes": "[\"Yes\", \"No\"]",
                 "outcomePrices": "[\"0.99\", \"0.01\"]"
             },
             {
-                "question": "Will Manchester United FC win on 2026-04-25?",
+                "question": sports_question,
                 "description": "A same-day football match result market.",
-                "endDateIso": "2026-04-25",
+                "endDateIso": sports_end,
                 "volume24hr": 2440327.74,
                 "volumeNum": 2961279.19,
                 "outcomes": "[\"Yes\", \"No\"]",
                 "outcomePrices": "[\"0.61\", \"0.39\"]"
             },
             {
-                "question": "US x Iran permanent peace deal by April 22, 2026?",
+                "question": diplomacy_question,
                 "description": "Diplomatic talks between the U.S. and Iran.",
-                "endDateIso": "2026-04-22",
+                "endDateIso": diplomacy_end,
                 "volume24hr": 1334557.19,
                 "volumeNum": 2992827.03,
                 "outcomes": "[\"Yes\", \"No\"]",
                 "outcomePrices": "[\"0.16\", \"0.84\"]"
             },
             {
-                "question": "Strait of Hormuz traffic returns to normal by end of April?",
+                "question": shipping_question,
                 "description": "Shipping conditions after a U.S. blockade threat.",
-                "endDateIso": "2026-04-30",
+                "endDateIso": shipping_end,
                 "volume24hr": 925127.52,
                 "volumeNum": 2987188.79,
                 "outcomes": "[\"Yes\", \"No\"]",
@@ -1053,17 +1076,19 @@ mod tests {
             .filter_map(|entry| entry.get("question").and_then(Value::as_str))
             .collect::<Vec<_>>();
 
-        assert!(questions.contains(&"Military action against Iran ends by April 17, 2026?"));
-        assert!(questions.contains(&"US x Iran permanent peace deal by April 22, 2026?"));
-        assert!(questions.contains(&"Strait of Hormuz traffic returns to normal by end of April?"));
-        assert!(!questions.contains(&"Will Manchester United FC win on 2026-04-25?"));
+        assert!(questions.contains(&action_question.as_str()));
+        assert!(questions.contains(&diplomacy_question.as_str()));
+        assert!(questions.contains(&shipping_question));
+        assert!(!questions.contains(&sports_question.as_str()));
     }
 
     #[test]
     fn eligible_polymarket_briefing_market_rejects_far_future_longshots() {
+        let far_future_end = iso_date_days_from_now(900);
+        let near_term_end = iso_date_days_from_now(8);
         let far_future = json!({
             "question": "Will Chelsea Clinton win the 2028 Democratic presidential nomination?",
-            "endDateIso": "2028-11-07",
+            "endDateIso": far_future_end,
             "volume24hr": 111370.47,
             "volumeNum": 45619805.03,
             "outcomes": "[\"Yes\", \"No\"]",
@@ -1071,7 +1096,7 @@ mod tests {
         });
         let near_term = json!({
             "question": "Will Bitcoin reach $150,000 in April?",
-            "endDateIso": "2026-05-01",
+            "endDateIso": near_term_end,
             "volume24hr": 1171906.10,
             "volumeNum": 4240140.38,
             "outcomes": "[\"Yes\", \"No\"]",
@@ -1127,10 +1152,12 @@ mod tests {
 
     #[test]
     fn basic_polymarket_briefing_candidates_skip_far_future_fallback_rows() {
+        let far_future_end = iso_date_days_from_now(900);
+        let near_term_end = iso_date_days_from_now(8);
         let snapshot = serde_json::to_string(&json!([
             {
                 "question": "Will Chelsea Clinton win the 2028 Democratic presidential nomination?",
-                "endDateIso": "2028-11-07",
+                "endDateIso": far_future_end,
                 "active": true,
                 "volume24hr": 131370.59,
                 "volumeNum": 45672723.15,
@@ -1139,7 +1166,7 @@ mod tests {
             },
             {
                 "question": "Will Bitcoin reach $150,000 in April?",
-                "endDateIso": "2026-05-01",
+                "endDateIso": near_term_end,
                 "active": true,
                 "volume24hr": 1900556.20,
                 "volumeNum": 4983592.53,
@@ -1163,11 +1190,15 @@ mod tests {
 
     #[test]
     fn top_polymarket_briefing_entries_prefers_news_groundable_candidates() {
+        let world_cup_end = iso_date_days_from_now(89);
+        let fed_end = iso_date_days_from_now(6);
+        let iran_end = iso_date_days_from_now(7);
+        let bitcoin_end = iso_date_days_from_now(8);
         let snapshot = serde_json::to_string(&json!([
             {
                 "question": "Will Cape Verde win the 2026 FIFA World Cup?",
                 "description": "World Cup winner market.",
-                "endDateIso": "2026-07-20",
+                "endDateIso": world_cup_end,
                 "volume24hr": 1916183.17,
                 "volumeNum": 14383434.45,
                 "outcomes": "[\"Yes\", \"No\"]",
@@ -1176,7 +1207,7 @@ mod tests {
             {
                 "question": "Will the Fed decrease interest rates by 50+ bps after the April 2026 meeting?",
                 "description": "Federal Reserve April decision market.",
-                "endDateIso": "2026-04-29",
+                "endDateIso": fed_end,
                 "volume24hr": 1260822.81,
                 "volumeNum": 26987209.09,
                 "outcomes": "[\"Yes\", \"No\"]",
@@ -1185,7 +1216,7 @@ mod tests {
             {
                 "question": "Will the Iranian regime fall by April 30?",
                 "description": "Iran political stability market.",
-                "endDateIso": "2026-04-30",
+                "endDateIso": iran_end,
                 "volume24hr": 1175008.40,
                 "volumeNum": 29714320.32,
                 "outcomes": "[\"Yes\", \"No\"]",
@@ -1194,7 +1225,7 @@ mod tests {
             {
                 "question": "Will Bitcoin reach $150,000 in April?",
                 "description": "Bitcoin price target market.",
-                "endDateIso": "2026-05-01",
+                "endDateIso": bitcoin_end,
                 "volume24hr": 1171906.10,
                 "volumeNum": 4240140.38,
                 "outcomes": "[\"Yes\", \"No\"]",
