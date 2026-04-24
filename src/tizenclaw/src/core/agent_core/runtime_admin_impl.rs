@@ -1,4 +1,41 @@
 impl AgentCore {
+    fn attach_runtime_primary_backend(runtime: &mut Value, fallback_primary: Option<&str>) {
+        let primary = runtime
+            .get("current_selection")
+            .and_then(|selection| selection.get("selected_provider"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .or_else(|| {
+                fallback_primary
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+            })
+            .or_else(|| {
+                runtime
+                    .get("configured_provider_order")
+                    .and_then(Value::as_array)
+                    .and_then(|providers| {
+                        providers
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(str::trim)
+                            .find(|value| !value.is_empty())
+                    })
+            })
+            .or_else(|| {
+                runtime
+                    .get("configured_active_backend")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+            });
+
+        runtime["runtime_primary_backend"] = primary
+            .map(|value| Value::String(value.to_string()))
+            .unwrap_or(Value::Null);
+    }
+
     pub async fn shutdown(&self) {
         log::info!("AgentCore shutting down");
         self.event_bus.stop();
@@ -227,7 +264,12 @@ impl AgentCore {
         // that may already hold a registry read lock.  Falls back to reading
         // the stored `llm_config` for basic compatibility fields.
         if let Ok(rg) = self.provider_registry.try_read() {
-            return rg.status_json(|name| self.is_backend_available(name));
+            let mut runtime = rg.status_json(|name| self.is_backend_available(name));
+            Self::attach_runtime_primary_backend(
+                &mut runtime,
+                Some(rg.active_selection_provider_name()),
+            );
+            return runtime;
         }
         // Fallback path: registry is write-locked (reload in progress).
         // Derive the routing config from the stored raw document so that the
@@ -262,13 +304,15 @@ impl AgentCore {
                 })
             })
             .collect();
-        json!({
+        let mut runtime = json!({
             "configured_active_backend": configured_active_backend,
             "configured_fallback_backends": configured_fallback_backends,
             "configured_provider_order": configured_provider_order,
             "providers": providers,
             "current_selection": Value::Null,
-        })
+        });
+        Self::attach_runtime_primary_backend(&mut runtime, None);
+        runtime
     }
 
     pub fn safety_guard_status(&self) -> Value {
@@ -902,5 +946,39 @@ If there is nothing new to remember, output exactly: []";
         } else {
             log::warn!("[MemoryExtractor] Extractor LLM call failed.");
         }
+    }
+}
+
+#[cfg(test)]
+mod runtime_admin_tests {
+    use super::AgentCore;
+    use serde_json::{json, Value};
+
+    #[test]
+    fn attach_runtime_primary_backend_uses_fallback_when_selection_missing() {
+        let mut runtime = json!({
+            "configured_active_backend": "openai-codex",
+            "configured_provider_order": ["openai-codex", "openai"],
+            "current_selection": Value::Null,
+        });
+
+        AgentCore::attach_runtime_primary_backend(&mut runtime, Some("openai-codex"));
+
+        assert_eq!(runtime["runtime_primary_backend"], json!("openai-codex"));
+    }
+
+    #[test]
+    fn attach_runtime_primary_backend_prefers_selected_provider() {
+        let mut runtime = json!({
+            "configured_active_backend": "openai-codex",
+            "configured_provider_order": ["openai-codex", "openai"],
+            "current_selection": {
+                "selected_provider": "openai"
+            },
+        });
+
+        AgentCore::attach_runtime_primary_backend(&mut runtime, Some("openai-codex"));
+
+        assert_eq!(runtime["runtime_primary_backend"], json!("openai"));
     }
 }
