@@ -316,7 +316,12 @@ jobs:
         run: |
           set -euo pipefail
           cd "${WORKDIR}"
-          ./deploy_host.sh --test --build-root "${RUNNER_TEMP}/tizenclaw-build"
+          sudo env \
+            PATH="${PATH}" \
+            HOME="${HOME}" \
+            CARGO_HOME="${CARGO_HOME:-${HOME}/.cargo}" \
+            RUSTUP_HOME="${RUSTUP_HOME:-${HOME}/.rustup}" \
+            ./deploy_host.sh --test --build-root "${RUNNER_TEMP}/tizenclaw-build"
 
       - name: Dump build diagnostics on failure
         if: failure()

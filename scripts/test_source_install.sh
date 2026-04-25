@@ -83,6 +83,10 @@ make_bare_repo() {
 
   log "Creating local bare repo at ${bare_dir}..."
   git init --bare "${bare_dir}"
+  # CI fetches the repository by commit with --depth 1.  The smoke remote is
+  # intentionally local and disposable, so allow it to accept that shallow
+  # source ref instead of requiring network access to unshallow first.
+  git -C "${bare_dir}" config receive.shallowUpdate true
   git -C "${PROJECT_DIR}" push "${bare_dir}" "HEAD:refs/heads/${ref}"
 }
 
