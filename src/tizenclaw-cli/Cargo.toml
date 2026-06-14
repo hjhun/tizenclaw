@@ -1,9 +1,0 @@
-[package]
-name = "tizenclaw-cli"
-version = "1.0.0"
-edition = "2021"
-
-[dependencies]
-tizenclaw = { package = "libtizenclaw", path = "../libtizenclaw" }
-libtizenclaw_core = { package = "libtizenclaw-core", path = "../libtizenclaw-core" }
-serde_json = "1"

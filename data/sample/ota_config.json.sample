@@ -1,5 +1,0 @@
-{
-  "manifest_url": "https://example.com/tizenclaw/manifest.json",
-  "auto_check_interval_hours": 24,
-  "auto_update": false
-}

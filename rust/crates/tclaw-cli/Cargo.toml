@@ -1,8 +1,0 @@
-[package]
-name = "tclaw-cli"
-edition.workspace = true
-license.workspace = true
-version.workspace = true
-
-[dependencies]
-rusty-claude-cli = { path = "../rusty-claude-cli" }

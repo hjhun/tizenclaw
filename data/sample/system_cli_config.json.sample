@@ -1,7 +1,0 @@
-{
-  "enabled": true,
-  "auto_discover": true,
-  "systemd_dir": "/usr/lib/systemd/system",
-  "tools_dir": "/home/owner/.tizenclaw/tools/system_cli",
-  "tools": {}
-}
